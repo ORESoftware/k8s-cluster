@@ -28,6 +28,8 @@ It exposes:
 - `GET /fabrication/design/formats`
 - `GET /slicers/catalog`
 - `GET /fabrication/slicers/catalog`
+- `POST /slicers/result`
+- `POST /fabrication/slicers/result`
 - `GET /mesh-repair/catalog`
 - `GET /fabrication/mesh-repair/catalog`
 - `GET /formats/catalog`
@@ -38,6 +40,8 @@ It exposes:
 - `GET /fabrication/subjects/catalog`
 - `POST /design/import/review`
 - `POST /fabrication/design/import/review`
+- `POST /design/import/result`
+- `POST /fabrication/design/import/result`
 - `POST /design/convert/plan`
 - `POST /fabrication/design/convert/plan`
 - `POST /design/convert/result`
@@ -112,6 +116,8 @@ It exposes:
 - `GET /fabrication/methods/catalog`
 - `POST /strategy/recommend`
 - `POST /fabrication/strategy/recommend`
+- `POST /strategy/result`
+- `POST /fabrication/strategy/result`
 - `GET /schedule/catalog`
 - `GET /fabrication/schedule/catalog`
 - `POST /schedule/result`
@@ -124,6 +130,14 @@ It exposes:
 - `POST /fabrication/simulation/result`
 - `GET /quality/catalog`
 - `GET /fabrication/quality/catalog`
+- `GET /dispositions/catalog`
+- `GET /fabrication/dispositions/catalog`
+- `GET /costing/catalog`
+- `GET /fabrication/costing/catalog`
+- `GET /utilities/catalog`
+- `GET /fabrication/utilities/catalog`
+- `GET /telemetry/catalog`
+- `GET /fabrication/telemetry/catalog`
 - `POST /quality/plan`
 - `POST /fabrication/quality/plan`
 - `POST /quality/result`
@@ -140,14 +154,40 @@ It exposes:
 - `GET /fabrication/setup/catalog`
 - `GET /tooling/catalog`
 - `GET /fabrication/tooling/catalog`
+- `GET /workholding/catalog`
+- `GET /fabrication/workholding/catalog`
+- `GET /support-strategies/catalog`
+- `GET /fabrication/support-strategies/catalog`
+- `POST /support-strategies/result`
+- `POST /fabrication/support-strategies/result`
 - `GET /process-recipes/catalog`
 - `GET /fabrication/process-recipes/catalog`
+- `POST /process-recipes/result`
+- `POST /fabrication/process-recipes/result`
 - `GET /kinematics/catalog`
 - `GET /fabrication/kinematics/catalog`
+- `POST /kinematics/result`
+- `POST /fabrication/kinematics/result`
 - `GET /tolerances/catalog`
 - `GET /fabrication/tolerances/catalog`
+- `POST /tolerances/result`
+- `POST /fabrication/tolerances/result`
+- `GET /process-capabilities/catalog`
+- `GET /fabrication/process-capabilities/catalog`
+- `GET /manufacturability/catalog`
+- `GET /fabrication/manufacturability/catalog`
+- `POST /manufacturability/result`
+- `POST /fabrication/manufacturability/result`
+- `GET /failure-modes/catalog`
+- `GET /fabrication/failure-modes/catalog`
+- `POST /failure-modes/result`
+- `POST /fabrication/failure-modes/result`
 - `GET /safety/catalog`
 - `GET /fabrication/safety/catalog`
+- `GET /environment/catalog`
+- `GET /fabrication/environment/catalog`
+- `GET /provenance/catalog`
+- `GET /fabrication/provenance/catalog`
 - `POST /setup/plan`
 - `POST /fabrication/setup/plan`
 - `POST /setup/result`
@@ -168,6 +208,8 @@ It exposes:
 - `GET /fabrication/artifacts/catalog`
 - `GET /learning/capabilities`
 - `GET /fabrication/learning/capabilities`
+- `GET /learning/rewards/catalog`
+- `GET /fabrication/learning/rewards/catalog`
 - `GET /schema`
 - `GET /fabrication/schema`
 - `GET /examples`
@@ -728,6 +770,30 @@ support, first-layer, material-map, and kinematic outcomes are retained as
 MDP/POMDP/neural learning signals so future print jobs can choose safer slicer
 settings.
 
+## `POST /fabrication/slicers/result`
+
+`POST /slicers/result` and the gateway-prefixed
+`POST /fabrication/slicers/result` let PrusaSlicer, OrcaSlicer, Cura, Bambu
+Studio, and custom print-prep workers report retained profile, support,
+first-layer, generated G-code, and slicer-project evidence back to the
+fabrication server. The `dd.fabrication.slicer-profile-result-review.v1`
+response reviews profile provenance checks, print-preparation gates,
+machine-code checks, retained artifacts, human-intervention requirements, and
+learning observations, then stores `slicer-profile-result`,
+`slicer-profile-checks`, `slicer-print-preparation`,
+`slicer-machine-code-checks`, `slicer-profile-artifacts`, and
+`slicer-profile-learning-observations` artifacts.
+
+Machine-ready release remains blocked when slicer workers fail, profile checks
+are missing or blocked, support/orientation/first-layer/material-map preparation
+is unreviewed, generated printer code checks fail, artifacts lack URI/checksum
+evidence, or human intervention is still required. Observations such as
+`slicer-profile-check:*`, `slicer-preparation:*`,
+`slicer-machine-code-check:*`, and `slicer-profile:release-blocked` feed the
+bounded MDP/POMDP/neural policy memory so future print jobs can pick safer
+profiles, split fragile parts, lower high-speed settings, or request operator
+review earlier.
+
 ## `GET /fabrication/mesh-repair/catalog`
 
 `GET /mesh-repair/catalog` and `GET /fabrication/mesh-repair/catalog` return the
@@ -791,6 +857,27 @@ the planner. It is an import review and dispatch contract, not a geometry
 certification route: `machineReady` remains false until translator/export
 results, topology/scale/profile review, neutral export checksums, simulation, and
 operator or automation signoff are attached back to the plan or release package.
+
+## `POST /fabrication/design/import/result`
+
+`POST /design/import/result` and the gateway-prefixed
+`POST /fabrication/design/import/result` let external CAD, mesh, scan, and
+slicer-project import workers report retained validation evidence back to the
+fabrication server. The `dd.fabrication.design-import-result-review.v1` response
+reviews topology, unit/scale, PMI/profile, and manufacturability checks; records
+failure boundaries that require human intervention, split/combine, conversion,
+or regeneration; verifies retained artifacts have URI, checksum, format, and
+evidence; and stores `design-import-result`, `design-import-checks`,
+`design-import-failure-boundaries`, `design-import-artifacts`, and
+`design-import-learning-observations` artifacts.
+
+Machine-ready release remains blocked when import workers fail, checks are
+missing or blocked, failure boundaries remain unresolved, split/combine or human
+review is required, or artifact evidence is incomplete. Learning observations
+such as `design-import-check:*`, `design-import-boundary:*`,
+`design-import-action:*`, and `design-import:split-required` feed the bounded
+MDP/POMDP/neural policy memory so future jobs can pick safer translators, split
+or repair geometry earlier, or request human review before toolpath generation.
 
 ## `POST /fabrication/design/convert/plan`
 
@@ -1637,6 +1724,28 @@ publish generated controller code, or certify machine-ready release; they keep
 `machineReady=false` while validation, setup, simulation, quality, postprocess,
 schedule, intervention, or release blockers remain.
 
+## `POST /fabrication/strategy/result`
+
+`POST /strategy/result` and the gateway-prefixed
+`POST /fabrication/strategy/result` let external strategy optimizers report
+whether a recommended print/mill/turn/cut/inspect/split/combine route is actually
+feasible, releasable, and useful for learning. The
+`dd.fabrication.strategy-result-review.v1` envelope validates route reviews,
+split/combine decisions, MDP/POMDP/neural learning updates, retained artifacts,
+warning text, and optimizer metadata, then stores a `strategy-result` job with
+`strategy-route-reviews`, `strategy-split-combine-decisions`,
+`strategy-learning-updates`, `strategy-artifacts`, and
+`strategy-learning-observations` artifacts.
+
+Machine-ready release remains blocked when the optimizer failed, no route review
+was supplied, a route is infeasible, split/combine or redesign decisions are
+unaccepted, learning updates still require review, or retained artifacts lack a
+URI, checksum, and evidence. Observations such as `strategy-route:*`,
+`strategy-route-machine-kind:*`, `strategy-split-combine:*`,
+`strategy-learning-update:*`, and `strategy:human-intervention-required` feed the
+bounded learning memory so later planners can avoid blocked hybrid routes or ask
+for redesign and operator intervention earlier.
+
 ## `GET /fabrication/schedule/catalog`
 
 `GET /schedule/catalog` and the gateway-prefixed
@@ -1809,6 +1918,106 @@ artifacts include `quality-plan`, `postprocess-plan`, `release-package-plan`,
 MDP/POMDP/neural workers can learn when to add inspection, split parts, adjust
 processes, regenerate instructions, or require human signoff.
 
+## `GET /fabrication/dispositions/catalog`
+
+`GET /dispositions/catalog` and the gateway-prefixed
+`GET /fabrication/dispositions/catalog` return the live
+`dd.fabrication.disposition-catalog.v1` post-inspection, post-simulation, and
+post-failure decision catalog before callers treat quality results, failure
+events, or release packages as closed. The catalog covers pass-with-retained
+evidence, rework-and-reinspect, scrap-and-remake, engineering waiver/use-as-is,
+and split/combine redesign dispositions.
+
+Each disposition family lists decision evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`qualityResult.measurements`, `qualityResult.findings`, `simulation.findings`,
+`failureModeResult.failureEvents`, `boundaryRemediationPlan.actions`,
+`decompositionPlan.parts`, `interfaceControlPlan.interfaces`,
+`assemblyPlan.requiredEvidence`, `releasePackagePlan.releaseGates`,
+`learning.outcomes`, and `machineRelease.blockers`. Catalog entries are
+decision evidence contracts, not certified quality acceptance. Machine-ready or
+customer release remains blocked while pass, rework, scrap, waiver, or
+split/combine redesign decisions lack retained evidence and human or automation
+authority. Disposition outcomes are retained as MDP/POMDP/neural learning
+signals so future planners can avoid failed routes, change fixtures, split
+parts, remake, or add inspection earlier.
+
+## `GET /fabrication/costing/catalog`
+
+`GET /costing/catalog` and the gateway-prefixed
+`GET /fabrication/costing/catalog` return the live
+`dd.fabrication.costing-catalog.v1` estimation evidence catalog before callers
+treat a plan, quote, schedule, or split/combine route as economically ready. The
+catalog covers machine-time/setup estimates, material yield and scrap allowance,
+quality/rework/release risk, split/combine route economics, and controller,
+postprocessor, and artifact review effort.
+
+Each cost family lists estimation evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`machineSchedule.lanes`, `materialPlan.quantity`, `qualityPlan.releaseGates`,
+`boundaryRemediationPlan.actions`, `decompositionPlan.parts`,
+`assemblyPlan.requiredEvidence`, `releasePackagePlan.requiredArtifacts`,
+`learning.outcomes`, and `machineRelease.blockers`. Catalog entries are
+estimation evidence contracts, not binding quotes, certified cost accounting, or
+shop-floor release authorization. Machine-ready and customer release remain
+blocked when route economics omit setup, material yield, scrap, quality, review,
+human intervention, or split/combine evidence. Cost, yield, scrap, cycle-time,
+and rework outcomes are retained as MDP/POMDP/neural learning signals so future
+planners can choose cheaper, safer, or more reliable fabrication routes.
+
+## `GET /fabrication/utilities/catalog`
+
+`GET /utilities/catalog` and the gateway-prefixed
+`GET /fabrication/utilities/catalog` return the live
+`dd.fabrication.utilities-catalog.v1` process-support and facility-readiness
+catalog before callers treat generated, imported, simulated, or scheduled work
+as machine-ready. The catalog covers additive thermal/material utilities,
+subtractive coolant/chip/dust/air support, sheet-cut process support, hybrid
+cell fixture and robot services, and facility power, network, and environment
+readiness.
+
+Each utility family lists required evidence, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`validation.failureBoundaries`, `supportStrategyPlan.requirements`,
+`monitoringPlan.alerts`, `fixturePlan.setups`, `toolingPlan.requirements`,
+`executionPlan.stopPoints`,
+`operatorInterventionPlan.requiredOperatorActions`, `scheduleResult.holds`,
+`learning.outcomes`, and `machineRelease.blockers`. Catalog entries are
+process-support and facility-readiness evidence contracts, not certified machine
+safety approval or facility compliance. Machine-ready release remains blocked
+while power, network, thermal, material-supply, coolant, chip, dust, gas, pump,
+abrasive, fume, vacuum, fixture, robot, or recovery utilities lack retained
+evidence. Utility outages, restarts, operator recovery, and environmental
+excursions are retained as MDP/POMDP/neural learning signals so future planners
+can resequence, add checkpoints, split work, or avoid brittle unattended routes.
+
+## `GET /fabrication/telemetry/catalog`
+
+`GET /telemetry/catalog` and the gateway-prefixed
+`GET /fabrication/telemetry/catalog` return the live
+`dd.fabrication.telemetry-catalog.v1` runtime evidence catalog before execution,
+monitoring, simulation, or learning workers turn sensor streams into release or
+policy-training outcomes. The catalog covers additive print runtime sensors,
+subtractive load/vibration/process state, sheet-cut process and support-media
+telemetry, hybrid-cell assembly and handoff telemetry, and simulation-to-runtime
+boundary correlation.
+
+Each telemetry family lists required channels, release blockers, response
+surfaces, and learning signals. The response names surfaces such as
+`executionTelemetryResult.telemetryArtifacts`,
+`executionTelemetryResult.machineStops`,
+`executionTelemetryResult.operatorInterventions`, `monitoringResult.alerts`,
+`failureModeResult.failureEvents`, `qualityResult.measurements`,
+`simulation.findings`, `validation.failureBoundaries`, and `learning.outcomes`.
+Catalog entries are runtime evidence contracts, not certified machine safety
+validation or calibrated metrology acceptance. Machine-ready and learning-ready
+release remain blocked when sensor streams, machine stops, operator
+interventions, generated/imported program hashes, or boundary-correlation
+evidence cannot be retained. Telemetry outcomes feed MDP/POMDP/neural workers so
+future planners can learn which generated instructions, machine choices,
+utilities, split/combine handoffs, and human checkpoints prevented or caused
+failures.
+
 ## `POST /fabrication/quality/result`
 
 `POST /quality/result` and the gateway-prefixed
@@ -1970,6 +2179,91 @@ calibration, and operator or automation signoff evidence clear. Tool selection,
 tool-life, offset, feed/speed, support-media, and inspection outcomes are retained
 as MDP/POMDP/neural learning signals for future planning and instruction repair.
 
+## `GET /fabrication/workholding/catalog`
+
+`GET /workholding/catalog` and the gateway-prefixed
+`GET /fabrication/workholding/catalog` return the live
+`dd.fabrication.workholding-catalog.v1` stock, build, fixture, support,
+retention, and recomposition holding evidence catalog before generated or
+imported instructions are treated as ready for setup, toolpath, simulation, or
+release handoff. The catalog covers additive build plates, vats, powder beds,
+sheet stacks, and build-surface reset evidence; mill/router vises, clamps,
+vacuum tables, pallets, tombstones, tabs, spoilboards, and datum transfers;
+lathe chucks, collets, guide bushings, supports, subspindles, and part-off
+catchers; sheet-cut slats, honeycomb, water tables, retained tabs, nests, and
+drop control; and hybrid assembly fixtures for split/combine recomposition.
+
+Each workholding family lists machine kinds, holding evidence, release blockers,
+response surfaces, and learning signals. The response names surfaces such as
+`toolingPlan.requirements.workholding`, `fixturePlan.setups`,
+`fixturePlan.setups.requiredEvidence`, `fixturePlan.setups.clearanceChecks`,
+`fixturePlan.datumTransfers`, `simulation.riskProfile.programRisks`,
+`operatorInterventionPlan.requiredOperatorActions`,
+`interfaceControlPlan.interfaces`, `decompositionPlan.parts`,
+`assemblyPlan.requiredEvidence`, `releasePackagePlan.requiredArtifacts`, and
+`machineRelease.blockers`. Catalog entries are evidence contracts, not
+certified fixture designs. Machine-ready release remains blocked while
+build-surface, clamp, vacuum, chuck, support, tab, nest, datum-transfer, or
+split/combine fixture evidence is unresolved. Workholding failures and
+successful fixture choices are retained as MDP/POMDP/neural learning signals so
+future planners can split jobs, change fixtures, add probes, or require human
+intervention earlier.
+
+## `GET /fabrication/support-strategies/catalog`
+
+`GET /support-strategies/catalog` and the gateway-prefixed
+`GET /fabrication/support-strategies/catalog` return the live
+`dd.fabrication.support-strategy-catalog.v1` orientation, support,
+sacrificial-holding, tab, bridge, split/combine, and support-removal evidence
+catalog before generated or imported instructions are treated as ready for
+design generation, setup, simulation, assembly, or release handoff. The catalog
+covers additive build orientation, overhangs, bridges, islands, support
+interfaces, support removal, depowder, wash/cure, and plate removal;
+subtractive setup orientation, tabs, bridges, soft jaws, sacrificial stock, and
+multi-sided support; turning stick-out, guide-bushing, tailstock, subspindle,
+catcher, and cutoff support; sheet-cut nests, tabs, bridges, drop support, and
+skeleton handling; and hybrid split/combine interface and recomposition support.
+
+Each support-strategy family lists machine kinds, strategy evidence, release
+blockers, response surfaces, and learning signals. The response names surfaces
+such as `designInputReview.manufacturabilityEvidence`, `slicerProfileCatalog`,
+`fixturePlan.setups`, `toolingPlan.requirements.workholding`,
+`decompositionPlan.parts`, `interfaceControlPlan.interfaces`,
+`interventionMap.requiredInterventions`,
+`interventionMap.splitCombineDecisions`, `executionPlan.stopPoints`,
+`postprocessPlan.requiredArtifacts`, `qualityPlan.measurementTargets`,
+`learning.outcomes`, and `machineRelease.blockers`. Catalog entries are
+evidence contracts, not certified manufacturing instructions. Machine-ready
+release remains blocked while orientation, supports, tabs, bridges, sacrificial
+stock, support removal, postprocess access, or split/combine interface evidence
+is unresolved. Orientation, support, split/combine, and intervention outcomes
+are retained as MDP/POMDP/neural learning signals so future planners can choose
+one-piece, split, combine, or alternate-machine routes earlier.
+
+## `POST /fabrication/support-strategies/result`
+
+`POST /support-strategies/result` and the gateway-prefixed
+`POST /fabrication/support-strategies/result` accept retained
+`dd.fabrication.support-strategy-result-review.v1` reviews from slicer, CAM,
+simulation, decomposition, assembly, or operator workers after orientation,
+support, sacrificial-holding, tab, bridge, or split/combine strategies are
+checked against the requested machine route.
+
+The request records orientation reviews, support/removal reviews,
+split/combine decisions, human interventions, artifacts, warnings, and learning
+observations. Responses retain `support-strategy-result`,
+`support-strategy-orientation-reviews`, `support-strategy-support-reviews`,
+`support-strategy-split-combine-decisions`, `support-strategy-interventions`,
+`support-strategy-artifacts`, and `support-strategy-learning-observations`
+artifacts on the fabrication job. Machine-ready release remains blocked while
+orientation, support removal, postprocess access, split/combine, intervention,
+artifact, or human dispositions are unresolved. Learning observations such as
+`support-strategy-family:*`, `support-orientation:*`, `support-removal:*`,
+`support-split-combine:*`, `support-strategy:support-change-required`, and
+`support-strategy:split-combine-required` feed the bounded MDP/POMDP/neural
+policy memory so future planners can reorient, change supports, split, combine,
+reroute, or request human help before release.
+
 ## `GET /fabrication/process-recipes/catalog`
 
 `GET /process-recipes/catalog` and the gateway-prefixed
@@ -1994,6 +2288,30 @@ parameter revisions, feed/speed outcomes, thermal cycles, edge quality,
 first-layer behavior, and postprocess results are retained as MDP/POMDP/neural
 learning signals for future planning and instruction repair.
 
+## `POST /fabrication/process-recipes/result`
+
+`POST /process-recipes/result` and the gateway-prefixed
+`POST /fabrication/process-recipes/result` accept retained
+`dd.fabrication.process-recipe-result-review.v1` reviews from slicer, CAM,
+postprocessor, simulation, coupon, or operator workers after selected recipe
+parameters are checked against the material, tool, machine, controller, and
+postprocess route.
+
+The request records recipe reviews, parameter checks, first-article or coupon
+results, artifacts, warnings, and learning observations. Responses retain
+`process-recipe-result`, `process-recipe-reviews`,
+`process-recipe-parameter-checks`, `process-recipe-coupon-results`,
+`process-recipe-artifacts`, and `process-recipe-learning-observations` artifacts
+on the fabrication job. Machine-ready release remains blocked while recipe
+provenance, feed/speed, thermal, cut-chart, support media, coupon, artifact, or
+human signoff evidence is unresolved. Learning observations such as
+`process-recipe-family:*`, `process-recipe-kind:*`,
+`process-recipe-parameter:*`, `process-recipe-coupon:*`,
+`process-recipe:parameter-change-required`, and
+`process-recipe:human-signoff-required` feed the bounded MDP/POMDP/neural policy
+memory so future planners can choose safer parameters, revise recipes, request
+coupons, or block risky generated/imported instructions before release.
+
 ## `GET /fabrication/kinematics/catalog`
 
 `GET /kinematics/catalog` and the gateway-prefixed
@@ -2017,6 +2335,29 @@ simulation, and operator or automation signoff evidence clear. Axis-envelope,
 coordinate-mode, TCP/frame, external-axis, spindle-sync, and clearance
 observations are retained as MDP/POMDP/neural learning signals for future
 planning and instruction repair.
+
+## `POST /fabrication/kinematics/result`
+
+`POST /kinematics/result` and the gateway-prefixed
+`POST /fabrication/kinematics/result` accept retained
+`dd.fabrication.kinematics-result-review.v1` reviews from simulation,
+postprocessor, controller, probing, robotic-cell, or operator workers after
+axis envelopes, coordinate state, TCP/frame calibration, rotary sync, spindle
+sync, robot frames, or probe datum evidence are checked.
+
+The request records axis checks, coordinate reviews, frame checks, artifacts,
+warnings, and learning observations. Responses retain `kinematics-result`,
+`kinematics-axis-checks`, `kinematics-coordinate-reviews`,
+`kinematics-frame-checks`, `kinematics-artifacts`, and
+`kinematics-learning-observations` artifacts on the fabrication job.
+Machine-ready release remains blocked while axis envelope, homing, modal state,
+work offsets, TCP/frame, rotary/robot sync, probe calibration, artifact, or human
+intervention evidence is unresolved. Learning observations such as
+`kinematics-family:*`, `kinematics-axis:*`, `kinematics-coordinate:*`,
+`kinematics-frame:*`, and `kinematics:human-intervention-required` feed the
+bounded MDP/POMDP/neural policy memory so future planners can choose safer
+motions, insert probe/re-home stops, correct frames, or block risky generated
+and imported instructions before release.
 
 ## `GET /fabrication/tolerances/catalog`
 
@@ -2043,6 +2384,145 @@ outcomes, kerf offsets, fit-up interventions, and split/combine stackups are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
 
+## `POST /fabrication/tolerances/result`
+
+`POST /tolerances/result` and the gateway-prefixed
+`POST /fabrication/tolerances/result` accept retained tolerance-review outcomes
+from dimensional, GD&T/PMI, fit, kerf, compensation, and interface-control
+workers. The response uses `dd.fabrication.tolerance-result-review.v1` and
+captures tolerance checks, fit/interface checks, compensation actions, retained
+artifacts, release blockers, warning counts, and MDP/POMDP/neural learning
+observations.
+
+Machine-ready and release-ready status remains blocked when tolerance-critical
+features are out of tolerance, interface fits are rejected, compensation has not
+been applied, retained artifact evidence is missing, or the job still requires
+redesign, rework, split/combine planning, or human fit-up. The result is stored
+with `tolerance-result`, `tolerance-checks`, `tolerance-fit-checks`,
+`tolerance-compensations`, `tolerance-artifacts`, and
+`tolerance-learning-observations` artifacts so future planners can learn which
+allowances, offsets, interface designs, or human checkpoints made generated or
+imported instructions releasable.
+
+## `GET /fabrication/process-capabilities/catalog`
+
+`GET /process-capabilities/catalog` and the gateway-prefixed
+`GET /fabrication/process-capabilities/catalog` return the live
+`dd.fabrication.process-capability-catalog.v1` geometry/process capability
+catalog before generated, imported, or improved instructions are treated as
+ready for machine release. The catalog covers additive printability envelopes,
+subtractive tool access and chip-load envelopes, turning workholding and
+part-off envelopes, sheet-cut kerf/pierce/support envelopes, and hybrid
+split/combine and rework envelopes.
+
+Each capability family lists capability scopes, required evidence, failure
+boundaries, response surfaces, and learning signals. The response names
+surfaces such as `designInputReview.capabilityFindings`,
+`slicerPlan.profileEvidence`, `toolingPlan.requirements`,
+`processRecipe.cutChart`, `decompositionPlan.parts`,
+`interfaceControlPlan.interfaces`, `qualityPlan.measurementTargets`, and
+`machineRelease.blockers`. Catalog entries are not certified machine capability
+studies. Machine-ready release remains blocked when requested geometry exceeds
+reviewed process capability and no redesign, alternate route, split/combine
+plan, or human-intervention evidence is present. Capability failures, alternate
+routes, split boundaries, and measured process outcomes are retained as
+MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `GET /fabrication/manufacturability/catalog`
+
+`GET /manufacturability/catalog` and the gateway-prefixed
+`GET /fabrication/manufacturability/catalog` return the live
+`dd.fabrication.manufacturability-catalog.v1` design-for-manufacture review
+catalog before generated, imported, or improved instructions are treated as
+ready for machine-code generation or release. The catalog covers CAD topology and
+design-intent review, additive DFM print-or-split review, subtractive and
+turning DFM access review, sheet-cut and flat-pattern review, and hybrid
+assembly DFM/interface review.
+
+Each manufacturability review family lists source kinds, machine kinds, check
+scopes, required evidence, failure boundaries, response surfaces, and learning
+signals. The response names surfaces such as
+`designInputReview.manufacturabilityEvidence`,
+`designInputReview.conversionPlan`, `processCapabilityContracts`,
+`decompositionPlan.parts`, `interfaceControlPlan.interfaces`,
+`assemblyPlan.requiredEvidence`, `qualityPlan.measurementTargets`, and
+`machineRelease.blockers`. Catalog entries are not certified design approvals.
+Machine-ready release remains blocked when CAD, mesh, sheet, or assembly
+geometry needs redesign, repair, alternate routing, split/combine planning, or
+human-intervention evidence. Manufacturability failures, redesign actions,
+split/combine decisions, and successful route outcomes are retained as
+MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `POST /fabrication/manufacturability/result`
+
+`POST /manufacturability/result` and the gateway-prefixed
+`POST /fabrication/manufacturability/result` let DFM/DfAM, tool-access,
+support-access, flat-pattern, workholding, and hybrid-interface reviewers report
+retained manufacturability evidence back to the fabrication server. The
+`dd.fabrication.manufacturability-result-review.v1` response reviews findings,
+route feasibility, split/combine or redesign decisions, retained artifacts,
+human-intervention requirements, and learning observations, then stores
+`manufacturability-result`, `manufacturability-findings`,
+`manufacturability-route-reviews`, `manufacturability-split-combine-decisions`,
+`manufacturability-artifacts`, and `manufacturability-learning-observations`
+artifacts.
+
+Machine-ready release remains blocked when manufacturability workers fail,
+findings are missing or unresolved, geometry requires redesign or
+split/combine, route reviews are infeasible, artifacts lack URI/checksum
+evidence, or human intervention is still required. Observations such as
+`manufacturability-family:*`, `manufacturability-scope:*`,
+`manufacturability-route:*`, `manufacturability-decision:*`,
+`manufacturability:redesign-required`, and
+`manufacturability:split-combine-required` feed the bounded MDP/POMDP/neural
+policy memory so future planners can redesign, split, combine, reroute, or
+request human review before machine-code generation.
+
+## `GET /fabrication/failure-modes/catalog`
+
+`GET /failure-modes/catalog` and the gateway-prefixed
+`GET /fabrication/failure-modes/catalog` return the live
+`dd.fabrication.failure-mode-catalog.v1` process-failure catalog before
+generated, imported, or improved instructions are treated as ready for
+simulation, execution, or release. The catalog covers additive print-process
+failures, subtractive tool and fixture failures, turning and part-transfer
+failures, sheet-cutting utility and slug failures, and hybrid route or
+human-intervention failures.
+
+Each failure-mode family lists machine kinds, failure modes, early signals,
+required evidence, release blockers, remediation routes, response surfaces, and
+learning signals. The response names surfaces such as
+`boundarySummary.boundaries`, `interventionMap.requiredInterventions`,
+`simulation.riskProfile.programRisks`, `decompositionPlan.parts`,
+`executionPlan.stopPoints`, `learning.outcomes`, and
+`machineRelease.blockers`. Catalog entries are not certified machine
+diagnostics. Machine-ready release remains blocked while likely failure modes
+require unresolved human intervention, redesign, support restart, tool/process
+state recovery, or split/combine planning. Failure signatures, remediation
+choices, split/combine outcomes, and operator interventions are retained as
+MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `POST /fabrication/failure-modes/result`
+
+`POST /failure-modes/result` and the gateway-prefixed
+`POST /fabrication/failure-modes/result` accept retained
+`dd.fabrication.failure-mode-result-review.v1` reviews from process monitors,
+simulators, import validators, or operators after a generated, imported, or
+improved toolpath is checked against likely failure modes.
+
+The request records failure events, recovery actions, human interventions,
+artifacts, split/combine needs, and learning observations. Responses store
+`failure-mode-result`, `failure-mode-events`, `failure-mode-recovery-actions`,
+`failure-mode-interventions`, `failure-mode-artifacts`, and
+`failure-mode-learning-observations` artifacts on the retained fabrication job.
+Machine-ready release remains blocked while a failure event, recovery action,
+intervention, artifact, human disposition, or split/combine requirement is still
+unresolved. Learning observations such as `failure-family:*`,
+`failure-mode:*`, `failure-recovery:*`, `failure-intervention:*`,
+`failure-mode:support-failure`, and `failure-mode:split-combine-required` feed
+the bounded MDP/POMDP/neural policy memory so future planners can reroute,
+recover, split, combine, or request human help before release.
+
 ## `GET /fabrication/safety/catalog`
 
 `GET /safety/catalog` and the gateway-prefixed
@@ -2066,6 +2546,58 @@ emergency response, monitoring, alerting, and release signoff evidence clear.
 Interlock states, operator stops, extraction failures, E-stop events, recovery
 actions, and unattended-release outcomes are retained as MDP/POMDP/neural
 learning signals for future planning and instruction repair.
+
+## `GET /fabrication/environment/catalog`
+
+`GET /environment/catalog` and the gateway-prefixed
+`GET /fabrication/environment/catalog` return the live
+`dd.fabrication.environment-catalog.v1` humidity, thermal, utility,
+extraction, vibration, and metrology-environment evidence catalog before
+generated or imported instructions are treated as ready for material planning,
+monitoring, inspection, or machine release. The catalog covers additive material
+storage and printroom state, subtractive coolant/chip and thermal stability,
+sheet-cutting extraction and utility state, robotic-cell space and utility
+readiness, and inspection/metrology release environment.
+
+Each environment family lists condition scopes, required evidence, release
+blockers, response surfaces, and learning signals. The response names surfaces
+such as `materialPlan.routeRequirements`, `processRecipe.materialConditioning`,
+`processRecipe.coolant`, `monitoringPlan.monitorPoints`,
+`monitoringPlan.alertRules`, `qualityPlan.measurementTargets`,
+`calibrationPlan.requiredEvidence`, `releasePackagePlan.requiredArtifacts`, and
+`machineRelease.blockers`. Catalog entries are not certified facility
+qualifications. Machine-ready release remains blocked until material
+conditioning, ambient/process utilities, extraction, thermal stability,
+monitoring, inspection environment, and signoff evidence clear. Humidity,
+drying, coolant, extraction, utility, vibration, temperature, and metrology
+outcomes are retained as MDP/POMDP/neural learning signals for future planning
+and instruction repair.
+
+## `GET /fabrication/provenance/catalog`
+
+`GET /provenance/catalog` and the gateway-prefixed
+`GET /fabrication/provenance/catalog` return the live
+`dd.fabrication.provenance-catalog.v1` traceability catalog before generated,
+imported, improved, or learned fabrication instructions are treated as ready for
+machine release. The catalog covers design-input and CAD lineage, material lots
+and feedstock traceability, machine-program and controller artifact lineage,
+inspection/release/nonconformance ledgers, and learning-outcome/policy-memory
+lineage.
+
+Each provenance family lists evidence scopes, required evidence, release
+blockers, response surfaces, and learning signals. The response names surfaces
+such as `designInputReview.conversionPlan`, `designPackage.parts`,
+`materialPlan.routeRequirements`, `machineCodePackage.programs`,
+`qualityPlan.measurementTargets`, `releasePackagePlan.packages`,
+`learning.policySnapshot`, `learning.outcomes`, and `machineRelease.blockers`.
+Catalog entries are not certified quality records. Machine-ready release
+remains blocked until source artifacts, material lots, generated or imported
+programs, inspection results, release bundles, and learning outcomes have
+traceable hashes, revisions, review status, and signoff evidence. Artifact
+hashes, conversion logs, lot records, controller program digests, inspection
+dispositions, nonconformance decisions, and learning outcome lineage are
+retained as MDP/POMDP/neural learning signals for future planning and
+instruction repair.
 
 ## `POST /fabrication/setup/plan`
 
@@ -2354,6 +2886,28 @@ MDP/POMDP/DES Studio schema names, `solve_mdp` value-iteration support,
 learning evidence only: machine-ready release stays blocked while validation
 findings, unresolved failure boundaries, missing probe evidence, or
 human-intervention gates remain open.
+
+## `GET /fabrication/learning/rewards/catalog`
+
+`GET /learning/rewards/catalog` and the gateway-prefixed
+`GET /fabrication/learning/rewards/catalog` return the live
+`dd.fabrication.learning-reward-catalog.v1` policy-training reward contract for
+DES/MDP/POMDP/neural workers. The catalog covers machine-ready release success,
+machine-failure boundary penalties, split/combine recovery and route
+improvement, human-intervention and automation cost, and evidence-quality
+gating.
+
+Each reward family lists reward evidence, reward terms, and training surfaces
+such as `learning.outcomes`, `reward_terms`, `mdp_update`, `neural_example`,
+`validation.failureBoundaries`, `executionTelemetryResult.machineStops`,
+`operatorInterventionPlan.requiredOperatorActions`, `decompositionPlan.parts`,
+and `releasePackagePlan.releaseGates`. Reward entries are policy-training
+evidence contracts, not controller approval, certified safety validation, or
+autonomous release authority. Positive rewards cannot bypass validation,
+simulation, quality, setup, telemetry, operator, or release-package blockers.
+Reward terms are retained so DES/MDP/POMDP/neural workers can learn which
+generated instructions, imported programs, machine choices, split/combine
+boundaries, and human checkpoints improved future fabrication outcomes.
 
 ## `GET /fabrication/schema` And `GET /fabrication/examples`
 

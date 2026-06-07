@@ -149,6 +149,65 @@ struct DesignImportReviewRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct DesignImportResultReviewRequest {
+    request_id: Option<String>,
+    source_job_id: Option<String>,
+    input_id: Option<String>,
+    worker_id: String,
+    worker_lane: Option<String>,
+    source_format: Option<String>,
+    source_system: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    checks: Option<Vec<DesignImportResultCheck>>,
+    failure_boundaries: Option<Vec<DesignImportResultBoundary>>,
+    artifacts: Option<Vec<DesignImportResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignImportResultCheck {
+    check_id: String,
+    check_kind: String,
+    status: String,
+    passed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignImportResultBoundary {
+    boundary_id: String,
+    boundary_kind: String,
+    code: String,
+    message: String,
+    release_blocker: Option<bool>,
+    human_intervention_required: Option<bool>,
+    split_required: Option<bool>,
+    combine_required: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignImportResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    input_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DesignConversionResultReviewRequest {
     request_id: Option<String>,
     source_job_id: Option<String>,
@@ -706,6 +765,578 @@ struct DecompositionResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ManufacturabilityResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_part_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    findings: Option<Vec<ManufacturabilityResultFinding>>,
+    route_reviews: Option<Vec<ManufacturabilityResultRouteReview>>,
+    split_combine_decisions: Option<Vec<ManufacturabilityResultDecision>>,
+    artifacts: Option<Vec<ManufacturabilityResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturabilityResultFinding {
+    finding_id: String,
+    review_family: String,
+    check_scope: String,
+    status: String,
+    severity: Option<String>,
+    machine_kind: Option<String>,
+    manufacturing_method: Option<String>,
+    release_blocker: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturabilityResultRouteReview {
+    route_id: String,
+    finding_id: Option<String>,
+    route_kind: String,
+    manufacturing_method: Option<String>,
+    machine_kind: Option<String>,
+    status: String,
+    feasible: Option<bool>,
+    alternate_route_required: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturabilityResultDecision {
+    decision_id: String,
+    decision_kind: String,
+    status: String,
+    source_part_ids: Option<Vec<String>>,
+    target_part_ids: Option<Vec<String>>,
+    accepted: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManufacturabilityResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    source_part_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    orientation_reviews: Option<Vec<SupportStrategyResultOrientationReview>>,
+    support_reviews: Option<Vec<SupportStrategyResultSupportReview>>,
+    split_combine_decisions: Option<Vec<SupportStrategyResultDecision>>,
+    interventions: Option<Vec<SupportStrategyResultIntervention>>,
+    artifacts: Option<Vec<SupportStrategyResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultOrientationReview {
+    review_id: String,
+    strategy_family: String,
+    orientation_kind: String,
+    status: String,
+    build_angle: Option<f64>,
+    machine_kind: Option<String>,
+    release_blocker: Option<bool>,
+    requires_reorientation: Option<bool>,
+    requires_support_change: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultSupportReview {
+    support_id: String,
+    review_id: Option<String>,
+    support_kind: String,
+    status: String,
+    removable: Option<bool>,
+    postprocess_accessible: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultDecision {
+    decision_id: String,
+    decision_kind: String,
+    status: String,
+    source_part_ids: Option<Vec<String>>,
+    target_part_ids: Option<Vec<String>>,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultIntervention {
+    intervention_id: String,
+    intervention_kind: String,
+    status: String,
+    required: Option<bool>,
+    completed: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportStrategyResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessRecipeResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_kind: Option<String>,
+    material_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    recipe_reviews: Option<Vec<ProcessRecipeResultRecipeReview>>,
+    parameter_checks: Option<Vec<ProcessRecipeResultParameterCheck>>,
+    coupon_results: Option<Vec<ProcessRecipeResultCouponResult>>,
+    artifacts: Option<Vec<ProcessRecipeResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessRecipeResultRecipeReview {
+    review_id: String,
+    recipe_family: String,
+    recipe_kind: String,
+    status: String,
+    machine_kind: Option<String>,
+    material_id: Option<String>,
+    release_blocker: Option<bool>,
+    requires_parameter_change: Option<bool>,
+    requires_coupon: Option<bool>,
+    requires_human_signoff: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessRecipeResultParameterCheck {
+    check_id: String,
+    review_id: Option<String>,
+    parameter_kind: String,
+    status: String,
+    target_value: Option<String>,
+    measured_value: Option<String>,
+    within_limits: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessRecipeResultCouponResult {
+    coupon_id: String,
+    recipe_review_id: Option<String>,
+    result_kind: String,
+    status: String,
+    passed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_recipe_revision: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessRecipeResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KinematicsResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    axis_checks: Option<Vec<KinematicsResultAxisCheck>>,
+    coordinate_reviews: Option<Vec<KinematicsResultCoordinateReview>>,
+    frame_checks: Option<Vec<KinematicsResultFrameCheck>>,
+    artifacts: Option<Vec<KinematicsResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KinematicsResultAxisCheck {
+    check_id: String,
+    kinematic_family: String,
+    axis_kind: String,
+    status: String,
+    envelope_ref: Option<String>,
+    within_envelope: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_rehome: Option<bool>,
+    requires_reprobe: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KinematicsResultCoordinateReview {
+    review_id: String,
+    coordinate_kind: String,
+    status: String,
+    modal_state: Option<String>,
+    release_blocker: Option<bool>,
+    requires_reset: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KinematicsResultFrameCheck {
+    frame_id: String,
+    frame_kind: String,
+    status: String,
+    calibrated: Option<bool>,
+    synchronized: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_recalibration: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KinematicsResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToleranceResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    reviewer: Option<String>,
+    reviewer_version: Option<String>,
+    machine_kind: Option<String>,
+    source_part_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    tolerance_checks: Option<Vec<ToleranceResultCheck>>,
+    fit_checks: Option<Vec<ToleranceResultFitCheck>>,
+    compensations: Option<Vec<ToleranceResultCompensation>>,
+    artifacts: Option<Vec<ToleranceResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToleranceResultCheck {
+    check_id: String,
+    tolerance_family: String,
+    geometry_scope: String,
+    status: String,
+    nominal_value: Option<String>,
+    measured_value: Option<String>,
+    tolerance_band: Option<String>,
+    in_tolerance: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_compensation: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToleranceResultFitCheck {
+    interface_id: String,
+    fit_kind: String,
+    status: String,
+    accepted: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_rework: Option<bool>,
+    requires_redesign: Option<bool>,
+    requires_split_combine: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToleranceResultCompensation {
+    compensation_id: String,
+    compensation_kind: String,
+    status: String,
+    applied: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ToleranceResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FailureModeResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    monitor: Option<String>,
+    monitor_version: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    failure_events: Option<Vec<FailureModeResultEvent>>,
+    recovery_actions: Option<Vec<FailureModeResultRecoveryAction>>,
+    interventions: Option<Vec<FailureModeResultIntervention>>,
+    artifacts: Option<Vec<FailureModeResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FailureModeResultEvent {
+    event_id: String,
+    failure_family: String,
+    failure_mode: String,
+    status: String,
+    severity: Option<String>,
+    source_surface: Option<String>,
+    release_blocker: Option<bool>,
+    predicted: Option<bool>,
+    occurred: Option<bool>,
+    requires_recovery: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    requires_split_combine: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FailureModeResultRecoveryAction {
+    action_id: String,
+    event_id: Option<String>,
+    action_kind: String,
+    status: String,
+    completed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FailureModeResultIntervention {
+    intervention_id: String,
+    event_id: Option<String>,
+    intervention_kind: String,
+    status: String,
+    required: Option<bool>,
+    completed: Option<bool>,
+    operator_minutes: Option<f64>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FailureModeResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    optimizer: Option<String>,
+    optimizer_version: Option<String>,
+    strategy_id: Option<String>,
+    selected_strategy: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    candidate_score: Option<f64>,
+    recommended_methods: Option<Vec<String>>,
+    machine_kinds: Option<Vec<String>>,
+    route_reviews: Option<Vec<StrategyResultRouteReview>>,
+    split_combine_decisions: Option<Vec<StrategyResultSplitCombineDecision>>,
+    learning_updates: Option<Vec<StrategyResultLearningUpdate>>,
+    artifacts: Option<Vec<StrategyResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyResultRouteReview {
+    route_id: String,
+    part_id: Option<String>,
+    route_kind: String,
+    manufacturing_method: Option<String>,
+    machine_kind: Option<String>,
+    status: String,
+    feasible: Option<bool>,
+    estimated_minutes: Option<u32>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyResultSplitCombineDecision {
+    decision_id: String,
+    decision_kind: String,
+    status: String,
+    source_part_ids: Option<Vec<String>>,
+    target_part_ids: Option<Vec<String>>,
+    accepted: Option<bool>,
+    requires_redesign: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    recommended_action: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyResultLearningUpdate {
+    update_id: String,
+    update_kind: String,
+    status: String,
+    reward_delta: Option<f64>,
+    policy_state: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrategyResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    strategy_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AssemblyPlanningResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -860,6 +1491,67 @@ struct MaterialResultCheck {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MaterialResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    source_ref_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlicerProfileResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    slicer: String,
+    slicer_version: Option<String>,
+    printer_id: Option<String>,
+    printer_family: Option<String>,
+    material_id: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    profile_checks: Option<Vec<SlicerProfileResultCheck>>,
+    print_preparation: Option<Vec<SlicerProfileResultPreparation>>,
+    machine_code_checks: Option<Vec<SlicerProfileResultCheck>>,
+    artifacts: Option<Vec<SlicerProfileResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlicerProfileResultCheck {
+    check_id: String,
+    check_kind: String,
+    status: String,
+    required: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+    message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlicerProfileResultPreparation {
+    preparation_id: String,
+    preparation_kind: String,
+    status: String,
+    reviewed: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_intervention: Option<bool>,
+    evidence: Option<Vec<String>>,
+    message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlicerProfileResultArtifact {
     artifact_id: String,
     artifact_kind: String,
     source_ref_id: Option<String>,
@@ -8631,6 +9323,499 @@ fn design_import_review_response(request: DesignImportReviewRequest) -> Result<V
         ],
         "designInputReview": review
     }))
+}
+
+fn validate_design_import_result_checks(
+    checks: Option<Vec<DesignImportResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "checks must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(&check.check_id, &format!("checks[{index}].checkId"))?;
+            if !seen.insert(check_id.clone()) {
+                return Err(format!(
+                    "checks must have unique checkId values; duplicate {check_id}"
+                ));
+            }
+            Ok(json!({
+                "checkId": check_id,
+                "checkKind": validate_label(&check.check_kind, &format!("checks[{index}].checkKind"))?,
+                "status": validate_label(&check.status, &format!("checks[{index}].status"))?,
+                "passed": check.passed.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(check.evidence, &format!("checks[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_design_import_result_boundaries(
+    boundaries: Option<Vec<DesignImportResultBoundary>>,
+) -> Result<Vec<Value>, String> {
+    let boundaries = boundaries.unwrap_or_default();
+    if boundaries.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "failureBoundaries must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    boundaries
+        .into_iter()
+        .enumerate()
+        .map(|(index, boundary)| {
+            let boundary_id = validate_label(
+                &boundary.boundary_id,
+                &format!("failureBoundaries[{index}].boundaryId"),
+            )?;
+            if !seen.insert(boundary_id.clone()) {
+                return Err(format!(
+                    "failureBoundaries must have unique boundaryId values; duplicate {boundary_id}"
+                ));
+            }
+            Ok(json!({
+                "boundaryId": boundary_id,
+                "boundaryKind": validate_label(&boundary.boundary_kind, &format!("failureBoundaries[{index}].boundaryKind"))?,
+                "code": validate_label(&boundary.code, &format!("failureBoundaries[{index}].code"))?,
+                "message": validate_text(&boundary.message, &format!("failureBoundaries[{index}].message"), MAX_TEXT_LEN)?,
+                "releaseBlocker": boundary.release_blocker.unwrap_or(false),
+                "humanInterventionRequired": boundary.human_intervention_required.unwrap_or(false),
+                "splitRequired": boundary.split_required.unwrap_or(false),
+                "combineRequired": boundary.combine_required.unwrap_or(false),
+                "recommendedAction": validate_optional_text(boundary.recommended_action, &format!("failureBoundaries[{index}].recommendedAction"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(boundary.evidence, &format!("failureBoundaries[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_design_import_result_artifacts(
+    artifacts: Option<Vec<DesignImportResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "inputId": validate_optional_label(artifact.input_id, &format!("artifacts[{index}].inputId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_LABEL_LEN)?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn design_import_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn design_import_result_boundary_blocks_release(boundary: &Value) -> bool {
+    boundary
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || boundary
+            .get("humanInterventionRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("splitRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || boundary
+            .get("combineRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+}
+
+fn design_import_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn design_import_result_review_response(
+    request: DesignImportResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "design-import-result");
+    let generated_at_ms = now_ms();
+    let import_result_job_id = safe_job_id("design-import-result", &request_id, generated_at_ms);
+    let source_job_id = validate_optional_label(request.source_job_id, "sourceJobId")?;
+    let input_id = validate_optional_label(request.input_id, "inputId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let worker_lane = validate_optional_label(request.worker_lane, "workerLane")?;
+    let source_format =
+        validate_optional_text(request.source_format, "sourceFormat", MAX_LABEL_LEN)?;
+    let source_system =
+        validate_optional_text(request.source_system, "sourceSystem", MAX_LABEL_LEN)?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let checks = validate_design_import_result_checks(request.checks)?;
+    let failure_boundaries = validate_design_import_result_boundaries(request.failure_boundaries)?;
+    let artifacts = validate_design_import_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+    let check_blocker_count = checks
+        .iter()
+        .filter(|check| design_import_result_check_blocks_release(check))
+        .count();
+    let boundary_blocker_count = failure_boundaries
+        .iter()
+        .filter(|boundary| design_import_result_boundary_blocks_release(boundary))
+        .count();
+    let human_intervention_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let split_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("splitRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let combine_boundary_count = failure_boundaries
+        .iter()
+        .filter(|boundary| {
+            boundary
+                .get("combineRequired")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| design_import_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || checks.is_empty()
+        || check_blocker_count > 0
+        || boundary_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if checks.is_empty() {
+        "design-import-result-no-checks-release-blocked"
+    } else if !request.success {
+        "design-import-result-worker-failed-release-blocked"
+    } else if check_blocker_count > 0 {
+        "design-import-result-checks-release-blocked"
+    } else if boundary_blocker_count > 0 {
+        "design-import-result-boundaries-release-blocked"
+    } else if artifact_evidence_missing {
+        "design-import-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "design-import-result-machine-ready-review-required"
+    } else if !release_ready {
+        "design-import-result-release-ready-review-required"
+    } else {
+        "design-import-result-ready-for-release-review"
+    };
+    let mut learning_observations = vec![
+        format!("design-import-worker:{worker_id}"),
+        format!("design-import-result:{review_status}"),
+    ];
+    if let Some(worker_lane) = worker_lane.as_ref() {
+        learning_observations.push(format!(
+            "design-import-worker-lane:{}",
+            normalize_token(worker_lane)
+        ));
+    }
+    if let Some(source_format) = source_format.as_ref() {
+        learning_observations.push(format!(
+            "design-import-format:{}",
+            normalize_token(source_format)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("design-import:release-blocked".to_string());
+    }
+    if human_intervention_boundary_count > 0 {
+        learning_observations.push("design-import:human-intervention-required".to_string());
+    }
+    if split_boundary_count > 0 {
+        learning_observations.push("design-import:split-required".to_string());
+    }
+    if combine_boundary_count > 0 {
+        learning_observations.push("design-import:combine-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("design-import:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("design-import-check:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("code")
+            .and_then(Value::as_str)
+            .map(|code| format!("design-import-boundary:{}", normalize_token(code)))
+    }));
+    learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
+        boundary
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| format!("design-import-action:{}", normalize_token(action)))
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("design-import-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.design-import-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "importResultJobId": import_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /design/import/result", "POST /fabrication/design/import/result"],
+        "sourceReviewRoutes": ["POST /design/import/review", "POST /fabrication/design/import/review"],
+        "conversionRoutes": [
+            "POST /design/convert/plan",
+            "POST /fabrication/design/convert/plan",
+            "POST /design/convert/result",
+            "POST /fabrication/design/convert/result"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "checkCount": checks.len(),
+        "checkBlockerCount": check_blocker_count,
+        "failureBoundaryCount": failure_boundaries.len(),
+        "boundaryBlockerCount": boundary_blocker_count,
+        "humanInterventionBoundaryCount": human_intervention_boundary_count,
+        "splitBoundaryCount": split_boundary_count,
+        "combineBoundaryCount": combine_boundary_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "designImportResult": {
+            "sourceJobId": source_job_id,
+            "inputId": input_id,
+            "workerId": worker_id,
+            "workerLane": worker_lane,
+            "sourceFormat": source_format,
+            "sourceSystem": source_system,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "checks": checks,
+            "failureBoundaries": failure_boundaries,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "imported CAD, mesh, scan, or slicer source has topology, units, scale, PMI/profile, and manufacturability checks",
+                "failure boundaries identify human intervention, split/combine, conversion, or regeneration actions before release",
+                "retained import artifacts include URI, checksum, format, and evidence labels",
+                "conversion, simulation, validation, and operator or automation signoff evidence clear downstream release gates"
+            ],
+            "targetSurfaces": [
+                "designInputReview.inputs",
+                "designInputReview.conversionPlan",
+                "designExports",
+                "generatedDesign",
+                "machineRelease.blockers",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "design-import-result",
+            "design-import-checks",
+            "design-import-failure-boundaries",
+            "design-import-artifacts",
+            "design-import-learning-observations",
+            "mdp-request.artifacts.designImportResult"
+        ],
+        "designImportResultPolicy": [
+            "design import result reviews are retained worker evidence, not certified geometry or machine-code release",
+            "machine-ready release remains blocked until checks, boundaries, artifacts, conversion, simulation, validation, and human dispositions clear",
+            "import result observations feed MDP/POMDP/neural learning so future jobs can choose safer CAD translators, split/combine earlier, regenerate design, or request human review"
+        ]
+    }))
+}
+
+fn design_import_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("no-checks")
+        || status.contains("checks-release-blocked")
+        || status.contains("boundaries-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_design_import_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "design-import-result");
+    let job_id = response_str_field(
+        response,
+        "importResultJobId",
+        &safe_job_id("design-import-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "design-import-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("designImportResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let checks = result.get("checks").cloned().unwrap_or_else(|| json!([]));
+    let failure_boundaries = result
+        .get("failureBoundaries")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let import_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "design-import-result".to_string(),
+            "design-import-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "design-import-checks".to_string(),
+            "design-import-checks",
+            checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "design-import-failure-boundaries".to_string(),
+            "design-import-failure-boundaries",
+            failure_boundaries,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "design-import-artifacts".to_string(),
+            "design-import-artifacts",
+            import_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "design-import-learning-observations".to_string(),
+            "design-import-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "design-import-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: design_import_result_job_severity(response),
+            summary: format!("design import result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_design_import_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_design_import_result_job(response));
 }
 
 fn design_conversion_plan_response(request: DesignImportReviewRequest) -> Result<Value, String> {
@@ -46810,6 +47995,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/design/formats",
         "GET /slicers/catalog",
         "GET /fabrication/slicers/catalog",
+        "POST /slicers/result",
+        "POST /fabrication/slicers/result",
         "GET /mesh-repair/catalog",
         "GET /fabrication/mesh-repair/catalog",
         "GET /formats/catalog",
@@ -46824,6 +48011,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/design/synthesis/result",
         "POST /design/import/review",
         "POST /fabrication/design/import/review",
+        "POST /design/import/result",
+        "POST /fabrication/design/import/result",
         "POST /design/convert/plan",
         "POST /fabrication/design/convert/plan",
         "POST /design/convert/result",
@@ -46876,6 +48065,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/methods/catalog",
         "POST /strategy/recommend",
         "POST /fabrication/strategy/recommend",
+        "POST /strategy/result",
+        "POST /fabrication/strategy/result",
         "GET /schedule/catalog",
         "GET /fabrication/schedule/catalog",
         "POST /schedule/result",
@@ -46888,6 +48079,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/simulation/result",
         "GET /quality/catalog",
         "GET /fabrication/quality/catalog",
+        "GET /dispositions/catalog",
+        "GET /fabrication/dispositions/catalog",
         "POST /quality/plan",
         "POST /fabrication/quality/plan",
         "POST /quality/result",
@@ -46904,16 +48097,38 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/setup/catalog",
         "GET /tooling/catalog",
         "GET /fabrication/tooling/catalog",
+        "GET /workholding/catalog",
+        "GET /fabrication/workholding/catalog",
+        "GET /support-strategies/catalog",
+        "GET /fabrication/support-strategies/catalog",
+        "POST /support-strategies/result",
+        "POST /fabrication/support-strategies/result",
         "GET /process-recipes/catalog",
         "GET /fabrication/process-recipes/catalog",
+        "POST /process-recipes/result",
+        "POST /fabrication/process-recipes/result",
         "GET /kinematics/catalog",
         "GET /fabrication/kinematics/catalog",
+        "POST /kinematics/result",
+        "POST /fabrication/kinematics/result",
         "GET /tolerances/catalog",
         "GET /fabrication/tolerances/catalog",
+        "GET /process-capabilities/catalog",
+        "GET /fabrication/process-capabilities/catalog",
+        "GET /manufacturability/catalog",
+        "GET /fabrication/manufacturability/catalog",
+        "POST /manufacturability/result",
+        "POST /fabrication/manufacturability/result",
+        "GET /failure-modes/catalog",
+        "GET /fabrication/failure-modes/catalog",
+        "POST /failure-modes/result",
+        "POST /fabrication/failure-modes/result",
         "GET /safety/catalog",
         "GET /fabrication/safety/catalog",
         "GET /environment/catalog",
         "GET /fabrication/environment/catalog",
+        "GET /provenance/catalog",
+        "GET /fabrication/provenance/catalog",
         "POST /setup/plan",
         "POST /fabrication/setup/plan",
         "POST /setup/result",
@@ -50081,6 +51296,7 @@ fn strategy_catalog_response() -> Value {
         "schemas": schemas,
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
         "recommendationRoutes": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
+        "resultRoutes": ["POST /strategy/result", "POST /fabrication/strategy/result"],
         "learningRoutes": [
             "GET /learning/policy",
             "GET /fabrication/learning/policy",
@@ -50453,7 +51669,9 @@ fn manufacturing_method_catalog_response() -> Value {
             "GET /strategy/catalog",
             "GET /fabrication/strategy/catalog",
             "POST /strategy/recommend",
-            "POST /fabrication/strategy/recommend"
+            "POST /fabrication/strategy/recommend",
+            "POST /strategy/result",
+            "POST /fabrication/strategy/result"
         ],
         "machineRoutes": [
             "GET /machines/catalog",
@@ -50536,6 +51754,7 @@ fn strategy_recommendation_response(
         "routes": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
         "catalogRoutes": ["GET /strategy/catalog", "GET /fabrication/strategy/catalog"],
+        "resultRoutes": ["POST /strategy/result", "POST /fabrication/strategy/result"],
         "machineReady": !response.machine_release.machine_release_blocked,
         "machineReleaseBlocked": response.machine_release.machine_release_blocked,
         "selectedStrategy": &response.hybrid_make_plan.selected_strategy,
@@ -50596,6 +51815,707 @@ fn strategy_recommendation_response(
         "resolutionPlan": &response.resolution_plan,
         "machineRelease": &response.machine_release
     })
+}
+
+fn validate_strategy_result_route_reviews(
+    routes: Option<Vec<StrategyResultRouteReview>>,
+) -> Result<Vec<Value>, String> {
+    let routes = routes.unwrap_or_default();
+    if routes.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "routeReviews must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    routes
+        .into_iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let route_id =
+                validate_label(&route.route_id, &format!("routeReviews[{index}].routeId"))?;
+            if !seen.insert(route_id.clone()) {
+                return Err(format!(
+                    "routeReviews must have unique routeId values; duplicate {route_id}"
+                ));
+            }
+            Ok(json!({
+                "routeId": route_id,
+                "partId": validate_optional_label(route.part_id, &format!("routeReviews[{index}].partId"))?,
+                "routeKind": validate_label(&route.route_kind, &format!("routeReviews[{index}].routeKind"))?,
+                "manufacturingMethod": validate_optional_label(route.manufacturing_method, &format!("routeReviews[{index}].manufacturingMethod"))?,
+                "machineKind": validate_optional_label(route.machine_kind, &format!("routeReviews[{index}].machineKind"))?,
+                "status": validate_label(&route.status, &format!("routeReviews[{index}].status"))?,
+                "feasible": route.feasible.unwrap_or(false),
+                "estimatedMinutes": route.estimated_minutes.unwrap_or(0),
+                "releaseBlocker": route.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": route.requires_human_intervention.unwrap_or(false),
+                "evidence": validate_signal_list(route.evidence, &format!("routeReviews[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_strategy_result_split_combine_decisions(
+    decisions: Option<Vec<StrategyResultSplitCombineDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            if !seen.insert(decision_id.clone()) {
+                return Err(format!(
+                    "splitCombineDecisions must have unique decisionId values; duplicate {decision_id}"
+                ));
+            }
+            Ok(json!({
+                "decisionId": decision_id,
+                "decisionKind": validate_label(&decision.decision_kind, &format!("splitCombineDecisions[{index}].decisionKind"))?,
+                "status": validate_label(&decision.status, &format!("splitCombineDecisions[{index}].status"))?,
+                "sourcePartIds": validate_signal_list(decision.source_part_ids, &format!("splitCombineDecisions[{index}].sourcePartIds"), MAX_LABEL_LEN)?,
+                "targetPartIds": validate_signal_list(decision.target_part_ids, &format!("splitCombineDecisions[{index}].targetPartIds"), MAX_LABEL_LEN)?,
+                "accepted": decision.accepted.unwrap_or(false),
+                "requiresRedesign": decision.requires_redesign.unwrap_or(false),
+                "releaseBlocker": decision.release_blocker.unwrap_or(false),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": validate_optional_text(decision.recommended_action, &format!("splitCombineDecisions[{index}].recommendedAction"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(decision.evidence, &format!("splitCombineDecisions[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_strategy_result_learning_updates(
+    updates: Option<Vec<StrategyResultLearningUpdate>>,
+) -> Result<Vec<Value>, String> {
+    let updates = updates.unwrap_or_default();
+    if updates.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "learningUpdates must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    updates
+        .into_iter()
+        .enumerate()
+        .map(|(index, update)| {
+            let update_id = validate_label(
+                &update.update_id,
+                &format!("learningUpdates[{index}].updateId"),
+            )?;
+            if !seen.insert(update_id.clone()) {
+                return Err(format!(
+                    "learningUpdates must have unique updateId values; duplicate {update_id}"
+                ));
+            }
+            let reward_delta = update
+                .reward_delta
+                .map(|value| finite_value(value, &format!("learningUpdates[{index}].rewardDelta")))
+                .transpose()?;
+            Ok(json!({
+                "updateId": update_id,
+                "updateKind": validate_label(&update.update_kind, &format!("learningUpdates[{index}].updateKind"))?,
+                "status": validate_label(&update.status, &format!("learningUpdates[{index}].status"))?,
+                "rewardDelta": reward_delta,
+                "policyState": validate_optional_text(update.policy_state, &format!("learningUpdates[{index}].policyState"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(update.evidence, &format!("learningUpdates[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_strategy_result_artifacts(
+    artifacts: Option<Vec<StrategyResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id =
+                validate_label(&artifact.artifact_id, &format!("artifacts[{index}].artifactId"))?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "strategyId": validate_optional_label(artifact.strategy_id, &format!("artifacts[{index}].strategyId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), MAX_TEXT_LEN)?,
+                "sha256": validate_optional_text(artifact.sha256, &format!("artifacts[{index}].sha256"), MAX_LABEL_LEN)?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn strategy_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    !matches!(
+        status.as_str(),
+        "complete"
+            | "completed"
+            | "success"
+            | "succeeded"
+            | "ok"
+            | "pass"
+            | "passed"
+            | "ready"
+            | "approved"
+            | "released"
+            | "clear"
+            | "cleared"
+            | "resolved"
+            | "verified"
+            | "accepted"
+            | "feasible"
+            | "routable"
+            | "selected"
+            | "recommended"
+            | "applied"
+            | "stored"
+            | "updated"
+            | "strategy-ready"
+            | "route-ready"
+            | "split-ready"
+            | "combine-ready"
+            | "learning-ready"
+    )
+}
+
+fn strategy_result_route_blocks_release(route: &Value) -> bool {
+    if route
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !route
+            .get("feasible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = route
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    strategy_result_status_blocks_release(status)
+}
+
+fn strategy_result_decision_blocks_release(decision: &Value) -> bool {
+    if decision
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || decision
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !decision
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let status = decision
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    strategy_result_status_blocks_release(status)
+}
+
+fn strategy_result_learning_update_blocks_release(update: &Value) -> bool {
+    let status = update
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("unresolved");
+    strategy_result_status_blocks_release(status)
+}
+
+fn strategy_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact.get("uri").and_then(Value::as_str).is_none()
+        || artifact.get("sha256").and_then(Value::as_str).is_none()
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn strategy_result_review_response(request: StrategyResultReviewRequest) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "strategy-result");
+    let generated_at_ms = now_ms();
+    let strategy_result_job_id = safe_job_id("strategy-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let optimizer = validate_optional_label(request.optimizer, "optimizer")?;
+    let optimizer_version =
+        validate_optional_text(request.optimizer_version, "optimizerVersion", MAX_LABEL_LEN)?;
+    let strategy_id = validate_optional_label(request.strategy_id, "strategyId")?;
+    let selected_strategy = validate_optional_label(request.selected_strategy, "selectedStrategy")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let candidate_score = request
+        .candidate_score
+        .map(|value| finite_value(value, "candidateScore"))
+        .transpose()?;
+    let recommended_methods = validate_signal_list(
+        request.recommended_methods,
+        "recommendedMethods",
+        MAX_LABEL_LEN,
+    )?;
+    let machine_kinds = validate_signal_list(request.machine_kinds, "machineKinds", MAX_LABEL_LEN)?;
+    let route_reviews = validate_strategy_result_route_reviews(request.route_reviews)?;
+    let split_combine_decisions =
+        validate_strategy_result_split_combine_decisions(request.split_combine_decisions)?;
+    let learning_updates = validate_strategy_result_learning_updates(request.learning_updates)?;
+    let artifacts = validate_strategy_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let route_blocker_count = route_reviews
+        .iter()
+        .filter(|route| strategy_result_route_blocks_release(route))
+        .count();
+    let infeasible_route_count = route_reviews
+        .iter()
+        .filter(|route| {
+            !route
+                .get("feasible")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let split_combine_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| strategy_result_decision_blocks_release(decision))
+        .count();
+    let redesign_required_count = split_combine_decisions
+        .iter()
+        .filter(|decision| {
+            decision
+                .get("requiresRedesign")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_route_count = route_reviews
+        .iter()
+        .filter(|route| {
+            route
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_decision_count = split_combine_decisions
+        .iter()
+        .filter(|decision| {
+            decision
+                .get("requiresHumanIntervention")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let learning_update_blocker_count = learning_updates
+        .iter()
+        .filter(|update| strategy_result_learning_update_blocks_release(update))
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| strategy_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let human_intervention_required =
+        human_intervention_route_count > 0 || human_intervention_decision_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || route_reviews.is_empty()
+        || route_blocker_count > 0
+        || split_combine_blocker_count > 0
+        || learning_update_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if route_reviews.is_empty() {
+        "strategy-result-no-routes-release-blocked"
+    } else if !request.success {
+        "strategy-result-worker-failed-release-blocked"
+    } else if route_blocker_count > 0 {
+        "strategy-result-routes-release-blocked"
+    } else if split_combine_blocker_count > 0 {
+        "strategy-result-split-combine-release-blocked"
+    } else if learning_update_blocker_count > 0 {
+        "strategy-result-learning-updates-review-required"
+    } else if artifact_evidence_missing {
+        "strategy-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "strategy-result-machine-ready-review-required"
+    } else if !release_ready {
+        "strategy-result-release-ready-review-required"
+    } else {
+        "strategy-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("strategy-worker:{worker_id}"),
+        format!("strategy-result:{review_status}"),
+    ];
+    if let Some(optimizer) = optimizer.as_ref() {
+        learning_observations.push(format!("strategy-optimizer:{}", normalize_token(optimizer)));
+    }
+    if let Some(strategy_id) = strategy_id.as_ref() {
+        learning_observations.push(format!("strategy-id:{}", normalize_token(strategy_id)));
+    }
+    if let Some(selected_strategy) = selected_strategy.as_ref() {
+        learning_observations.push(format!(
+            "strategy-selected:{}",
+            normalize_token(selected_strategy)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("strategy:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("strategy:human-intervention-required".to_string());
+    }
+    if infeasible_route_count > 0 {
+        learning_observations.push("strategy:route-infeasible".to_string());
+    }
+    if split_combine_blocker_count > 0 {
+        learning_observations.push("strategy:split-combine-blocked".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("strategy:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(
+        recommended_methods
+            .iter()
+            .map(|method| format!("strategy-method:{}", normalize_token(method))),
+    );
+    learning_observations.extend(
+        machine_kinds
+            .iter()
+            .map(|machine_kind| format!("strategy-machine-kind:{}", normalize_token(machine_kind))),
+    );
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("routeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("strategy-route:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("machineKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("strategy-route-machine-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("strategy-route-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("strategy-split-combine:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| format!("strategy-decision-status:{}", normalize_token(status)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("recommendedAction")
+            .and_then(Value::as_str)
+            .map(|action| format!("strategy-recommended-action:{}", normalize_token(action)))
+    }));
+    learning_observations.extend(learning_updates.iter().filter_map(|update| {
+        update
+            .get("updateKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("strategy-learning-update:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(learning_updates.iter().filter_map(|update| {
+        update.get("status").and_then(Value::as_str).map(|status| {
+            format!(
+                "strategy-learning-update-status:{}",
+                normalize_token(status)
+            )
+        })
+    }));
+    learning_observations.extend(artifacts.iter().filter_map(|artifact| {
+        artifact
+            .get("artifactKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("strategy-artifact:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.strategy-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "strategyResultJobId": strategy_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /strategy/result", "POST /fabrication/strategy/result"],
+        "recommendationRoutes": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "catalogRoutes": [
+            "GET /strategy/catalog",
+            "GET /fabrication/strategy/catalog",
+            "GET /methods/catalog",
+            "GET /fabrication/methods/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog"
+        ],
+        "releaseRoutes": [
+            "POST /release/preview",
+            "POST /fabrication/release/preview",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "learningRoutes": [
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes",
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "routeReviewCount": route_reviews.len(),
+        "routeBlockerCount": route_blocker_count,
+        "infeasibleRouteCount": infeasible_route_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "splitCombineBlockerCount": split_combine_blocker_count,
+        "redesignRequiredCount": redesign_required_count,
+        "humanInterventionRouteCount": human_intervention_route_count,
+        "humanInterventionDecisionCount": human_intervention_decision_count,
+        "learningUpdateCount": learning_updates.len(),
+        "learningUpdateBlockerCount": learning_update_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "strategyResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "optimizer": optimizer,
+            "optimizerVersion": optimizer_version,
+            "strategyId": strategy_id,
+            "selectedStrategy": selected_strategy,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "candidateScore": candidate_score,
+            "recommendedMethods": recommended_methods,
+            "machineKinds": machine_kinds,
+            "routeReviews": route_reviews,
+            "splitCombineDecisions": split_combine_decisions,
+            "learningUpdates": learning_updates,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "selected strategy resolves to feasible route reviews for every printed, milled, turned, cut, or inspected part route",
+                "split/combine decisions are accepted or redesigned with retained human or automation evidence",
+                "MDP, POMDP, or neural learning updates are applied or reviewed without blocking status",
+                "strategy result artifacts are retained with URI, checksum, and evidence before machine-ready release"
+            ],
+            "targetSurfaces": [
+                "strategyCandidates",
+                "hybridMakePlan",
+                "decompositionPlan",
+                "interfaceControlPlan",
+                "machineSchedule",
+                "machineRelease",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "strategy-result",
+            "strategy-route-reviews",
+            "strategy-split-combine-decisions",
+            "strategy-learning-updates",
+            "strategy-artifacts",
+            "strategy-learning-observations",
+            "mdp-request.artifacts.strategyResult"
+        ],
+        "strategyResultPolicy": [
+            "strategy result reviews are retained optimizer, route, split/combine, and learning evidence, not certified machine-code release",
+            "machine-ready release remains blocked until routes, split/combine decisions, learning updates, artifacts, and human dispositions clear",
+            "strategy result observations feed MDP/POMDP/neural learning so future planners can compare print, mill, turn, split, combine, inspect, or operator-assisted routes"
+        ]
+    }))
+}
+
+fn strategy_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("no-routes")
+        || status.contains("routes-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_strategy_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "strategy-result");
+    let job_id = response_str_field(
+        response,
+        "strategyResultJobId",
+        &safe_job_id("strategy-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "strategy-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("strategyResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let route_reviews = result
+        .get("routeReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_updates = result
+        .get("learningUpdates")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let strategy_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "strategy-result".to_string(),
+            "strategy-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "strategy-route-reviews".to_string(),
+            "strategy-route-reviews",
+            route_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "strategy-split-combine-decisions".to_string(),
+            "strategy-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "strategy-learning-updates".to_string(),
+            "strategy-learning-updates",
+            learning_updates,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "strategy-artifacts".to_string(),
+            "strategy-artifacts",
+            strategy_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "strategy-learning-observations".to_string(),
+            "strategy-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "strategy-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: strategy_result_job_severity(response),
+            summary: format!("strategy result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_strategy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_strategy_result_job(response));
 }
 
 fn schedule_catalog_contracts() -> Vec<Value> {
@@ -52170,6 +54090,607 @@ fn quality_catalog_response() -> Value {
         "inspectionContracts": inspection_contracts,
         "measurementContracts": measurement_contracts
     })
+}
+
+fn disposition_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "dispositionFamily": "pass-with-retained-evidence",
+            "appliesTo": ["first-article inspection", "simulation dry-run", "quality result", "release package"],
+            "decisionEvidence": [
+                "measured values or simulation result is inside acceptance band",
+                "calibrated instrument, fixture, datum, or simulation version evidence is retained",
+                "operator or automation signoff is attached when the quality gate requires it",
+                "release package links the accepted artifacts, checksums, and learning outcome"
+            ],
+            "releaseBlockers": [
+                "acceptance criteria are implicit or missing",
+                "measurement, dry-run, or simulation artifact lacks checksum/evidence labels",
+                "human signoff is required but not retained"
+            ],
+            "responseSurfaces": ["qualityPlan.releaseGates", "qualityResult.measurements", "simulation.findings", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["disposition:pass", "quality-result:accepted", "simulation-result:accepted"]
+        }),
+        json!({
+            "dispositionFamily": "rework-and-reinspect",
+            "appliesTo": ["out-of-tolerance dimensions", "surface finish defects", "support scars", "edge quality defects", "assembly fit issues"],
+            "decisionEvidence": [
+                "nonconformance or finding identifies the failed feature, tolerance, and measured deviation",
+                "rework route names the machine, tool/process, setup, and expected material allowance",
+                "reinspection plan names measurement targets, acceptance band, and operator or automation signoff",
+                "learning outcome records whether rework recovered the part or triggered split/combine redesign"
+            ],
+            "releaseBlockers": [
+                "rework action lacks material allowance, setup, or process evidence",
+                "rework would violate interface, strength, wall thickness, heat, or surface requirements",
+                "reinspection target or disposition owner is absent"
+            ],
+            "responseSurfaces": ["boundaryRemediationPlan.actions", "qualityPlan.measurementTargets", "toolingPlan.requirements", "fixturePlan.setups", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["disposition:rework", "rework-route:*", "quality-result:reinspect", "split-combine-outcome:*"]
+        }),
+        json!({
+            "dispositionFamily": "scrap-and-remake",
+            "appliesTo": ["machine failure", "unrecoverable geometry", "failed support removal", "failed heat treatment", "unsafe material or traceability state"],
+            "decisionEvidence": [
+                "failure mode or quality finding records why the part cannot be recovered",
+                "scrap decision links material lot, machine route, program, inspection, and operator evidence",
+                "remake plan changes machine, orientation, support, recipe, split/combine plan, or human checkpoint",
+                "learning reward marks scrap/failure so MDP/POMDP/neural planners avoid the same route"
+            ],
+            "releaseBlockers": [
+                "scrap decision is inferred but not retained as a disposition artifact",
+                "remake repeats the same failed route without policy or evidence change",
+                "material quantity plus scrap allowance is not revalidated"
+            ],
+            "responseSurfaces": ["failureModeResult.failureEvents", "materialPlan.quantity", "strategy.recommendation", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["disposition:scrap", "scrap-risk:*", "policy:update-after-failure", "material:scrap-allowance"]
+        }),
+        json!({
+            "dispositionFamily": "engineering-waiver-or-use-as-is",
+            "appliesTo": ["minor cosmetic deviation", "documented dimensional deviation", "prototype concession", "noncritical support scar"],
+            "decisionEvidence": [
+                "deviation map and tolerance comparison show the nonconformance scope",
+                "engineering authority, customer approval, or prototype concession is retained",
+                "risk note explains why function, fit, safety, material, and traceability remain acceptable",
+                "release package marks the waiver as human-approved and non-reusable unless policy allows"
+            ],
+            "releaseBlockers": [
+                "waiver is requested for safety, load-bearing, regulatory, or hidden-critical features without authority",
+                "deviation lacks measured values, drawing reference, risk note, or approval owner",
+                "future batch policy would reuse an exceptional waiver as normal process evidence"
+            ],
+            "responseSurfaces": ["qualityResult.findings", "releasePackagePlan.releaseGates", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["disposition:waiver", "human-approval:*", "quality-result:use-as-is"]
+        }),
+        json!({
+            "dispositionFamily": "split-combine-redesign-disposition",
+            "appliesTo": ["failed one-piece print", "unreachable machined feature", "support removal impossible", "assembly fit nonconformance", "hybrid route recovery"],
+            "decisionEvidence": [
+                "root cause identifies whether the part failed because it should be split, reoriented, supported, or rerouted",
+                "decomposition plan defines new parts, interfaces, datum transfers, and inspection gates",
+                "assembly/recomposition plan defines joining, fastening, bonding, fit, cure, torque, and final metrology evidence",
+                "learning outcome records whether the split/combine route succeeded better than the original route"
+            ],
+            "releaseBlockers": [
+                "redesign disposition lacks interface-control, assembly, or final inspection evidence",
+                "split/combine route creates hidden surfaces, trapped supports, or unreachable postprocess steps",
+                "human fitting or rework is expected but not planned as an intervention"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "interventionMap.splitCombineDecisions", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["disposition:split-combine-redesign", "interface-control:*", "assembly-quality:*", "planner-policy:update"]
+        }),
+    ]
+}
+
+fn disposition_catalog_response() -> Value {
+    let entries = disposition_catalog_entries();
+    let disposition_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("dispositionFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.disposition-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /dispositions/catalog", "GET /fabrication/dispositions/catalog"],
+        "dispositionFamilyCount": entries.len(),
+        "dispositionFamilies": disposition_families,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /remediation/plan", "POST /fabrication/remediation/plan"],
+        "reviewRoutes": [
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ],
+        "responseSurfaces": [
+            "qualityResult.measurements",
+            "qualityResult.findings",
+            "simulation.findings",
+            "failureModeResult.failureEvents",
+            "boundaryRemediationPlan.actions",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "assemblyPlan.requiredEvidence",
+            "releasePackagePlan.releaseGates",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "quality-result",
+            "failure-mode-result",
+            "nonconformance-disposition-record",
+            "boundary-remediation-plan",
+            "release-readiness-result",
+            "learning-outcomes"
+        ],
+        "releasePolicy": [
+            "disposition catalog entries describe post-inspection, post-simulation, and post-failure decision evidence contracts, not certified quality acceptance",
+            "machine-ready or customer release remains blocked while pass, rework, scrap, waiver, or split/combine redesign decisions lack retained evidence and human or automation authority",
+            "disposition outcomes are retained as MDP/POMDP/neural learning signals so future planners can avoid failed routes, change fixtures, split parts, remake, or add inspection earlier"
+        ],
+        "dispositions": entries
+    })
+}
+
+async fn disposition_catalog_http() -> impl IntoResponse {
+    Json(disposition_catalog_response())
+}
+
+fn costing_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "costFamily": "machine-time-and-setup-estimate",
+            "appliesTo": ["additive print", "subtractive machining", "turning", "sheet cutting", "hybrid route"],
+            "estimateEvidence": [
+                "machine lane, setup count, queue window, and expected cycle minutes are retained",
+                "tooling, fixture, support, postprocess, and inspection time allowances are itemized",
+                "schedule result or DES capacity model records bottleneck and utilization assumptions",
+                "learning outcome records actual cycle time and operator intervention deltas"
+            ],
+            "releaseBlockers": [
+                "quote or routing decision omits setup time, queue capacity, or human intervention allowance",
+                "estimated cycle time is reused after machine, controller, material, or split/combine route changes",
+                "schedule overcapacity or blocked operation starts are present without a mitigation"
+            ],
+            "responseSurfaces": ["machineSchedule.lanes", "executionPlan.steps", "operatorInterventionPlan.requiredOperatorActions", "scheduleResult.desModels", "learning.outcomes"],
+            "learningSignals": ["cost:machine-time", "schedule:overcapacity", "cycle-time-delta:*"]
+        }),
+        json!({
+            "costFamily": "material-yield-and-scrap-allowance",
+            "appliesTo": ["filament/spool planning", "resin vat planning", "bar stock", "sheet nesting", "billet machining"],
+            "estimateEvidence": [
+                "gross material, net part mass/volume, supports, tabs, purge, kerf, chips, and cutoff remnants are estimated",
+                "scrap, rework, first-article, coupon, and remake allowances are tied to material lot evidence",
+                "capacity checks verify spool/vat/sheet/bar inventory before unattended release",
+                "actual yield and scrap disposition are fed back into learning memory"
+            ],
+            "releaseBlockers": [
+                "material quantity omits support, purge, kerf, chip, coupon, or rework allowance",
+                "scrap disposition or remake path is missing for failed first-article or simulation outcomes",
+                "material capacity evidence is absent for long additive, resin, sheet, or bar-stock jobs"
+            ],
+            "responseSurfaces": ["materialPlan.quantity", "supportStrategyPlan.requirements", "dispositions.scrap-and-remake", "failureModeResult.failureEvents", "machineRelease.blockers"],
+            "learningSignals": ["cost:material-yield", "material:scrap-allowance", "disposition:scrap"]
+        }),
+        json!({
+            "costFamily": "quality-rework-and-release-risk",
+            "appliesTo": ["inspection-intensive features", "tight tolerance machining", "surface finish", "assembly fit", "human waiver"],
+            "estimateEvidence": [
+                "inspection points, measurement targets, calibration evidence, and required signoffs are priced into route choice",
+                "rework and reinspection paths identify machine, tool/process, setup, material allowance, and owner",
+                "waiver/use-as-is decisions are treated as exceptional human-approved release events",
+                "quality outcomes update risk weights for future quote, process, and split/combine decisions"
+            ],
+            "releaseBlockers": [
+                "quoted route treats quality, metrology, or release-package work as free or optional",
+                "rework is selected without remaining material allowance or reinspection evidence",
+                "human waiver risk is reused as normal process evidence"
+            ],
+            "responseSurfaces": ["qualityPlan.releaseGates", "qualityResult.measurements", "boundaryRemediationPlan.actions", "releasePackagePlan.releaseGates", "machineRelease.blockers"],
+            "learningSignals": ["cost:quality-risk", "disposition:rework", "quality-result:reinspect", "human-approval:*"]
+        }),
+        json!({
+            "costFamily": "split-combine-route-economics",
+            "appliesTo": ["failed one-piece print", "unreachable machined feature", "hybrid printed/milled route", "multi-part assembly"],
+            "estimateEvidence": [
+                "decomposition plan compares one-piece, split, hybrid, and remake alternatives",
+                "interface control, joining, bonding, fastener, cure, datum transfer, and final metrology costs are retained",
+                "operator intervention and fixture/tooling changes are represented as explicit route costs",
+                "learning reward captures whether the split/combine route reduced failure, scrap, rework, or cycle time"
+            ],
+            "releaseBlockers": [
+                "planner selects split/combine without interface, assembly, inspection, and release-package evidence",
+                "assembly or postprocess labor is omitted from route comparison",
+                "failed one-piece route is retried without learned cost/risk adjustment"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "strategy.recommendation", "learning.outcomes"],
+            "learningSignals": ["cost:split-combine", "split-combine-outcome:*", "planner-policy:update"]
+        }),
+        json!({
+            "costFamily": "controller-postprocessor-and-artifact-review",
+            "appliesTo": ["imported G-code", "slicer profiles", "CAM posts", "macro/subprogram review", "controller-specific machine code"],
+            "estimateEvidence": [
+                "program validation, postprocessor choice, controller dialect, dry-run/simulation, and artifact retention are scoped",
+                "review effort is increased when external macros, subprograms, operator pauses, or controller state dependencies are present",
+                "generated artifacts carry URI, checksum, format, and evidence labels before release",
+                "actual review findings update future validation and improvement effort estimates"
+            ],
+            "releaseBlockers": [
+                "submitted instructions are quoted without validation, simulation, or controller-specific review",
+                "external macro/subprogram or operator-state dependency lacks retained review evidence",
+                "release package omits generated artifacts, checksums, or provenance"
+            ],
+            "responseSurfaces": ["validation.failureBoundaries", "instructionSimulationResult.findings", "artifactCatalog.artifactSurfaces", "provenanceContracts", "releasePackagePlan.requiredArtifacts"],
+            "learningSignals": ["cost:review-effort", "instruction-boundary:*", "artifact-review:*"]
+        }),
+    ]
+}
+
+fn costing_catalog_response() -> Value {
+    let entries = costing_catalog_entries();
+    let cost_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("costFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.costing-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /costing/catalog", "GET /fabrication/costing/catalog"],
+        "costFamilyCount": entries.len(),
+        "costFamilies": cost_families,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /schedule/result",
+            "POST /fabrication/schedule/result",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "responseSurfaces": [
+            "machineSchedule.lanes",
+            "materialPlan.quantity",
+            "qualityPlan.releaseGates",
+            "boundaryRemediationPlan.actions",
+            "decompositionPlan.parts",
+            "assemblyPlan.requiredEvidence",
+            "releasePackagePlan.requiredArtifacts",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "quote-assumption-record",
+            "machine-time-estimate",
+            "material-yield-estimate",
+            "quality-risk-estimate",
+            "split-combine-route-comparison",
+            "controller-review-effort-record",
+            "mdp-request.artifacts.costing"
+        ],
+        "releasePolicy": [
+            "costing catalog entries describe estimation evidence contracts, not binding quotes, certified cost accounting, or shop-floor release authorization",
+            "machine-ready and customer release remain blocked when route economics omit setup, material yield, scrap, quality, review, human intervention, or split/combine evidence",
+            "cost, yield, scrap, cycle-time, and rework outcomes are retained as MDP/POMDP/neural learning signals so future planners can choose cheaper, safer, or more reliable routes"
+        ],
+        "costContracts": entries
+    })
+}
+
+async fn costing_catalog_http() -> impl IntoResponse {
+    Json(costing_catalog_response())
+}
+
+fn utilities_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "utilityFamily": "additive-thermal-and-motion-utilities",
+            "appliesTo": ["fdm-printer", "multi-material-printer", "resin-printer", "powder-bed-printer"],
+            "requiredEvidence": [
+                "nozzle, bed, chamber, resin, powder, or build-volume thermal state is verified before positive extrusion, exposure, recoating, or sintering",
+                "stepper, homing, coordinate, and power-loss recovery state is restored after pause, idle, or emergency stop",
+                "filament runout, spool/AMS, resin vat, powder supply, purge, and support-material state are retained",
+                "monitoring alerts and operator check-in expectations are attached for unattended runs"
+            ],
+            "releaseBlockers": [
+                "positive extrusion or exposure starts after cooldown, pause, tool change, or stepper disable without fresh utility verification",
+                "material supply or support media capacity is missing for long or unattended jobs",
+                "thermal runaway, power-loss, or runout recovery is expected but not routed to an operator or automation stop"
+            ],
+            "responseSurfaces": ["validation.failureBoundaries", "supportStrategyPlan.requirements", "monitoringPlan.alerts", "materialPlan.quantity", "machineRelease.blockers"],
+            "learningSignals": ["utility:additive-thermal", "utility:material-supply", "monitoring:recovery"]
+        }),
+        json!({
+            "utilityFamily": "subtractive-coolant-chip-dust-and-air",
+            "appliesTo": ["vertical-mill", "horizontal-mill", "cnc-router", "mill-turn", "lathe"],
+            "requiredEvidence": [
+                "coolant, mist, chip evacuation, dust collection, vacuum, compressed air, and enclosure/interlock state are verified before cutting feed",
+                "tool-life, spindle load, chip evacuation, and fire/fume controls are monitored for long or unattended cuts",
+                "utility restart evidence is required after explicit coolant, dust, air, spindle, or process stop",
+                "operator intervention plan records manual chip clearing, vacuum restart, or coolant recovery checkpoints"
+            ],
+            "releaseBlockers": [
+                "cutting feed continues after coolant, chip, dust, air, vacuum, spindle, or process support is stopped",
+                "router or mill job expects vacuum hold-down or dust collection without retained utility state",
+                "long cuts omit tool-life, coolant, chip-load, or operator recovery evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups", "toolingPlan.requirements", "executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["utility:coolant-chip", "utility:dust-vacuum", "intervention:chip-clear"]
+        }),
+        json!({
+            "utilityFamily": "sheet-cut-process-support",
+            "appliesTo": ["laser-cutter", "waterjet-cutter", "plasma-cutter", "wire-edm", "hot-wire-foam"],
+            "requiredEvidence": [
+                "assist gas, fume extraction, fire watch, abrasive flow, pump pressure, water-table/slats, dielectric flushing, or wire power state is verified before feed cutting",
+                "pierce/thread/startup utility state is linked to cut chart, kerf coupon, material thickness, and edge-quality targets",
+                "support-media restart and slug/part retention checks are required after utility stop or program pause",
+                "monitoring artifacts record pressure, flow, current, fume, dielectric, or fire-watch evidence"
+            ],
+            "releaseBlockers": [
+                "feed cutting starts without verified gas, pump pressure, abrasive, fume extraction, dielectric, or fire-watch state",
+                "continued cutting follows a support-media stop without restart or reverification evidence",
+                "slug, tab, bridge, slat, or water-table support state is omitted before profile release"
+            ],
+            "responseSurfaces": ["supportStrategyPlan.requirements", "validation.failureBoundaries", "monitoringPlan.recoveryActions", "failureModeResult.failureEvents", "machineRelease.blockers"],
+            "learningSignals": ["utility:sheet-support", "utility:pump-gas-fume", "boundary:slug-retention"]
+        }),
+        json!({
+            "utilityFamily": "hybrid-cell-fixture-and-robot-services",
+            "appliesTo": ["robotic-additive-cell", "robotic-assembly-cell", "hybrid print/mill cell", "automated fixture station"],
+            "requiredEvidence": [
+                "robot enable, safety zone, gripper/vacuum, fixture clamp, datum transfer, and tool/service coupler state are retained",
+                "service utilities such as adhesive dispense, UV cure, compressed air, torque tools, vision lighting, and probe wash are tied to assembly or machining steps",
+                "handoff checkpoints identify when a human must reload, combine, separate, fixture, inspect, or restart utilities",
+                "DES/MDP/POMDP/neural workers receive utility outage and recovery outcomes for future sequencing"
+            ],
+            "releaseBlockers": [
+                "hybrid route expects robot, fixture, vacuum, gripper, adhesive, cure, or probe service readiness without evidence",
+                "split/combine handoff omits utility restart, datum transfer, or human reload checkpoint",
+                "service outage recovery is not represented in schedule, intervention, or release package artifacts"
+            ],
+            "responseSurfaces": ["interfaceControlPlan.controls", "assemblyPlan.requiredEvidence", "operatorInterventionPlan.requiredOperatorActions", "scheduleResult.holds", "learning.outcomes"],
+            "learningSignals": ["utility:hybrid-cell", "handoff:utility-restart", "split-combine-outage:*"]
+        }),
+        json!({
+            "utilityFamily": "facility-power-network-and-environment",
+            "appliesTo": ["unattended batch", "remote machine execution", "cloud worker dispatch", "facility monitoring"],
+            "requiredEvidence": [
+                "machine power, UPS/power-loss recovery, network/NATS dispatch, storage/artifact access, and environment limits are documented for remote execution",
+                "temperature, humidity, ventilation, oxygen, fume, fire, and emergency-stop monitoring are attached when process risk requires it",
+                "operator alert routes and critical-event publishing are configured before unattended release",
+                "learning memory records outages, failed dispatches, environmental excursions, and recovery effectiveness"
+            ],
+            "releaseBlockers": [
+                "remote/unattended execution lacks power-loss, network, artifact, or alerting recovery evidence",
+                "environment or ventilation utility is outside process limits without a hold or operator intervention",
+                "critical utility failure does not publish a retained event or learning outcome"
+            ],
+            "responseSurfaces": ["monitoringPlan.alerts", "provenanceContracts", "artifactCatalog.artifactSurfaces", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["utility:facility-power", "utility:network-dispatch", "environment:excursion", "critical-event:*"]
+        }),
+    ]
+}
+
+fn utilities_catalog_response() -> Value {
+    let entries = utilities_catalog_entries();
+    let utility_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("utilityFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.utilities-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /utilities/catalog", "GET /fabrication/utilities/catalog"],
+        "utilityFamilyCount": entries.len(),
+        "utilityFamilies": utility_families,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "responseSurfaces": [
+            "validation.failureBoundaries",
+            "supportStrategyPlan.requirements",
+            "monitoringPlan.alerts",
+            "fixturePlan.setups",
+            "toolingPlan.requirements",
+            "executionPlan.stopPoints",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "scheduleResult.holds",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "utility-readiness-record",
+            "facility-power-recovery-record",
+            "coolant-chip-dust-state-record",
+            "sheet-cut-support-media-record",
+            "additive-thermal-material-state-record",
+            "hybrid-cell-service-state-record",
+            "mdp-request.artifacts.utilities"
+        ],
+        "releasePolicy": [
+            "utilities catalog entries describe process-support and facility-readiness evidence contracts, not certified machine safety approval or facility compliance",
+            "machine-ready release remains blocked while power, network, thermal, material-supply, coolant, chip, dust, gas, pump, abrasive, fume, vacuum, fixture, robot, or recovery utilities lack retained evidence",
+            "utility outages, restarts, operator recovery, and environmental excursions are retained as MDP/POMDP/neural learning signals so future planners can resequence, add checkpoints, split work, or avoid brittle unattended routes"
+        ],
+        "utilityContracts": entries
+    })
+}
+
+async fn utilities_catalog_http() -> impl IntoResponse {
+    Json(utilities_catalog_response())
+}
+
+fn telemetry_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "telemetryFamily": "additive-print-runtime-sensors",
+            "appliesTo": ["fdm-printer", "multi-material-printer", "resin-printer", "powder-bed-printer"],
+            "requiredChannels": [
+                "nozzle, bed, chamber, resin, powder, or build-volume temperature samples",
+                "extruder, filament runout, AMS/MMU/tool, stepper, pause/resume, and power-loss state",
+                "camera, first-layer, thermal, recoater, peel, vat, powder-bed, or support-removal observations",
+                "operator intervention, alarm, recovery, scrap, rework, and final disposition events"
+            ],
+            "releaseBlockers": [
+                "runtime sensor stream omits thermal, motion, material, pause/resume, or power-loss state for an unattended additive run",
+                "positive extrusion, exposure, or recoating continues after telemetry reports cooldown, runout, failed resume, or alarm state",
+                "telemetry artifacts lack URI, checksum, time window, machine ID, program ID, or evidence labels"
+            ],
+            "responseSurfaces": ["executionTelemetryResult.telemetryArtifacts", "monitoringResult.alerts", "failureModeResult.failureEvents", "dispositions", "learning.outcomes"],
+            "learningSignals": ["telemetry:additive-runtime", "telemetry:thermal-drift", "telemetry:material-runout", "disposition:*"]
+        }),
+        json!({
+            "telemetryFamily": "subtractive-load-vibration-and-process-state",
+            "appliesTo": ["vertical-mill", "horizontal-mill", "cnc-router", "mill-turn", "lathe"],
+            "requiredChannels": [
+                "spindle load, feed override, axis following error, vibration, acoustic, current, and tool-breakage signals",
+                "coolant, chip evacuation, dust collection, vacuum, chuck pressure, bar support, and door/interlock state",
+                "tool change, workholding, datum/probe, cutter compensation, threading, and process stop/restart events",
+                "operator stop, manual recovery, rework, scrap, and accepted-part disposition events"
+            ],
+            "releaseBlockers": [
+                "cutting telemetry omits load, vibration, coolant/chip/dust, workholding, chuck, or interlock state for a risky subtractive run",
+                "machine code is marked improved without comparing runtime stops, alarms, or operator interventions to predicted boundaries",
+                "tool wear, chatter, overload, or fixture-slip evidence is not retained as a learning outcome"
+            ],
+            "responseSurfaces": ["validation.failureBoundaries", "executionTelemetryResult.machineStops", "operatorInterventionPlan.requiredOperatorActions", "toolingPlan.requirements", "learning.outcomes"],
+            "learningSignals": ["telemetry:subtractive-load", "telemetry:chatter-risk", "telemetry:tool-wear", "boundary-hit:*"]
+        }),
+        json!({
+            "telemetryFamily": "sheet-cut-process-and-support-media",
+            "appliesTo": ["laser-cutter", "waterjet-cutter", "plasma-cutter", "wire-edm", "hot-wire-foam"],
+            "requiredChannels": [
+                "assist gas pressure/flow, pump pressure, abrasive flow, fume extraction, current, voltage, wire state, dielectric, or fire-watch telemetry",
+                "pierce, thread, kerf coupon, lead-in/out, slug/drop, part-retention, tab/bridge, and water-table/slat support observations",
+                "edge-quality, dross, taper, recast, heat-affected-zone, delamination, or foam kerf measurements",
+                "support-media stop/restart, operator recovery, scrap, remake, and release disposition events"
+            ],
+            "releaseBlockers": [
+                "sheet cutting proceeds without telemetry for gas, pump, abrasive, fume, dielectric, wire, fire, or support media",
+                "slug, part retention, tab, bridge, or support-media failure is not tied to generated machine code or nesting evidence",
+                "edge quality or kerf drift is not retained for future cut-chart, feed, pierce, or split/combine learning"
+            ],
+            "responseSurfaces": ["supportStrategyPlan.requirements", "monitoringPlan.alerts", "failureModeResult.failureEvents", "qualityResult.measurements", "learning.outcomes"],
+            "learningSignals": ["telemetry:sheet-process", "telemetry:edge-quality", "telemetry:support-media", "kerf-drift:*"]
+        }),
+        json!({
+            "telemetryFamily": "hybrid-cell-assembly-and-handoff",
+            "appliesTo": ["robotic-additive-cell", "robotic-assembly-cell", "hybrid print/mill cell", "manual split/combine handoff"],
+            "requiredChannels": [
+                "fixture presence, clamp/vacuum, robot enable, gripper force, vision/fiducial, tool/service coupler, and interlock telemetry",
+                "part identity, revision, datum transfer, operator handoff, reload, combine, separate, or fit-up events",
+                "adhesive dispense, cure, torque, press, force, pull, leak, vision alignment, and final metrology results",
+                "handoff delay, human intervention, failed join, rework, scrap, and split/combine outcome rewards"
+            ],
+            "releaseBlockers": [
+                "hybrid route telemetry does not prove which part revision, datum, fixture, robot, or operator handoff was used",
+                "assembly or recomposition feedback omits force, torque, cure, vision, metrology, or final fit evidence",
+                "split/combine success or failure is not retained as policy-training data"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "executionTelemetryResult.operatorInterventions", "learning.outcomes"],
+            "learningSignals": ["telemetry:hybrid-handoff", "telemetry:assembly-fit", "split-combine-outcome:*", "human-intervention:*"]
+        }),
+        json!({
+            "telemetryFamily": "simulation-to-runtime-boundary-correlation",
+            "appliesTo": ["generated program", "imported CNC instructions", "slicer output", "machine-code improvement", "release package"],
+            "requiredChannels": [
+                "runtime telemetry links machine ID, controller, program hash, dry-run/simulation artifact, generated code, and release package",
+                "predicted failure boundaries are compared with actual stops, alarms, sensor excursions, and operator interventions",
+                "false positive, false negative, missed boundary, improved instruction, and successful release outcomes are labeled",
+                "MDP/POMDP/neural training examples include reward, state/action features, artifacts, and redacted evidence"
+            ],
+            "releaseBlockers": [
+                "runtime evidence cannot be joined to the generated/imported program, simulator, boundary review, or release package",
+                "machine failure or human intervention occurs without a retained boundary-correlation outcome",
+                "learning worker receives unlabeled telemetry that cannot update future planning, validation, or improvement policy"
+            ],
+            "responseSurfaces": ["simulation.findings", "validation.failureBoundaries", "instructionImprovement.patchManifest", "releasePackagePlan.packages", "learning.outcomes"],
+            "learningSignals": ["telemetry:boundary-correlation", "boundary:false-positive", "boundary:false-negative", "policy-training-example:*"]
+        }),
+    ]
+}
+
+fn telemetry_catalog_response() -> Value {
+    let entries = telemetry_catalog_entries();
+    let telemetry_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("telemetryFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.telemetry-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /telemetry/catalog", "GET /fabrication/telemetry/catalog"],
+        "telemetryFamilyCount": entries.len(),
+        "telemetryFamilies": telemetry_families,
+        "reviewRoutes": [
+            "POST /execution/result",
+            "POST /fabrication/execution/result",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "responseSurfaces": [
+            "executionTelemetryResult.telemetryArtifacts",
+            "executionTelemetryResult.machineStops",
+            "executionTelemetryResult.operatorInterventions",
+            "monitoringResult.alerts",
+            "failureModeResult.failureEvents",
+            "qualityResult.measurements",
+            "simulation.findings",
+            "validation.failureBoundaries",
+            "learning.outcomes"
+        ],
+        "artifactSurfaces": [
+            "machine-telemetry-log",
+            "sensor-window-summary",
+            "runtime-boundary-correlation",
+            "operator-intervention-event",
+            "machine-stop-event",
+            "telemetry-learning-example",
+            "mdp-request.artifacts.telemetry"
+        ],
+        "releasePolicy": [
+            "telemetry catalog entries describe runtime evidence contracts, not certified machine safety validation or calibrated metrology acceptance",
+            "machine-ready and learning-ready release remain blocked when sensor streams, machine stops, operator interventions, generated/imported program hashes, or boundary-correlation evidence cannot be retained",
+            "telemetry outcomes feed MDP/POMDP/neural workers so future planners can learn which generated instructions, machine choices, utilities, split/combine handoffs, and human checkpoints prevented or caused failures"
+        ],
+        "telemetryContracts": entries
+    })
+}
+
+async fn telemetry_catalog_http() -> impl IntoResponse {
+    Json(telemetry_catalog_response())
 }
 
 fn quality_planning_response(
@@ -55932,6 +58453,1137 @@ async fn tooling_catalog_http() -> impl IntoResponse {
     Json(tooling_catalog_response())
 }
 
+fn workholding_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "workholdingFamily": "additive-build-surface-and-material-containment",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "resin-printer", "sls-mjf-powder-bed-printer", "metal-pbf-printer", "binder-jet-printer", "material-jetting-printer", "sheet-lamination-printer"],
+            "holdingEvidence": [
+                "cleaned build plate, fixture, vat, powder bed, tray, sheet stack, or platen setup proof",
+                "bed adhesion, raft/brim/support, recoater clearance, vat fill, powder spread, or sheet registration evidence",
+                "measured Z-offset, bed mesh, first-layer/first-slice proof, and build-volume occupancy review",
+                "operator or automation signoff for part removal, depowdering, vat handling, or sheet-stack reset"
+            ],
+            "releaseBlockers": [
+                "positive extrusion, exposure, jetting, recoating, or lamination begins before build-surface holding evidence",
+                "part orientation/support assumes adhesion or containment that has not been verified",
+                "unattended repeat run lacks removal, cleaning, depowder, or reset evidence",
+                "large-format or robotic additive path exceeds verified fixture/build-volume holding envelope"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.requiredEvidence", "toolingPlan.requirements.workholding", "releaseProbePlan.probes", "machineRelease.blockers"],
+            "learningSignals": ["workholding:additive-build-surface", "first-layer-holding:*", "fixture-reset:*", "release-probe:z-offset"]
+        }),
+        json!({
+            "workholdingFamily": "mill-router-fixture-clamp-and-vacuum",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router"],
+            "holdingEvidence": [
+                "vise, soft-jaw, tombstone, pallet, fixture plate, vacuum table, clamp, tab, or spoilboard proof",
+                "datum/work-offset transfer, clamp height, rotary/index brake, and clearance sweep evidence",
+                "fixture stiffness, stock protrusion, thin-wall support, and tool-access review",
+                "probe, dry-run, or simulation evidence that rapid plunges and cutting feeds clear workholding"
+            ],
+            "releaseBlockers": [
+                "cutting feed or negative-Z rapid occurs before verified workholding and datum evidence",
+                "toolpath enters clamp, vise, pallet, tab, or fixture exclusion zones",
+                "fixture stiffness, vacuum, or clamp force is unresolved for material removal loads",
+                "multi-setup transfer lacks datum and re-probe evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups", "fixturePlan.setups.clearanceChecks", "fixturePlan.datumTransfers", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["workholding:mill-router", "fixture-clearance:*", "datum-transfer:*", "machine-failure-boundary:workholding"]
+        }),
+        json!({
+            "workholdingFamily": "lathe-grip-support-transfer-and-partoff",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "holdingEvidence": [
+                "chuck, collet, guide bushing, soft jaw, hard jaw, expanding mandrel, or fixture grip proof",
+                "stick-out, runout, grip pressure, bar-feed, tailstock, steady-rest, follower-rest, or center support evidence",
+                "subspindle, part catcher, pickup pull-force, cutoff/part-off support, and transfer timing proof",
+                "spindle speed cap, CSS, tool approach, and collision envelope review around jaws/supports"
+            ],
+            "releaseBlockers": [
+                "turning, threading, grooving, or part-off begins before grip/support evidence",
+                "part-off or cutoff lacks catcher, subspindle, tailstock, steady-rest, or stock-support proof",
+                "bar-feed or spindle transfer lacks clamping and pull-force verification",
+                "toolpath approaches jaws, guide bushing, or support hardware without clearance evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.requiredEvidence", "toolingPlan.requirements.setupChecks", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["workholding:lathe-grip", "partoff-support:*", "spindle-transfer:*", "machine-failure-boundary:lathe-workholding"]
+        }),
+        json!({
+            "workholdingFamily": "sheet-cut-nesting-support-retention-and-drop-control",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "hot-wire-foam-cutter"],
+            "holdingEvidence": [
+                "slat, honeycomb, water table, spoilboard, vacuum, pin, clamp, bridge, tab, or nest support proof",
+                "sheet flatness, origin, material thickness, kerf, lead-in/out, pierce/thread, and drop-zone review",
+                "assist gas, fume extraction, abrasive, pump, dielectric, flushing, or process support restart evidence",
+                "slug retention, tip-up avoidance, part marking, unloading, and edge inspection plan"
+            ],
+            "releaseBlockers": [
+                "feed cutting starts before support, retention, nest, or process-media evidence",
+                "part, slug, or skeleton can tip up, fall, drift, or collide without retained-tab/drop control",
+                "support media is stopped and cutting resumes without restart or reverification",
+                "sheet origin or workholding changes without re-probe or operator confirmation"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.workholding", "toolingPlan.requirements.consumables", "monitoringPlan.monitorPoints", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["workholding:sheet-cut", "slug-retention:*", "support-media-restart:*", "drop-control:*"]
+        }),
+        json!({
+            "workholdingFamily": "hybrid-assembly-fixture-datum-and-recomposition",
+            "machineKinds": ["robotic-assembly-cell", "manual-or-special-process", "hybrid split/combine jobs"],
+            "holdingEvidence": [
+                "assembly jig, nest, datum fixture, bond clamp, press fixture, heat-set support, or cure fixture proof",
+                "interface datum transfer, mating-surface protection, tolerance stack, and dry-fit/metrology evidence",
+                "gripper, robot path, vision/fiducial, torque, adhesive, press, or cure holding proof",
+                "split/combine traveler evidence tying printed, milled, cut, and postprocessed pieces back to one release package"
+            ],
+            "releaseBlockers": [
+                "recomposition or assembly begins before fixture and datum-transfer evidence",
+                "printed/milled/cut pieces cannot be combined without manual fit or metrology intervention",
+                "bond, press, torque, cure, or heat-set operations lack holding and release evidence",
+                "split/combine route lacks traceable interface-control and final inspection proof"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "fixturePlan.datumTransfers", "assemblyPlan.requiredEvidence", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["workholding:hybrid-assembly", "interface-control:*", "combine-or-assembly-boundary:*", "split-combine-outcome:*"]
+        }),
+    ]
+}
+
+fn workholding_catalog_response() -> Value {
+    let entries = workholding_catalog_entries();
+    let workholding_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("workholdingFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.workholding-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
+        "workholdingFamilyCount": entries.len(),
+        "workholdingFamilies": workholding_families,
+        "machineKinds": machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan"],
+        "reviewRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /quality/plan",
+            "POST /fabrication/quality/plan"
+        ],
+        "responseSurfaces": [
+            "toolingPlan.requirements.workholding",
+            "fixturePlan.setups",
+            "fixturePlan.setups.requiredEvidence",
+            "fixturePlan.setups.clearanceChecks",
+            "fixturePlan.setups.workholding",
+            "fixturePlan.datumTransfers",
+            "simulation.riskProfile.programRisks",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "interfaceControlPlan.interfaces",
+            "decompositionPlan.parts",
+            "assemblyPlan.requiredEvidence",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "fixture-plan",
+            "tooling-plan",
+            "setup-plan",
+            "simulation-report",
+            "assembly-plan",
+            "interface-control-plan",
+            "mdp-request.artifacts.fixturePlan"
+        ],
+        "releasePolicy": [
+            "workholding catalog entries describe evidence contracts for stock, build, fixture, support, retention, and recomposition holding, not certified fixture designs",
+            "machine-ready release remains blocked while build-surface, clamp, vacuum, chuck, support, tab, nest, datum-transfer, or split/combine fixture evidence is unresolved",
+            "workholding failures and successful fixture choices are retained as MDP/POMDP/neural learning signals so future planners can split jobs, change fixtures, add probes, or require human intervention earlier"
+        ],
+        "workholdingFamiliesDetailed": entries
+    })
+}
+
+async fn workholding_catalog_http() -> impl IntoResponse {
+    Json(workholding_catalog_response())
+}
+
+fn support_strategy_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "strategyFamily": "additive-orientation-overhang-and-support",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "resin-printer", "material-jetting-printer", "metal-pbf-printer", "sls-mjf-powder-bed-printer", "binder-jet-printer"],
+            "strategyEvidence": [
+                "build orientation, overhang, bridge, island, drain, heat-sink, recoater, and collision review",
+                "support type, density, interface material, raft/brim, touchpoint, removal access, and scar-risk evidence",
+                "anisotropy, layer direction, surface finish, trapped resin/powder, depowder, wash/cure, and plate-removal risk review",
+                "split/merge recommendation when one-piece printing cannot satisfy support removal, tolerance, strength, or postprocess access"
+            ],
+            "releaseBlockers": [
+                "positive extrusion, exposure, jetting, or powder-bed fusion begins before orientation and support strategy evidence",
+                "support removal or depowder/wash/cure cannot complete without human intervention and no intervention plan exists",
+                "support contact, heat sink, overhang, bridge, island, or recoater risk is unresolved",
+                "part should be split or reoriented but decomposition/interface-control evidence is absent"
+            ],
+            "responseSurfaces": ["designInputReview.manufacturabilityEvidence", "slicerProfileCatalog", "decompositionPlan.parts", "interventionMap.requiredInterventions", "postprocessPlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["support-strategy:additive", "orientation-risk:*", "support-removal:*", "split-combine-outcome:*"]
+        }),
+        json!({
+            "strategyFamily": "subtractive-setup-orientation-and-sacrificial-support",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router"],
+            "strategyEvidence": [
+                "setup orientation, approach direction, tool-access, undercut, remaining-stock, and rest-machining review",
+                "tabs, bridges, sacrificial jaws, soft jaws, fixtures, pallets, tombstones, and datum-transfer plan",
+                "multi-sided setup count, re-probe points, clamp clearance, thin-wall support, chatter risk, and finish-pass strategy",
+                "split/bolt/bond/weld route when one setup cannot reach or support the geometry safely"
+            ],
+            "releaseBlockers": [
+                "cutting feed starts before setup orientation and sacrificial-support strategy evidence",
+                "tool cannot reach features without collision, chatter, clamp interference, or human re-fixturing",
+                "tabs, bridges, soft jaws, or remaining-stock supports are missing for part separation",
+                "multi-setup or split/combine route lacks datum-transfer and interface evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups", "toolingPlan.requirements.workholding", "simulation.riskProfile.programRisks", "decompositionPlan.parts", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["support-strategy:subtractive", "setup-orientation:*", "sacrificial-support:*", "fixture-datum-transfer:*"]
+        }),
+        json!({
+            "strategyFamily": "turning-stickout-transfer-and-cutoff-support",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "strategyEvidence": [
+                "stock stick-out, chuck/collet/guide-bushing orientation, jaw clearance, runout, and spindle-speed envelope",
+                "tailstock, steady rest, follower rest, subspindle, catcher, pickup, and part-off/cutoff support plan",
+                "live-tool orientation, C/Y/B-axis clearance, transfer timing, and remnant/ejection review",
+                "secondary operation or split route when length, slenderness, part-off, or transfer risk exceeds support capability"
+            ],
+            "releaseBlockers": [
+                "turning, threading, live-tooling, transfer, or part-off starts before support strategy evidence",
+                "stick-out, slenderness, guide-bushing, or tailstock/steady-rest support is unresolved",
+                "part-off or cutoff can drop, whip, jam, or lose datum without catcher/subspindle/support proof",
+                "secondary setup or recomposition route lacks datum and inspection evidence"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.requiredEvidence", "toolingPlan.requirements.setupChecks", "operatorInterventionPlan.requiredOperatorActions", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["support-strategy:turning", "stickout-risk:*", "partoff-support:*", "spindle-transfer:*"]
+        }),
+        json!({
+            "strategyFamily": "sheet-cut-nesting-tabs-bridges-and-drop-support",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "hot-wire-foam-cutter"],
+            "strategyEvidence": [
+                "nest orientation, grain direction, heat/warp path, lead-in/out, kerf, pierce/thread, and edge-quality strategy",
+                "tabs, bridges, microjoints, slug retention, drop zones, small-part support, and skeleton handling plan",
+                "slat/honeycomb/water-table/spoilboard support, tip-up, collision, fume/fire/drop monitoring, and unloading review",
+                "part split, bridge retention, or secondary finishing route when one continuous cut cannot retain parts safely"
+            ],
+            "releaseBlockers": [
+                "profile feed cutting starts before nesting, tab/bridge, and drop-support strategy evidence",
+                "part, slug, or skeleton can tip up, fall, float, burn, jam, or collide without retained support",
+                "support-media restart, origin, kerf, or material-thickness changes are not reverified",
+                "part separation or manual unload needs intervention but no stop point or operator plan exists"
+            ],
+            "responseSurfaces": ["fixturePlan.setups.workholding", "toolingPlan.requirements.consumables", "monitoringPlan.monitorPoints", "executionPlan.stopPoints", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["support-strategy:sheet-cut", "tabs-bridges:*", "drop-control:*", "operator-unload:*"]
+        }),
+        json!({
+            "strategyFamily": "hybrid-split-combine-interface-and-support-removal",
+            "machineKinds": ["hybrid split/combine jobs", "robotic-assembly-cell", "manual-or-special-process"],
+            "strategyEvidence": [
+                "split plane, interface geometry, fastener/bond/weld/press/heat-set strategy, and assembly datum review",
+                "support-removal access, postprocess access, inspection access, and hidden-surface risk review",
+                "fit allowance, tolerance stack, locating features, witness marks, traveler, and traceability proof",
+                "learning-backed choice between one-piece print/mill/cut, split-and-join, or alternate machine routing"
+            ],
+            "releaseBlockers": [
+                "split/combine route lacks interface-control and recomposition support evidence",
+                "support removal, postprocess, inspection, or assembly cannot be completed after one-piece fabrication",
+                "join method lacks fixture, datum, cure/torque/press, quality, or human-intervention evidence",
+                "planner chooses one-piece route despite unresolved support, access, or machine-failure boundary"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "interventionMap.splitCombineDecisions", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["support-strategy:hybrid", "interface-control:*", "split-combine-decision:*", "planner-policy:update"]
+        }),
+    ]
+}
+
+fn support_strategy_catalog_response() -> Value {
+    let entries = support_strategy_catalog_entries();
+    let strategy_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("strategyFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.support-strategy-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
+        "supportStrategyFamilyCount": entries.len(),
+        "strategyFamilies": strategy_families,
+        "machineKinds": machine_kinds,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
+        "reviewRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /design/generate",
+            "POST /fabrication/design/generate",
+            "POST /simulation/run",
+            "POST /fabrication/simulation/run",
+            "POST /assembly/plan",
+            "POST /fabrication/assembly/plan"
+        ],
+        "responseSurfaces": [
+            "designInputReview.manufacturabilityEvidence",
+            "slicerProfileCatalog",
+            "fixturePlan.setups",
+            "toolingPlan.requirements.workholding",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "interventionMap.requiredInterventions",
+            "interventionMap.splitCombineDecisions",
+            "executionPlan.stopPoints",
+            "postprocessPlan.requiredArtifacts",
+            "qualityPlan.measurementTargets",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "decomposition-plan",
+            "interface-control-plan",
+            "fixture-plan",
+            "tooling-plan",
+            "simulation-report",
+            "assembly-plan",
+            "learning-outcomes",
+            "mdp-request.artifacts.decompositionPlan"
+        ],
+        "releasePolicy": [
+            "support strategy catalog entries describe orientation, support, sacrificial-holding, tab, bridge, split/combine, and support-removal evidence contracts, not certified manufacturing instructions",
+            "machine-ready release remains blocked while orientation, supports, tabs, bridges, sacrificial stock, support removal, postprocess access, or split/combine interface evidence is unresolved",
+            "orientation, support, split/combine, and intervention outcomes are retained as MDP/POMDP/neural learning signals so future planners can choose one-piece, split, combine, or alternate-machine routes earlier"
+        ],
+        "supportStrategies": entries
+    })
+}
+
+async fn support_strategy_catalog_http() -> impl IntoResponse {
+    Json(support_strategy_catalog_response())
+}
+
+fn validate_support_strategy_result_orientation_reviews(
+    orientation_reviews: Option<Vec<SupportStrategyResultOrientationReview>>,
+) -> Result<Vec<Value>, String> {
+    let orientation_reviews = orientation_reviews.unwrap_or_default();
+    if orientation_reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "orientationReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    orientation_reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id = validate_label(
+                &review.review_id,
+                &format!("orientationReviews[{index}].reviewId"),
+            )?;
+            let strategy_family = validate_label(
+                &review.strategy_family,
+                &format!("orientationReviews[{index}].strategyFamily"),
+            )?;
+            let orientation_kind = validate_label(
+                &review.orientation_kind,
+                &format!("orientationReviews[{index}].orientationKind"),
+            )?;
+            let status = validate_label(
+                &review.status,
+                &format!("orientationReviews[{index}].status"),
+            )?;
+            let machine_kind =
+                validate_optional_label(review.machine_kind, "orientationReviews.machineKind")?;
+            let evidence =
+                validate_signal_list(review.evidence, "orientationReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "strategyFamily": strategy_family,
+                "orientationKind": orientation_kind,
+                "status": status,
+                "buildAngle": review.build_angle,
+                "machineKind": machine_kind,
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresReorientation": review.requires_reorientation.unwrap_or(false),
+                "requiresSupportChange": review.requires_support_change.unwrap_or(false),
+                "requiresSplitCombine": review.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": review.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_support_strategy_result_support_reviews(
+    support_reviews: Option<Vec<SupportStrategyResultSupportReview>>,
+) -> Result<Vec<Value>, String> {
+    let support_reviews = support_reviews.unwrap_or_default();
+    if support_reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "supportReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    support_reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let support_id = validate_label(
+                &review.support_id,
+                &format!("supportReviews[{index}].supportId"),
+            )?;
+            let review_id = validate_optional_label(review.review_id, "supportReviews.reviewId")?;
+            let support_kind = validate_label(
+                &review.support_kind,
+                &format!("supportReviews[{index}].supportKind"),
+            )?;
+            let status =
+                validate_label(&review.status, &format!("supportReviews[{index}].status"))?;
+            let evidence =
+                validate_signal_list(review.evidence, "supportReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "supportId": support_id,
+                "reviewId": review_id,
+                "supportKind": support_kind,
+                "status": status,
+                "removable": review.removable.unwrap_or(false),
+                "postprocessAccessible": review.postprocess_accessible.unwrap_or(false),
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresRedesign": review.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": review.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": review.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_support_strategy_result_decisions(
+    decisions: Option<Vec<SupportStrategyResultDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            let decision_kind = validate_label(
+                &decision.decision_kind,
+                &format!("splitCombineDecisions[{index}].decisionKind"),
+            )?;
+            let status = validate_label(
+                &decision.status,
+                &format!("splitCombineDecisions[{index}].status"),
+            )?;
+            let source_part_ids = validate_signal_list(
+                decision.source_part_ids,
+                "splitCombineDecisions.sourcePartIds",
+                MAX_LABEL_LEN,
+            )?;
+            let target_part_ids = validate_signal_list(
+                decision.target_part_ids,
+                "splitCombineDecisions.targetPartIds",
+                MAX_LABEL_LEN,
+            )?;
+            let evidence = validate_signal_list(
+                decision.evidence,
+                "splitCombineDecisions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "decisionId": decision_id,
+                "decisionKind": decision_kind,
+                "status": status,
+                "sourcePartIds": source_part_ids,
+                "targetPartIds": target_part_ids,
+                "accepted": decision.accepted.unwrap_or(false),
+                "releaseBlocker": decision.release_blocker.unwrap_or(true),
+                "requiresSplitCombine": decision.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_support_strategy_result_interventions(
+    interventions: Option<Vec<SupportStrategyResultIntervention>>,
+) -> Result<Vec<Value>, String> {
+    let interventions = interventions.unwrap_or_default();
+    if interventions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "interventions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    interventions
+        .into_iter()
+        .enumerate()
+        .map(|(index, intervention)| {
+            let intervention_id = validate_label(
+                &intervention.intervention_id,
+                &format!("interventions[{index}].interventionId"),
+            )?;
+            let intervention_kind = validate_label(
+                &intervention.intervention_kind,
+                &format!("interventions[{index}].interventionKind"),
+            )?;
+            let status = validate_label(
+                &intervention.status,
+                &format!("interventions[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                intervention.evidence,
+                "interventions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "interventionId": intervention_id,
+                "interventionKind": intervention_kind,
+                "status": status,
+                "required": intervention.required.unwrap_or(true),
+                "completed": intervention.completed.unwrap_or(false),
+                "releaseBlocker": intervention.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_support_strategy_result_artifacts(
+    artifacts: Option<Vec<SupportStrategyResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn support_strategy_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("redesign")
+        || status.contains("intervention")
+        || status.contains("split")
+}
+
+fn support_strategy_result_orientation_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresReorientation")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresSupportChange")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || support_strategy_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || review
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn support_strategy_result_support_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !review
+            .get("removable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !review
+            .get("postprocessAccessible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || support_strategy_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn support_strategy_result_decision_blocks_release(decision: &Value) -> bool {
+    decision
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || decision
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !decision
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || support_strategy_result_status_blocks_release(
+            decision.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn support_strategy_result_intervention_blocks_release(intervention: &Value) -> bool {
+    intervention
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || (intervention
+            .get("required")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+            && !intervention
+                .get("completed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))
+        || support_strategy_result_status_blocks_release(
+            intervention
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn support_strategy_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn support_strategy_result_review_response(
+    request: SupportStrategyResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "support-strategy-result");
+    let generated_at_ms = now_ms();
+    let support_strategy_result_job_id =
+        safe_job_id("support-strategy-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let orientation_reviews =
+        validate_support_strategy_result_orientation_reviews(request.orientation_reviews)?;
+    let support_reviews =
+        validate_support_strategy_result_support_reviews(request.support_reviews)?;
+    let split_combine_decisions =
+        validate_support_strategy_result_decisions(request.split_combine_decisions)?;
+    let interventions = validate_support_strategy_result_interventions(request.interventions)?;
+    let artifacts = validate_support_strategy_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let orientation_blocker_count = orientation_reviews
+        .iter()
+        .filter(|review| support_strategy_result_orientation_blocks_release(review))
+        .count();
+    let support_blocker_count = support_reviews
+        .iter()
+        .filter(|review| support_strategy_result_support_blocks_release(review))
+        .count();
+    let split_combine_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| support_strategy_result_decision_blocks_release(decision))
+        .count();
+    let intervention_blocker_count = interventions
+        .iter()
+        .filter(|intervention| support_strategy_result_intervention_blocks_release(intervention))
+        .count();
+    let split_combine_required_count = orientation_reviews
+        .iter()
+        .filter(|review| {
+            review
+                .get("requiresSplitCombine")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + support_reviews
+            .iter()
+            .filter(|review| {
+                review
+                    .get("requiresSplitCombine")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("requiresSplitCombine")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count();
+    let support_change_required_count = orientation_reviews
+        .iter()
+        .filter(|review| {
+            review
+                .get("requiresSupportChange")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_intervention_required = orientation_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || support_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || split_combine_decisions.iter().any(|decision| {
+        decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || interventions.iter().any(|intervention| {
+        intervention
+            .get("required")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| support_strategy_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || orientation_reviews.is_empty()
+        || support_reviews.is_empty()
+        || orientation_blocker_count > 0
+        || support_blocker_count > 0
+        || split_combine_blocker_count > 0
+        || intervention_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if orientation_reviews.is_empty() {
+        "support-strategy-result-orientation-reviews-required"
+    } else if support_reviews.is_empty() {
+        "support-strategy-result-support-reviews-required"
+    } else if !request.success {
+        "support-strategy-result-worker-failed-release-blocked"
+    } else if orientation_blocker_count > 0 {
+        "support-strategy-result-orientation-release-blocked"
+    } else if support_blocker_count > 0 {
+        "support-strategy-result-support-release-blocked"
+    } else if split_combine_blocker_count > 0 {
+        "support-strategy-result-split-combine-release-blocked"
+    } else if intervention_blocker_count > 0 {
+        "support-strategy-result-interventions-release-blocked"
+    } else if artifact_evidence_missing {
+        "support-strategy-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "support-strategy-result-machine-ready-review-required"
+    } else if !release_ready {
+        "support-strategy-result-release-ready-review-required"
+    } else {
+        "support-strategy-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("support-strategy-worker:{worker_id}"),
+        format!("support-strategy-result:{review_status}"),
+    ];
+    if let Some(reviewer) = reviewer.as_ref() {
+        learning_observations.push(format!(
+            "support-strategy-reviewer:{}",
+            normalize_token(reviewer)
+        ));
+    }
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "support-strategy-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("support-strategy:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("support-strategy:human-intervention-required".to_string());
+    }
+    if support_change_required_count > 0 {
+        learning_observations.push("support-strategy:support-change-required".to_string());
+    }
+    if split_combine_required_count > 0 {
+        learning_observations.push("support-strategy:split-combine-required".to_string());
+    }
+    learning_observations.extend(orientation_reviews.iter().filter_map(|review| {
+        review
+            .get("strategyFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("support-strategy-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(orientation_reviews.iter().filter_map(|review| {
+        review
+            .get("orientationKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("support-orientation:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(support_reviews.iter().filter_map(|review| {
+        review
+            .get("supportKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("support-removal:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("support-split-combine:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.support-strategy-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "supportStrategyResultJobId": support_strategy_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /support-strategies/result", "POST /fabrication/support-strategies/result"],
+        "catalogRoutes": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /assembly/plan",
+            "POST /fabrication/assembly/plan"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "orientationReviewCount": orientation_reviews.len(),
+        "orientationBlockerCount": orientation_blocker_count,
+        "supportReviewCount": support_reviews.len(),
+        "supportBlockerCount": support_blocker_count,
+        "supportChangeRequiredCount": support_change_required_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "splitCombineBlockerCount": split_combine_blocker_count,
+        "splitCombineRequiredCount": split_combine_required_count,
+        "interventionCount": interventions.len(),
+        "interventionBlockerCount": intervention_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "supportStrategyResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourcePartId": source_part_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "orientationReviews": orientation_reviews,
+            "supportReviews": support_reviews,
+            "splitCombineDecisions": split_combine_decisions,
+            "interventions": interventions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "orientation, overhang, bridge, support, and support-removal reviews clear with retained evidence",
+                "split/combine choices have accepted interface and downstream assembly evidence",
+                "human support-removal, depowder, tab, bridge, fixture, or reorientation interventions are complete before machine-ready release",
+                "support-strategy result artifacts retain URI, checksum, format, and evidence labels"
+            ],
+            "targetSurfaces": [
+                "designInputReview.manufacturabilityEvidence",
+                "slicerProfileCatalog",
+                "decompositionPlan",
+                "interfaceControlPlan",
+                "postprocessPlan",
+                "interventionMap",
+                "machineRelease",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "support-strategy-result",
+            "support-strategy-orientation-reviews",
+            "support-strategy-support-reviews",
+            "support-strategy-split-combine-decisions",
+            "support-strategy-interventions",
+            "support-strategy-artifacts",
+            "support-strategy-learning-observations",
+            "mdp-request.artifacts.supportStrategyResult"
+        ],
+        "supportStrategyResultPolicy": [
+            "support-strategy results are retained orientation, support, sacrificial-holding, tab, bridge, support-removal, and split/combine evidence, not certified manufacturing instructions",
+            "machine-ready release remains blocked until orientation, support, split/combine, intervention, artifact, and human dispositions clear",
+            "support-strategy result observations feed MDP/POMDP/neural learning so future planners can reorient, change supports, split, combine, reroute, or request human review earlier"
+        ]
+    }))
+}
+
+fn support_strategy_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("orientation-release-blocked")
+        || status.contains("support-release-blocked")
+        || status.contains("split-combine-release-blocked")
+        || status.contains("interventions-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_support_strategy_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "support-strategy-result");
+    let job_id = response_str_field(
+        response,
+        "supportStrategyResultJobId",
+        &safe_job_id("support-strategy-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "support-strategy-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("supportStrategyResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let orientation_reviews = result
+        .get("orientationReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let support_reviews = result
+        .get("supportReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interventions = result
+        .get("interventions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let support_strategy_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "support-strategy-result".to_string(),
+            "support-strategy-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-orientation-reviews".to_string(),
+            "support-strategy-orientation-reviews",
+            orientation_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-support-reviews".to_string(),
+            "support-strategy-support-reviews",
+            support_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-split-combine-decisions".to_string(),
+            "support-strategy-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-interventions".to_string(),
+            "support-strategy-interventions",
+            interventions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-artifacts".to_string(),
+            "support-strategy-artifacts",
+            support_strategy_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "support-strategy-learning-observations".to_string(),
+            "support-strategy-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "support-strategy-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: support_strategy_result_job_severity(response),
+            summary: format!("support strategy result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_support_strategy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_support_strategy_result_job(response));
+}
+
 fn process_recipe_catalog_entries() -> Vec<Value> {
     vec![
         json!({
@@ -56083,6 +59735,591 @@ fn process_recipe_catalog_response() -> Value {
 
 async fn process_recipe_catalog_http() -> impl IntoResponse {
     Json(process_recipe_catalog_response())
+}
+
+fn validate_process_recipe_result_recipe_reviews(
+    recipe_reviews: Option<Vec<ProcessRecipeResultRecipeReview>>,
+) -> Result<Vec<Value>, String> {
+    let recipe_reviews = recipe_reviews.unwrap_or_default();
+    if recipe_reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "recipeReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    recipe_reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id = validate_label(
+                &review.review_id,
+                &format!("recipeReviews[{index}].reviewId"),
+            )?;
+            let recipe_family = validate_label(
+                &review.recipe_family,
+                &format!("recipeReviews[{index}].recipeFamily"),
+            )?;
+            let recipe_kind = validate_label(
+                &review.recipe_kind,
+                &format!("recipeReviews[{index}].recipeKind"),
+            )?;
+            let status = validate_label(&review.status, &format!("recipeReviews[{index}].status"))?;
+            let machine_kind =
+                validate_optional_label(review.machine_kind, "recipeReviews.machineKind")?;
+            let material_id =
+                validate_optional_label(review.material_id, "recipeReviews.materialId")?;
+            let evidence =
+                validate_signal_list(review.evidence, "recipeReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "recipeFamily": recipe_family,
+                "recipeKind": recipe_kind,
+                "status": status,
+                "machineKind": machine_kind,
+                "materialId": material_id,
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresParameterChange": review.requires_parameter_change.unwrap_or(false),
+                "requiresCoupon": review.requires_coupon.unwrap_or(false),
+                "requiresHumanSignoff": review.requires_human_signoff.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_recipe_result_parameter_checks(
+    checks: Option<Vec<ProcessRecipeResultParameterCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "parameterChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("parameterChecks[{index}].checkId"),
+            )?;
+            let review_id = validate_optional_label(check.review_id, "parameterChecks.reviewId")?;
+            let parameter_kind = validate_label(
+                &check.parameter_kind,
+                &format!("parameterChecks[{index}].parameterKind"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("parameterChecks[{index}].status"))?;
+            let target_value =
+                validate_optional_text(check.target_value, "parameterChecks.targetValue", 256)?;
+            let measured_value =
+                validate_optional_text(check.measured_value, "parameterChecks.measuredValue", 256)?;
+            let evidence =
+                validate_signal_list(check.evidence, "parameterChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "reviewId": review_id,
+                "parameterKind": parameter_kind,
+                "status": status,
+                "targetValue": target_value,
+                "measuredValue": measured_value,
+                "withinLimits": check.within_limits.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_recipe_result_coupon_results(
+    coupons: Option<Vec<ProcessRecipeResultCouponResult>>,
+) -> Result<Vec<Value>, String> {
+    let coupons = coupons.unwrap_or_default();
+    if coupons.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "couponResults must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    coupons
+        .into_iter()
+        .enumerate()
+        .map(|(index, coupon)| {
+            let coupon_id = validate_label(
+                &coupon.coupon_id,
+                &format!("couponResults[{index}].couponId"),
+            )?;
+            let recipe_review_id =
+                validate_optional_label(coupon.recipe_review_id, "couponResults.recipeReviewId")?;
+            let result_kind = validate_label(
+                &coupon.result_kind,
+                &format!("couponResults[{index}].resultKind"),
+            )?;
+            let status = validate_label(&coupon.status, &format!("couponResults[{index}].status"))?;
+            let evidence =
+                validate_signal_list(coupon.evidence, "couponResults.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "couponId": coupon_id,
+                "recipeReviewId": recipe_review_id,
+                "resultKind": result_kind,
+                "status": status,
+                "passed": coupon.passed.unwrap_or(false),
+                "releaseBlocker": coupon.release_blocker.unwrap_or(true),
+                "requiresRecipeRevision": coupon.requires_recipe_revision.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_process_recipe_result_artifacts(
+    artifacts: Option<Vec<ProcessRecipeResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn process_recipe_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("revision")
+        || status.contains("signoff")
+}
+
+fn process_recipe_result_recipe_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresParameterChange")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresCoupon")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresHumanSignoff")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_recipe_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || review
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn process_recipe_result_parameter_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("withinLimits")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_recipe_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn process_recipe_result_coupon_blocks_release(coupon: &Value) -> bool {
+    coupon
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !coupon
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || coupon
+            .get("requiresRecipeRevision")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || process_recipe_result_status_blocks_release(
+            coupon.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn process_recipe_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn process_recipe_result_review_response(
+    request: ProcessRecipeResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "process-recipe-result");
+    let generated_at_ms = now_ms();
+    let process_recipe_result_job_id =
+        safe_job_id("process-recipe-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let material_id = validate_optional_label(request.material_id, "materialId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let recipe_reviews = validate_process_recipe_result_recipe_reviews(request.recipe_reviews)?;
+    let parameter_checks =
+        validate_process_recipe_result_parameter_checks(request.parameter_checks)?;
+    let coupon_results = validate_process_recipe_result_coupon_results(request.coupon_results)?;
+    let artifacts = validate_process_recipe_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let recipe_blocker_count = recipe_reviews
+        .iter()
+        .filter(|review| process_recipe_result_recipe_blocks_release(review))
+        .count();
+    let parameter_blocker_count = parameter_checks
+        .iter()
+        .filter(|check| process_recipe_result_parameter_blocks_release(check))
+        .count();
+    let coupon_blocker_count = coupon_results
+        .iter()
+        .filter(|coupon| process_recipe_result_coupon_blocks_release(coupon))
+        .count();
+    let parameter_change_required_count = recipe_reviews
+        .iter()
+        .filter(|review| {
+            review
+                .get("requiresParameterChange")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let human_signoff_required = recipe_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanSignoff")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| process_recipe_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || recipe_reviews.is_empty()
+        || parameter_checks.is_empty()
+        || recipe_blocker_count > 0
+        || parameter_blocker_count > 0
+        || coupon_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if recipe_reviews.is_empty() {
+        "process-recipe-result-reviews-required"
+    } else if parameter_checks.is_empty() {
+        "process-recipe-result-parameter-checks-required"
+    } else if !request.success {
+        "process-recipe-result-worker-failed-release-blocked"
+    } else if recipe_blocker_count > 0 {
+        "process-recipe-result-recipes-release-blocked"
+    } else if parameter_blocker_count > 0 {
+        "process-recipe-result-parameters-release-blocked"
+    } else if coupon_blocker_count > 0 {
+        "process-recipe-result-coupons-release-blocked"
+    } else if artifact_evidence_missing {
+        "process-recipe-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "process-recipe-result-machine-ready-review-required"
+    } else if !release_ready {
+        "process-recipe-result-release-ready-review-required"
+    } else {
+        "process-recipe-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("process-recipe-worker:{worker_id}"),
+        format!("process-recipe-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "process-recipe-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("process-recipe:release-blocked".to_string());
+    }
+    if parameter_change_required_count > 0 {
+        learning_observations.push("process-recipe:parameter-change-required".to_string());
+    }
+    if human_signoff_required {
+        learning_observations.push("process-recipe:human-signoff-required".to_string());
+    }
+    learning_observations.extend(recipe_reviews.iter().filter_map(|review| {
+        review
+            .get("recipeFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("process-recipe-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(recipe_reviews.iter().filter_map(|review| {
+        review
+            .get("recipeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("process-recipe-kind:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(parameter_checks.iter().filter_map(|check| {
+        check
+            .get("parameterKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("process-recipe-parameter:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(coupon_results.iter().filter_map(|coupon| {
+        coupon
+            .get("resultKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("process-recipe-coupon:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.process-recipe-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "processRecipeResultJobId": process_recipe_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /process-recipes/result", "POST /fabrication/process-recipes/result"],
+        "catalogRoutes": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "recipeReviewCount": recipe_reviews.len(),
+        "recipeBlockerCount": recipe_blocker_count,
+        "parameterCheckCount": parameter_checks.len(),
+        "parameterBlockerCount": parameter_blocker_count,
+        "couponResultCount": coupon_results.len(),
+        "couponBlockerCount": coupon_blocker_count,
+        "parameterChangeRequiredCount": parameter_change_required_count,
+        "humanSignoffRequired": human_signoff_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "processRecipeResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineKind": machine_kind,
+            "materialId": material_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "recipeReviews": recipe_reviews,
+            "parameterChecks": parameter_checks,
+            "couponResults": coupon_results,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "recipe reviews clear with retained material, tool, machine, and parameter evidence",
+                "parameter checks are within limits before generated or imported instructions are released",
+                "first-article, coupon, or process-media results are accepted when recipe families require them",
+                "process-recipe result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "process-recipe-result",
+            "process-recipe-reviews",
+            "process-recipe-parameter-checks",
+            "process-recipe-coupon-results",
+            "process-recipe-artifacts",
+            "process-recipe-learning-observations",
+            "mdp-request.artifacts.processRecipeResult"
+        ]
+    }))
+}
+
+fn process_recipe_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("recipes-release-blocked")
+        || status.contains("parameters-release-blocked")
+        || status.contains("coupons-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_process_recipe_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "process-recipe-result");
+    let job_id = response_str_field(
+        response,
+        "processRecipeResultJobId",
+        &safe_job_id("process-recipe-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "process-recipe-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("processRecipeResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let recipe_reviews = result
+        .get("recipeReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let parameter_checks = result
+        .get("parameterChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let coupon_results = result
+        .get("couponResults")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let process_recipe_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "process-recipe-result".to_string(),
+            "process-recipe-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-recipe-reviews".to_string(),
+            "process-recipe-reviews",
+            recipe_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-recipe-parameter-checks".to_string(),
+            "process-recipe-parameter-checks",
+            parameter_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-recipe-coupon-results".to_string(),
+            "process-recipe-coupon-results",
+            coupon_results,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-recipe-artifacts".to_string(),
+            "process-recipe-artifacts",
+            process_recipe_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-recipe-learning-observations".to_string(),
+            "process-recipe-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "process-recipe-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: process_recipe_result_job_severity(response),
+            summary: format!("process recipe result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_process_recipe_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_process_recipe_result_job(response));
 }
 
 fn kinematics_catalog_entries() -> Vec<Value> {
@@ -56242,6 +60479,1212 @@ fn kinematics_catalog_response() -> Value {
 
 async fn kinematics_catalog_http() -> impl IntoResponse {
     Json(kinematics_catalog_response())
+}
+
+fn validate_kinematics_result_axis_checks(
+    checks: Option<Vec<KinematicsResultAxisCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "axisChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id =
+                validate_label(&check.check_id, &format!("axisChecks[{index}].checkId"))?;
+            let kinematic_family = validate_label(
+                &check.kinematic_family,
+                &format!("axisChecks[{index}].kinematicFamily"),
+            )?;
+            let axis_kind =
+                validate_label(&check.axis_kind, &format!("axisChecks[{index}].axisKind"))?;
+            let status = validate_label(&check.status, &format!("axisChecks[{index}].status"))?;
+            let envelope_ref =
+                validate_optional_label(check.envelope_ref, "axisChecks.envelopeRef")?;
+            let evidence =
+                validate_signal_list(check.evidence, "axisChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "kinematicFamily": kinematic_family,
+                "axisKind": axis_kind,
+                "status": status,
+                "envelopeRef": envelope_ref,
+                "withinEnvelope": check.within_envelope.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRehome": check.requires_rehome.unwrap_or(false),
+                "requiresReprobe": check.requires_reprobe.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_kinematics_result_coordinate_reviews(
+    reviews: Option<Vec<KinematicsResultCoordinateReview>>,
+) -> Result<Vec<Value>, String> {
+    let reviews = reviews.unwrap_or_default();
+    if reviews.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "coordinateReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    reviews
+        .into_iter()
+        .enumerate()
+        .map(|(index, review)| {
+            let review_id = validate_label(
+                &review.review_id,
+                &format!("coordinateReviews[{index}].reviewId"),
+            )?;
+            let coordinate_kind = validate_label(
+                &review.coordinate_kind,
+                &format!("coordinateReviews[{index}].coordinateKind"),
+            )?;
+            let status = validate_label(
+                &review.status,
+                &format!("coordinateReviews[{index}].status"),
+            )?;
+            let modal_state =
+                validate_optional_label(review.modal_state, "coordinateReviews.modalState")?;
+            let evidence =
+                validate_signal_list(review.evidence, "coordinateReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "reviewId": review_id,
+                "coordinateKind": coordinate_kind,
+                "status": status,
+                "modalState": modal_state,
+                "releaseBlocker": review.release_blocker.unwrap_or(true),
+                "requiresReset": review.requires_reset.unwrap_or(false),
+                "requiresHumanIntervention": review.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_kinematics_result_frame_checks(
+    checks: Option<Vec<KinematicsResultFrameCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "frameChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let frame_id =
+                validate_label(&check.frame_id, &format!("frameChecks[{index}].frameId"))?;
+            let frame_kind = validate_label(
+                &check.frame_kind,
+                &format!("frameChecks[{index}].frameKind"),
+            )?;
+            let status = validate_label(&check.status, &format!("frameChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "frameChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "frameId": frame_id,
+                "frameKind": frame_kind,
+                "status": status,
+                "calibrated": check.calibrated.unwrap_or(false),
+                "synchronized": check.synchronized.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRecalibration": check.requires_recalibration.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_kinematics_result_artifacts(
+    artifacts: Option<Vec<KinematicsResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn kinematics_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("exceeded")
+        || status.contains("recalibration")
+}
+
+fn kinematics_result_axis_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("withinEnvelope")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRehome")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresReprobe")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || kinematics_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn kinematics_result_coordinate_blocks_release(review: &Value) -> bool {
+    review
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || review
+            .get("requiresReset")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || kinematics_result_status_blocks_release(
+            review.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn kinematics_result_frame_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("calibrated")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !check
+            .get("synchronized")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRecalibration")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || kinematics_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn kinematics_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn kinematics_result_review_response(
+    request: KinematicsResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "kinematics-result");
+    let generated_at_ms = now_ms();
+    let kinematics_result_job_id = safe_job_id("kinematics-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let axis_checks = validate_kinematics_result_axis_checks(request.axis_checks)?;
+    let coordinate_reviews =
+        validate_kinematics_result_coordinate_reviews(request.coordinate_reviews)?;
+    let frame_checks = validate_kinematics_result_frame_checks(request.frame_checks)?;
+    let artifacts = validate_kinematics_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let axis_blocker_count = axis_checks
+        .iter()
+        .filter(|check| kinematics_result_axis_blocks_release(check))
+        .count();
+    let coordinate_blocker_count = coordinate_reviews
+        .iter()
+        .filter(|review| kinematics_result_coordinate_blocks_release(review))
+        .count();
+    let frame_blocker_count = frame_checks
+        .iter()
+        .filter(|check| kinematics_result_frame_blocks_release(check))
+        .count();
+    let human_intervention_required = axis_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || coordinate_reviews.iter().any(|review| {
+        review
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || frame_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| kinematics_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || axis_checks.is_empty()
+        || coordinate_reviews.is_empty()
+        || frame_checks.is_empty()
+        || axis_blocker_count > 0
+        || coordinate_blocker_count > 0
+        || frame_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if axis_checks.is_empty() {
+        "kinematics-result-axis-checks-required"
+    } else if coordinate_reviews.is_empty() {
+        "kinematics-result-coordinate-reviews-required"
+    } else if frame_checks.is_empty() {
+        "kinematics-result-frame-checks-required"
+    } else if !request.success {
+        "kinematics-result-worker-failed-release-blocked"
+    } else if axis_blocker_count > 0 {
+        "kinematics-result-axis-release-blocked"
+    } else if coordinate_blocker_count > 0 {
+        "kinematics-result-coordinate-release-blocked"
+    } else if frame_blocker_count > 0 {
+        "kinematics-result-frame-release-blocked"
+    } else if artifact_evidence_missing {
+        "kinematics-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "kinematics-result-machine-ready-review-required"
+    } else if !release_ready {
+        "kinematics-result-release-ready-review-required"
+    } else {
+        "kinematics-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("kinematics-worker:{worker_id}"),
+        format!("kinematics-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "kinematics-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("kinematics:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("kinematics:human-intervention-required".to_string());
+    }
+    learning_observations.extend(axis_checks.iter().filter_map(|check| {
+        check
+            .get("kinematicFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("kinematics-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(axis_checks.iter().filter_map(|check| {
+        check
+            .get("axisKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("kinematics-axis:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(coordinate_reviews.iter().filter_map(|review| {
+        review
+            .get("coordinateKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("kinematics-coordinate:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(frame_checks.iter().filter_map(|check| {
+        check
+            .get("frameKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("kinematics-frame:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.kinematics-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "kinematicsResultJobId": kinematics_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /kinematics/result", "POST /fabrication/kinematics/result"],
+        "catalogRoutes": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "axisCheckCount": axis_checks.len(),
+        "axisBlockerCount": axis_blocker_count,
+        "coordinateReviewCount": coordinate_reviews.len(),
+        "coordinateBlockerCount": coordinate_blocker_count,
+        "frameCheckCount": frame_checks.len(),
+        "frameBlockerCount": frame_blocker_count,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "kinematicsResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "axisChecks": axis_checks,
+            "coordinateReviews": coordinate_reviews,
+            "frameChecks": frame_checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "axis envelope, homing, and clearance checks are within retained machine limits",
+                "coordinate modal state, units, offsets, and reset evidence clear before release",
+                "TCP/frame, rotary, spindle-sync, robot, or probe calibration evidence is retained",
+                "kinematics result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "kinematics-result",
+            "kinematics-axis-checks",
+            "kinematics-coordinate-reviews",
+            "kinematics-frame-checks",
+            "kinematics-artifacts",
+            "kinematics-learning-observations",
+            "mdp-request.artifacts.kinematicsResult"
+        ]
+    }))
+}
+
+fn kinematics_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("axis-release-blocked")
+        || status.contains("coordinate-release-blocked")
+        || status.contains("frame-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_kinematics_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "kinematics-result");
+    let job_id = response_str_field(
+        response,
+        "kinematicsResultJobId",
+        &safe_job_id("kinematics-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "kinematics-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("kinematicsResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let axis_checks = result
+        .get("axisChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let coordinate_reviews = result
+        .get("coordinateReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let frame_checks = result
+        .get("frameChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let kinematics_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "kinematics-result".to_string(),
+            "kinematics-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "kinematics-axis-checks".to_string(),
+            "kinematics-axis-checks",
+            axis_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "kinematics-coordinate-reviews".to_string(),
+            "kinematics-coordinate-reviews",
+            coordinate_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "kinematics-frame-checks".to_string(),
+            "kinematics-frame-checks",
+            frame_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "kinematics-artifacts".to_string(),
+            "kinematics-artifacts",
+            kinematics_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "kinematics-learning-observations".to_string(),
+            "kinematics-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "kinematics-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: kinematics_result_job_severity(response),
+            summary: format!("kinematics result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_kinematics_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_kinematics_result_job(response));
+}
+
+fn validate_tolerance_result_checks(
+    checks: Option<Vec<ToleranceResultCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "toleranceChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(
+                &check.check_id,
+                &format!("toleranceChecks[{index}].checkId"),
+            )?;
+            let tolerance_family = validate_label(
+                &check.tolerance_family,
+                &format!("toleranceChecks[{index}].toleranceFamily"),
+            )?;
+            let geometry_scope = validate_label(
+                &check.geometry_scope,
+                &format!("toleranceChecks[{index}].geometryScope"),
+            )?;
+            let status =
+                validate_label(&check.status, &format!("toleranceChecks[{index}].status"))?;
+            let nominal_value =
+                validate_optional_text(check.nominal_value, "toleranceChecks.nominalValue", 256)?;
+            let measured_value =
+                validate_optional_text(check.measured_value, "toleranceChecks.measuredValue", 256)?;
+            let tolerance_band =
+                validate_optional_text(check.tolerance_band, "toleranceChecks.toleranceBand", 256)?;
+            let evidence =
+                validate_signal_list(check.evidence, "toleranceChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "checkId": check_id,
+                "toleranceFamily": tolerance_family,
+                "geometryScope": geometry_scope,
+                "status": status,
+                "nominalValue": nominal_value,
+                "measuredValue": measured_value,
+                "toleranceBand": tolerance_band,
+                "inTolerance": check.in_tolerance.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresCompensation": check.requires_compensation.unwrap_or(false),
+                "requiresRedesign": check.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": check.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_tolerance_result_fit_checks(
+    checks: Option<Vec<ToleranceResultFitCheck>>,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "fitChecks must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let interface_id = validate_label(
+                &check.interface_id,
+                &format!("fitChecks[{index}].interfaceId"),
+            )?;
+            let fit_kind = validate_label(&check.fit_kind, &format!("fitChecks[{index}].fitKind"))?;
+            let status = validate_label(&check.status, &format!("fitChecks[{index}].status"))?;
+            let evidence =
+                validate_signal_list(check.evidence, "fitChecks.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "interfaceId": interface_id,
+                "fitKind": fit_kind,
+                "status": status,
+                "accepted": check.accepted.unwrap_or(false),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresRework": check.requires_rework.unwrap_or(false),
+                "requiresRedesign": check.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": check.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_tolerance_result_compensations(
+    compensations: Option<Vec<ToleranceResultCompensation>>,
+) -> Result<Vec<Value>, String> {
+    let compensations = compensations.unwrap_or_default();
+    if compensations.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "compensations must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    compensations
+        .into_iter()
+        .enumerate()
+        .map(|(index, compensation)| {
+            let compensation_id = validate_label(
+                &compensation.compensation_id,
+                &format!("compensations[{index}].compensationId"),
+            )?;
+            let compensation_kind = validate_label(
+                &compensation.compensation_kind,
+                &format!("compensations[{index}].compensationKind"),
+            )?;
+            let status = validate_label(
+                &compensation.status,
+                &format!("compensations[{index}].status"),
+            )?;
+            let evidence = validate_signal_list(
+                compensation.evidence,
+                "compensations.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "compensationId": compensation_id,
+                "compensationKind": compensation_kind,
+                "status": status,
+                "applied": compensation.applied.unwrap_or(false),
+                "releaseBlocker": compensation.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_tolerance_result_artifacts(
+    artifacts: Option<Vec<ToleranceResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn tolerance_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("out-of")
+        || status.contains("rework")
+        || status.contains("redesign")
+}
+
+fn tolerance_result_check_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("inTolerance")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresCompensation")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || tolerance_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn tolerance_result_fit_blocks_release(check: &Value) -> bool {
+    check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !check
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRework")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || tolerance_result_status_blocks_release(
+            check.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn tolerance_result_compensation_blocks_release(compensation: &Value) -> bool {
+    compensation
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !compensation
+            .get("applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || tolerance_result_status_blocks_release(
+            compensation
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn tolerance_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn tolerance_result_review_response(
+    request: ToleranceResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "tolerance-result");
+    let generated_at_ms = now_ms();
+    let tolerance_result_job_id = safe_job_id("tolerance-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let tolerance_checks = validate_tolerance_result_checks(request.tolerance_checks)?;
+    let fit_checks = validate_tolerance_result_fit_checks(request.fit_checks)?;
+    let compensations = validate_tolerance_result_compensations(request.compensations)?;
+    let artifacts = validate_tolerance_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let tolerance_blocker_count = tolerance_checks
+        .iter()
+        .filter(|check| tolerance_result_check_blocks_release(check))
+        .count();
+    let fit_blocker_count = fit_checks
+        .iter()
+        .filter(|check| tolerance_result_fit_blocks_release(check))
+        .count();
+    let compensation_blocker_count = compensations
+        .iter()
+        .filter(|compensation| tolerance_result_compensation_blocks_release(compensation))
+        .count();
+    let compensation_required = tolerance_checks.iter().any(|check| {
+        check
+            .get("requiresCompensation")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required = tolerance_checks.iter().any(|check| {
+        check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || fit_checks.iter().any(|check| {
+        check
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let human_intervention_required = tolerance_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || fit_checks.iter().any(|check| {
+        check
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| tolerance_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || tolerance_checks.is_empty()
+        || fit_checks.is_empty()
+        || artifacts.is_empty()
+        || tolerance_blocker_count > 0
+        || fit_blocker_count > 0
+        || compensation_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if tolerance_checks.is_empty() {
+        "tolerance-result-checks-required"
+    } else if fit_checks.is_empty() {
+        "tolerance-result-fit-checks-required"
+    } else if !request.success {
+        "tolerance-result-worker-failed-release-blocked"
+    } else if tolerance_blocker_count > 0 {
+        "tolerance-result-tolerance-release-blocked"
+    } else if fit_blocker_count > 0 {
+        "tolerance-result-fit-release-blocked"
+    } else if compensation_blocker_count > 0 {
+        "tolerance-result-compensation-release-blocked"
+    } else if artifact_evidence_missing {
+        "tolerance-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "tolerance-result-machine-ready-review-required"
+    } else if !release_ready {
+        "tolerance-result-release-ready-review-required"
+    } else {
+        "tolerance-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("tolerance-worker:{worker_id}"),
+        format!("tolerance-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "tolerance-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("tolerance:release-blocked".to_string());
+    }
+    if compensation_required {
+        learning_observations.push("tolerance:compensation-required".to_string());
+    }
+    if split_combine_required {
+        learning_observations.push("tolerance:split-combine-required".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("tolerance:human-intervention-required".to_string());
+    }
+    learning_observations.extend(tolerance_checks.iter().filter_map(|check| {
+        check
+            .get("toleranceFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("tolerance-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(tolerance_checks.iter().filter_map(|check| {
+        check
+            .get("geometryScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("tolerance-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(fit_checks.iter().filter_map(|check| {
+        check
+            .get("fitKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("tolerance-fit:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(compensations.iter().filter_map(|compensation| {
+        compensation
+            .get("compensationKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("tolerance-compensation:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.tolerance-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "toleranceResultJobId": tolerance_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /tolerances/result", "POST /fabrication/tolerances/result"],
+        "catalogRoutes": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "toleranceCheckCount": tolerance_checks.len(),
+        "toleranceBlockerCount": tolerance_blocker_count,
+        "fitCheckCount": fit_checks.len(),
+        "fitBlockerCount": fit_blocker_count,
+        "compensationCount": compensations.len(),
+        "compensationBlockerCount": compensation_blocker_count,
+        "compensationRequired": compensation_required,
+        "splitCombineRequired": split_combine_required,
+        "humanInterventionRequired": human_intervention_required,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "warningCount": warnings.len(),
+        "toleranceResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "machineKind": machine_kind,
+            "sourcePartId": source_part_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "toleranceChecks": tolerance_checks,
+            "fitChecks": fit_checks,
+            "compensations": compensations,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "tolerance-critical features retain measured value, nominal value, tolerance band, and accepted status",
+                "fit/interface checks prove printed, milled, turned, sheet-cut, or hybrid parts assemble inside the retained interface-control plan",
+                "required compensation, redesign, split/combine, rework, or human fit-up is resolved before release",
+                "tolerance result artifacts retain URI, checksum, format, and evidence labels"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "tolerance-result",
+            "tolerance-checks",
+            "tolerance-fit-checks",
+            "tolerance-compensations",
+            "tolerance-artifacts",
+            "tolerance-learning-observations",
+            "mdp-request.artifacts.toleranceResult"
+        ]
+    }))
+}
+
+fn tolerance_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("tolerance-release-blocked")
+        || status.contains("fit-release-blocked")
+        || status.contains("compensation-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_tolerance_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "tolerance-result");
+    let job_id = response_str_field(
+        response,
+        "toleranceResultJobId",
+        &safe_job_id("tolerance-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "tolerance-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("toleranceResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let tolerance_checks = result
+        .get("toleranceChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let fit_checks = result
+        .get("fitChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let compensations = result
+        .get("compensations")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let tolerance_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "tolerance-result".to_string(),
+            "tolerance-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tolerance-checks".to_string(),
+            "tolerance-checks",
+            tolerance_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tolerance-fit-checks".to_string(),
+            "tolerance-fit-checks",
+            fit_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tolerance-compensations".to_string(),
+            "tolerance-compensations",
+            compensations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tolerance-artifacts".to_string(),
+            "tolerance-artifacts",
+            tolerance_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tolerance-learning-observations".to_string(),
+            "tolerance-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "tolerance-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: tolerance_result_job_severity(response),
+            summary: format!("tolerance result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_tolerance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_tolerance_result_job(response));
 }
 
 fn tolerance_catalog_entries() -> Vec<Value> {
@@ -56417,6 +61860,1912 @@ fn tolerance_catalog_response() -> Value {
 
 async fn tolerance_catalog_http() -> impl IntoResponse {
     Json(tolerance_catalog_response())
+}
+
+fn process_capability_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "capabilityFamily": "additive-printability-envelope",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "resin-printer", "powder-bed-printer"],
+            "capabilityScopes": ["minimum-wall", "minimum-hole", "overhang", "bridge-span", "layer-height", "build-volume", "support-removal"],
+            "requiredEvidence": [
+                "machine/material/nozzle or exposure profile, layer height, orientation, support strategy, and build-volume fit evidence",
+                "thin-wall, small-hole, unsupported-span, and first-layer capability review against the selected printer and material",
+                "coupon, test feature, slicer preview, or measured process capability evidence for critical additive features"
+            ],
+            "failureBoundaries": [
+                "wall, hole, pin, bridge, or overhang is below the selected printer/material capability without redesign, split, or support evidence",
+                "part exceeds build envelope or support-removal access without split/combine or alternate-machine plan",
+                "feature is released based only on nominal CAD dimensions without process compensation or measurement evidence"
+            ],
+            "responseSurfaces": ["designInputReview.capabilityFindings", "slicerPlan.profileEvidence", "decompositionPlan.parts", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["capability:additive-printability", "minimum-feature:*", "support-access:*", "first-article:*"]
+        }),
+        json!({
+            "capabilityFamily": "subtractive-tool-access-and-chip-load-envelope",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router"],
+            "capabilityScopes": ["tool-diameter", "tool-stickout", "corner-radius", "pocket-depth", "stepdown", "chip-load", "work-envelope"],
+            "requiredEvidence": [
+                "selected tool diameter, flute length, stickout, holder clearance, spindle speed, feed rate, and chip-load evidence",
+                "pocket, slot, internal-radius, undercut, and reach review against machine axes and tool access",
+                "CAM simulation, setup sheet, or operator review when geometry requires refixturing, alternate tooling, or split manufacture"
+            ],
+            "failureBoundaries": [
+                "internal corner, slot, pocket depth, or undercut cannot be reached with selected tooling and axes",
+                "feed, speed, chip load, or tool stickout exceeds reviewed process envelope",
+                "geometry requires refixture, alternate operation, or human intervention that is not represented in the plan"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "machineCodePackage.programs", "simulation.riskProfile.programRisks", "fixturePlan.setups", "machineRelease.blockers"],
+            "learningSignals": ["capability:subtractive-access", "tool-reach:*", "chip-load:*", "refixture:*"]
+        }),
+        json!({
+            "capabilityFamily": "turning-workholding-and-part-off-envelope",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "capabilityScopes": ["bar-diameter", "stickout", "minimum-diameter", "thread-pitch", "part-off-width", "subspindle-transfer", "tailstock-support"],
+            "requiredEvidence": [
+                "stock diameter, chuck/collet grip, stickout, tailstock or steady-rest support, turret tool geometry, and spindle-speed evidence",
+                "thread pitch/feed-per-rev, tool-nose radius, cutoff groove width, catcher/subspindle/tailstock support, and transfer review",
+                "operator or automation evidence for part-off, pickup, or long-slender work where support changes release state"
+            ],
+            "failureBoundaries": [
+                "slender stock, cutoff, thread, or transfer operation lacks support or spindle-synchronization evidence",
+                "tool-nose radius, groove width, or turret clearance cannot produce the requested geometry",
+                "part-off or handoff can drop, deflect, or lose datum without catcher, subspindle, tailstock, or operator plan"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "workholdingPlan.supportEvidence", "executionPlan.stopPoints", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["capability:turning-workholding", "part-off-support:*", "thread-sync:*", "turret-clearance:*"]
+        }),
+        json!({
+            "capabilityFamily": "sheet-cut-kerf-pierce-and-support-envelope",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "capabilityScopes": ["material-thickness", "kerf", "pierce-clearance", "lead-in", "minimum-web", "slug-retention", "support-media"],
+            "requiredEvidence": [
+                "cut chart, kerf/taper compensation, pierce lead-in/out, support slats or water table, assist gas/abrasive/dielectric evidence",
+                "minimum web, hole-to-edge, nest spacing, slug retention, heat-affected-zone, and edge-quality review",
+                "tabbing, sequencing, or secondary-operation plan when released geometry can shift during cutting"
+            ],
+            "failureBoundaries": [
+                "feature, web, or bridge is below kerf/pierce capability without redesign, tabbing, or alternate route",
+                "cutting feed lacks active support media, pump/beam/jet state, or slug-retention evidence",
+                "part can tip, float, weld, or shift before completion without sequencing or human intervention plan"
+            ],
+            "responseSurfaces": ["processRecipe.cutChart", "toolpathPlan.kerfCompensation", "monitoringPlan.monitorPoints", "safetyContracts.releaseBlockers", "machineRelease.blockers"],
+            "learningSignals": ["capability:sheet-cut", "kerf-limit:*", "pierce-limit:*", "slug-retention:*"]
+        }),
+        json!({
+            "capabilityFamily": "hybrid-split-combine-and-rework-envelope",
+            "machineKinds": ["hybrid-cell", "mixed-additive-subtractive-job", "manual-assembly", "robotic-assembly-cell"],
+            "capabilityScopes": ["split-boundary", "join-interface", "post-machine-stock", "bond-line", "fastener-access", "rework-allowance"],
+            "requiredEvidence": [
+                "split/combine rationale, interface-control plan, post-machining allowance, adhesive/fastener/process capability, and inspection evidence",
+                "route-by-route capability evidence showing which features are printed, milled, turned, cut, joined, finished, or reworked",
+                "assembly fixture, datum-transfer, dry-fit, or metrology plan before using combined parts as a release substitute"
+            ],
+            "failureBoundaries": [
+                "single-piece route is impossible or unreliable but no split/combine boundary has been selected",
+                "join, bond, fastener, or post-machined interface lacks capability, access, tolerance, or inspection evidence",
+                "rework or human fitting is expected without explicit intervention, datum recovery, or release-package evidence"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["capability:hybrid-route", "split-boundary:*", "join-interface:*", "rework-allowance:*"]
+        }),
+    ]
+}
+
+fn process_capability_catalog_response() -> Value {
+    let entries = process_capability_catalog_entries();
+    let capability_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("capabilityFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let capability_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("capabilityScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.process-capability-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
+        "capabilityFamilyCount": entries.len(),
+        "capabilityFamilies": capability_families,
+        "machineKinds": machine_kinds,
+        "capabilityScopes": capability_scopes,
+        "planningRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ],
+        "reviewRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result"
+        ],
+        "responseSurfaces": [
+            "designInputReview.capabilityFindings",
+            "slicerPlan.profileEvidence",
+            "toolingPlan.requirements",
+            "processRecipe.cutChart",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "qualityPlan.measurementTargets",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "process-capability-catalog",
+            "design-input-review",
+            "tooling-plan",
+            "decomposition-plan",
+            "simulation-report",
+            "mdp-request.artifacts.processCapabilityEvidence"
+        ],
+        "releasePolicy": [
+            "process-capability catalog entries describe printability, tool-access, workholding, kerf, and split/combine evidence, not certified machine capability studies",
+            "machine-ready release remains blocked when requested geometry exceeds reviewed process capability and no redesign, alternate route, split/combine plan, or human intervention evidence is present",
+            "capability failures, alternate routes, split boundaries, and measured process outcomes are retained as MDP/POMDP/neural learning signals"
+        ],
+        "processCapabilityContracts": entries
+    })
+}
+
+async fn process_capability_catalog_http() -> impl IntoResponse {
+    Json(process_capability_catalog_response())
+}
+
+fn manufacturability_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "reviewFamily": "cad-topology-and-design-intent-review",
+            "sourceKinds": ["native-cad", "neutral-cad", "mesh", "scan", "slicer-project"],
+            "machineKinds": ["all-fabrication-machines"],
+            "checkScopes": ["units", "scale", "watertightness", "open-shells", "self-intersections", "PMI", "references", "configuration"],
+            "requiredEvidence": [
+                "source format, units, scale, revision/configuration, topology, PMI/profile, and conversion-loss review",
+                "mesh watertightness, non-manifold, self-intersection, wall-thickness, and repair evidence when source is tessellated",
+                "operator or worker review for missing referenced components, suppressed features, ambiguous bodies, or scan-derived surfaces"
+            ],
+            "failureBoundaries": [
+                "geometry source is ambiguous, lossy, non-manifold, or missing referenced bodies before manufacturing method selection",
+                "units, scale, or PMI/profile evidence is absent for tolerance-critical or machine-code-generating work",
+                "source repair changes design intent without review evidence or traceable regenerated export"
+            ],
+            "responseSurfaces": ["designInputReview.reviewedInputs", "designInputReview.conversionPlan", "designExports", "provenanceContracts.releaseBlockers", "machineRelease.blockers"],
+            "learningSignals": ["manufacturability:cad-topology", "mesh-repair:*", "pmi-review:*", "conversion-loss:*"]
+        }),
+        json!({
+            "reviewFamily": "additive-dfm-print-or-split-review",
+            "sourceKinds": ["native-cad", "neutral-cad", "mesh", "parametric-design"],
+            "machineKinds": ["fdm-printer", "resin-printer", "powder-bed-printer", "multi-material-fdm-printer", "pellet-fgf-printer"],
+            "checkScopes": ["wall-thickness", "overhang", "support-access", "orientation", "build-volume", "material-shrink", "postprocess-access"],
+            "requiredEvidence": [
+                "minimum wall/hole/pin/bridge review against selected printer, material, nozzle/exposure, layer height, and support strategy",
+                "orientation, build-volume, support-removal, first-layer, postprocess, and material-shrink compensation evidence",
+                "split/combine review when geometry cannot print as a single part with accessible support removal and fit tolerance"
+            ],
+            "failureBoundaries": [
+                "feature is below additive process capability without redesign, alternate material, support, split, or combine evidence",
+                "support, resin drain, powder removal, or postprocess access is impossible without part decomposition",
+                "build envelope or warp/shrink risk requires a split route that is not represented in decompositionPlan"
+            ],
+            "responseSurfaces": ["processCapabilityContracts", "slicerPlan.profileEvidence", "decompositionPlan.parts", "postprocessPlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["manufacturability:additive-dfm", "print-or-split:*", "support-access:*", "shrink-compensation:*"]
+        }),
+        json!({
+            "reviewFamily": "subtractive-and-turning-dfm-access-review",
+            "sourceKinds": ["native-cad", "neutral-cad", "drawing", "PMI"],
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router", "lathe", "mill-turn-center"],
+            "checkScopes": ["tool-access", "internal-corners", "undercuts", "setup-count", "workholding", "stock-allowance", "turning-stickout", "part-off-support"],
+            "requiredEvidence": [
+                "tool access, cutter radius, tool length/stickout, holder clearance, stock allowance, and setup-count review",
+                "workholding, datum transfer, chuck/collet grip, tailstock/subspindle/catcher support, and operator-load evidence",
+                "alternate machine, tool, refixture, split, or additive/subtractive hybrid route review for unreachable features"
+            ],
+            "failureBoundaries": [
+                "feature requires undercut, internal radius, deep pocket, or tool reach unavailable to selected machines and tools",
+                "stock, datum, or workholding state cannot survive planned setup/turning/part-off sequence without intervention evidence",
+                "single-route machining is selected where split/combine or hybrid route is required to reach geometry"
+            ],
+            "responseSurfaces": ["toolingPlan.requirements", "fixturePlan.setups", "machineSchedule.lanes", "decompositionPlan.parts", "machineRelease.blockers"],
+            "learningSignals": ["manufacturability:subtractive-dfm", "tool-access:*", "workholding-risk:*", "hybrid-route:*"]
+        }),
+        json!({
+            "reviewFamily": "sheet-cut-and-flat-pattern-dfm-review",
+            "sourceKinds": ["flat-dxf", "sheet-metal-cad", "nest", "neutral-cad", "text-job-sheet"],
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "checkScopes": ["flat-pattern", "kerf", "minimum-web", "pierce-clearance", "bend-relief", "tabs", "nest-spacing", "slug-retention"],
+            "requiredEvidence": [
+                "flat pattern, bend relief, kerf, pierce, lead-in/out, tabbing, minimum web, and nest-spacing review",
+                "cut chart, material thickness, support media, assist gas/abrasive/dielectric, edge-quality, and slug-retention evidence",
+                "secondary operation or split route review when sheet-cut edge quality cannot meet final interface requirements"
+            ],
+            "failureBoundaries": [
+                "flat pattern or nest cannot preserve minimum web, pierce clearance, tabbing, or slug-retention requirements",
+                "sheet-cut feature needs post-machining, bending, or assembly evidence not represented in route plan",
+                "continued cutting after support-media failure would require human intervention before completion"
+            ],
+            "responseSurfaces": ["processRecipe.cutChart", "toolpathPlan.kerfCompensation", "monitoringPlan.monitorPoints", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["manufacturability:sheet-dfm", "flat-pattern:*", "kerf-review:*", "slug-retention:*"]
+        }),
+        json!({
+            "reviewFamily": "hybrid-assembly-dfm-and-interface-review",
+            "sourceKinds": ["assembly-cad", "parametric-design", "native-cad", "operator-job-sheet"],
+            "machineKinds": ["hybrid-cell", "mixed-additive-subtractive-job", "manual-assembly", "robotic-assembly-cell"],
+            "checkScopes": ["split-boundary", "interface-datum", "join-access", "bond-line", "fastener-access", "inspection-access", "rework-plan"],
+            "requiredEvidence": [
+                "split boundary, interface-control, datum-transfer, mating-surface, bond/fastener, and inspection-access evidence",
+                "route-by-route DFM review showing which features are printed, milled, turned, cut, assembled, inspected, or reworked",
+                "human-intervention, automation, dry-fit, and release-package evidence before combined parts substitute for one-piece manufacture"
+            ],
+            "failureBoundaries": [
+                "combined assembly depends on undocumented hand fitting, datum recovery, or rework intervention",
+                "join interface cannot be printed, machined, inspected, or assembled with selected route evidence",
+                "single-piece geometry is impossible but decomposition, interface control, and recomposition evidence are missing"
+            ],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["manufacturability:hybrid-dfm", "interface-dfm:*", "dry-fit:*", "rework-plan:*"]
+        }),
+    ]
+}
+
+fn manufacturability_catalog_response() -> Value {
+    let entries = manufacturability_catalog_entries();
+    let review_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("reviewFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let check_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("checkScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.manufacturability-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /manufacturability/catalog", "GET /fabrication/manufacturability/catalog"],
+        "reviewFamilyCount": entries.len(),
+        "reviewFamilies": review_families,
+        "machineKinds": machine_kinds,
+        "checkScopes": check_scopes,
+        "planningRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /design/generate",
+            "POST /fabrication/design/generate",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate"
+        ],
+        "reviewRoutes": [
+            "POST /design/import/result",
+            "POST /fabrication/design/import/result",
+            "POST /manufacturability/result",
+            "POST /fabrication/manufacturability/result",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ],
+        "responseSurfaces": [
+            "designInputReview.manufacturabilityEvidence",
+            "designInputReview.conversionPlan",
+            "processCapabilityContracts",
+            "decompositionPlan.parts",
+            "interfaceControlPlan.interfaces",
+            "assemblyPlan.requiredEvidence",
+            "qualityPlan.measurementTargets",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "manufacturability-catalog",
+            "design-input-review",
+            "process-capability-catalog",
+            "decomposition-plan",
+            "interface-control-plan",
+            "mdp-request.artifacts.manufacturabilityEvidence"
+        ],
+        "releasePolicy": [
+            "manufacturability catalog entries describe DFM, DfAM, tool-access, flat-pattern, and hybrid interface review evidence, not certified design approval",
+            "machine-ready release remains blocked when CAD, mesh, sheet, or assembly geometry needs redesign, repair, alternate routing, split/combine planning, or human intervention evidence",
+            "manufacturability failures, redesign actions, split/combine decisions, and successful route outcomes are retained as MDP/POMDP/neural learning signals"
+        ],
+        "manufacturabilityContracts": entries
+    })
+}
+
+async fn manufacturability_catalog_http() -> impl IntoResponse {
+    Json(manufacturability_catalog_response())
+}
+
+fn validate_manufacturability_result_findings(
+    findings: Option<Vec<ManufacturabilityResultFinding>>,
+) -> Result<Vec<Value>, String> {
+    let findings = findings.unwrap_or_default();
+    if findings.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "findings must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    findings
+        .into_iter()
+        .enumerate()
+        .map(|(index, finding)| {
+            let finding_id =
+                validate_label(&finding.finding_id, &format!("findings[{index}].findingId"))?;
+            let review_family = validate_label(
+                &finding.review_family,
+                &format!("findings[{index}].reviewFamily"),
+            )?;
+            let check_scope = validate_label(
+                &finding.check_scope,
+                &format!("findings[{index}].checkScope"),
+            )?;
+            let status = validate_label(&finding.status, &format!("findings[{index}].status"))?;
+            let severity = validate_optional_label(finding.severity, "severity")?;
+            let machine_kind =
+                validate_optional_label(finding.machine_kind, "findings.machineKind")?;
+            let manufacturing_method = validate_optional_label(
+                finding.manufacturing_method,
+                "findings.manufacturingMethod",
+            )?;
+            let recommended_action =
+                validate_optional_label(finding.recommended_action, "findings.recommendedAction")?;
+            let evidence =
+                validate_signal_list(finding.evidence, "findings.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "findingId": finding_id,
+                "reviewFamily": review_family,
+                "checkScope": check_scope,
+                "status": status,
+                "severity": severity,
+                "machineKind": machine_kind,
+                "manufacturingMethod": manufacturing_method,
+                "releaseBlocker": finding.release_blocker.unwrap_or(true),
+                "requiresRedesign": finding.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": finding.requires_split_combine.unwrap_or(false),
+                "requiresHumanIntervention": finding.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": recommended_action,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_manufacturability_result_route_reviews(
+    routes: Option<Vec<ManufacturabilityResultRouteReview>>,
+) -> Result<Vec<Value>, String> {
+    let routes = routes.unwrap_or_default();
+    if routes.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "routeReviews must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    routes
+        .into_iter()
+        .enumerate()
+        .map(|(index, route)| {
+            let route_id =
+                validate_label(&route.route_id, &format!("routeReviews[{index}].routeId"))?;
+            let finding_id = validate_optional_label(route.finding_id, "routeReviews.findingId")?;
+            let route_kind = validate_label(
+                &route.route_kind,
+                &format!("routeReviews[{index}].routeKind"),
+            )?;
+            let manufacturing_method = validate_optional_label(
+                route.manufacturing_method,
+                "routeReviews.manufacturingMethod",
+            )?;
+            let machine_kind =
+                validate_optional_label(route.machine_kind, "routeReviews.machineKind")?;
+            let status = validate_label(&route.status, &format!("routeReviews[{index}].status"))?;
+            let evidence =
+                validate_signal_list(route.evidence, "routeReviews.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "routeId": route_id,
+                "findingId": finding_id,
+                "routeKind": route_kind,
+                "manufacturingMethod": manufacturing_method,
+                "machineKind": machine_kind,
+                "status": status,
+                "feasible": route.feasible.unwrap_or(false),
+                "alternateRouteRequired": route.alternate_route_required.unwrap_or(false),
+                "releaseBlocker": route.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": route.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_manufacturability_result_decisions(
+    decisions: Option<Vec<ManufacturabilityResultDecision>>,
+) -> Result<Vec<Value>, String> {
+    let decisions = decisions.unwrap_or_default();
+    if decisions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "splitCombineDecisions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    decisions
+        .into_iter()
+        .enumerate()
+        .map(|(index, decision)| {
+            let decision_id = validate_label(
+                &decision.decision_id,
+                &format!("splitCombineDecisions[{index}].decisionId"),
+            )?;
+            let decision_kind = validate_label(
+                &decision.decision_kind,
+                &format!("splitCombineDecisions[{index}].decisionKind"),
+            )?;
+            let status = validate_label(
+                &decision.status,
+                &format!("splitCombineDecisions[{index}].status"),
+            )?;
+            let source_part_ids = validate_signal_list(
+                decision.source_part_ids,
+                "splitCombineDecisions.sourcePartIds",
+                MAX_LABEL_LEN,
+            )?;
+            let target_part_ids = validate_signal_list(
+                decision.target_part_ids,
+                "splitCombineDecisions.targetPartIds",
+                MAX_LABEL_LEN,
+            )?;
+            let recommended_action = validate_optional_label(
+                decision.recommended_action,
+                "splitCombineDecisions.recommendedAction",
+            )?;
+            let evidence = validate_signal_list(
+                decision.evidence,
+                "splitCombineDecisions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "decisionId": decision_id,
+                "decisionKind": decision_kind,
+                "status": status,
+                "sourcePartIds": source_part_ids,
+                "targetPartIds": target_part_ids,
+                "accepted": decision.accepted.unwrap_or(false),
+                "requiresRedesign": decision.requires_redesign.unwrap_or(false),
+                "requiresSplitCombine": decision.requires_split_combine.unwrap_or(false),
+                "releaseBlocker": decision.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": decision.requires_human_intervention.unwrap_or(false),
+                "recommendedAction": recommended_action,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_manufacturability_result_artifacts(
+    artifacts: Option<Vec<ManufacturabilityResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn manufacturability_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("infeasible")
+        || status.contains("redesign")
+        || status.contains("intervention")
+}
+
+fn manufacturability_result_finding_blocks_release(finding: &Value) -> bool {
+    finding
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || finding
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || finding
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || manufacturability_result_status_blocks_release(
+            finding.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || finding
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn manufacturability_result_route_blocks_release(route: &Value) -> bool {
+    route
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || route
+            .get("alternateRouteRequired")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !route
+            .get("feasible")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || manufacturability_result_status_blocks_release(
+            route.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn manufacturability_result_decision_blocks_release(decision: &Value) -> bool {
+    decision
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || decision
+            .get("requiresRedesign")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || !decision
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || manufacturability_result_status_blocks_release(
+            decision.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn manufacturability_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn manufacturability_result_review_response(
+    request: ManufacturabilityResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "manufacturability-result");
+    let generated_at_ms = now_ms();
+    let manufacturability_result_job_id =
+        safe_job_id("manufacturability-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
+    let reviewer_version =
+        validate_optional_text(request.reviewer_version, "reviewerVersion", MAX_LABEL_LEN)?;
+    let source_part_id = validate_optional_label(request.source_part_id, "sourcePartId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let findings = validate_manufacturability_result_findings(request.findings)?;
+    let route_reviews = validate_manufacturability_result_route_reviews(request.route_reviews)?;
+    let split_combine_decisions =
+        validate_manufacturability_result_decisions(request.split_combine_decisions)?;
+    let artifacts = validate_manufacturability_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let finding_blocker_count = findings
+        .iter()
+        .filter(|finding| manufacturability_result_finding_blocks_release(finding))
+        .count();
+    let route_blocker_count = route_reviews
+        .iter()
+        .filter(|route| manufacturability_result_route_blocks_release(route))
+        .count();
+    let infeasible_route_count = route_reviews
+        .iter()
+        .filter(|route| {
+            !route
+                .get("feasible")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let split_combine_blocker_count = split_combine_decisions
+        .iter()
+        .filter(|decision| manufacturability_result_decision_blocks_release(decision))
+        .count();
+    let redesign_required_count = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .get("requiresRedesign")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("requiresRedesign")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count();
+    let split_combine_required_count = findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .get("requiresSplitCombine")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count()
+        + split_combine_decisions
+            .iter()
+            .filter(|decision| {
+                decision
+                    .get("requiresSplitCombine")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            .count();
+    let human_intervention_required = findings.iter().any(|finding| {
+        finding
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || route_reviews.iter().any(|route| {
+        route
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || split_combine_decisions.iter().any(|decision| {
+        decision
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| manufacturability_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || findings.is_empty()
+        || finding_blocker_count > 0
+        || route_blocker_count > 0
+        || split_combine_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if findings.is_empty() {
+        "manufacturability-result-findings-required"
+    } else if !request.success {
+        "manufacturability-result-worker-failed-release-blocked"
+    } else if finding_blocker_count > 0 {
+        "manufacturability-result-findings-release-blocked"
+    } else if route_blocker_count > 0 {
+        "manufacturability-result-routes-release-blocked"
+    } else if split_combine_blocker_count > 0 {
+        "manufacturability-result-split-combine-release-blocked"
+    } else if artifact_evidence_missing {
+        "manufacturability-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "manufacturability-result-machine-ready-review-required"
+    } else if !release_ready {
+        "manufacturability-result-release-ready-review-required"
+    } else {
+        "manufacturability-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("manufacturability-worker:{worker_id}"),
+        format!("manufacturability-result:{review_status}"),
+    ];
+    if let Some(reviewer) = reviewer.as_ref() {
+        learning_observations.push(format!(
+            "manufacturability-reviewer:{}",
+            normalize_token(reviewer)
+        ));
+    }
+    if let Some(source_part_id) = source_part_id.as_ref() {
+        learning_observations.push(format!(
+            "manufacturability-source-part:{}",
+            normalize_token(source_part_id)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("manufacturability:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("manufacturability:human-intervention-required".to_string());
+    }
+    if redesign_required_count > 0 {
+        learning_observations.push("manufacturability:redesign-required".to_string());
+    }
+    if split_combine_required_count > 0 {
+        learning_observations.push("manufacturability:split-combine-required".to_string());
+    }
+    if infeasible_route_count > 0 {
+        learning_observations.push("manufacturability:route-infeasible".to_string());
+    }
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("reviewFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("manufacturability-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(findings.iter().filter_map(|finding| {
+        finding
+            .get("checkScope")
+            .and_then(Value::as_str)
+            .map(|scope| format!("manufacturability-scope:{}", normalize_token(scope)))
+    }));
+    learning_observations.extend(route_reviews.iter().filter_map(|route| {
+        route
+            .get("routeKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("manufacturability-route:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(split_combine_decisions.iter().filter_map(|decision| {
+        decision
+            .get("decisionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("manufacturability-decision:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.manufacturability-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "manufacturabilityResultJobId": manufacturability_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /manufacturability/result", "POST /fabrication/manufacturability/result"],
+        "catalogRoutes": [
+            "GET /manufacturability/catalog",
+            "GET /fabrication/manufacturability/catalog",
+            "GET /process-capabilities/catalog",
+            "GET /fabrication/process-capabilities/catalog"
+        ],
+        "planningRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /strategy/recommend",
+            "POST /fabrication/strategy/recommend"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "findingCount": findings.len(),
+        "findingBlockerCount": finding_blocker_count,
+        "routeReviewCount": route_reviews.len(),
+        "routeBlockerCount": route_blocker_count,
+        "infeasibleRouteCount": infeasible_route_count,
+        "splitCombineDecisionCount": split_combine_decisions.len(),
+        "splitCombineBlockerCount": split_combine_blocker_count,
+        "redesignRequiredCount": redesign_required_count,
+        "splitCombineRequiredCount": split_combine_required_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "manufacturabilityResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "reviewer": reviewer,
+            "reviewerVersion": reviewer_version,
+            "sourcePartId": source_part_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "findings": findings,
+            "routeReviews": route_reviews,
+            "splitCombineDecisions": split_combine_decisions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "DFM and DfAM findings are resolved or dispositioned with retained evidence",
+                "tool-access, support-access, flat-pattern, workholding, and hybrid-interface blockers have accepted route, redesign, split/combine, or human-intervention evidence",
+                "alternate route and split/combine decisions are accepted before machine-ready release",
+                "manufacturability result artifacts retain URI, checksum, format, and evidence labels"
+            ],
+            "targetSurfaces": [
+                "designInputReview.manufacturabilityEvidence",
+                "processCapabilityContracts",
+                "decompositionPlan",
+                "strategyCandidates",
+                "toolingPlan",
+                "slicerPlan",
+                "machineRelease",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "manufacturability-result",
+            "manufacturability-findings",
+            "manufacturability-route-reviews",
+            "manufacturability-split-combine-decisions",
+            "manufacturability-artifacts",
+            "manufacturability-learning-observations",
+            "mdp-request.artifacts.manufacturabilityResult"
+        ],
+        "manufacturabilityResultPolicy": [
+            "manufacturability results are retained DFM, DfAM, tool-access, support-access, flat-pattern, and hybrid-interface evidence, not certified design approval",
+            "machine-ready release remains blocked until findings, routes, split/combine decisions, artifacts, and human dispositions clear",
+            "manufacturability result observations feed MDP/POMDP/neural learning so future planners can redesign, split, combine, reroute, or request human review earlier"
+        ]
+    }))
+}
+
+fn manufacturability_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("findings-release-blocked")
+        || status.contains("routes-release-blocked")
+        || status.contains("split-combine-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_manufacturability_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "manufacturability-result");
+    let job_id = response_str_field(
+        response,
+        "manufacturabilityResultJobId",
+        &safe_job_id("manufacturability-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "manufacturability-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("manufacturabilityResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let findings = result.get("findings").cloned().unwrap_or_else(|| json!([]));
+    let route_reviews = result
+        .get("routeReviews")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let split_combine_decisions = result
+        .get("splitCombineDecisions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let manufacturability_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "manufacturability-result".to_string(),
+            "manufacturability-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "manufacturability-findings".to_string(),
+            "manufacturability-findings",
+            findings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "manufacturability-route-reviews".to_string(),
+            "manufacturability-route-reviews",
+            route_reviews,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "manufacturability-split-combine-decisions".to_string(),
+            "manufacturability-split-combine-decisions",
+            split_combine_decisions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "manufacturability-artifacts".to_string(),
+            "manufacturability-artifacts",
+            manufacturability_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "manufacturability-learning-observations".to_string(),
+            "manufacturability-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "manufacturability-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: manufacturability_result_job_severity(response),
+            summary: format!("manufacturability result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_manufacturability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_manufacturability_result_job(response));
+}
+
+fn failure_mode_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "failureFamily": "additive-print-process-failures",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "resin-printer", "powder-bed-printer"],
+            "failureModes": ["nozzle-clog", "under-extrusion", "first-layer-loss", "warping", "support-failure", "resin-cure-failure", "powder-fusion-defect"],
+            "earlySignals": [
+                "extrusion, chamber, bed, resin, powder, or recoater state deviates from selected profile",
+                "first-layer, adhesion, support, purge/prime, or material-conditioning evidence is stale or absent",
+                "geometry exceeds additive process capability or support/postprocess access"
+            ],
+            "requiredEvidence": [
+                "temperature wait, extrusion state, material conditioning, slicer preview, support strategy, and first-layer verification",
+                "machine telemetry or operator inspection evidence before continuing after pause, tool/material change, or heater/cooldown event",
+                "redesign, support, alternate material, or split/combine review when failure is geometry-driven"
+            ],
+            "releaseBlockers": [
+                "positive extrusion or exposure continues after heater, bed, stepper, pause, material, or tool state invalidates readiness",
+                "additive failure mode requires human purge, prime, cleanout, resin/powder recovery, or support repair without an intervention plan",
+                "geometry cannot print reliably as one part and lacks decomposition or alternate route evidence"
+            ],
+            "remediationRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve", "POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
+            "responseSurfaces": ["monitoringPlan.alertRules", "postprocessPlan.requiredArtifacts", "decompositionPlan.parts", "machineRelease.blockers"],
+            "learningSignals": ["failure-mode:additive", "first-layer:*", "extrusion-state:*", "support-failure:*"]
+        }),
+        json!({
+            "failureFamily": "subtractive-tool-and-fixture-failures",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "cnc-router"],
+            "failureModes": ["tool-breakage", "tool-pullout", "fixture-slip", "rapid-plunge", "spindle-speed-missing", "coolant-chip-evacuation-loss", "cutter-compensation-error"],
+            "earlySignals": [
+                "feed, speed, chip load, tool length, cutter compensation, or spindle state lacks explicit evidence",
+                "workholding, datum, probe, fixture clearance, coolant, dust, or chip evacuation evidence is missing or stopped",
+                "rapid or feed moves enter stock/fixture risk before process, tool-length, workholding, or datum readiness"
+            ],
+            "requiredEvidence": [
+                "tool, holder, offset, spindle speed/direction, coolant or dust extraction, and feed-rate evidence",
+                "workholding, datum, probe, clearance, and fixture evidence before cutting or rapid-risk moves",
+                "simulation, dry-run, operator stop point, or regenerated toolpath when controller state is unsafe"
+            ],
+            "releaseBlockers": [
+                "cutting or rapid-risk move can break tool, crash fixture, lose datum, or continue after process support is stopped",
+                "tool change, cutter compensation, length compensation, canned cycle, or arc state is unresolved before release",
+                "operator chip clearing, workholding recovery, or tool replacement is expected without explicit intervention evidence"
+            ],
+            "remediationRoutes": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate", "POST /instructions/boundaries/review", "POST /fabrication/instructions/boundaries/review"],
+            "responseSurfaces": ["toolingPlan.requirements", "fixturePlan.setups", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["failure-mode:subtractive", "tool-breakage:*", "fixture-slip:*", "controller-modal:*"]
+        }),
+        json!({
+            "failureFamily": "turning-and-part-transfer-failures",
+            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+            "failureModes": ["chuck-slip", "bar-whip", "thread-sync-loss", "tool-nose-compensation-error", "part-off-drop", "turret-collision", "subspindle-transfer-loss"],
+            "earlySignals": [
+                "stock stickout, chuck/collet grip, spindle speed, feed-per-rev, tool-nose radius, or turret clearance evidence is missing",
+                "threading, part-off, cutoff, or transfer cycle lacks catcher, tailstock, subspindle, or operator support evidence",
+                "lathe tool/turret changes occur while spindle/process state remains active"
+            ],
+            "requiredEvidence": [
+                "workholding, stickout, speed/feed synchronization, tool-nose geometry, and turret clearance evidence",
+                "catcher, subspindle, tailstock, steady rest, or operator intervention evidence for part-off and transfer",
+                "inspection, datum recovery, and regrip/reprobe evidence when part state changes across operations"
+            ],
+            "releaseBlockers": [
+                "part-off, threading, transfer, or long-stock operation can fail without support or spindle-sync evidence",
+                "tool-nose compensation, turret indexing, or spindle direction/speed state is unsafe before machine-ready release",
+                "human catch, regrip, datum recovery, or chip clearing is required but not planned"
+            ],
+            "remediationRoutes": ["POST /toolpaths/plan", "POST /fabrication/toolpaths/plan", "POST /execution/plan", "POST /fabrication/execution/plan"],
+            "responseSurfaces": ["toolingPlan.requirements", "executionPlan.stopPoints", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["failure-mode:turning", "part-off-support:*", "thread-sync:*", "turret-state:*"]
+        }),
+        json!({
+            "failureFamily": "sheet-cutting-utility-and-slug-failures",
+            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter"],
+            "failureModes": ["assist-gas-loss", "abrasive-flow-loss", "pump-pressure-loss", "fume-extraction-loss", "slug-tip-up", "kerf-overburn", "dielectric-flush-loss"],
+            "earlySignals": [
+                "beam/jet/plasma/wire support media, assist gas, abrasive, water, dielectric, extraction, or table/slat evidence is missing or stopped",
+                "nest spacing, minimum web, tabbing, lead-in/out, slug retention, or edge quality is below process capability",
+                "continued cutting after utility stop would require human intervention or support restart"
+            ],
+            "requiredEvidence": [
+                "cut chart, pump/beam/jet state, assist gas, abrasive/dielectric/extraction, support table, and slug-retention evidence",
+                "tabbing, sequencing, pierce, lead-in/out, kerf/taper compensation, and edge-quality inspection evidence",
+                "support-media restart and reverification evidence before feed cutting resumes after any stop"
+            ],
+            "releaseBlockers": [
+                "cutting feed continues after support utility, pump, gas, abrasive, extraction, or dielectric state is invalid",
+                "slug, web, tab, or thermal/abrasive edge failure can interrupt completion without sequencing or intervention plan",
+                "sheet-cut part requires secondary operation or recomposition not captured in release package"
+            ],
+            "remediationRoutes": ["POST /toolpaths/result", "POST /fabrication/toolpaths/result", "POST /monitoring/plan", "POST /fabrication/monitoring/plan"],
+            "responseSurfaces": ["processRecipe.cutChart", "monitoringPlan.monitorPoints", "toolpathPlan.kerfCompensation", "machineRelease.blockers"],
+            "learningSignals": ["failure-mode:sheet-cut", "support-media:*", "slug-retention:*", "kerf-failure:*"]
+        }),
+        json!({
+            "failureFamily": "hybrid-route-and-human-intervention-failures",
+            "machineKinds": ["hybrid-cell", "mixed-additive-subtractive-job", "manual-assembly", "robotic-assembly-cell"],
+            "failureModes": ["split-boundary-missing", "join-interface-mismatch", "datum-transfer-loss", "dry-fit-failure", "robot-fixture-collision", "unplanned-human-fitup"],
+            "earlySignals": [
+                "single-piece route is selected despite additive, subtractive, or sheet capability failure",
+                "interface, datum, bond, fastener, fixture, dry-fit, inspection, or rework evidence is missing",
+                "human fit-up or robot/fixture intervention is expected but not represented in execution/release plans"
+            ],
+            "requiredEvidence": [
+                "decomposition, interface-control, recomposition, fixture, dry-fit, and inspection evidence",
+                "operator-intervention, automation, stop-point, datum recovery, and release-package evidence",
+                "learning outcome trace tying prior split/combine success or failure to current route choice"
+            ],
+            "releaseBlockers": [
+                "machine cannot complete job as one part and no split/combine plan is selected",
+                "combined route requires undocumented human fitting, rework, datum recovery, or assembly intervention",
+                "learned route preference lacks source outcome evidence or contradicts current release blockers"
+            ],
+            "remediationRoutes": ["POST /decomposition/plan", "POST /fabrication/decomposition/plan", "POST /assembly/plan", "POST /fabrication/assembly/plan", "POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
+            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "learning.outcomes", "machineRelease.blockers"],
+            "learningSignals": ["failure-mode:hybrid-route", "split-boundary:*", "human-fitup:*", "join-interface:*"]
+        }),
+    ]
+}
+
+fn failure_mode_catalog_response() -> Value {
+    let entries = failure_mode_catalog_entries();
+    let failure_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("failureFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let failure_modes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("failureModes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.failure-mode-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
+        "failureFamilyCount": entries.len(),
+        "failureFamilies": failure_families,
+        "machineKinds": machine_kinds,
+        "failureModes": failure_modes,
+        "planningRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /strategy/recommend",
+            "POST /fabrication/strategy/recommend"
+        ],
+        "reviewRoutes": [
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /execution/result",
+            "POST /fabrication/execution/result",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "responseSurfaces": [
+            "boundarySummary.boundaries",
+            "interventionMap.requiredInterventions",
+            "simulation.riskProfile.programRisks",
+            "decompositionPlan.parts",
+            "executionPlan.stopPoints",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "failure-mode-catalog",
+            "boundary-summary",
+            "intervention-map",
+            "simulation-report",
+            "execution-plan",
+            "mdp-request.artifacts.failureModes"
+        ],
+        "releasePolicy": [
+            "failure-mode catalog entries describe process-failure signatures and evidence gates, not certified machine diagnostics",
+            "machine-ready release remains blocked while likely failure modes require unresolved human intervention, redesign, support restart, tool/process state recovery, or split/combine planning",
+            "failure signatures, remediation choices, split/combine outcomes, and operator interventions are retained as MDP/POMDP/neural learning signals"
+        ],
+        "failureModeContracts": entries
+    })
+}
+
+async fn failure_mode_catalog_http() -> impl IntoResponse {
+    Json(failure_mode_catalog_response())
+}
+
+fn validate_failure_mode_result_events(
+    events: Option<Vec<FailureModeResultEvent>>,
+) -> Result<Vec<Value>, String> {
+    let events = events.unwrap_or_default();
+    if events.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "failureEvents must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    events
+        .into_iter()
+        .enumerate()
+        .map(|(index, event)| {
+            let event_id =
+                validate_label(&event.event_id, &format!("failureEvents[{index}].eventId"))?;
+            let failure_family = validate_label(
+                &event.failure_family,
+                &format!("failureEvents[{index}].failureFamily"),
+            )?;
+            let failure_mode = validate_label(
+                &event.failure_mode,
+                &format!("failureEvents[{index}].failureMode"),
+            )?;
+            let status = validate_label(&event.status, &format!("failureEvents[{index}].status"))?;
+            let severity = validate_optional_label(event.severity, "failureEvents.severity")?;
+            let source_surface =
+                validate_optional_label(event.source_surface, "failureEvents.sourceSurface")?;
+            let recommended_action = validate_optional_label(
+                event.recommended_action,
+                "failureEvents.recommendedAction",
+            )?;
+            let evidence =
+                validate_signal_list(event.evidence, "failureEvents.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "eventId": event_id,
+                "failureFamily": failure_family,
+                "failureMode": failure_mode,
+                "status": status,
+                "severity": severity,
+                "sourceSurface": source_surface,
+                "releaseBlocker": event.release_blocker.unwrap_or(true),
+                "predicted": event.predicted.unwrap_or(false),
+                "occurred": event.occurred.unwrap_or(false),
+                "requiresRecovery": event.requires_recovery.unwrap_or(true),
+                "requiresHumanIntervention": event.requires_human_intervention.unwrap_or(false),
+                "requiresSplitCombine": event.requires_split_combine.unwrap_or(false),
+                "recommendedAction": recommended_action,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_failure_mode_result_recovery_actions(
+    actions: Option<Vec<FailureModeResultRecoveryAction>>,
+) -> Result<Vec<Value>, String> {
+    let actions = actions.unwrap_or_default();
+    if actions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "recoveryActions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    actions
+        .into_iter()
+        .enumerate()
+        .map(|(index, action)| {
+            let action_id = validate_label(
+                &action.action_id,
+                &format!("recoveryActions[{index}].actionId"),
+            )?;
+            let event_id = validate_optional_label(action.event_id, "recoveryActions.eventId")?;
+            let action_kind = validate_label(
+                &action.action_kind,
+                &format!("recoveryActions[{index}].actionKind"),
+            )?;
+            let status =
+                validate_label(&action.status, &format!("recoveryActions[{index}].status"))?;
+            let evidence =
+                validate_signal_list(action.evidence, "recoveryActions.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "actionId": action_id,
+                "eventId": event_id,
+                "actionKind": action_kind,
+                "status": status,
+                "completed": action.completed.unwrap_or(false),
+                "releaseBlocker": action.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": action.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_failure_mode_result_interventions(
+    interventions: Option<Vec<FailureModeResultIntervention>>,
+) -> Result<Vec<Value>, String> {
+    let interventions = interventions.unwrap_or_default();
+    if interventions.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "interventions must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    interventions
+        .into_iter()
+        .enumerate()
+        .map(|(index, intervention)| {
+            let intervention_id = validate_label(
+                &intervention.intervention_id,
+                &format!("interventions[{index}].interventionId"),
+            )?;
+            let event_id = validate_optional_label(intervention.event_id, "interventions.eventId")?;
+            let intervention_kind = validate_label(
+                &intervention.intervention_kind,
+                &format!("interventions[{index}].interventionKind"),
+            )?;
+            let status = validate_label(
+                &intervention.status,
+                &format!("interventions[{index}].status"),
+            )?;
+            let operator_minutes = intervention
+                .operator_minutes
+                .map(|minutes| finite_non_negative(minutes, "operatorMinutes"))
+                .transpose()?;
+            let evidence = validate_signal_list(
+                intervention.evidence,
+                "interventions.evidence",
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "interventionId": intervention_id,
+                "eventId": event_id,
+                "interventionKind": intervention_kind,
+                "status": status,
+                "required": intervention.required.unwrap_or(true),
+                "completed": intervention.completed.unwrap_or(false),
+                "operatorMinutes": operator_minutes,
+                "releaseBlocker": intervention.release_blocker.unwrap_or(true),
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn validate_failure_mode_result_artifacts(
+    artifacts: Option<Vec<FailureModeResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id =
+                validate_optional_label(artifact.source_ref_id, "artifacts.sourceRefId")?;
+            let uri = validate_optional_text(artifact.uri, "artifacts.uri", 2048)?;
+            let sha256 = validate_optional_label(artifact.sha256, "artifacts.sha256")?;
+            let format = validate_optional_label(artifact.format, "artifacts.format")?;
+            let evidence =
+                validate_signal_list(artifact.evidence, "artifacts.evidence", MAX_TEXT_LEN)?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn failure_mode_result_status_blocks_release(status: &str) -> bool {
+    let status = normalize_token(status);
+    status.contains("fail")
+        || status.contains("blocked")
+        || status.contains("missing")
+        || status.contains("unresolved")
+        || status.contains("active")
+        || status.contains("predicted")
+        || status.contains("intervention")
+}
+
+fn failure_mode_result_event_blocks_release(event: &Value) -> bool {
+    event
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || event
+            .get("requiresRecovery")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+        || event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || event
+            .get("requiresSplitCombine")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || failure_mode_result_status_blocks_release(
+            event.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+        || event
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn failure_mode_result_action_blocks_release(action: &Value) -> bool {
+    action
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !action
+            .get("completed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || failure_mode_result_status_blocks_release(
+            action.get("status").and_then(Value::as_str).unwrap_or(""),
+        )
+}
+
+fn failure_mode_result_intervention_blocks_release(intervention: &Value) -> bool {
+    intervention
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || (intervention
+            .get("required")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+            && !intervention
+                .get("completed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false))
+        || failure_mode_result_status_blocks_release(
+            intervention
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )
+}
+
+fn failure_mode_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn failure_mode_result_review_response(
+    request: FailureModeResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "failure-mode-result");
+    let generated_at_ms = now_ms();
+    let failure_mode_result_job_id =
+        safe_job_id("failure-mode-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let monitor = validate_optional_label(request.monitor, "monitor")?;
+    let monitor_version =
+        validate_optional_text(request.monitor_version, "monitorVersion", MAX_LABEL_LEN)?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let failure_events = validate_failure_mode_result_events(request.failure_events)?;
+    let recovery_actions = validate_failure_mode_result_recovery_actions(request.recovery_actions)?;
+    let interventions = validate_failure_mode_result_interventions(request.interventions)?;
+    let artifacts = validate_failure_mode_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let event_blocker_count = failure_events
+        .iter()
+        .filter(|event| failure_mode_result_event_blocks_release(event))
+        .count();
+    let recovery_blocker_count = recovery_actions
+        .iter()
+        .filter(|action| failure_mode_result_action_blocks_release(action))
+        .count();
+    let intervention_blocker_count = interventions
+        .iter()
+        .filter(|intervention| failure_mode_result_intervention_blocks_release(intervention))
+        .count();
+    let human_intervention_required = failure_events.iter().any(|event| {
+        event
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || recovery_actions.iter().any(|action| {
+        action
+            .get("requiresHumanIntervention")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }) || interventions.iter().any(|intervention| {
+        intervention
+            .get("required")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let split_combine_required_count = failure_events
+        .iter()
+        .filter(|event| {
+            event
+                .get("requiresSplitCombine")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| failure_mode_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || failure_events.is_empty()
+        || event_blocker_count > 0
+        || recovery_blocker_count > 0
+        || intervention_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if failure_events.is_empty() {
+        "failure-mode-result-events-required"
+    } else if !request.success {
+        "failure-mode-result-worker-failed-release-blocked"
+    } else if event_blocker_count > 0 {
+        "failure-mode-result-events-release-blocked"
+    } else if recovery_blocker_count > 0 {
+        "failure-mode-result-recovery-release-blocked"
+    } else if intervention_blocker_count > 0 {
+        "failure-mode-result-interventions-release-blocked"
+    } else if artifact_evidence_missing {
+        "failure-mode-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "failure-mode-result-machine-ready-review-required"
+    } else if !release_ready {
+        "failure-mode-result-release-ready-review-required"
+    } else {
+        "failure-mode-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("failure-mode-worker:{worker_id}"),
+        format!("failure-mode-result:{review_status}"),
+    ];
+    if let Some(machine_kind) = machine_kind.as_ref() {
+        learning_observations.push(format!(
+            "failure-mode-machine-kind:{}",
+            normalize_token(machine_kind)
+        ));
+    }
+    if release_blocked {
+        learning_observations.push("failure-mode:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("failure-mode:human-intervention-required".to_string());
+    }
+    if split_combine_required_count > 0 {
+        learning_observations.push("failure-mode:split-combine-required".to_string());
+    }
+    learning_observations.extend(failure_events.iter().filter_map(|event| {
+        event
+            .get("failureFamily")
+            .and_then(Value::as_str)
+            .map(|family| format!("failure-family:{}", normalize_token(family)))
+    }));
+    learning_observations.extend(failure_events.iter().filter_map(|event| {
+        event
+            .get("failureMode")
+            .and_then(Value::as_str)
+            .map(|mode| format!("failure-mode:{}", normalize_token(mode)))
+    }));
+    learning_observations.extend(recovery_actions.iter().filter_map(|action| {
+        action
+            .get("actionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("failure-recovery:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(interventions.iter().filter_map(|intervention| {
+        intervention
+            .get("interventionKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("failure-intervention:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.failure-mode-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "failureModeResultJobId": failure_mode_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
+        "catalogRoutes": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
+        "remediationRoutes": [
+            "POST /remediation/plan",
+            "POST /fabrication/remediation/plan",
+            "POST /instructions/boundaries/review",
+            "POST /fabrication/instructions/boundaries/review",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "failureEventCount": failure_events.len(),
+        "eventBlockerCount": event_blocker_count,
+        "recoveryActionCount": recovery_actions.len(),
+        "recoveryBlockerCount": recovery_blocker_count,
+        "interventionCount": interventions.len(),
+        "interventionBlockerCount": intervention_blocker_count,
+        "splitCombineRequiredCount": split_combine_required_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "failureModeResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "monitor": monitor,
+            "monitorVersion": monitor_version,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "failureEvents": failure_events,
+            "recoveryActions": recovery_actions,
+            "interventions": interventions,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "failure events are resolved or dispositioned with retained evidence",
+                "recovery actions prove process, tool, support, utility, datum, or geometry state was restored",
+                "required human interventions, stop points, split/combine plans, or redesign actions are completed before release",
+                "failure-mode artifacts retain URI, checksum, format, and evidence labels"
+            ],
+            "targetSurfaces": [
+                "boundarySummary.boundaries",
+                "interventionMap.requiredInterventions",
+                "simulation.riskProfile",
+                "monitoringPlan.alertRules",
+                "executionPlan.stopPoints",
+                "machineRelease",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "failure-mode-result",
+            "failure-mode-events",
+            "failure-mode-recovery-actions",
+            "failure-mode-interventions",
+            "failure-mode-artifacts",
+            "failure-mode-learning-observations",
+            "mdp-request.artifacts.failureModeResult"
+        ],
+        "failureModeResultPolicy": [
+            "failure-mode results are retained process-boundary, recovery, intervention, and learning evidence, not certified machine diagnostics",
+            "machine-ready release remains blocked until failure events, recovery actions, interventions, artifacts, and human dispositions clear",
+            "failure-mode observations feed MDP/POMDP/neural learning so future planners can avoid unsafe routes, insert stop points, split/combine parts, or request human intervention earlier"
+        ]
+    }))
+}
+
+fn failure_mode_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("events-release-blocked")
+        || status.contains("recovery-release-blocked")
+        || status.contains("interventions-release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_failure_mode_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "failure-mode-result");
+    let job_id = response_str_field(
+        response,
+        "failureModeResultJobId",
+        &safe_job_id("failure-mode-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "failure-mode-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("failureModeResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let failure_events = result
+        .get("failureEvents")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let recovery_actions = result
+        .get("recoveryActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let interventions = result
+        .get("interventions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let failure_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "failure-mode-result".to_string(),
+            "failure-mode-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-events".to_string(),
+            "failure-mode-events",
+            failure_events,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-recovery-actions".to_string(),
+            "failure-mode-recovery-actions",
+            recovery_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-interventions".to_string(),
+            "failure-mode-interventions",
+            interventions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-artifacts".to_string(),
+            "failure-mode-artifacts",
+            failure_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-learning-observations".to_string(),
+            "failure-mode-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "failure-mode-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: failure_mode_result_job_severity(response),
+            summary: format!("failure mode result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_failure_mode_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_failure_mode_result_job(response));
 }
 
 fn safety_catalog_entries() -> Vec<Value> {
@@ -56766,6 +64115,181 @@ fn environment_catalog_response() -> Value {
 
 async fn environment_catalog_http() -> impl IntoResponse {
     Json(environment_catalog_response())
+}
+
+fn provenance_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "provenanceFamily": "design-input-and-cad-lineage",
+            "machineKinds": ["all-fabrication-machines"],
+            "evidenceScopes": ["native-cad", "neutral-cad", "mesh", "PMI", "revision", "conversion-log"],
+            "requiredEvidence": [
+                "source URI digest, CAD format, revision, configuration, units, scale, PMI/GD&T extraction, and conversion lineage",
+                "translator, mesh repair, export, and design synthesis artifact hashes",
+                "operator or worker review for ambiguous extensions, missing references, or lossy conversions"
+            ],
+            "releaseBlockers": [
+                "design input lacks digest, revision, units, scale, or conversion provenance",
+                "native CAD, mesh, or PMI conversion is lossy or ambiguous without review evidence",
+                "generated design package cannot be traced back to accepted source artifacts"
+            ],
+            "responseSurfaces": ["designInputReview.conversionPlan", "designPackage.parts", "designExports", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["provenance:design-lineage", "cad-conversion:*", "mesh-repair:*", "pmi-extraction:*"]
+        }),
+        json!({
+            "provenanceFamily": "material-lot-and-feedstock-traceability",
+            "machineKinds": ["fdm-printer", "resin-printer", "powder-bed-printer", "lathe", "mill-turn-center", "sheet-cutter"],
+            "evidenceScopes": ["material-lot", "certificate", "stock-heat", "drying-profile", "powder-reuse", "resin-batch"],
+            "requiredEvidence": [
+                "material lot, certificate, stock heat, supplier, dimensions, storage, conditioning, and reuse evidence",
+                "feedstock preparation, drying, sieving, resin mix, powder refresh, or stock facing records",
+                "material-machine-process compatibility review linked to plan and release artifacts"
+            ],
+            "releaseBlockers": [
+                "material or stock lacks lot, certificate, conditioning, or compatibility provenance",
+                "powder/resin/filament reuse or drying state is not linked to the released job",
+                "stock dimensions or material identity changed after planning without traceable review"
+            ],
+            "responseSurfaces": ["materialPlan.routeRequirements", "environmentContracts.releaseBlockers", "qualityPlan.measurementTargets", "machineRelease.blockers"],
+            "learningSignals": ["provenance:material-lot", "feedstock-condition:*", "certificate:*", "stock-identity:*"]
+        }),
+        json!({
+            "provenanceFamily": "machine-program-and-controller-artifact-lineage",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "lathe", "cnc-router", "sheet-cutter", "additive-printer"],
+            "evidenceScopes": ["controller-program", "postprocessor", "slicer-profile", "toolpath", "machine-code", "macro-dependency"],
+            "requiredEvidence": [
+                "postprocessor/slicer/controller version, generated machine-code hash, and submitted program digest",
+                "toolpath, simulation, validation, improvement, and controller-review artifact references",
+                "external subprogram, macro, parameter, or operator-loaded controller state review"
+            ],
+            "releaseBlockers": [
+                "program hash, postprocessor/slicer profile, controller target, or machine-code lineage is missing",
+                "imported CNC/controller macro or subprogram dependency lacks traceable review evidence",
+                "improved or regenerated instructions cannot be reconciled with submitted source instructions"
+            ],
+            "responseSurfaces": ["controllerPlan.requiredControllerChecks", "machineCodePackage.programs", "simulation.riskProfile.programRisks", "machineRelease.blockers"],
+            "learningSignals": ["provenance:program-lineage", "postprocessor:*", "slicer-profile:*", "macro-review:*"]
+        }),
+        json!({
+            "provenanceFamily": "inspection-release-and-nonconformance-ledger",
+            "machineKinds": ["all-fabrication-machines", "coordinate-measuring-machine", "probe-equipped-mill", "probe-equipped-lathe"],
+            "evidenceScopes": ["inspection-report", "calibration-record", "quality-result", "nonconformance", "release-bundle", "operator-signoff"],
+            "requiredEvidence": [
+                "measurement target, gauge/CMM/probe calibration, pass/fail, nonconformance, disposition, and signoff records",
+                "release bundle artifact manifest with hashes for design, material, machine program, setup, simulation, quality, and safety evidence",
+                "operator or automation approval trail for machine-ready and final release"
+            ],
+            "releaseBlockers": [
+                "quality or calibration result lacks traceable measurements, disposition, or signoff",
+                "release bundle is missing design/material/program/setup/inspection/safety artifact lineage",
+                "nonconformance, rework, or deviation is unresolved before machine-ready or final release"
+            ],
+            "responseSurfaces": ["qualityPlan.measurementTargets", "calibrationPlan.requiredEvidence", "releasePackagePlan.packages", "machineRelease.blockers"],
+            "learningSignals": ["provenance:release-ledger", "inspection-result:*", "nonconformance:*", "release-signoff:*"]
+        }),
+        json!({
+            "provenanceFamily": "learning-outcome-and-policy-memory-lineage",
+            "machineKinds": ["all-fabrication-machines"],
+            "evidenceScopes": ["mdp-outcome", "pomdp-belief", "neural-training-example", "policy-snapshot", "reward", "remediation-risk"],
+            "requiredEvidence": [
+                "fabrication outcome, reward, artifacts, boundary decisions, remediation actions, and policy snapshot references",
+                "training example provenance linking plan, instructions, machine, material, inspection, and release artifacts",
+                "bounded retention/redaction evidence before learning records affect future planning"
+            ],
+            "releaseBlockers": [
+                "learning outcome cannot be traced to source plan, job, artifacts, and policy snapshot",
+                "policy preference update lacks bounded provenance, reward, or redaction evidence",
+                "future generated plan uses learned preference without auditable source outcome lineage"
+            ],
+            "responseSurfaces": ["learning.policySnapshot", "learning.outcomes", "remediationPlan.actions", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["provenance:learning-lineage", "mdp-outcome:*", "policy-snapshot:*", "training-example:*"]
+        }),
+    ]
+}
+
+fn provenance_catalog_response() -> Value {
+    let entries = provenance_catalog_entries();
+    let provenance_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("provenanceFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let evidence_scopes = unique_sorted(entries.iter().flat_map(|entry| {
+        entry
+            .get("evidenceScopes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.provenance-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
+        "provenanceFamilyCount": entries.len(),
+        "provenanceFamilies": provenance_families,
+        "machineKinds": machine_kinds,
+        "evidenceScopes": evidence_scopes,
+        "planningRoutes": [
+            "POST /design/import/review",
+            "POST /fabrication/design/import/review",
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ],
+        "reviewRoutes": [
+            "GET /jobs/:job_id/release-bundle",
+            "GET /fabrication/jobs/:job_id/release-bundle",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /outcomes",
+            "POST /fabrication/outcomes"
+        ],
+        "responseSurfaces": [
+            "designInputReview.conversionPlan",
+            "designPackage.parts",
+            "materialPlan.routeRequirements",
+            "machineCodePackage.programs",
+            "qualityPlan.measurementTargets",
+            "releasePackagePlan.packages",
+            "learning.policySnapshot",
+            "learning.outcomes",
+            "machineRelease.blockers"
+        ],
+        "artifactSurfaces": [
+            "design-package",
+            "material-plan",
+            "machine-code-package",
+            "inspection-report",
+            "release-bundle",
+            "mdp-request.artifacts.provenanceLedger"
+        ],
+        "releasePolicy": [
+            "provenance catalog entries describe design, material, machine-program, inspection, release, and learning lineage evidence, not certified quality records",
+            "machine-ready release remains blocked until source artifacts, material lots, generated or imported programs, inspection results, release bundles, and learning outcomes have traceable hashes, revisions, review status, and signoff evidence",
+            "artifact hashes, conversion logs, lot records, controller program digests, inspection dispositions, nonconformance decisions, and learning outcome lineage are retained as MDP/POMDP/neural learning signals"
+        ],
+        "provenanceContracts": entries
+    })
+}
+
+async fn provenance_catalog_http() -> impl IntoResponse {
+    Json(provenance_catalog_response())
 }
 
 fn setup_planning_response(
@@ -64516,6 +72040,141 @@ async fn learning_capabilities() -> impl IntoResponse {
     Json(learning_capability_catalog_response())
 }
 
+fn learning_reward_catalog_entries() -> Vec<Value> {
+    vec![
+        json!({
+            "rewardFamily": "machine-ready-release-success",
+            "rewardDirection": "positive",
+            "appliesTo": ["validated generated program", "successful imported instruction review", "cleared release package", "accepted quality result"],
+            "rewardEvidence": [
+                "machineReady and releaseReady are true after validation, simulation, setup, quality, monitoring, and release gates clear",
+                "generated or imported instruction artifacts carry URI, checksum, controller, machine, material, and evidence labels",
+                "runtime telemetry and final disposition confirm no unresolved machine stop, operator rescue, scrap, or rework blocker",
+                "learning outcome links plan job, program hash, artifacts, observations, and route/method/machine features"
+            ],
+            "rewardTerms": ["release-success:+3", "artifact-evidence:+1", "telemetry-confirmed:+1", "quality-accepted:+1"],
+            "trainingSurfaces": ["learning.outcomes", "mdp_update", "neural_example", "releasePackagePlan.packages", "executionTelemetryResult.telemetryArtifacts"]
+        }),
+        json!({
+            "rewardFamily": "machine-failure-boundary-penalty",
+            "rewardDirection": "negative",
+            "appliesTo": ["validation failure", "simulation failure", "runtime stop", "machine alarm", "unresolved boundary"],
+            "rewardEvidence": [
+                "failure boundary records machine class, program id, line/span, boundary kind, severity, and recommended action",
+                "simulation or telemetry confirms collision, envelope, process stop, tool, utility, workholding, material, or controller-state failure",
+                "human intervention or safe-stop evidence is retained when the machine cannot complete unattended",
+                "false positive and false negative boundary labels are preserved for policy recalibration"
+            ],
+            "rewardTerms": ["machine-failure:-5", "unresolved-boundary:-3", "operator-rescue:-2", "false-negative:-4"],
+            "trainingSurfaces": ["validation.failureBoundaries", "simulation.findings", "executionTelemetryResult.machineStops", "failureModeResult.failureEvents", "learning.outcomes"]
+        }),
+        json!({
+            "rewardFamily": "split-combine-recovery-and-route-improvement",
+            "rewardDirection": "mixed",
+            "appliesTo": ["failed one-piece print", "hybrid print/mill recovery", "assembly recomposition", "route redesign"],
+            "rewardEvidence": [
+                "decomposition and interface-control plans identify new parts, joining strategy, datum transfer, and final inspection gates",
+                "assembly, workholding, postprocess, and quality evidence prove the split/combine route can release safely",
+                "rework, scrap, cycle-time, material-yield, and human-intervention deltas compare original and revised routes",
+                "policy outcome records whether split/combine reduced failures or merely moved risk to assembly"
+            ],
+            "rewardTerms": ["split-combine-success:+2", "route-risk-reduced:+1", "assembly-rework:-2", "hidden-interface-failure:-3"],
+            "trainingSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.requiredEvidence", "costContracts", "dispositions", "learning.outcomes"]
+        }),
+        json!({
+            "rewardFamily": "human-intervention-and-automation-cost",
+            "rewardDirection": "negative-or-neutral",
+            "appliesTo": ["manual reload", "tool change", "pause/resume", "fixture reset", "operator signoff", "automation recovery"],
+            "rewardEvidence": [
+                "operator intervention plan states whether the intervention was planned, required, avoidable, or automation-recoverable",
+                "execution telemetry records actual stop time, operator action, restart/rehome/reprobe evidence, and final disposition",
+                "release package distinguishes planned human checkpoints from unexpected rescues or unsafe manual recovery",
+                "future plans can learn when to add automation, sensors, split work, or explicit human gates"
+            ],
+            "rewardTerms": ["planned-human-checkpoint:-0.5", "unexpected-human-rescue:-2", "automation-recovered:+1", "missing-signoff:-2"],
+            "trainingSurfaces": ["operatorInterventionPlan.requiredOperatorActions", "executionTelemetryResult.operatorInterventions", "monitoringResult.alerts", "releasePackagePlan.releaseGates", "learning.outcomes"]
+        }),
+        json!({
+            "rewardFamily": "evidence-quality-and-learning-usability",
+            "rewardDirection": "gating",
+            "appliesTo": ["all generated plans", "worker results", "telemetry reviews", "learning observations"],
+            "rewardEvidence": [
+                "learning outcome includes reward, reward terms, state/action features, policy state, observations, and artifact links",
+                "artifacts are bounded, redacted, checksum-addressed, and tied to request id, job id, machine id, and program id",
+                "MDP/POMDP/neural examples are compatible with the local des_engine primitives and do not replace release gates",
+                "low-quality evidence blocks promotion even when a nominal success reward exists"
+            ],
+            "rewardTerms": ["evidence-complete:+1", "missing-artifact:-2", "unlabeled-telemetry:-1", "promotion-blocked:gate"],
+            "trainingSurfaces": ["reward_terms", "mdp_update", "neural_example", "learningPolicySnapshot", "artifactCatalog.artifactSurfaces", "provenanceContracts"]
+        }),
+    ]
+}
+
+fn learning_reward_catalog_response() -> Value {
+    let entries = learning_reward_catalog_entries();
+    let reward_families = unique_sorted(entries.iter().filter_map(|entry| {
+        entry
+            .get("rewardFamily")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-reward-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/rewards/catalog",
+            "GET /fabrication/learning/rewards/catalog"
+        ],
+        "rewardFamilyCount": entries.len(),
+        "rewardFamilies": reward_families,
+        "learningRoutes": [
+            "GET /learning/capabilities",
+            "GET /fabrication/learning/capabilities",
+            "GET /learning/policy",
+            "GET /fabrication/learning/policy",
+            "GET /learning/outcomes",
+            "GET /fabrication/learning/outcomes",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes",
+            "POST /learning/observe",
+            "POST /fabrication/learning/observe"
+        ],
+        "engineTargets": ["DES", "MDP", "POMDP", "neural"],
+        "responseSurfaces": [
+            "learning.outcomes",
+            "reward_terms",
+            "mdp_update",
+            "neural_example",
+            "validation.failureBoundaries",
+            "executionTelemetryResult.machineStops",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "decompositionPlan.parts",
+            "releasePackagePlan.releaseGates"
+        ],
+        "artifactSurfaces": [
+            "learning-outcome-record",
+            "mdp-request",
+            "pomdp-belief-state",
+            "neural-training-corpus",
+            "runtime-boundary-correlation",
+            "release-package-manifest"
+        ],
+        "releasePolicy": [
+            "learning reward catalog entries describe policy-training evidence contracts, not controller approval, certified safety validation, or autonomous release authority",
+            "positive rewards cannot bypass validation, simulation, quality, setup, telemetry, operator, or release-package blockers",
+            "reward terms are retained so DES/MDP/POMDP/neural workers can learn which generated instructions, imported programs, machine choices, split/combine boundaries, and human checkpoints improved future fabrication outcomes"
+        ],
+        "rewardContracts": entries
+    })
+}
+
+async fn learning_reward_catalog_http() -> impl IntoResponse {
+    Json(learning_reward_catalog_response())
+}
+
 async fn capabilities() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -64540,6 +72199,8 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/design/formats",
                 "GET /slicers/catalog",
                 "GET /fabrication/slicers/catalog",
+                "POST /slicers/result",
+                "POST /fabrication/slicers/result",
                 "GET /mesh-repair/catalog",
                 "GET /fabrication/mesh-repair/catalog",
                 "GET /design/import/catalog",
@@ -64554,6 +72215,8 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/design/generate",
                 "POST /design/import/review",
                 "POST /fabrication/design/import/review",
+                "POST /design/import/result",
+                "POST /fabrication/design/import/result",
                 "POST /design/convert/plan",
                 "POST /fabrication/design/convert/plan",
                 "POST /design/convert/result",
@@ -64604,6 +72267,12 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/release/catalog",
                 "POST /release/result",
                 "POST /fabrication/release/result",
+                "GET /strategy/catalog",
+                "GET /fabrication/strategy/catalog",
+                "POST /strategy/recommend",
+                "POST /fabrication/strategy/recommend",
+                "POST /strategy/result",
+                "POST /fabrication/strategy/result",
                 "GET /schedule/catalog",
                 "GET /fabrication/schedule/catalog",
                 "POST /schedule/result",
@@ -64632,16 +72301,38 @@ async fn capabilities() -> impl IntoResponse {
                 "GET /fabrication/setup/catalog",
                 "GET /tooling/catalog",
                 "GET /fabrication/tooling/catalog",
+                "GET /workholding/catalog",
+                "GET /fabrication/workholding/catalog",
+                "GET /support-strategies/catalog",
+                "GET /fabrication/support-strategies/catalog",
+                "POST /support-strategies/result",
+                "POST /fabrication/support-strategies/result",
                 "GET /process-recipes/catalog",
                 "GET /fabrication/process-recipes/catalog",
+                "POST /process-recipes/result",
+                "POST /fabrication/process-recipes/result",
                 "GET /kinematics/catalog",
                 "GET /fabrication/kinematics/catalog",
-                "GET /tolerances/catalog",
-                "GET /fabrication/tolerances/catalog",
-                "GET /safety/catalog",
-                "GET /fabrication/safety/catalog",
+                "POST /kinematics/result",
+                "POST /fabrication/kinematics/result",
+            "GET /tolerances/catalog",
+            "GET /fabrication/tolerances/catalog",
+            "GET /process-capabilities/catalog",
+            "GET /fabrication/process-capabilities/catalog",
+            "GET /manufacturability/catalog",
+            "GET /fabrication/manufacturability/catalog",
+            "POST /manufacturability/result",
+            "POST /fabrication/manufacturability/result",
+            "GET /failure-modes/catalog",
+            "GET /fabrication/failure-modes/catalog",
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "GET /safety/catalog",
+            "GET /fabrication/safety/catalog",
                 "GET /environment/catalog",
                 "GET /fabrication/environment/catalog",
+                "GET /provenance/catalog",
+                "GET /fabrication/provenance/catalog",
                 "POST /setup/plan",
                 "POST /fabrication/setup/plan",
                 "POST /setup/result",
@@ -64673,7 +72364,9 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /release/preview",
                 "POST /fabrication/release/preview",
                 "POST /strategy/recommend",
-                "POST /fabrication/strategy/recommend"
+                "POST /fabrication/strategy/recommend",
+                "POST /strategy/result",
+                "POST /fabrication/strategy/result"
             ],
             "instructionGeneration": [
                 "POST /instructions/generate",
@@ -65099,6 +72792,8 @@ fn slicer_profile_catalog_response() -> Value {
         "reviewRoutes": [
             "POST /design/import/review",
             "POST /fabrication/design/import/review",
+            "POST /slicers/result",
+            "POST /fabrication/slicers/result",
             "POST /instructions/validate",
             "POST /fabrication/instructions/validate",
             "POST /simulation/run",
@@ -65124,6 +72819,578 @@ fn slicer_profile_catalog_response() -> Value {
 
 async fn slicer_profile_catalog_http() -> impl IntoResponse {
     Json(slicer_profile_catalog_response())
+}
+
+fn validate_slicer_profile_result_checks(
+    checks: Option<Vec<SlicerProfileResultCheck>>,
+    label: &str,
+) -> Result<Vec<Value>, String> {
+    let checks = checks.unwrap_or_default();
+    if checks.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "{label} must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    checks
+        .into_iter()
+        .enumerate()
+        .map(|(index, check)| {
+            let check_id = validate_label(&check.check_id, &format!("{label}[{index}].checkId"))?;
+            let check_kind =
+                validate_label(&check.check_kind, &format!("{label}[{index}].checkKind"))?;
+            let status = validate_label(&check.status, &format!("{label}[{index}].status"))?;
+            let evidence = validate_signal_list(
+                check.evidence,
+                &format!("{label}[{index}].evidence"),
+                MAX_TEXT_LEN,
+            )?;
+            let message = validate_optional_text(
+                check.message,
+                &format!("{label}[{index}].message"),
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "checkId": check_id,
+                "checkKind": check_kind,
+                "status": status,
+                "required": check.required.unwrap_or(true),
+                "releaseBlocker": check.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": check.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence,
+                "message": message
+            }))
+        })
+        .collect()
+}
+
+fn validate_slicer_profile_result_preparation(
+    preparation: Option<Vec<SlicerProfileResultPreparation>>,
+) -> Result<Vec<Value>, String> {
+    let preparation = preparation.unwrap_or_default();
+    if preparation.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "printPreparation must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    preparation
+        .into_iter()
+        .enumerate()
+        .map(|(index, step)| {
+            let preparation_id = validate_label(
+                &step.preparation_id,
+                &format!("printPreparation[{index}].preparationId"),
+            )?;
+            let preparation_kind = validate_label(
+                &step.preparation_kind,
+                &format!("printPreparation[{index}].preparationKind"),
+            )?;
+            let status =
+                validate_label(&step.status, &format!("printPreparation[{index}].status"))?;
+            let evidence = validate_signal_list(
+                step.evidence,
+                &format!("printPreparation[{index}].evidence"),
+                MAX_TEXT_LEN,
+            )?;
+            let message = validate_optional_text(
+                step.message,
+                &format!("printPreparation[{index}].message"),
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "preparationId": preparation_id,
+                "preparationKind": preparation_kind,
+                "status": status,
+                "reviewed": step.reviewed.unwrap_or(false),
+                "releaseBlocker": step.release_blocker.unwrap_or(true),
+                "requiresHumanIntervention": step.requires_human_intervention.unwrap_or(false),
+                "evidence": evidence,
+                "message": message
+            }))
+        })
+        .collect()
+}
+
+fn validate_slicer_profile_result_artifacts(
+    artifacts: Option<Vec<SlicerProfileResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            let artifact_kind = validate_label(
+                &artifact.artifact_kind,
+                &format!("artifacts[{index}].artifactKind"),
+            )?;
+            let source_ref_id = validate_optional_label(
+                artifact.source_ref_id,
+                &format!("artifacts[{index}].sourceRefId"),
+            )?;
+            let uri =
+                validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), 2048)?;
+            let sha256 =
+                validate_optional_label(artifact.sha256, &format!("artifacts[{index}].sha256"))?;
+            let format =
+                validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?;
+            let evidence = validate_signal_list(
+                artifact.evidence,
+                &format!("artifacts[{index}].evidence"),
+                MAX_TEXT_LEN,
+            )?;
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": artifact_kind,
+                "sourceRefId": source_ref_id,
+                "uri": uri,
+                "sha256": sha256,
+                "format": format,
+                "evidence": evidence
+            }))
+        })
+        .collect()
+}
+
+fn slicer_profile_result_status_blocks_release(status: &str) -> bool {
+    let normalized = normalize_token(status);
+    normalized.contains("fail")
+        || normalized.contains("blocked")
+        || normalized.contains("missing")
+        || normalized.contains("unverified")
+        || normalized.contains("unreviewed")
+        || normalized.contains("warning")
+        || normalized.contains("error")
+}
+
+fn slicer_profile_result_check_blocks_release(check: &Value) -> bool {
+    let required = check
+        .get("required")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let release_blocker = check
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let status = check.get("status").and_then(Value::as_str).unwrap_or("");
+    let evidence_missing = check
+        .get("evidence")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    (required || release_blocker)
+        && (slicer_profile_result_status_blocks_release(status) || evidence_missing)
+}
+
+fn slicer_profile_result_preparation_blocks_release(step: &Value) -> bool {
+    let release_blocker = step
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let reviewed = step
+        .get("reviewed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let status = step.get("status").and_then(Value::as_str).unwrap_or("");
+    let evidence_missing = step
+        .get("evidence")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    release_blocker
+        && (!reviewed || slicer_profile_result_status_blocks_release(status) || evidence_missing)
+}
+
+fn slicer_profile_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("format")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn slicer_profile_result_review_response(
+    request: SlicerProfileResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(request.request_id.as_ref(), "slicer-profile-result");
+    let generated_at_ms = now_ms();
+    let slicer_result_job_id = safe_job_id("slicer-profile-result", &request_id, generated_at_ms);
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let slicer = validate_text(&request.slicer, "slicer", MAX_LABEL_LEN)?;
+    let slicer_version =
+        validate_optional_text(request.slicer_version, "slicerVersion", MAX_LABEL_LEN)?;
+    let printer_id = validate_optional_label(request.printer_id, "printerId")?;
+    let printer_family =
+        validate_optional_text(request.printer_family, "printerFamily", MAX_LABEL_LEN)?;
+    let material_id = validate_optional_label(request.material_id, "materialId")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let profile_checks =
+        validate_slicer_profile_result_checks(request.profile_checks, "profileChecks")?;
+    let print_preparation = validate_slicer_profile_result_preparation(request.print_preparation)?;
+    let machine_code_checks =
+        validate_slicer_profile_result_checks(request.machine_code_checks, "machineCodeChecks")?;
+    let artifacts = validate_slicer_profile_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let profile_check_blocker_count = profile_checks
+        .iter()
+        .filter(|check| slicer_profile_result_check_blocks_release(check))
+        .count();
+    let preparation_blocker_count = print_preparation
+        .iter()
+        .filter(|step| slicer_profile_result_preparation_blocks_release(step))
+        .count();
+    let machine_code_check_blocker_count = machine_code_checks
+        .iter()
+        .filter(|check| slicer_profile_result_check_blocks_release(check))
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| slicer_profile_result_artifact_missing_release_evidence(artifact))
+        .count();
+    let human_intervention_required =
+        profile_checks
+            .iter()
+            .chain(machine_code_checks.iter())
+            .any(|check| {
+                check
+                    .get("requiresHumanIntervention")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            })
+            || print_preparation.iter().any(|step| {
+                step.get("requiresHumanIntervention")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+            });
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || profile_checks.is_empty()
+        || print_preparation.is_empty()
+        || machine_code_checks.is_empty()
+        || profile_check_blocker_count > 0
+        || preparation_blocker_count > 0
+        || machine_code_check_blocker_count > 0
+        || artifact_evidence_missing;
+    let review_status = if !request.success {
+        "slicer-profile-result-worker-failed-release-blocked"
+    } else if profile_checks.is_empty() {
+        "slicer-profile-result-profile-checks-required"
+    } else if print_preparation.is_empty() {
+        "slicer-profile-result-print-preparation-required"
+    } else if machine_code_checks.is_empty() {
+        "slicer-profile-result-machine-code-checks-required"
+    } else if profile_check_blocker_count > 0 {
+        "slicer-profile-result-profile-checks-release-blocked"
+    } else if preparation_blocker_count > 0 {
+        "slicer-profile-result-print-preparation-release-blocked"
+    } else if machine_code_check_blocker_count > 0 {
+        "slicer-profile-result-machine-code-release-blocked"
+    } else if artifact_evidence_missing {
+        "slicer-profile-result-artifact-evidence-required"
+    } else if !request.machine_ready {
+        "slicer-profile-result-machine-ready-review-required"
+    } else if !release_ready {
+        "slicer-profile-result-release-ready-review-required"
+    } else {
+        "slicer-profile-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("slicer-profile-worker:{worker_id}"),
+        format!("slicer-profile-result:{review_status}"),
+        format!("slicer:{}", normalize_token(&slicer)),
+    ];
+    if let Some(printer_family) = printer_family.as_ref() {
+        learning_observations.push(format!(
+            "slicer-printer-family:{}",
+            normalize_token(printer_family)
+        ));
+    }
+    if let Some(material_id) = material_id.as_ref() {
+        learning_observations.push(format!("slicer-material:{}", normalize_token(material_id)));
+    }
+    if release_blocked {
+        learning_observations.push("slicer-profile:release-blocked".to_string());
+    }
+    if human_intervention_required {
+        learning_observations.push("slicer-profile:human-intervention-required".to_string());
+    }
+    if artifact_evidence_missing {
+        learning_observations.push("slicer-profile:artifact-evidence-missing".to_string());
+    }
+    learning_observations.extend(profile_checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("slicer-profile-check:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(print_preparation.iter().filter_map(|step| {
+        step.get("preparationKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("slicer-preparation:{}", normalize_token(kind)))
+    }));
+    learning_observations.extend(machine_code_checks.iter().filter_map(|check| {
+        check
+            .get("checkKind")
+            .and_then(Value::as_str)
+            .map(|kind| format!("slicer-machine-code-check:{}", normalize_token(kind)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.slicer-profile-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "slicerProfileResultJobId": slicer_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /slicers/result",
+            "POST /fabrication/slicers/result"
+        ],
+        "catalogRoutes": [
+            "GET /slicers/catalog",
+            "GET /fabrication/slicers/catalog"
+        ],
+        "generationRoutes": [
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /instructions/generate",
+            "POST /fabrication/instructions/generate"
+        ],
+        "reviewRoutes": [
+            "POST /toolpaths/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /instructions/validation/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "profileCheckCount": profile_checks.len(),
+        "profileCheckBlockerCount": profile_check_blocker_count,
+        "printPreparationCount": print_preparation.len(),
+        "printPreparationBlockerCount": preparation_blocker_count,
+        "machineCodeCheckCount": machine_code_checks.len(),
+        "machineCodeCheckBlockerCount": machine_code_check_blocker_count,
+        "artifactCount": artifacts.len(),
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "artifactEvidenceMissing": artifact_evidence_missing,
+        "humanInterventionRequired": human_intervention_required,
+        "warningCount": warnings.len(),
+        "slicerProfileResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "slicer": slicer,
+            "slicerVersion": slicer_version,
+            "printerId": printer_id,
+            "printerFamily": printer_family,
+            "materialId": material_id,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "profileChecks": profile_checks,
+            "printPreparation": print_preparation,
+            "machineCodeChecks": machine_code_checks,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "slicer profile and printer/material preset provenance are retained with checksum evidence",
+                "orientation, support, bed adhesion, first-layer, purge, and material-map print preparation gates are reviewed",
+                "generated G-code or slicer project output passes controller, firmware, arc, unit, extrusion, and high-speed kinematic checks",
+                "slicer profile result artifacts carry URI, checksum, format, and evidence labels before machine-ready release"
+            ],
+            "targetSurfaces": [
+                "slicerPlan.profileEvidence",
+                "toolpathPlan",
+                "generatedPrograms",
+                "instructionValidation",
+                "simulation",
+                "qualityPlan",
+                "machineRelease",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes"
+        },
+        "artifactSurfaces": [
+            "slicer-profile-result",
+            "slicer-profile-checks",
+            "slicer-print-preparation",
+            "slicer-machine-code-checks",
+            "slicer-profile-artifacts",
+            "slicer-profile-learning-observations",
+            "slicer-project-package",
+            "printer-gcode-package",
+            "mdp-request.artifacts.slicerProfileResult"
+        ],
+        "slicerProfilePolicy": [
+            "slicer profile results are retained print-preparation evidence, not certified printer-ready G-code",
+            "machine-ready release remains blocked until profile provenance, material/nozzle compatibility, support/orientation, first-layer, generated machine-code checks, artifacts, and human dispositions clear",
+            "slicer profile observations feed MDP/POMDP/neural learning so future print jobs can choose safer profile families, split fragile parts, request support review, or require operator intervention before release"
+        ]
+    }))
+}
+
+fn slicer_profile_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("worker-failed")
+        || status.contains("release-blocked")
+        || status.contains("checks-required")
+        || status.contains("preparation-required")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_slicer_profile_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "slicer-profile-result");
+    let job_id = response_str_field(
+        response,
+        "slicerProfileResultJobId",
+        &safe_job_id("slicer-profile-result", &request_id, generated_at_ms),
+    );
+    let review_status = response_str_field(response, "reviewStatus", "slicer-profile-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("slicerProfileResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let profile_checks = result
+        .get("profileChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let print_preparation = result
+        .get("printPreparation")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let machine_code_checks = result
+        .get("machineCodeChecks")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let slicer_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "slicer-profile-result".to_string(),
+            "slicer-profile-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "slicer-profile-checks".to_string(),
+            "slicer-profile-checks",
+            profile_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "slicer-print-preparation".to_string(),
+            "slicer-print-preparation",
+            print_preparation,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "slicer-machine-code-checks".to_string(),
+            "slicer-machine-code-checks",
+            machine_code_checks,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "slicer-profile-artifacts".to_string(),
+            "slicer-profile-artifacts",
+            slicer_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "slicer-profile-learning-observations".to_string(),
+            "slicer-profile-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "slicer-profile-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: slicer_profile_result_job_severity(response),
+            summary: format!("slicer profile result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_slicer_profile_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_slicer_profile_result_job(response));
 }
 
 fn mesh_repair_catalog_entries() -> Vec<Value> {
@@ -66283,10 +74550,12 @@ async fn request_schema() -> impl IntoResponse {
             "materialResult": ["POST /materials/result", "POST /fabrication/materials/result"],
             "designFormats": ["GET /design/formats", "GET /fabrication/design/formats"],
             "slicerProfileCatalog": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
+            "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
             "subjectCatalog": ["GET /subjects/catalog", "GET /fabrication/subjects/catalog"],
             "designImportReview": ["POST /design/import/review", "POST /fabrication/design/import/review"],
+            "designImportResult": ["POST /design/import/result", "POST /fabrication/design/import/result"],
             "designGenerationCatalog": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
             "designGeneration": ["POST /design/generate", "POST /fabrication/design/generate"],
             "instructionLanguages": ["GET /instructions/languages", "GET /fabrication/instructions/languages"],
@@ -66322,6 +74591,7 @@ async fn request_schema() -> impl IntoResponse {
             "simulationRun": ["POST /simulation/run", "POST /fabrication/simulation/run"],
             "instructionSimulationResult": ["POST /simulation/result", "POST /fabrication/simulation/result"],
             "qualityCatalog": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
+            "dispositionCatalog": ["GET /dispositions/catalog", "GET /fabrication/dispositions/catalog"],
             "qualityPlan": ["POST /quality/plan", "POST /fabrication/quality/plan"],
             "qualityResult": ["POST /quality/result", "POST /fabrication/quality/result"],
             "calibrationCatalog": ["GET /calibration/catalog", "GET /fabrication/calibration/catalog"],
@@ -66330,11 +74600,22 @@ async fn request_schema() -> impl IntoResponse {
             "interventionCatalog": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
             "setupCatalog": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
             "toolingCatalog": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
-            "processRecipeCatalog": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
-            "kinematicsCatalog": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
-            "toleranceCatalog": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
-            "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+            "workholdingCatalog": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
+            "supportStrategyCatalog": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
+            "supportStrategyResult": ["POST /support-strategies/result", "POST /fabrication/support-strategies/result"],
+        "processRecipeCatalog": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
+        "processRecipeResult": ["POST /process-recipes/result", "POST /fabrication/process-recipes/result"],
+        "kinematicsCatalog": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
+        "kinematicsResult": ["POST /kinematics/result", "POST /fabrication/kinematics/result"],
+        "toleranceCatalog": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
+        "processCapabilityCatalog": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
+        "manufacturabilityCatalog": ["GET /manufacturability/catalog", "GET /fabrication/manufacturability/catalog"],
+        "manufacturabilityResult": ["POST /manufacturability/result", "POST /fabrication/manufacturability/result"],
+        "failureModeCatalog": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
+        "failureModeResult": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
+        "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
+            "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
             "monitoringCatalog": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
@@ -66351,6 +74632,7 @@ async fn request_schema() -> impl IntoResponse {
             "workflowPlan": ["POST /workflow/plan", "POST /fabrication/workflow/plan"],
             "releasePreview": ["POST /release/preview", "POST /fabrication/release/preview"],
             "strategyRecommendation": ["POST /strategy/recommend", "POST /fabrication/strategy/recommend"],
+            "strategyResult": ["POST /strategy/result", "POST /fabrication/strategy/result"],
             "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
             "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
             "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
@@ -66385,7 +74667,12 @@ async fn request_schema() -> impl IntoResponse {
         },
             "designInput": {
                 "optional": ["id", "fileName", "sourceUri", "format", "sourceSystem", "role", "notes"],
-            "reviewRoutes": ["POST /design/import/review", "POST /fabrication/design/import/review"],
+            "reviewRoutes": [
+                "POST /design/import/review",
+                "POST /fabrication/design/import/review",
+                "POST /design/import/result",
+                "POST /fabrication/design/import/result"
+            ],
                 "supportedFormats": design_format_catalog(),
                 "reviewContract": [
                 "native CAD sources are classified and retained as translator-required evidence",
@@ -67041,6 +75328,40 @@ async fn design_import_review_http(Json(request): Json<DesignImportReviewRequest
     }
 }
 
+async fn design_import_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<DesignImportResultReviewRequest>,
+) -> Response {
+    match design_import_result_review_response(request) {
+        Ok(response) => {
+            store_design_import_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn slicer_profile_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<SlicerProfileResultReviewRequest>,
+) -> Response {
+    match slicer_profile_result_review_response(request) {
+        Ok(response) => {
+            store_slicer_profile_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
 async fn design_conversion_plan_http(Json(request): Json<DesignImportReviewRequest>) -> Response {
     match design_conversion_plan_response(request) {
         Ok(response) => Json(response).into_response(),
@@ -67170,6 +75491,108 @@ async fn decomposition_result_http(
     match decomposition_result_review_response(request) {
         Ok(response) => {
             store_decomposition_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn manufacturability_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ManufacturabilityResultReviewRequest>,
+) -> Response {
+    match manufacturability_result_review_response(request) {
+        Ok(response) => {
+            store_manufacturability_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn support_strategy_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<SupportStrategyResultReviewRequest>,
+) -> Response {
+    match support_strategy_result_review_response(request) {
+        Ok(response) => {
+            store_support_strategy_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn process_recipe_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ProcessRecipeResultReviewRequest>,
+) -> Response {
+    match process_recipe_result_review_response(request) {
+        Ok(response) => {
+            store_process_recipe_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn kinematics_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<KinematicsResultReviewRequest>,
+) -> Response {
+    match kinematics_result_review_response(request) {
+        Ok(response) => {
+            store_kinematics_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn tolerance_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<ToleranceResultReviewRequest>,
+) -> Response {
+    match tolerance_result_review_response(request) {
+        Ok(response) => {
+            store_tolerance_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn failure_mode_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<FailureModeResultReviewRequest>,
+) -> Response {
+    match failure_mode_result_review_response(request) {
+        Ok(response) => {
+            store_failure_mode_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -67572,6 +75995,23 @@ async fn strategy_recommend_http(
             )
                 .into_response()
         }
+    }
+}
+
+async fn strategy_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<StrategyResultReviewRequest>,
+) -> Response {
+    match strategy_result_review_response(request) {
+        Ok(response) => {
+            store_strategy_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
     }
 }
 
@@ -68317,6 +76757,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/slicers/catalog",
             get(slicer_profile_catalog_http),
         )
+        .route("/slicers/result", post(slicer_profile_result_http))
+        .route(
+            "/fabrication/slicers/result",
+            post(slicer_profile_result_http),
+        )
         .route("/mesh-repair/catalog", get(mesh_repair_catalog_http))
         .route(
             "/fabrication/mesh-repair/catalog",
@@ -68338,6 +76783,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/design/import/review",
             post(design_import_review_http),
+        )
+        .route("/design/import/result", post(design_import_result_http))
+        .route(
+            "/fabrication/design/import/result",
+            post(design_import_result_http),
         )
         .route("/design/convert/plan", post(design_conversion_plan_http))
         .route(
@@ -68531,6 +76981,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/quality/catalog", get(quality_catalog_http))
         .route("/fabrication/quality/catalog", get(quality_catalog_http))
+        .route("/dispositions/catalog", get(disposition_catalog_http))
+        .route(
+            "/fabrication/dispositions/catalog",
+            get(disposition_catalog_http),
+        )
+        .route("/costing/catalog", get(costing_catalog_http))
+        .route("/fabrication/costing/catalog", get(costing_catalog_http))
+        .route("/utilities/catalog", get(utilities_catalog_http))
+        .route(
+            "/fabrication/utilities/catalog",
+            get(utilities_catalog_http),
+        )
+        .route("/telemetry/catalog", get(telemetry_catalog_http))
+        .route(
+            "/fabrication/telemetry/catalog",
+            get(telemetry_catalog_http),
+        )
         .route("/quality/plan", post(quality_plan_http))
         .route("/fabrication/quality/plan", post(quality_plan_http))
         .route("/quality/result", post(quality_result_http))
@@ -68556,20 +77023,90 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/setup/catalog", get(setup_catalog_http))
         .route("/tooling/catalog", get(tooling_catalog_http))
         .route("/fabrication/tooling/catalog", get(tooling_catalog_http))
+        .route("/workholding/catalog", get(workholding_catalog_http))
+        .route(
+            "/fabrication/workholding/catalog",
+            get(workholding_catalog_http),
+        )
+        .route(
+            "/support-strategies/catalog",
+            get(support_strategy_catalog_http),
+        )
+        .route(
+            "/fabrication/support-strategies/catalog",
+            get(support_strategy_catalog_http),
+        )
+        .route(
+            "/support-strategies/result",
+            post(support_strategy_result_http),
+        )
+        .route(
+            "/fabrication/support-strategies/result",
+            post(support_strategy_result_http),
+        )
         .route("/process-recipes/catalog", get(process_recipe_catalog_http))
         .route(
             "/fabrication/process-recipes/catalog",
             get(process_recipe_catalog_http),
+        )
+        .route("/process-recipes/result", post(process_recipe_result_http))
+        .route(
+            "/fabrication/process-recipes/result",
+            post(process_recipe_result_http),
         )
         .route("/kinematics/catalog", get(kinematics_catalog_http))
         .route(
             "/fabrication/kinematics/catalog",
             get(kinematics_catalog_http),
         )
+        .route("/kinematics/result", post(kinematics_result_http))
+        .route(
+            "/fabrication/kinematics/result",
+            post(kinematics_result_http),
+        )
         .route("/tolerances/catalog", get(tolerance_catalog_http))
         .route(
             "/fabrication/tolerances/catalog",
             get(tolerance_catalog_http),
+        )
+        .route("/tolerances/result", post(tolerance_result_http))
+        .route(
+            "/fabrication/tolerances/result",
+            post(tolerance_result_http),
+        )
+        .route(
+            "/process-capabilities/catalog",
+            get(process_capability_catalog_http),
+        )
+        .route(
+            "/fabrication/process-capabilities/catalog",
+            get(process_capability_catalog_http),
+        )
+        .route(
+            "/manufacturability/catalog",
+            get(manufacturability_catalog_http),
+        )
+        .route(
+            "/fabrication/manufacturability/catalog",
+            get(manufacturability_catalog_http),
+        )
+        .route(
+            "/manufacturability/result",
+            post(manufacturability_result_http),
+        )
+        .route(
+            "/fabrication/manufacturability/result",
+            post(manufacturability_result_http),
+        )
+        .route("/failure-modes/catalog", get(failure_mode_catalog_http))
+        .route(
+            "/fabrication/failure-modes/catalog",
+            get(failure_mode_catalog_http),
+        )
+        .route("/failure-modes/result", post(failure_mode_result_http))
+        .route(
+            "/fabrication/failure-modes/result",
+            post(failure_mode_result_http),
         )
         .route("/safety/catalog", get(safety_catalog_http))
         .route("/fabrication/safety/catalog", get(safety_catalog_http))
@@ -68577,6 +77114,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/environment/catalog",
             get(environment_catalog_http),
+        )
+        .route("/provenance/catalog", get(provenance_catalog_http))
+        .route(
+            "/fabrication/provenance/catalog",
+            get(provenance_catalog_http),
         )
         .route("/setup/plan", post(setup_plan_http))
         .route("/fabrication/setup/plan", post(setup_plan_http))
@@ -68612,6 +77154,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/learning/capabilities",
             get(learning_capabilities),
+        )
+        .route(
+            "/learning/rewards/catalog",
+            get(learning_reward_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/rewards/catalog",
+            get(learning_reward_catalog_http),
         )
         .route("/schema", get(request_schema))
         .route("/fabrication/schema", get(request_schema))
@@ -68659,6 +77209,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/strategy/recommend",
             post(strategy_recommend_http),
         )
+        .route("/strategy/result", post(strategy_result_http))
+        .route("/fabrication/strategy/result", post(strategy_result_http))
         .route("/instructions/analyze", post(analyze_http))
         .route("/fabrication/instructions/analyze", post(analyze_http))
         .route("/instructions/validate", post(instruction_validate_http))
@@ -69662,6 +78214,139 @@ mod tests {
     }
 
     #[test]
+    fn slicer_profile_result_endpoint_reviews_print_prep_artifacts_and_learning() {
+        let response = slicer_profile_result_review_response(SlicerProfileResultReviewRequest {
+            request_id: Some("slicer-result-high-speed-001".to_string()),
+            plan_request_id: Some("plan-high-speed-print".to_string()),
+            job_id: Some("job-high-speed-print".to_string()),
+            worker_id: "orca-profile-reviewer-01".to_string(),
+            slicer: "OrcaSlicer".to_string(),
+            slicer_version: Some("2.2.0".to_string()),
+            printer_id: Some("corexy-printer-01".to_string()),
+            printer_family: Some("high-speed-fdm".to_string()),
+            material_id: Some("petg-cf".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            profile_checks: Some(vec![SlicerProfileResultCheck {
+                check_id: "profile-provenance".to_string(),
+                check_kind: "profile-provenance".to_string(),
+                status: "passed".to_string(),
+                required: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(false),
+                evidence: Some(vec![
+                    "printer preset checksum retained".to_string(),
+                    "filament preset checksum retained".to_string(),
+                ]),
+                message: None,
+            }]),
+            print_preparation: Some(vec![SlicerProfileResultPreparation {
+                preparation_id: "support-first-layer".to_string(),
+                preparation_kind: "support-orientation-first-layer".to_string(),
+                status: "blocked".to_string(),
+                reviewed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "support contact preview needs operator review".to_string()
+                ]),
+                message: Some("first-layer coupon and support scarring review missing".to_string()),
+            }]),
+            machine_code_checks: Some(vec![SlicerProfileResultCheck {
+                check_id: "high-speed-kinematics".to_string(),
+                check_kind: "input-shaper-volumetric-flow".to_string(),
+                status: "blocked".to_string(),
+                required: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(false),
+                evidence: Some(vec![
+                    "volumetric flow exceeds retained PETG-CF coupon".to_string()
+                ]),
+                message: Some("reduce max flow or attach new coupon evidence".to_string()),
+            }]),
+            artifacts: Some(vec![SlicerProfileResultArtifact {
+                artifact_id: "orca-project".to_string(),
+                artifact_kind: "slicer-project-package".to_string(),
+                source_ref_id: Some("job-high-speed-print".to_string()),
+                uri: Some("s3://fabrication/slicer/orca-project.3mf".to_string()),
+                sha256: Some("c".repeat(64)),
+                format: Some("3mf".to_string()),
+                evidence: Some(vec!["profile and G-code package retained".to_string()]),
+            }]),
+            warnings: Some(vec!["operator first-layer review required".to_string()]),
+            review_metadata: Some(json!({ "policy": "high-speed-fdm-release" })),
+        })
+        .expect("slicer profile result should review");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.slicer-profile-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/slicers/result"))));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("slicer-profile-result-print-preparation-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("printPreparationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("machineCodeCheckBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("slicer-profile:human-intervention-required"))));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations
+                .iter()
+                .any(|observation| observation.as_str()
+                    == Some("slicer-machine-code-check:input-shaper-volumetric-flow"))));
+
+        let job = stored_slicer_profile_result_job(&response);
+        assert_eq!(job.record.kind, "slicer-profile-result");
+        assert_eq!(
+            job.record.status,
+            "slicer-profile-result-print-preparation-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        assert!(job.artifacts.contains_key("slicer-profile-result"));
+        assert!(job.artifacts.contains_key("slicer-print-preparation"));
+        assert!(job
+            .artifacts
+            .contains_key("slicer-profile-learning-observations"));
+    }
+
+    #[test]
     fn mesh_repair_catalog_endpoint_exposes_repair_evidence_and_learning_policy() {
         let payload = mesh_repair_catalog_response();
         assert_eq!(
@@ -69982,6 +78667,138 @@ mod tests {
         })
         .expect_err("notes-only design import review should be rejected");
         assert!(error.contains("must include fileName, sourceUri, format, or sourceSystem"));
+    }
+
+    #[test]
+    fn design_import_result_endpoint_reviews_boundaries_artifacts_and_learning() {
+        let payload = design_import_result_review_response(DesignImportResultReviewRequest {
+            request_id: Some("unit-design-import-result".to_string()),
+            source_job_id: Some("design-import-review-job".to_string()),
+            input_id: Some("scan-mesh".to_string()),
+            worker_id: "mesh-import-worker-01".to_string(),
+            worker_lane: Some("mesh-repair-converter".to_string()),
+            source_format: Some("stl".to_string()),
+            source_system: Some("field-scan".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            checks: Some(vec![DesignImportResultCheck {
+                check_id: "mesh-topology-check".to_string(),
+                check_kind: "mesh-topology-and-scale".to_string(),
+                status: "blocked".to_string(),
+                passed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "non-manifold scan mesh has unknown scale and open shell".to_string(),
+                ]),
+            }]),
+            failure_boundaries: Some(vec![DesignImportResultBoundary {
+                boundary_id: "split-repair-required".to_string(),
+                boundary_kind: "mesh-repair-and-split-boundary".to_string(),
+                code: "mesh-open-shell-scale-unknown".to_string(),
+                message: "Imported scan cannot be converted into machine-ready geometry without scale review and split repair.".to_string(),
+                release_blocker: Some(true),
+                human_intervention_required: Some(true),
+                split_required: Some(true),
+                combine_required: Some(false),
+                recommended_action: Some("human-scale-review-split-and-remesh".to_string()),
+                evidence: Some(vec![
+                    "repair worker found open shell across intended split line".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![DesignImportResultArtifact {
+                artifact_id: "mesh-import-report".to_string(),
+                artifact_kind: "mesh-import-report".to_string(),
+                input_id: Some("scan-mesh".to_string()),
+                uri: Some("s3://fabrication/design-import/mesh-import-report.json".to_string()),
+                sha256: Some("b".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["retained mesh topology report".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "scale and split repair must be reviewed before conversion".to_string(),
+            ]),
+            review_metadata: Some(json!({"scanSession": "shop-floor-17"})),
+        })
+        .expect("design import result should validate");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.design-import-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/design/import/result")
+            })));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("design-import-result-checks-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("checkBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("boundaryBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("splitBoundaryCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("design-import:split-required")
+            })));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("design-import-action:human-scale-review-split-and-remesh")
+            })));
+
+        let job = stored_design_import_result_job(&payload);
+        assert_eq!(job.record.kind, "design-import-result");
+        assert_eq!(
+            job.record.status,
+            "design-import-result-checks-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        assert!(!job.record.ok);
+        for artifact in [
+            "design-import-result",
+            "design-import-checks",
+            "design-import-failure-boundaries",
+            "design-import-artifacts",
+            "design-import-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing design import result artifact {artifact}"
+            );
+        }
     }
 
     #[test]
@@ -75746,6 +84563,174 @@ mod tests {
     }
 
     #[test]
+    fn strategy_result_endpoint_reviews_routes_split_combine_and_learning() {
+        let payload = strategy_result_review_response(StrategyResultReviewRequest {
+            request_id: Some("unit-strategy-result".to_string()),
+            plan_request_id: Some("unit-strategy-recommend".to_string()),
+            job_id: Some("strategy-job-42".to_string()),
+            worker_id: "strategy-worker-01".to_string(),
+            optimizer: Some("hybrid-pomdp-neural-optimizer".to_string()),
+            optimizer_version: Some("0.9.7".to_string()),
+            strategy_id: Some("hybrid-printed-body-milled-datum".to_string()),
+            selected_strategy: Some("print-body-then-mill-datum-pad".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            candidate_score: Some(0.62),
+            recommended_methods: Some(vec!["additive-print".to_string(), "milling".to_string()]),
+            machine_kinds: Some(vec!["fdm-printer".to_string(), "vertical-mill".to_string()]),
+            route_reviews: Some(vec![StrategyResultRouteReview {
+                route_id: "printed-body-milled-datum-route".to_string(),
+                part_id: Some("fixture-body".to_string()),
+                route_kind: "printed-body-milled-datum-route".to_string(),
+                manufacturing_method: Some("milling".to_string()),
+                machine_kind: Some("vertical-mill".to_string()),
+                status: "blocked".to_string(),
+                feasible: Some(false),
+                estimated_minutes: Some(42),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "datum pad needs fixture redesign before vertical-mill release".to_string(),
+                ]),
+            }]),
+            split_combine_decisions: Some(vec![StrategyResultSplitCombineDecision {
+                decision_id: "split-printed-body-and-milled-datum".to_string(),
+                decision_kind: "split-then-combine".to_string(),
+                status: "operator-review-required".to_string(),
+                source_part_ids: Some(vec!["fixture-body".to_string()]),
+                target_part_ids: Some(vec![
+                    "printed-body".to_string(),
+                    "milled-datum-insert".to_string(),
+                ]),
+                accepted: Some(false),
+                requires_redesign: Some(true),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                recommended_action: Some("redesign-interface-and-rerun-strategy".to_string()),
+                evidence: Some(vec![
+                    "split interface cannot be released without operator-reviewed redesign"
+                        .to_string(),
+                ]),
+            }]),
+            learning_updates: Some(vec![StrategyResultLearningUpdate {
+                update_id: "pomdp-belief-route-blocked".to_string(),
+                update_kind: "pomdp-belief-update".to_string(),
+                status: "pending-review".to_string(),
+                reward_delta: Some(-0.4),
+                policy_state: Some("route-blocked-human-review-required".to_string()),
+                evidence: Some(vec![
+                    "negative reward retained for blocked hybrid strategy candidate".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![StrategyResultArtifact {
+                artifact_id: "strategy-result-package".to_string(),
+                artifact_kind: "strategy-result-package".to_string(),
+                strategy_id: Some("hybrid-printed-body-milled-datum".to_string()),
+                uri: Some("s3://fabrication/strategy/result-package.json".to_string()),
+                sha256: Some("a".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["retained optimizer result package".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "strategy blocked until interface redesign review completes".to_string(),
+            ]),
+            review_metadata: Some(json!({"fixtureRevision": "B"})),
+        })
+        .expect("strategy result review should validate");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.strategy-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/strategy/result"))));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("strategy-result-routes-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("routeReviewCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("routeBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("infeasibleRouteCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("splitCombineBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("redesignRequiredCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("learningUpdateBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload
+                .get("missingArtifactEvidenceCount")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("strategy:split-combine-blocked")
+            })));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("strategy-route-machine-kind:vertical-mill")
+            })));
+
+        let job = stored_strategy_result_job(&payload);
+        assert_eq!(job.record.kind, "strategy-result");
+        assert_eq!(job.record.status, "strategy-result-routes-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        assert!(!job.record.ok);
+        for artifact in [
+            "strategy-result",
+            "strategy-route-reviews",
+            "strategy-split-combine-decisions",
+            "strategy-learning-updates",
+            "strategy-artifacts",
+            "strategy-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact),
+                "missing strategy result artifact {artifact}"
+            );
+        }
+    }
+
+    #[test]
     fn schedule_catalog_endpoint_exposes_batch_lane_and_des_contract() {
         let payload = schedule_catalog_response();
         assert_eq!(
@@ -76608,6 +85593,212 @@ mod tests {
         assert!(measurement_contracts.iter().any(|item| {
             item.get("target").and_then(Value::as_str) == Some("interface-fit-and-assembly-lock")
         }));
+    }
+
+    #[test]
+    fn disposition_catalog_endpoint_exposes_rework_scrap_and_split_learning_contract() {
+        let payload = disposition_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.disposition-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/dispositions/catalog"))));
+        assert_eq!(
+            payload
+                .get("dispositionFamilyCount")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("dispositionFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("split-combine-redesign-disposition") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("learning.outcomes"))));
+        assert!(payload
+            .get("dispositions")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |dispositions| dispositions.iter().any(|disposition| disposition
+                    .get("releaseBlockers")
+                    .and_then(Value::as_array)
+                    .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                        .as_str()
+                        .is_some_and(|blocker| blocker.contains("same failed route")))))
+            ));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified quality acceptance")))));
+    }
+
+    #[test]
+    fn costing_catalog_endpoint_exposes_yield_quote_and_split_learning_contract() {
+        let payload = costing_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.costing-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/costing/catalog") })));
+        assert_eq!(
+            payload.get("costFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("costFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("split-combine-route-economics") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("material-yield-estimate") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machineSchedule.lanes"))));
+        assert!(payload
+            .get("costContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("scrap")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("binding quotes")))));
+    }
+
+    #[test]
+    fn utilities_catalog_endpoint_exposes_process_support_and_recovery_learning_contract() {
+        let payload = utilities_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.utilities-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/utilities/catalog") })));
+        assert_eq!(
+            payload.get("utilityFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("utilityFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| { family.as_str() == Some("sheet-cut-process-support") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("coolant-chip-dust-state-record") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("monitoringPlan.alerts"))));
+        assert!(payload
+            .get("utilityContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("support-media stop")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("process-support")))));
+    }
+
+    #[test]
+    fn telemetry_catalog_endpoint_exposes_runtime_boundary_and_learning_contract() {
+        let payload = telemetry_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.telemetry-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/telemetry/catalog") })));
+        assert_eq!(
+            payload.get("telemetryFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("telemetryFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("simulation-to-runtime-boundary-correlation")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("runtime-boundary-correlation") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("executionTelemetryResult.machineStops")
+            })));
+        assert!(payload
+            .get("telemetryContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("learningSignals")
+                .and_then(Value::as_array)
+                .is_some_and(|signals| signals.iter().any(|signal| signal
+                    .as_str()
+                    .is_some_and(|signal| signal.contains("boundary:false-negative")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("runtime evidence contracts")))));
     }
 
     #[test]
@@ -77562,6 +86753,273 @@ mod tests {
     }
 
     #[test]
+    fn workholding_catalog_endpoint_exposes_fixture_release_and_learning_contract() {
+        let payload = workholding_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.workholding-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/workholding/catalog") })));
+        assert_eq!(
+            payload
+                .get("workholdingFamilyCount")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("workholdingFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families
+                .iter()
+                .any(|family| family.as_str() == Some("lathe-grip-support-transfer-and-partoff"))));
+        assert!(payload
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|machine_kinds| machine_kinds
+                .iter()
+                .any(|machine_kind| machine_kind.as_str() == Some("horizontal-mill"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("toolingPlan.requirements.workholding")
+            })));
+        assert!(payload
+            .get("workholdingFamiliesDetailed")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| family
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("part-off")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified fixture designs")))));
+    }
+
+    #[test]
+    fn support_strategy_catalog_endpoint_exposes_orientation_split_and_learning_contract() {
+        let payload = support_strategy_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.support-strategy-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/support-strategies/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("supportStrategyFamilyCount")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("strategyFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("hybrid-split-combine-interface-and-support-removal")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("interventionMap.splitCombineDecisions")
+            })));
+        assert!(payload
+            .get("supportStrategies")
+            .and_then(Value::as_array)
+            .is_some_and(|strategies| strategies.iter().any(|strategy| strategy
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("support removal")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified manufacturing instructions")))));
+    }
+
+    #[test]
+    fn support_strategy_result_endpoint_reviews_orientation_support_and_learning() {
+        let response =
+            support_strategy_result_review_response(SupportStrategyResultReviewRequest {
+                request_id: Some("support-strategy-result-001".to_string()),
+                plan_request_id: Some("plan-support-001".to_string()),
+                job_id: Some("job-support-001".to_string()),
+                worker_id: "support-strategy-worker".to_string(),
+                reviewer: Some("orientation-reviewer".to_string()),
+                reviewer_version: Some("2026.06-support".to_string()),
+                source_part_id: Some("part-overhang-bracket".to_string()),
+                machine_kind: Some("fdm-printer".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                orientation_reviews: Some(vec![SupportStrategyResultOrientationReview {
+                    review_id: "orientation-001".to_string(),
+                    strategy_family: "additive-orientation-overhang-and-support".to_string(),
+                    orientation_kind: "steep-overhang-support-risk".to_string(),
+                    status: "blocked".to_string(),
+                    build_angle: Some(63.0),
+                    machine_kind: Some("fdm-printer".to_string()),
+                    release_blocker: Some(true),
+                    requires_reorientation: Some(true),
+                    requires_support_change: Some(true),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "support contact scars block mating surface".to_string(),
+                        "support removal path is inaccessible as one piece".to_string(),
+                    ]),
+                }]),
+                support_reviews: Some(vec![SupportStrategyResultSupportReview {
+                    support_id: "tree-support-001".to_string(),
+                    review_id: Some("orientation-001".to_string()),
+                    support_kind: "tree-support-interface".to_string(),
+                    status: "unresolved".to_string(),
+                    removable: Some(false),
+                    postprocess_accessible: Some(false),
+                    release_blocker: Some(true),
+                    requires_redesign: Some(false),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec![
+                        "support tool cannot reach hidden cavity".to_string(),
+                        "split plane needed before slicer release".to_string(),
+                    ]),
+                }]),
+                split_combine_decisions: Some(vec![SupportStrategyResultDecision {
+                    decision_id: "split-support-001".to_string(),
+                    decision_kind: "split-for-support-removal".to_string(),
+                    status: "required".to_string(),
+                    source_part_ids: Some(vec!["part-overhang-bracket".to_string()]),
+                    target_part_ids: Some(vec![
+                        "part-overhang-bracket-a".to_string(),
+                        "part-overhang-bracket-b".to_string(),
+                    ]),
+                    accepted: Some(false),
+                    release_blocker: Some(true),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    evidence: Some(vec!["interface-control plan missing".to_string()]),
+                }]),
+                interventions: Some(vec![SupportStrategyResultIntervention {
+                    intervention_id: "operator-support-review-001".to_string(),
+                    intervention_kind: "support-removal-and-split-review".to_string(),
+                    status: "required".to_string(),
+                    required: Some(true),
+                    completed: Some(false),
+                    release_blocker: Some(true),
+                    evidence: Some(vec!["operator signoff pending".to_string()]),
+                }]),
+                artifacts: Some(vec![SupportStrategyResultArtifact {
+                    artifact_id: "support-strategy-report-001".to_string(),
+                    artifact_kind: "support-strategy-report".to_string(),
+                    source_ref_id: Some("orientation-001".to_string()),
+                    uri: Some("s3://fabrication/support-strategy-report-001.json".to_string()),
+                    sha256: Some("f".repeat(64)),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec!["retained support strategy report".to_string()]),
+                }]),
+                warnings: Some(vec!["support split requires assembly follow-up".to_string()]),
+                review_metadata: Some(json!({"source": "unit-test"})),
+            })
+            .expect("support strategy result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.support-strategy-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/support-strategies/result")
+            })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("support-strategy-result-orientation-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("supportChangeRequiredCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequiredCount")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "support-strategy:support-change-required",
+            "support-strategy:split-combine-required",
+            "support-strategy-family:additive-orientation-overhang-and-support",
+            "support-orientation:steep-overhang-support-risk",
+            "support-removal:tree-support-interface",
+            "support-split-combine:split-for-support-removal",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_support_strategy_result_job(&response);
+        assert_eq!(job.record.kind, "support-strategy-result");
+        assert_eq!(
+            job.record.status,
+            "support-strategy-result-orientation-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "support-strategy-result",
+            "support-strategy-orientation-reviews",
+            "support-strategy-support-reviews",
+            "support-strategy-split-combine-decisions",
+            "support-strategy-interventions",
+            "support-strategy-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn process_recipe_catalog_endpoint_exposes_parameter_release_contract() {
         let payload = process_recipe_catalog_response();
         assert_eq!(
@@ -77605,6 +87063,147 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified production recipes")))));
+    }
+
+    #[test]
+    fn process_recipe_result_endpoint_reviews_parameters_coupons_and_learning() {
+        let response = process_recipe_result_review_response(ProcessRecipeResultReviewRequest {
+            request_id: Some("process-recipe-result-001".to_string()),
+            plan_request_id: Some("plan-recipe-001".to_string()),
+            job_id: Some("job-recipe-001".to_string()),
+            worker_id: "recipe-review-worker".to_string(),
+            reviewer: Some("feed-speed-reviewer".to_string()),
+            reviewer_version: Some("2026.06-recipe".to_string()),
+            machine_kind: Some("vertical-mill".to_string()),
+            material_id: Some("6061-t6".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            recipe_reviews: Some(vec![ProcessRecipeResultRecipeReview {
+                review_id: "recipe-review-001".to_string(),
+                recipe_family: "subtractive-feeds-speeds-and-engagement".to_string(),
+                recipe_kind: "adaptive-roughing-feed-speed".to_string(),
+                status: "blocked".to_string(),
+                machine_kind: Some("vertical-mill".to_string()),
+                material_id: Some("6061-t6".to_string()),
+                release_blocker: Some(true),
+                requires_parameter_change: Some(true),
+                requires_coupon: Some(true),
+                requires_human_signoff: Some(true),
+                evidence: Some(vec![
+                    "spindle load exceeded retained envelope".to_string(),
+                    "chip evacuation evidence is stale".to_string(),
+                ]),
+            }]),
+            parameter_checks: Some(vec![ProcessRecipeResultParameterCheck {
+                check_id: "parameter-check-001".to_string(),
+                review_id: Some("recipe-review-001".to_string()),
+                parameter_kind: "feed-rate".to_string(),
+                status: "out-of-limits".to_string(),
+                target_value: Some("1800 mm/min".to_string()),
+                measured_value: Some("2600 mm/min".to_string()),
+                within_limits: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "feed override too high for cutter geometry".to_string()
+                ]),
+            }]),
+            coupon_results: Some(vec![ProcessRecipeResultCouponResult {
+                coupon_id: "coupon-001".to_string(),
+                recipe_review_id: Some("recipe-review-001".to_string()),
+                result_kind: "first-article-chip-load-coupon".to_string(),
+                status: "failed".to_string(),
+                passed: Some(false),
+                release_blocker: Some(true),
+                requires_recipe_revision: Some(true),
+                evidence: Some(vec!["chatter marks exceed finish allowance".to_string()]),
+            }]),
+            artifacts: Some(vec![ProcessRecipeResultArtifact {
+                artifact_id: "recipe-report-001".to_string(),
+                artifact_kind: "process-recipe-report".to_string(),
+                source_ref_id: Some("recipe-review-001".to_string()),
+                uri: Some("s3://fabrication/process-recipe-report-001.json".to_string()),
+                sha256: Some("a".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["retained recipe review report".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "recipe revision required before machine release".to_string()
+            ]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("process recipe result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-recipe-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/process-recipes/result")
+            })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("process-recipe-result-recipes-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("parameterChangeRequiredCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("humanSignoffRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "process-recipe:parameter-change-required",
+            "process-recipe:human-signoff-required",
+            "process-recipe-family:subtractive-feeds-speeds-and-engagement",
+            "process-recipe-kind:adaptive-roughing-feed-speed",
+            "process-recipe-parameter:feed-rate",
+            "process-recipe-coupon:first-article-chip-load-coupon",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_process_recipe_result_job(&response);
+        assert_eq!(job.record.kind, "process-recipe-result");
+        assert_eq!(
+            job.record.status,
+            "process-recipe-result-recipes-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "process-recipe-result",
+            "process-recipe-reviews",
+            "process-recipe-parameter-checks",
+            "process-recipe-coupon-results",
+            "process-recipe-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
     }
 
     #[test]
@@ -77662,6 +87261,137 @@ mod tests {
     }
 
     #[test]
+    fn kinematics_result_endpoint_reviews_axes_frames_and_learning() {
+        let response = kinematics_result_review_response(KinematicsResultReviewRequest {
+            request_id: Some("kinematics-result-001".to_string()),
+            plan_request_id: Some("plan-kinematics-001".to_string()),
+            job_id: Some("job-kinematics-001".to_string()),
+            worker_id: "kinematics-review-worker".to_string(),
+            reviewer: Some("axis-envelope-reviewer".to_string()),
+            reviewer_version: Some("2026.06-kinematics".to_string()),
+            machine_id: Some("five-axis-mill-01".to_string()),
+            machine_kind: Some("five-axis-mill".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            axis_checks: Some(vec![KinematicsResultAxisCheck {
+                check_id: "axis-check-001".to_string(),
+                kinematic_family: "rotary-index-and-five-axis-milling".to_string(),
+                axis_kind: "b-axis-sweep-envelope".to_string(),
+                status: "exceeded".to_string(),
+                envelope_ref: Some("sim-axis-envelope-001".to_string()),
+                within_envelope: Some(false),
+                release_blocker: Some(true),
+                requires_rehome: Some(false),
+                requires_reprobe: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "B-axis sweep intersects tombstone clearance volume".to_string(),
+                    "re-probe required after rotary offset correction".to_string(),
+                ]),
+            }]),
+            coordinate_reviews: Some(vec![KinematicsResultCoordinateReview {
+                review_id: "coord-review-001".to_string(),
+                coordinate_kind: "tcp-work-offset-state".to_string(),
+                status: "blocked".to_string(),
+                modal_state: Some("G43.4-active-without-G49-cancel".to_string()),
+                release_blocker: Some(true),
+                requires_reset: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec!["TCP cancel and offset restore missing".to_string()]),
+            }]),
+            frame_checks: Some(vec![KinematicsResultFrameCheck {
+                frame_id: "frame-check-001".to_string(),
+                frame_kind: "rotary-pivot-tcp-frame".to_string(),
+                status: "recalibration-required".to_string(),
+                calibrated: Some(false),
+                synchronized: Some(false),
+                release_blocker: Some(true),
+                requires_recalibration: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec!["rotary pivot mismatch exceeds tolerance".to_string()]),
+            }]),
+            artifacts: Some(vec![KinematicsResultArtifact {
+                artifact_id: "kinematics-report-001".to_string(),
+                artifact_kind: "axis-envelope-report".to_string(),
+                source_ref_id: Some("axis-check-001".to_string()),
+                uri: Some("s3://fabrication/kinematics-report-001.json".to_string()),
+                sha256: Some("b".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["retained axis envelope report".to_string()]),
+            }]),
+            warnings: Some(vec!["five-axis dry run blocked before release".to_string()]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("kinematics result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.kinematics-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/kinematics/result") })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("kinematics-result-axis-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response.get("axisBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "kinematics:human-intervention-required",
+            "kinematics-family:rotary-index-and-five-axis-milling",
+            "kinematics-axis:b-axis-sweep-envelope",
+            "kinematics-coordinate:tcp-work-offset-state",
+            "kinematics-frame:rotary-pivot-tcp-frame",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_kinematics_result_job(&response);
+        assert_eq!(job.record.kind, "kinematics-result");
+        assert_eq!(job.record.status, "kinematics-result-axis-release-blocked");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "kinematics-result",
+            "kinematics-axis-checks",
+            "kinematics-coordinate-reviews",
+            "kinematics-frame-checks",
+            "kinematics-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn tolerance_catalog_endpoint_exposes_fit_stackup_release_contract() {
         let payload = tolerance_catalog_response();
         assert_eq!(
@@ -77714,6 +87444,168 @@ mod tests {
     }
 
     #[test]
+    fn tolerance_result_endpoint_reviews_fit_compensation_and_learning() {
+        let response = tolerance_result_review_response(ToleranceResultReviewRequest {
+            request_id: Some("tolerance-result-001".to_string()),
+            plan_request_id: Some("plan-tolerance-001".to_string()),
+            job_id: Some("job-tolerance-001".to_string()),
+            worker_id: "tolerance-review-worker".to_string(),
+            reviewer: Some("fit-stack-reviewer".to_string()),
+            reviewer_version: Some("2026.06-tolerance".to_string()),
+            machine_kind: Some("mixed-additive-subtractive-job".to_string()),
+            source_part_id: Some("split-bracket-a".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            tolerance_checks: Some(vec![ToleranceResultCheck {
+                check_id: "tol-check-001".to_string(),
+                tolerance_family: "hybrid-assembly-interface-stackups".to_string(),
+                geometry_scope: "split-combine-joints".to_string(),
+                status: "out-of-tolerance".to_string(),
+                nominal_value: Some("10.00 mm".to_string()),
+                measured_value: Some("10.42 mm".to_string()),
+                tolerance_band: Some("+0.05/-0.00 mm".to_string()),
+                in_tolerance: Some(false),
+                release_blocker: Some(true),
+                requires_compensation: Some(true),
+                requires_redesign: Some(false),
+                requires_split_combine: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "dry-fit failed after print plus finish pass".to_string(),
+                    "interface stackup exceeds retained tolerance band".to_string(),
+                ]),
+            }]),
+            fit_checks: Some(vec![ToleranceResultFitCheck {
+                interface_id: "interface-pin-001".to_string(),
+                fit_kind: "press-fit-alignment-pin".to_string(),
+                status: "rework-required".to_string(),
+                accepted: Some(false),
+                release_blocker: Some(true),
+                requires_rework: Some(true),
+                requires_redesign: Some(false),
+                requires_split_combine: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "alignment pin cannot seat without manual filing".to_string()
+                ]),
+            }]),
+            compensations: Some(vec![ToleranceResultCompensation {
+                compensation_id: "comp-kerf-shrink-001".to_string(),
+                compensation_kind: "post-machined-printed-face-offset".to_string(),
+                status: "pending-application".to_string(),
+                applied: Some(false),
+                release_blocker: Some(true),
+                evidence: Some(vec![
+                    "offset exists but regenerated toolpath has not been retained".to_string(),
+                ]),
+            }]),
+            artifacts: Some(vec![ToleranceResultArtifact {
+                artifact_id: "tolerance-report-001".to_string(),
+                artifact_kind: "fit-stackup-report".to_string(),
+                source_ref_id: Some("tol-check-001".to_string()),
+                uri: Some("s3://fabrication/tolerance-report-001.json".to_string()),
+                sha256: Some("c".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec![
+                    "retained fit stackup and compensation report".to_string()
+                ]),
+            }]),
+            warnings: Some(vec!["manual fit-up blocked before release".to_string()]),
+            review_metadata: Some(json!({"source": "unit-test"})),
+        })
+        .expect("tolerance result should be accepted");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.tolerance-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/tolerances/result") })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("tolerance-result-tolerance-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("toleranceBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response.get("fitBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("compensationBlockerCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("learning observations should be retained");
+        for observation in [
+            "tolerance:compensation-required",
+            "tolerance:split-combine-required",
+            "tolerance:human-intervention-required",
+            "tolerance-family:hybrid-assembly-interface-stackups",
+            "tolerance-scope:split-combine-joints",
+            "tolerance-fit:press-fit-alignment-pin",
+            "tolerance-compensation:post-machined-printed-face-offset",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing learning observation {observation}"
+            );
+        }
+
+        let job = stored_tolerance_result_job(&response);
+        assert_eq!(job.record.kind, "tolerance-result");
+        assert_eq!(
+            job.record.status,
+            "tolerance-result-tolerance-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "tolerance-result",
+            "tolerance-checks",
+            "tolerance-fit-checks",
+            "tolerance-compensations",
+            "tolerance-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn safety_catalog_endpoint_exposes_interlock_release_contract() {
         let payload = safety_catalog_response();
         assert_eq!(
@@ -77763,6 +87655,543 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified machine-safety approvals")))));
+    }
+
+    #[test]
+    fn environment_catalog_endpoint_exposes_condition_release_contract() {
+        let payload = environment_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.environment-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/environment/catalog") })));
+        assert_eq!(
+            payload
+                .get("environmentFamilyCount")
+                .and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("environmentFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("additive-material-storage-and-printroom-state")
+            })));
+        assert!(payload
+            .get("conditionScopes")
+            .and_then(Value::as_array)
+            .is_some_and(|scopes| scopes
+                .iter()
+                .any(|scope| scope.as_str() == Some("filament-humidity"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("materialPlan.routeRequirements"))));
+        assert!(payload
+            .get("environmentContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("humidity")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified facility qualifications")))));
+    }
+
+    #[test]
+    fn provenance_catalog_endpoint_exposes_traceability_release_contract() {
+        let payload = provenance_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.provenance-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/provenance/catalog") })));
+        assert_eq!(
+            payload.get("provenanceFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("provenanceFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("machine-program-and-controller-artifact-lineage")
+            })));
+        assert!(payload
+            .get("evidenceScopes")
+            .and_then(Value::as_array)
+            .is_some_and(|scopes| scopes
+                .iter()
+                .any(|scope| scope.as_str() == Some("mdp-outcome"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("releasePackagePlan.packages"))));
+        assert!(payload
+            .get("provenanceContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("source artifacts")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified quality records")))));
+    }
+
+    #[test]
+    fn process_capability_catalog_endpoint_exposes_geometry_release_boundaries() {
+        let payload = process_capability_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-capability-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(
+                |route| route.as_str() == Some("GET /fabrication/process-capabilities/catalog")
+            )));
+        assert_eq!(
+            payload.get("capabilityFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("capabilityFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("hybrid-split-combine-and-rework-envelope")
+            })));
+        assert!(payload
+            .get("capabilityScopes")
+            .and_then(Value::as_array)
+            .is_some_and(|scopes| scopes
+                .iter()
+                .any(|scope| scope.as_str() == Some("minimum-wall"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("decompositionPlan.parts"))));
+        assert!(payload
+            .get("processCapabilityContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("failureBoundaries")
+                .and_then(Value::as_array)
+                .is_some_and(|boundaries| boundaries.iter().any(|boundary| boundary
+                    .as_str()
+                    .is_some_and(|boundary| boundary.contains("split/combine")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified machine capability studies")))));
+    }
+
+    #[test]
+    fn manufacturability_catalog_endpoint_exposes_dfm_release_boundaries() {
+        let payload = manufacturability_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturability-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| {
+                routes.iter().any(|route| {
+                    route.as_str() == Some("GET /fabrication/manufacturability/catalog")
+                })
+            }));
+        assert_eq!(
+            payload.get("reviewFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("reviewFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("hybrid-assembly-dfm-and-interface-review")
+            })));
+        assert!(payload
+            .get("checkScopes")
+            .and_then(Value::as_array)
+            .is_some_and(|scopes| scopes
+                .iter()
+                .any(|scope| scope.as_str() == Some("tool-access"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("designInputReview.manufacturabilityEvidence")
+            })));
+        assert!(payload
+            .get("manufacturabilityContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("failureBoundaries")
+                .and_then(Value::as_array)
+                .is_some_and(|boundaries| boundaries.iter().any(|boundary| boundary
+                    .as_str()
+                    .is_some_and(|boundary| boundary.contains("split/combine")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified design approval")))));
+    }
+
+    #[test]
+    fn manufacturability_result_endpoint_reviews_dfm_split_and_learning() {
+        let response =
+            manufacturability_result_review_response(ManufacturabilityResultReviewRequest {
+                request_id: Some("manufacturability-result-001".to_string()),
+                plan_request_id: Some("hybrid-dfm-plan".to_string()),
+                job_id: Some("hybrid-dfm-job".to_string()),
+                worker_id: "dfm-reviewer-01".to_string(),
+                reviewer: Some("hybrid-dfam-tool-access".to_string()),
+                reviewer_version: Some("1.0.0".to_string()),
+                source_part_id: Some("enclosure-shell".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                findings: Some(vec![ManufacturabilityResultFinding {
+                    finding_id: "support-access-pocket".to_string(),
+                    review_family: "additive-dfm-print-or-split-review".to_string(),
+                    check_scope: "support-access".to_string(),
+                    status: "blocked".to_string(),
+                    severity: Some("error".to_string()),
+                    machine_kind: Some("fdm-printer".to_string()),
+                    manufacturing_method: Some("additive-print".to_string()),
+                    release_blocker: Some(true),
+                    requires_redesign: Some(true),
+                    requires_split_combine: Some(true),
+                    requires_human_intervention: Some(true),
+                    recommended_action: Some("split-shell-and-machine-datum".to_string()),
+                    evidence: Some(vec![
+                        "support removal cannot reach internal latch pocket".to_string(),
+                        "datum face requires milling after print".to_string(),
+                    ]),
+                }]),
+                route_reviews: Some(vec![ManufacturabilityResultRouteReview {
+                    route_id: "single-piece-print".to_string(),
+                    finding_id: Some("support-access-pocket".to_string()),
+                    route_kind: "single-piece-additive".to_string(),
+                    manufacturing_method: Some("additive-print".to_string()),
+                    machine_kind: Some("fdm-printer".to_string()),
+                    status: "infeasible".to_string(),
+                    feasible: Some(false),
+                    alternate_route_required: Some(true),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(false),
+                    evidence: Some(vec!["support access blocked in preview".to_string()]),
+                }]),
+                split_combine_decisions: Some(vec![ManufacturabilityResultDecision {
+                    decision_id: "split-shell-datum-insert".to_string(),
+                    decision_kind: "split-and-machine-interface".to_string(),
+                    status: "blocked".to_string(),
+                    source_part_ids: Some(vec!["enclosure-shell".to_string()]),
+                    target_part_ids: Some(vec![
+                        "printed-shell-left".to_string(),
+                        "printed-shell-right".to_string(),
+                        "milled-datum-insert".to_string(),
+                    ]),
+                    accepted: Some(false),
+                    requires_redesign: Some(true),
+                    requires_split_combine: Some(true),
+                    release_blocker: Some(true),
+                    requires_human_intervention: Some(true),
+                    recommended_action: Some("operator-interface-review".to_string()),
+                    evidence: Some(vec!["interface datum not approved".to_string()]),
+                }]),
+                artifacts: Some(vec![ManufacturabilityResultArtifact {
+                    artifact_id: "dfm-report".to_string(),
+                    artifact_kind: "dfm-review-report".to_string(),
+                    source_ref_id: Some("enclosure-shell".to_string()),
+                    uri: Some("s3://fabrication/dfm/enclosure-shell.json".to_string()),
+                    sha256: Some("d".repeat(64)),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec!["dfm report retained".to_string()]),
+                }]),
+                warnings: Some(vec!["split route needs operator disposition".to_string()]),
+                review_metadata: Some(json!({ "review": "support-access" })),
+            })
+            .expect("manufacturability result should review");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturability-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/manufacturability/result")
+            })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("manufacturability-result-findings-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("redesignRequiredCount")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequiredCount")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("manufacturability:split-combine-required")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("manufacturability-family:additive-dfm-print-or-split-review")
+            })));
+
+        let job = stored_manufacturability_result_job(&response);
+        assert_eq!(job.record.kind, "manufacturability-result");
+        assert_eq!(
+            job.record.status,
+            "manufacturability-result-findings-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        assert!(job.artifacts.contains_key("manufacturability-result"));
+        assert!(job.artifacts.contains_key("manufacturability-findings"));
+        assert!(job
+            .artifacts
+            .contains_key("manufacturability-learning-observations"));
+    }
+
+    #[test]
+    fn failure_mode_catalog_endpoint_exposes_process_failure_learning_contract() {
+        let payload = failure_mode_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.failure-mode-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/failure-modes/catalog")
+            })));
+        assert_eq!(
+            payload.get("failureFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("failureFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("hybrid-route-and-human-intervention-failures")
+            })));
+        assert!(payload
+            .get("failureModes")
+            .and_then(Value::as_array)
+            .is_some_and(|modes| modes
+                .iter()
+                .any(|mode| mode.as_str() == Some("part-off-drop"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("machineRelease.blockers"))));
+        assert!(payload
+            .get("failureModeContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("releaseBlockers")
+                .and_then(Value::as_array)
+                .is_some_and(|blockers| blockers.iter().any(|blocker| blocker
+                    .as_str()
+                    .is_some_and(|blocker| blocker.contains("split/combine")))))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified machine diagnostics")))));
+    }
+
+    #[test]
+    fn failure_mode_result_endpoint_reviews_recovery_intervention_and_learning() {
+        let response = failure_mode_result_review_response(FailureModeResultReviewRequest {
+            request_id: Some("failure-mode-result-001".to_string()),
+            plan_request_id: Some("print-boundary-plan".to_string()),
+            job_id: Some("support-risk-job".to_string()),
+            worker_id: "failure-monitor-01".to_string(),
+            monitor: Some("additive-boundary-monitor".to_string()),
+            monitor_version: Some("1.0.0".to_string()),
+            machine_id: Some("corexy-01".to_string()),
+            machine_kind: Some("fdm-printer".to_string()),
+            success: true,
+            machine_ready: false,
+            release_ready: Some(false),
+            failure_events: Some(vec![FailureModeResultEvent {
+                event_id: "support-failure-risk".to_string(),
+                failure_family: "additive-print-process-failures".to_string(),
+                failure_mode: "support-failure".to_string(),
+                status: "blocked".to_string(),
+                severity: Some("error".to_string()),
+                source_surface: Some("simulation.riskProfile".to_string()),
+                release_blocker: Some(true),
+                predicted: Some(true),
+                occurred: Some(false),
+                requires_recovery: Some(true),
+                requires_human_intervention: Some(true),
+                requires_split_combine: Some(true),
+                recommended_action: Some("split-and-redesign-supports".to_string()),
+                evidence: Some(vec![
+                    "overhang support island detached in preview".to_string()
+                ]),
+            }]),
+            recovery_actions: Some(vec![FailureModeResultRecoveryAction {
+                action_id: "regenerate-supports".to_string(),
+                event_id: Some("support-failure-risk".to_string()),
+                action_kind: "regenerate-supports-and-orientation".to_string(),
+                status: "blocked".to_string(),
+                completed: Some(false),
+                release_blocker: Some(true),
+                requires_human_intervention: Some(true),
+                evidence: Some(vec![
+                    "support regeneration requires operator review".to_string()
+                ]),
+            }]),
+            interventions: Some(vec![FailureModeResultIntervention {
+                intervention_id: "operator-support-review".to_string(),
+                event_id: Some("support-failure-risk".to_string()),
+                intervention_kind: "operator-support-and-split-review".to_string(),
+                status: "required".to_string(),
+                required: Some(true),
+                completed: Some(false),
+                operator_minutes: Some(12.0),
+                release_blocker: Some(true),
+                evidence: Some(vec!["operator review not complete".to_string()]),
+            }]),
+            artifacts: Some(vec![FailureModeResultArtifact {
+                artifact_id: "support-risk-report".to_string(),
+                artifact_kind: "failure-mode-report".to_string(),
+                source_ref_id: Some("support-risk-job".to_string()),
+                uri: Some("s3://fabrication/failures/support-risk.json".to_string()),
+                sha256: Some("e".repeat(64)),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["failure mode report retained".to_string()]),
+            }]),
+            warnings: Some(vec![
+                "split/combine review required before release".to_string()
+            ]),
+            review_metadata: Some(json!({ "monitor": "support-preview" })),
+        })
+        .expect("failure mode result should review");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.failure-mode-result-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/failure-modes/result")
+            })));
+        assert_eq!(
+            response.get("reviewStatus").and_then(Value::as_str),
+            Some("failure-mode-result-events-release-blocked")
+        );
+        assert_eq!(
+            response.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("humanInterventionRequired")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            response
+                .get("splitCombineRequiredCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("failure-mode:split-combine-required")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str() == Some("failure-mode:support-failure")
+            })));
+
+        let job = stored_failure_mode_result_job(&response);
+        assert_eq!(job.record.kind, "failure-mode-result");
+        assert_eq!(
+            job.record.status,
+            "failure-mode-result-events-release-blocked"
+        );
+        assert_eq!(job.record.severity, "error");
+        assert!(job.artifacts.contains_key("failure-mode-result"));
+        assert!(job.artifacts.contains_key("failure-mode-events"));
+        assert!(job
+            .artifacts
+            .contains_key("failure-mode-learning-observations"));
     }
 
     #[test]
@@ -79493,6 +89922,58 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+    }
+
+    #[test]
+    fn learning_reward_catalog_endpoint_exposes_reward_terms_and_training_contract() {
+        let payload = learning_reward_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-reward-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/rewards/catalog")
+            })));
+        assert_eq!(
+            payload.get("rewardFamilyCount").and_then(Value::as_u64),
+            Some(5)
+        );
+        assert!(payload
+            .get("rewardFamilies")
+            .and_then(Value::as_array)
+            .is_some_and(|families| families.iter().any(|family| {
+                family.as_str() == Some("split-combine-recovery-and-route-improvement")
+            })));
+        assert!(payload
+            .get("engineTargets")
+            .and_then(Value::as_array)
+            .is_some_and(|targets| targets
+                .iter()
+                .any(|target| target.as_str() == Some("POMDP"))));
+        assert!(payload
+            .get("rewardContracts")
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("rewardTerms")
+                .and_then(Value::as_array)
+                .is_some_and(|terms| terms.iter().any(|term| term
+                    .as_str()
+                    .is_some_and(|term| term.contains("machine-failure:-5")))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("neural_example"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("Positive rewards cannot bypass")))));
     }
 
     #[test]
