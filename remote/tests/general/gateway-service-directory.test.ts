@@ -367,8 +367,14 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   );
   assert.match(gateway, /location = \/auth\/login[\s\S]*return 302 \/auth\?return=\/home/);
   assert.match(gateway, /location = \/auth\/logout[\s\S]*return 302 \/auth\?return=\/home/);
-  assert.match(gateway, /location = \/jello[\s\S]*Athlet-O performance gelatin/);
-  assert.match(gateway, /location = \/jello\/sample[\s\S]*Athlet-O sample pack/);
+  assert.match(
+    gateway,
+    /location = \/jello[\s\S]*dd-remote-web-home\.default\.svc\.cluster\.local:8080/,
+  );
+  assert.match(
+    gateway,
+    /location = \/jello\/sample[\s\S]*dd-remote-web-home\.default\.svc\.cluster\.local:8080/,
+  );
   assert.match(gateway, /location @auth_required/);
   assert.match(gateway, /return 302 \/auth\?return=\$request_uri/);
   assert.doesNotMatch(gateway, /location @auth_required_html/);
