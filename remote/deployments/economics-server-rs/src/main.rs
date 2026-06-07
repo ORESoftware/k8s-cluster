@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     error::Error,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
@@ -34,6 +34,7 @@ const MAX_SERIES: usize = 160;
 const MAX_OBSERVATIONS_PER_SERIES: usize = 8_000;
 const MAX_TOKEN_LEN: usize = 128;
 const MAX_URL_LEN: usize = 2_048;
+const MAX_JSON_POINTER_LEN: usize = 256;
 const MAX_SENTIMENT_DOCUMENTS: usize = 512;
 const MAX_SENTIMENT_TEXT_BYTES: usize = 4_096;
 const MAX_SENTIMENT_CONTEXT_SCORES: usize = 512;
@@ -64,6 +65,7 @@ struct Config {
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
     allow_private_source_urls: bool,
+    allowed_source_hosts: Vec<String>,
     sentiment_credentials: SentimentCredentialStatus,
     market_data_credentials: MarketDataCredentialStatus,
     history_years: u32,
@@ -247,7 +249,9 @@ struct TheoryWeights {
 #[serde(rename_all = "camelCase")]
 struct ApiPullRequest {
     request_id: Option<String>,
-    url: String,
+    source_id: Option<String>,
+    url: Option<String>,
+    parser: Option<SourceParser>,
     instrument_id: Option<String>,
     display_name: Option<String>,
     asset_class: Option<String>,
@@ -257,8 +261,19 @@ struct ApiPullRequest {
     date_field: Option<String>,
     price_field: Option<String>,
     volume_field: Option<String>,
+    date_index: Option<usize>,
+    price_index: Option<usize>,
+    volume_index: Option<usize>,
     auth_header_env: Option<String>,
     auth_header_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SourceParser {
+    JsonRecords,
+    JsonTupleArray,
+    CsvRecords,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -266,14 +281,29 @@ struct ApiPullRequest {
 struct ApiPullResponse {
     ok: bool,
     request_id: String,
+    source_id: Option<String>,
     source: String,
+    parser: Option<SourceParser>,
     url_host: String,
     http_status: u16,
     bytes: usize,
     stored_points: usize,
     instrument_id: Option<String>,
+    quality: Option<SourceQualityReport>,
     warnings: Vec<String>,
     fetched_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceQualityReport {
+    parser: SourceParser,
+    observed_points: usize,
+    dropped_points: usize,
+    first_date: Option<String>,
+    last_date: Option<String>,
+    min_price: Option<f64>,
+    max_price: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -349,6 +379,32 @@ struct SourceDescriptor {
     notes: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicSourceTemplate {
+    id: &'static str,
+    provider: &'static str,
+    name: &'static str,
+    asset_class: &'static str,
+    instrument_id: &'static str,
+    display_name: &'static str,
+    currency: &'static str,
+    source: &'static str,
+    url: &'static str,
+    host: &'static str,
+    parser: SourceParser,
+    root_pointer: Option<&'static str>,
+    date_field: Option<&'static str>,
+    price_field: Option<&'static str>,
+    volume_field: Option<&'static str>,
+    date_index: Option<usize>,
+    price_index: Option<usize>,
+    volume_index: Option<usize>,
+    cadence: &'static str,
+    documentation_url: &'static str,
+    notes: &'static str,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SentimentCredentialStatus {
@@ -374,6 +430,7 @@ struct MarketDataCredentialStatus {
     treasury_api_key: bool,
     census_api_key: bool,
     eia_api_key: bool,
+    coingecko_api_key: bool,
     sec_api_key: bool,
     crunchbase_api_key: bool,
     pitchbook_api_key: bool,
@@ -667,6 +724,24 @@ fn optional_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn env_list(key: &str) -> Vec<String> {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| {
+                    !item.is_empty()
+                        && item.len() <= MAX_TOKEN_LEN
+                        && !item.chars().any(char::is_control)
+                })
+                .take(64)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn env_bool(key: &str, fallback: bool) -> bool {
     env::var(key)
         .ok()
@@ -701,6 +776,7 @@ fn config_from_env() -> Config {
             .or_else(|| optional_env("ECONOMICS_SERVER_AUTH_SECRET")),
         allow_unauthenticated: env_bool("ECONOMICS_ALLOW_UNAUTHENTICATED", false),
         allow_private_source_urls: env_bool("ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS", false),
+        allowed_source_hosts: env_list("ECONOMICS_ALLOWED_SOURCE_HOSTS"),
         sentiment_credentials: sentiment_credentials_from_env(),
         market_data_credentials: market_data_credentials_from_env(),
         history_years: env_u32("ECONOMICS_HISTORY_YEARS", DEFAULT_HISTORY_YEARS),
@@ -764,6 +840,7 @@ fn market_data_credentials_from_env() -> MarketDataCredentialStatus {
         treasury_api_key: optional_env("ECONOMICS_TREASURY_API_KEY").is_some(),
         census_api_key: optional_env("ECONOMICS_CENSUS_API_KEY").is_some(),
         eia_api_key: optional_env("ECONOMICS_EIA_API_KEY").is_some(),
+        coingecko_api_key: optional_env("ECONOMICS_COINGECKO_API_KEY").is_some(),
         sec_api_key: optional_env("ECONOMICS_SEC_API_KEY").is_some(),
         crunchbase_api_key: optional_env("ECONOMICS_CRUNCHBASE_API_KEY").is_some(),
         pitchbook_api_key: optional_env("ECONOMICS_PITCHBOOK_API_KEY").is_some(),
@@ -909,9 +986,15 @@ fn des_service_descriptor() -> Value {
             EndpointKind::Action,
         )
         .endpoint(
+            "GET",
+            "/sources/public",
+            "Known public data source templates with parsers and documentation links.",
+            EndpointKind::Service,
+        )
+        .endpoint(
             "POST",
             "/sources/pull",
-            "Fetch JSON market history from an approved API URL.",
+            "Fetch sourceId templates or bounded custom market history from an approved API URL.",
             EndpointKind::Action,
         )
         .endpoint(
@@ -1135,7 +1218,7 @@ fn source_catalog() -> Vec<SourceDescriptor> {
             id: "crypto",
             name: "CoinGecko, Coinbase, Kraken, Binance US",
             asset_classes: &["crypto", "fx"],
-            auth: "public/private",
+            auth: "public 365-day CoinGecko window or ECONOMICS_COINGECKO_API_KEY/private exchange keys",
             notes: "Spot, order-book, volume, market-cap, funding, and exchange metadata.",
         },
         SourceDescriptor {
@@ -1212,6 +1295,331 @@ fn source_catalog() -> Vec<SourceDescriptor> {
                 "Prices, rents, permits, starts, inventory, mortgage rates, and regional supply.",
         },
     ]
+}
+
+fn public_source_templates() -> Vec<PublicSourceTemplate> {
+    vec![
+        PublicSourceTemplate {
+            id: "treasury-debt-to-penny",
+            provider: "US Treasury FiscalData",
+            name: "US total public debt outstanding",
+            asset_class: "debt",
+            instrument_id: "US-PUBLIC-DEBT",
+            display_name: "US Total Public Debt Outstanding",
+            currency: "USD",
+            source: "treasury-fiscaldata",
+            url: "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny?fields=record_date,tot_pub_debt_out_amt&filter=record_date:gte:2011-01-01&sort=record_date&page%5Bsize%5D=8000",
+            host: "api.fiscaldata.treasury.gov",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/data"),
+            date_field: Some("record_date"),
+            price_field: Some("tot_pub_debt_out_amt"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/",
+            notes: "Official Treasury borrowing series for national-debt context.",
+        },
+        PublicSourceTemplate {
+            id: "worldbank-us-gdp-current-usd",
+            provider: "World Bank Indicators API",
+            name: "US GDP current USD",
+            asset_class: "macro",
+            instrument_id: "US-GDP-CURRENT-USD",
+            display_name: "US GDP Current USD",
+            currency: "USD",
+            source: "worldbank",
+            url: "https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD?format=json&per_page=70",
+            host: "api.worldbank.org",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/1"),
+            date_field: Some("date"),
+            price_field: Some("value"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "annual",
+            documentation_url: "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation",
+            notes: "Public GDP anchor for macro/fiscal projections.",
+        },
+        PublicSourceTemplate {
+            id: "worldbank-us-labor-participation",
+            provider: "World Bank Indicators API",
+            name: "US labor force participation rate",
+            asset_class: "labor",
+            instrument_id: "US-LABOR-PARTICIPATION",
+            display_name: "US Labor Force Participation Rate",
+            currency: "PCT",
+            source: "worldbank",
+            url: "https://api.worldbank.org/v2/country/US/indicator/SL.TLF.CACT.ZS?format=json&per_page=70",
+            host: "api.worldbank.org",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/1"),
+            date_field: Some("date"),
+            price_field: Some("value"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "annual",
+            documentation_url: "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation",
+            notes: "Public workforce participation proxy for labor pressure.",
+        },
+        PublicSourceTemplate {
+            id: "coingecko-bitcoin-usd",
+            provider: "CoinGecko API",
+            name: "Bitcoin market chart USD",
+            asset_class: "crypto",
+            instrument_id: "BTC-USD",
+            display_name: "Bitcoin USD",
+            currency: "USD",
+            source: "coingecko",
+            url: "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily",
+            host: "api.coingecko.com",
+            parser: SourceParser::JsonTupleArray,
+            root_pointer: Some("/prices"),
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: Some(0),
+            price_index: Some(1),
+            volume_index: None,
+            cadence: "daily",
+            documentation_url: "https://docs.coingecko.com/reference/endpoint-overview",
+            notes: "Public unauthenticated crypto history is provider-limited to the past 365 days; longer windows require a provider key or private market-data feed.",
+        },
+        PublicSourceTemplate {
+            id: "coingecko-ethereum-usd",
+            provider: "CoinGecko API",
+            name: "Ethereum market chart USD",
+            asset_class: "crypto",
+            instrument_id: "ETH-USD",
+            display_name: "Ethereum USD",
+            currency: "USD",
+            source: "coingecko",
+            url: "https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=365&interval=daily",
+            host: "api.coingecko.com",
+            parser: SourceParser::JsonTupleArray,
+            root_pointer: Some("/prices"),
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: Some(0),
+            price_index: Some(1),
+            volume_index: None,
+            cadence: "daily",
+            documentation_url: "https://docs.coingecko.com/reference/endpoint-overview",
+            notes: "Public unauthenticated crypto history is provider-limited to the past 365 days; longer windows require a provider key or private market-data feed.",
+        },
+        PublicSourceTemplate {
+            id: "fred-dgs10",
+            provider: "Federal Reserve Economic Data",
+            name: "10-year Treasury constant maturity rate",
+            asset_class: "rates",
+            instrument_id: "DGS10",
+            display_name: "10-Year Treasury Constant Maturity Rate",
+            currency: "PCT",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DGS10"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DGS10",
+            notes: "Public rate anchor for duration, discount-rate, and dollar-pressure features.",
+        },
+        PublicSourceTemplate {
+            id: "fred-wti-oil",
+            provider: "Federal Reserve Economic Data",
+            name: "WTI crude oil spot price",
+            asset_class: "oil",
+            instrument_id: "DCOILWTICO",
+            display_name: "WTI Crude Oil Spot Price",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DCOILWTICO"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DCOILWTICO",
+            notes: "Public oil benchmark for commodity and inflation scenarios.",
+        },
+        PublicSourceTemplate {
+            id: "fred-gold",
+            provider: "Federal Reserve Economic Data",
+            name: "Gold fixing price USD",
+            asset_class: "gold",
+            instrument_id: "GOLDAMGBD228NLBM",
+            display_name: "Gold Fixing Price USD",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GOLDAMGBD228NLBM&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("GOLDAMGBD228NLBM"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/GOLDAMGBD228NLBM",
+            notes: "Public precious-metals benchmark for real-rate and safe-haven modeling.",
+        },
+        PublicSourceTemplate {
+            id: "fred-silver",
+            provider: "Federal Reserve Economic Data",
+            name: "Silver price USD",
+            asset_class: "silver",
+            instrument_id: "SLVPRUSD",
+            display_name: "Silver Price USD",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SLVPRUSD&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("SLVPRUSD"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/SLVPRUSD",
+            notes: "Public silver benchmark for industrial and precious-metals modeling.",
+        },
+        PublicSourceTemplate {
+            id: "fred-sp500",
+            provider: "Federal Reserve Economic Data",
+            name: "S&P 500 index",
+            asset_class: "equities",
+            instrument_id: "SP500",
+            display_name: "S&P 500 Index",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("SP500"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/SP500",
+            notes: "Public equity benchmark for broad market momentum and risk-premium context.",
+        },
+        PublicSourceTemplate {
+            id: "fred-mortgage30",
+            provider: "Federal Reserve Economic Data",
+            name: "30-year fixed mortgage average",
+            asset_class: "real-estate",
+            instrument_id: "MORTGAGE30US",
+            display_name: "30-Year Fixed Rate Mortgage Average",
+            currency: "PCT",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=MORTGAGE30US&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("MORTGAGE30US"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "weekly",
+            documentation_url: "https://fred.stlouisfed.org/series/MORTGAGE30US",
+            notes: "Public real-estate financing pressure series.",
+        },
+        PublicSourceTemplate {
+            id: "fred-usd-eur",
+            provider: "Federal Reserve Economic Data",
+            name: "US dollar to euro exchange rate",
+            asset_class: "forex",
+            instrument_id: "DEXUSEU",
+            display_name: "US Dollar to Euro Exchange Rate",
+            currency: "USD/EUR",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DEXUSEU"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DEXUSEU",
+            notes: "Public FX benchmark for dollar-strength and carry scenarios.",
+        },
+    ]
+}
+
+fn public_source_template(id: &str) -> Option<PublicSourceTemplate> {
+    public_source_templates()
+        .into_iter()
+        .find(|template| template.id == id)
+}
+
+fn public_source_ids() -> Vec<&'static str> {
+    public_source_templates()
+        .into_iter()
+        .map(|template| template.id)
+        .collect()
+}
+
+fn public_source_hosts() -> Vec<&'static str> {
+    let mut hosts = public_source_templates()
+        .into_iter()
+        .map(|template| template.host)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    hosts.sort_unstable();
+    hosts
+}
+
+fn public_source_catalog_payload(config: &Config) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "sources": public_source_templates(),
+        "pullRoute": "POST /sources/pull",
+        "usage": {
+            "sourceId": "Pass one of these ids to POST /sources/pull with no url to fetch and parse a known public source.",
+            "adHoc": "Pass url plus instrumentId, assetClass, parser, and field/index metadata for authenticated custom API pulls."
+        },
+        "egressPolicy": {
+            "privateUrlsAllowed": config.allow_private_source_urls,
+            "allowedSourceHosts": config.allowed_source_hosts,
+            "knownPublicHosts": public_source_hosts(),
+            "redirectFollowing": false
+        },
+        "atMs": now_ms()
+    })
 }
 
 fn sentiment_source_catalog(credentials: &SentimentCredentialStatus) -> Value {
@@ -1303,6 +1711,11 @@ fn schema_descriptor() -> Value {
             "sources": "GET /sentiment/sources reports placeholder credential env names and configured status for X/Twitter, Reddit, news, Stocktwits, and GDELT.",
             "analyze": "POST /sentiment/analyze accepts supplied social/news snippets and returns bounded placeholder sentiment scores by source."
         },
+        "sources": {
+            "catalog": "GET /sources reports broad provider families.",
+            "publicTemplates": "GET /sources/public reports sourceId templates for known public APIs and CSV feeds.",
+            "pull": "POST /sources/pull accepts authenticated sourceId pulls or bounded ad-hoc API pulls."
+        },
         "macro": {
             "indicators": "GET /macro/indicators reports built-in fiscal/labor sample context and public/private credential placeholders."
         },
@@ -1370,6 +1783,7 @@ fn service_descriptor(state: &AppState) -> Value {
             "forecast": "POST /forecast",
             "ingest": "POST /ingest",
             "sources": "GET /sources",
+            "publicSources": "GET /sources/public",
             "pullSource": "POST /sources/pull",
             "sentimentSources": "GET /sentiment/sources",
             "sentimentAnalyze": "POST /sentiment/analyze",
@@ -1404,6 +1818,7 @@ fn service_descriptor(state: &AppState) -> Value {
         },
         "marketData": {
             "credentialStatus": &state.config.market_data_credentials,
+            "publicSourcesRoute": "GET /sources/public",
             "macroRoute": "GET /macro/indicators",
             "vcRoute": "GET /vc/investment",
             "recommendationsRoute": "POST /recommendations"
@@ -1417,6 +1832,7 @@ fn service_descriptor(state: &AppState) -> Value {
         },
         "equationCount": equation_catalog().len(),
         "sourceCount": source_catalog().len(),
+        "publicSourceTemplateCount": public_source_templates().len(),
         "atMs": now_ms()
     })
 }
@@ -1448,8 +1864,15 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
                 item.instrument_id
             ));
         }
+        let mut seen_dates = BTreeSet::new();
         for (index, point) in item.observations.iter().enumerate() {
             clean_token(&point.date, "observation.date")?;
+            if !seen_dates.insert(point.date.trim().to_string()) {
+                return Err(format!(
+                    "series {} observation {index} date is duplicated",
+                    item.instrument_id
+                ));
+            }
             if !point.price.is_finite() || point.price <= 0.0 {
                 return Err(format!(
                     "series {} observation {index} price must be finite and positive",
@@ -2847,6 +3270,10 @@ fn hardening_audit_payload(state: &AppState) -> Value {
         },
         "egressPolicy": {
             "sourcePullPrivateUrlsAllowed": state.config.allow_private_source_urls,
+            "sourcePullAllowedHosts": state.config.allowed_source_hosts,
+            "knownPublicSourceHosts": public_source_hosts(),
+            "knownPublicSourceTemplates": public_source_templates().len(),
+            "sourcePullRedirectFollowing": false,
             "externalPipelineUrlsAllowed": state.config.allow_external_pipeline_urls,
             "sparkPipelineSubmitEnabled": state.config.allow_pipeline_submit,
             "sparkPipelineSubmitRequiresInternalUrl": !state.config.allow_external_pipeline_urls
@@ -3086,6 +3513,7 @@ fn spark_ingest_intent(request_id: &str, data_lake_uri: &str) -> PipelineJobInte
             "schemaVersion": SCHEMA_VERSION,
             "requestId": request_id,
             "dataLakeUri": data_lake_uri,
+            "publicSourceIds": public_source_ids(),
             "inputRoutes": ["POST /sources/pull", "POST /ingest"],
             "qualityChecks": [
                 "schema-check",
@@ -3127,6 +3555,7 @@ fn spark_feature_intent(
             "appResource": format!("{data_lake_uri}/jobs/economics-feature-build.jar"),
             "args": [
                 "--scenario", scenario,
+                "--public-source-ids", public_source_ids().join(","),
                 "--input", format!("{data_lake_uri}/bronze/market_series"),
                 "--output", format!("{data_lake_uri}/silver/features"),
                 "--recommendations", format!("{data_lake_uri}/gold/recommendations")
@@ -3166,6 +3595,7 @@ fn airflow_dag_intent(
                 "schemaVersion": SCHEMA_VERSION,
                 "scenario": scenario,
                 "dataLakeUri": data_lake_uri,
+                "publicSourceIds": public_source_ids(),
                 "sparkPipelineJobKinds": ["INGEST_VALIDATE_PUBLISH", "SPARK_SUBMIT"]
             }
         }),
@@ -3199,7 +3629,8 @@ fn databricks_job_intent(
                 "source": SERVICE_NAME,
                 "schemaVersion": SCHEMA_VERSION,
                 "scenario": scenario,
-                "dataLakeUri": data_lake_uri
+                "dataLakeUri": data_lake_uri,
+                "publicSourceIds": public_source_ids()
             },
             "credentialEnv": ["ECONOMICS_DATABRICKS_HOST", "ECONOMICS_DATABRICKS_TOKEN"]
         }),
@@ -3231,6 +3662,7 @@ fn nats_pipeline_intent(
             "schemaVersion": SCHEMA_VERSION,
             "scenario": scenario,
             "dataLakeUri": data_lake_uri,
+            "publicSourceIds": public_source_ids(),
             "createdAtMs": now_ms()
         }),
         notes: vec![
@@ -5671,6 +6103,8 @@ async fn sources() -> impl IntoResponse {
     Json(json!({
         "ok": true,
         "sources": source_catalog(),
+        "publicSourcesRoute": "GET /sources/public",
+        "publicSourceTemplateCount": public_source_templates().len(),
         "pullRoute": "POST /sources/pull",
         "ingestRoute": "POST /ingest",
         "sentimentSourcesRoute": "GET /sentiment/sources",
@@ -5682,6 +6116,10 @@ async fn sources() -> impl IntoResponse {
         "pipelineSubmitRoute": "POST /pipelines/submit",
         "auditHardeningRoute": "GET /audit/hardening"
     }))
+}
+
+async fn public_sources(State(state): State<AppState>) -> impl IntoResponse {
+    Json(public_source_catalog_payload(&state.config))
 }
 
 async fn sentiment_sources(State(state): State<AppState>) -> impl IntoResponse {
@@ -5998,9 +6436,19 @@ async fn pull_source_http(
 }
 
 async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPullResponse, String> {
-    let parsed_url = reqwest::Url::parse(request.url.trim())
-        .map_err(|error| format!("url is invalid: {error}"))?;
-    validate_source_url(&parsed_url, state.config.allow_private_source_urls)?;
+    let mut request = request;
+    let source_template = apply_public_source_template(&mut request)?;
+    validate_api_pull_request(&request, source_template.as_ref())?;
+    let url = request.url.as_deref().ok_or_else(|| {
+        "url is required unless sourceId names a public source template".to_string()
+    })?;
+    let parsed_url =
+        reqwest::Url::parse(url.trim()).map_err(|error| format!("url is invalid: {error}"))?;
+    if let Some(template) = source_template.as_ref() {
+        validate_public_source_url(&parsed_url, template)?;
+    } else {
+        validate_source_url_for_config(&parsed_url, &state.config)?;
+    }
     let mut http_request = state.http.get(parsed_url.clone());
     if let Some(env_name) = request.auth_header_env.as_deref() {
         let env_name = clean_token(env_name, "authHeaderEnv")?;
@@ -6045,17 +6493,19 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     let mut stored_points = 0usize;
     let mut warnings = Vec::new();
     let mut instrument_id = request.instrument_id.clone();
-    if request.instrument_id.is_some()
-        && request.asset_class.is_some()
-        && request.date_field.is_some()
-        && request.price_field.is_some()
-    {
-        let json_value = serde_json::from_slice::<Value>(&bytes)
-            .map_err(|error| format!("source response is not JSON: {error}"))?;
-        let series = series_from_json(&request, &json_value)?;
+    let mut quality = None;
+    let parser = request.parser;
+    let should_parse = parser.is_some()
+        || (request.instrument_id.is_some()
+            && request.asset_class.is_some()
+            && request.date_field.is_some()
+            && request.price_field.is_some());
+    if should_parse {
+        let (series, report) = series_from_bytes(&request, &bytes)?;
         stored_points = series.observations.len();
         instrument_id = Some(series.instrument_id.clone());
         validate_series(std::slice::from_ref(&series))?;
+        quality = Some(report);
         let mut store = state
             .series_store
             .write()
@@ -6063,7 +6513,7 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
         store.insert(series.instrument_id.clone(), series);
     } else {
         warnings.push(
-            "response fetched but not stored; provide instrumentId, assetClass, dateField, and priceField to parse JSON series"
+            "response fetched but not stored; provide sourceId or instrumentId, assetClass, parser, and field/index metadata to parse a series"
                 .to_string(),
         );
     }
@@ -6071,17 +6521,20 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     let response = ApiPullResponse {
         ok: true,
         request_id,
+        source_id: request.source_id.clone(),
         source: request
             .source
             .unwrap_or_else(|| "ad-hoc-api".to_string())
             .chars()
             .take(MAX_TOKEN_LEN)
             .collect(),
+        parser,
         url_host: host,
         http_status: status.as_u16(),
         bytes: bytes.len(),
         stored_points,
         instrument_id,
+        quality,
         warnings,
         fetched_at_ms: now_ms(),
     };
@@ -6101,7 +6554,155 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     Ok(response)
 }
 
+fn apply_public_source_template(
+    request: &mut ApiPullRequest,
+) -> Result<Option<PublicSourceTemplate>, String> {
+    let Some(source_id) = request.source_id.as_deref() else {
+        return Ok(None);
+    };
+    let source_id = clean_token(source_id, "sourceId")?;
+    let template = public_source_template(&source_id).ok_or_else(|| {
+        format!(
+            "unknown sourceId {source_id}; use GET /sources/public for supported public templates"
+        )
+    })?;
+    if request
+        .url
+        .as_deref()
+        .map(|url| !url.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err("sourceId templates do not allow url overrides".to_string());
+    }
+    if request.auth_header_env.is_some() || request.auth_header_name.is_some() {
+        return Err(
+            "sourceId templates are public and do not accept auth header overrides".to_string(),
+        );
+    }
+
+    request.source_id = Some(source_id);
+    request.url = Some(template.url.to_string());
+    request.parser.get_or_insert(template.parser);
+    request
+        .instrument_id
+        .get_or_insert_with(|| template.instrument_id.to_string());
+    request
+        .display_name
+        .get_or_insert_with(|| template.display_name.to_string());
+    request
+        .asset_class
+        .get_or_insert_with(|| template.asset_class.to_string());
+    request
+        .currency
+        .get_or_insert_with(|| template.currency.to_string());
+    request
+        .source
+        .get_or_insert_with(|| template.source.to_string());
+    if request.root_pointer.is_none() {
+        request.root_pointer = template.root_pointer.map(str::to_string);
+    }
+    if request.date_field.is_none() {
+        request.date_field = template.date_field.map(str::to_string);
+    }
+    if request.price_field.is_none() {
+        request.price_field = template.price_field.map(str::to_string);
+    }
+    if request.volume_field.is_none() {
+        request.volume_field = template.volume_field.map(str::to_string);
+    }
+    request.date_index = request.date_index.or(template.date_index);
+    request.price_index = request.price_index.or(template.price_index);
+    request.volume_index = request.volume_index.or(template.volume_index);
+    Ok(Some(template))
+}
+
+fn validate_api_pull_request(
+    request: &ApiPullRequest,
+    source_template: Option<&PublicSourceTemplate>,
+) -> Result<(), String> {
+    clean_optional_token(&request.source_id, "sourceId")?;
+    clean_optional_token(&request.instrument_id, "instrumentId")?;
+    clean_optional_token(&request.display_name, "displayName")?;
+    clean_optional_token(&request.asset_class, "assetClass")?;
+    clean_optional_token(&request.currency, "currency")?;
+    clean_optional_token(&request.source, "source")?;
+    clean_optional_token(&request.date_field, "dateField")?;
+    clean_optional_token(&request.price_field, "priceField")?;
+    clean_optional_token(&request.volume_field, "volumeField")?;
+    clean_optional_token(&request.auth_header_env, "authHeaderEnv")?;
+    clean_optional_token(&request.auth_header_name, "authHeaderName")?;
+    if let Some(url) = request.url.as_deref() {
+        if url.trim().is_empty() || url.len() > MAX_URL_LEN || url.chars().any(char::is_control) {
+            return Err(format!(
+                "url must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+            ));
+        }
+    }
+    if let Some(pointer) = request.root_pointer.as_deref() {
+        validate_json_pointer(pointer, "rootPointer")?;
+    }
+    for (label, index) in [
+        ("dateIndex", request.date_index),
+        ("priceIndex", request.price_index),
+        ("volumeIndex", request.volume_index),
+    ] {
+        if let Some(index) = index {
+            if index > 16 {
+                return Err(format!("{label} must be between 0 and 16"));
+            }
+        }
+    }
+    if source_template.is_none() && request.source_id.is_some() {
+        return Err("sourceId did not resolve to a public source template".to_string());
+    }
+    Ok(())
+}
+
+fn validate_json_pointer(pointer: &str, label: &str) -> Result<(), String> {
+    let trimmed = pointer.trim();
+    if trimmed.len() > MAX_JSON_POINTER_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "{label} must contain no control characters and be at most {MAX_JSON_POINTER_LEN} bytes"
+        ));
+    }
+    if !trimmed.is_empty() && !trimmed.starts_with('/') {
+        return Err(format!("{label} must be a JSON pointer starting with /"));
+    }
+    Ok(())
+}
+
+fn validate_public_source_url(
+    url: &reqwest::Url,
+    template: &PublicSourceTemplate,
+) -> Result<(), String> {
+    validate_source_url(url, false)?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source URL must include a host".to_string())?
+        .to_ascii_lowercase();
+    if host != template.host {
+        return Err(format!(
+            "sourceId {} must resolve to host {}",
+            template.id, template.host
+        ));
+    }
+    Ok(())
+}
+
+fn validate_source_url_for_config(url: &reqwest::Url, config: &Config) -> Result<(), String> {
+    validate_source_url(url, config.allow_private_source_urls)?;
+    validate_source_host_allowlist(url, &config.allowed_source_hosts)
+}
+
 fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), String> {
+    if url.as_str().len() > MAX_URL_LEN || url.as_str().chars().any(char::is_control) {
+        return Err(format!(
+            "source URL must contain no control characters and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    if url.fragment().is_some() {
+        return Err("source URL fragments are not allowed".to_string());
+    }
     match url.scheme() {
         "https" => {}
         "http" if allow_private => {}
@@ -6116,21 +6717,14 @@ fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), St
         .host_str()
         .ok_or_else(|| "source URL must include a host".to_string())?
         .to_ascii_lowercase();
-    let private_host = host == "localhost"
-        || host == "127.0.0.1"
-        || host == "::1"
-        || host.starts_with("10.")
-        || host.starts_with("192.168.")
-        || host.starts_with("172.16.")
-        || host.starts_with("172.17.")
-        || host.starts_with("172.18.")
-        || host.starts_with("172.19.")
-        || host.starts_with("172.2")
-        || host.starts_with("172.30.")
-        || host.starts_with("172.31.");
-    if private_host && !allow_private {
+    if source_host_is_private(&host) && !allow_private {
         return Err(
             "private source hosts require ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true".to_string(),
+        );
+    }
+    if url.port().is_some() && !allow_private {
+        return Err(
+            "custom source URL ports require ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true".to_string(),
         );
     }
     if url.username() != "" || url.password().is_some() {
@@ -6139,7 +6733,92 @@ fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), St
     Ok(())
 }
 
+fn source_host_is_private(host: &str) -> bool {
+    if matches!(
+        host,
+        "localhost" | "host.docker.internal" | "metadata.google.internal"
+    ) || host.ends_with(".localhost")
+        || host.ends_with(".local")
+    {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            let [a, b, _, _] = ip.octets();
+            a == 0
+                || a == 10
+                || a == 127
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..=31).contains(&b))
+                || (a == 192 && b == 168)
+                || a >= 224
+        }
+        Ok(IpAddr::V6(ip)) => {
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+        }
+        Err(_) => false,
+    }
+}
+
+fn validate_source_host_allowlist(
+    url: &reqwest::Url,
+    allowed_hosts: &[String],
+) -> Result<(), String> {
+    if allowed_hosts.is_empty() {
+        return Ok(());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source URL must include a host".to_string())?
+        .to_ascii_lowercase();
+    if allowed_hosts
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "source host {host} is not in ECONOMICS_ALLOWED_SOURCE_HOSTS"
+    ))
+}
+
+fn series_from_bytes(
+    request: &ApiPullRequest,
+    bytes: &[u8],
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    match request.parser.unwrap_or(SourceParser::JsonRecords) {
+        SourceParser::JsonRecords => {
+            let json_value = serde_json::from_slice::<Value>(bytes)
+                .map_err(|error| format!("source response is not JSON: {error}"))?;
+            series_from_json_records_with_quality(request, &json_value)
+        }
+        SourceParser::JsonTupleArray => {
+            let json_value = serde_json::from_slice::<Value>(bytes)
+                .map_err(|error| format!("source response is not JSON: {error}"))?;
+            series_from_json_tuple_array(request, &json_value)
+        }
+        SourceParser::CsvRecords => {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|error| format!("source response is not UTF-8 CSV: {error}"))?;
+            series_from_csv_records(request, text)
+        }
+    }
+}
+
+#[cfg(test)]
 fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSeries, String> {
+    series_from_json_records_with_quality(request, value).map(|(series, _)| series)
+}
+
+fn series_from_json_records_with_quality(
+    request: &ApiPullRequest,
+    value: &Value,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
     let root = match request.root_pointer.as_deref() {
         Some(pointer) if !pointer.trim().is_empty() => value
             .pointer(pointer)
@@ -6153,23 +6832,145 @@ fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSer
     let price_field = request.price_field.as_deref().unwrap_or("price");
     let volume_field = request.volume_field.as_deref();
     let mut observations = Vec::with_capacity(items.len().min(MAX_OBSERVATIONS_PER_SERIES));
+    let mut dropped_points = 0usize;
     for item in items.iter().take(MAX_OBSERVATIONS_PER_SERIES) {
-        let date = field_value(item, date_field)
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("dateField {date_field} missing or not a string"))?;
-        let price = field_value(item, price_field)
-            .and_then(number_from_value)
-            .ok_or_else(|| format!("priceField {price_field} missing or not numeric"))?;
+        let Some(date) = field_value(item, date_field).and_then(date_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = field_value(item, price_field).and_then(number_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
         let volume = volume_field
             .and_then(|field| field_value(item, field))
             .and_then(number_from_value);
         observations.push(MarketObservation {
-            date: date.to_string(),
+            date,
             price,
             volume,
         });
     }
-    Ok(MarketSeries {
+    build_series_with_quality(
+        request,
+        SourceParser::JsonRecords,
+        observations,
+        dropped_points,
+    )
+}
+
+fn series_from_json_tuple_array(
+    request: &ApiPullRequest,
+    value: &Value,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    let root = match request.root_pointer.as_deref() {
+        Some(pointer) if !pointer.trim().is_empty() => value
+            .pointer(pointer)
+            .ok_or_else(|| format!("rootPointer {pointer} did not match JSON response"))?,
+        _ => value,
+    };
+    let items = root
+        .as_array()
+        .ok_or_else(|| "selected JSON value must be an array".to_string())?;
+    let date_index = request.date_index.unwrap_or(0);
+    let price_index = request.price_index.unwrap_or(1);
+    let volume_index = request.volume_index;
+    let mut observations = Vec::with_capacity(items.len().min(MAX_OBSERVATIONS_PER_SERIES));
+    let mut dropped_points = 0usize;
+    for item in items.iter().take(MAX_OBSERVATIONS_PER_SERIES) {
+        let Some(tuple) = item.as_array() else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(date) = tuple.get(date_index).and_then(date_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = tuple.get(price_index).and_then(number_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let volume = volume_index
+            .and_then(|index| tuple.get(index))
+            .and_then(number_from_value);
+        observations.push(MarketObservation {
+            date,
+            price,
+            volume,
+        });
+    }
+    build_series_with_quality(
+        request,
+        SourceParser::JsonTupleArray,
+        observations,
+        dropped_points,
+    )
+}
+
+fn series_from_csv_records(
+    request: &ApiPullRequest,
+    text: &str,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let header_line = lines
+        .next()
+        .ok_or_else(|| "CSV response must include a header row".to_string())?;
+    let headers = parse_csv_line(header_line)?;
+    let date_field = request.date_field.as_deref().unwrap_or("date");
+    let price_field = request.price_field.as_deref().unwrap_or("price");
+    let volume_field = request.volume_field.as_deref();
+    let date_index = csv_header_index(&headers, date_field)?;
+    let price_index = csv_header_index(&headers, price_field)?;
+    let volume_index = volume_field
+        .map(|field| csv_header_index(&headers, field))
+        .transpose()?;
+    let mut observations = Vec::with_capacity(MAX_OBSERVATIONS_PER_SERIES.min(1024));
+    let mut dropped_points = 0usize;
+    for line in lines.take(MAX_OBSERVATIONS_PER_SERIES) {
+        let fields = parse_csv_line(line)?;
+        let Some(date) = fields
+            .get(date_index)
+            .and_then(|value| date_from_text(value))
+        else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = fields
+            .get(price_index)
+            .and_then(|value| number_from_text(value))
+        else {
+            dropped_points += 1;
+            continue;
+        };
+        let volume = volume_index
+            .and_then(|index| fields.get(index))
+            .and_then(|value| number_from_text(value));
+        observations.push(MarketObservation {
+            date,
+            price,
+            volume,
+        });
+    }
+    build_series_with_quality(
+        request,
+        SourceParser::CsvRecords,
+        observations,
+        dropped_points,
+    )
+}
+
+fn build_series_with_quality(
+    request: &ApiPullRequest,
+    parser: SourceParser,
+    mut observations: Vec<MarketObservation>,
+    dropped_points: usize,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    observations.sort_by(|left, right| left.date.cmp(&right.date));
+    let before_dedupe = observations.len();
+    observations.dedup_by(|left, right| left.date == right.date);
+    let dropped_points = dropped_points + before_dedupe.saturating_sub(observations.len());
+    let quality = source_quality_report(parser, &observations, dropped_points);
+    let series = MarketSeries {
         instrument_id: request
             .instrument_id
             .clone()
@@ -6186,7 +6987,67 @@ fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSer
             .or_else(|| Some("api-pull".to_string())),
         observations,
         features: None,
-    })
+    };
+    Ok((series, quality))
+}
+
+fn source_quality_report(
+    parser: SourceParser,
+    observations: &[MarketObservation],
+    dropped_points: usize,
+) -> SourceQualityReport {
+    let min_price = observations
+        .iter()
+        .map(|point| point.price)
+        .reduce(f64::min)
+        .map(round6);
+    let max_price = observations
+        .iter()
+        .map(|point| point.price)
+        .reduce(f64::max)
+        .map(round6);
+    SourceQualityReport {
+        parser,
+        observed_points: observations.len(),
+        dropped_points,
+        first_date: observations.first().map(|point| point.date.clone()),
+        last_date: observations.last().map(|point| point.date.clone()),
+        min_price,
+        max_price,
+    }
+}
+
+fn parse_csv_line(line: &str) -> Result<Vec<String>, String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                field.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                fields.push(field.trim().to_string());
+                field.clear();
+            }
+            _ => field.push(ch),
+        }
+    }
+    if in_quotes {
+        return Err("CSV row has an unterminated quoted field".to_string());
+    }
+    fields.push(field.trim().to_string());
+    Ok(fields)
+}
+
+fn csv_header_index(headers: &[String], field: &str) -> Result<usize, String> {
+    headers
+        .iter()
+        .position(|header| header.eq_ignore_ascii_case(field))
+        .ok_or_else(|| format!("CSV field {field} was not found in header row"))
 }
 
 fn field_value<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
@@ -6197,14 +7058,56 @@ fn field_value<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
     }
 }
 
+fn date_from_value(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .and_then(date_from_text)
+        .or_else(|| value.as_i64().map(|number| number.to_string()))
+        .or_else(|| value.as_u64().map(|number| number.to_string()))
+        .or_else(|| {
+            value.as_f64().and_then(|number| {
+                if number.is_finite() {
+                    Some(format!("{number:.0}"))
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn date_from_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed.eq_ignore_ascii_case("null") {
+        None
+    } else {
+        Some(trimmed.chars().take(MAX_TOKEN_LEN).collect())
+    }
+}
+
 fn number_from_value(value: &Value) -> Option<f64> {
     value
         .as_f64()
-        .or_else(|| {
-            value
-                .as_str()
-                .and_then(|text| text.trim().parse::<f64>().ok())
-        })
+        .or_else(|| value.as_str().and_then(number_from_text))
+        .filter(|number| number.is_finite())
+}
+
+fn number_from_text(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed == "."
+        || trimmed.eq_ignore_ascii_case("null")
+        || trimmed.eq_ignore_ascii_case("nan")
+    {
+        return None;
+    }
+    let normalized = trimmed
+        .trim_start_matches('$')
+        .chars()
+        .filter(|ch| *ch != ',')
+        .collect::<String>();
+    normalized
+        .parse::<f64>()
+        .ok()
         .filter(|number| number.is_finite())
 }
 
@@ -6303,6 +7206,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         nats,
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("dd-economics-server/0.1 source-pull")
             .build()?,
         series_store: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -6318,6 +7223,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/schema", get(schema))
         .route("/example", get(example))
         .route("/sources", get(sources))
+        .route("/sources/public", get(public_sources))
         .route("/sources/pull", post(pull_source_http))
         .route("/sentiment/sources", get(sentiment_sources))
         .route("/sentiment/analyze", post(sentiment_analyze_http))
@@ -6686,6 +7592,7 @@ mod tests {
             server_auth_secret: Some("secret".to_string()),
             allow_unauthenticated: false,
             allow_private_source_urls: false,
+            allowed_source_hosts: Vec::new(),
             sentiment_credentials: SentimentCredentialStatus {
                 x_bearer_token: true,
                 x_api_key: false,
@@ -6706,6 +7613,7 @@ mod tests {
                 treasury_api_key: false,
                 census_api_key: false,
                 eia_api_key: false,
+                coingecko_api_key: true,
                 sec_api_key: false,
                 crunchbase_api_key: true,
                 pitchbook_api_key: false,
@@ -6738,8 +7646,36 @@ mod tests {
             config: Arc::new(test_config()),
             metrics: Arc::new(Metrics::default()),
             nats: None,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("dd-economics-server/0.1 test-source-pull")
+                .build()
+                .unwrap(),
             series_store: Arc::new(RwLock::new(BTreeMap::new())),
+        }
+    }
+
+    fn source_id_pull_request(source_id: &str) -> ApiPullRequest {
+        ApiPullRequest {
+            request_id: None,
+            source_id: Some(source_id.to_string()),
+            url: None,
+            parser: None,
+            instrument_id: None,
+            display_name: None,
+            asset_class: None,
+            currency: None,
+            source: None,
+            root_pointer: None,
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: None,
+            auth_header_name: None,
         }
     }
 
@@ -6799,7 +7735,9 @@ mod tests {
     fn parses_json_series_from_pointer_fields() {
         let request = ApiPullRequest {
             request_id: None,
-            url: "https://example.com/data.json".to_string(),
+            source_id: None,
+            url: Some("https://example.com/data.json".to_string()),
+            parser: Some(SourceParser::JsonRecords),
             instrument_id: Some("TEST".to_string()),
             display_name: Some("Test".to_string()),
             asset_class: Some("equities".to_string()),
@@ -6809,6 +7747,9 @@ mod tests {
             date_field: Some("d".to_string()),
             price_field: Some("p".to_string()),
             volume_field: Some("v".to_string()),
+            date_index: None,
+            price_index: None,
+            volume_index: None,
             auth_header_env: None,
             auth_header_name: None,
         };
@@ -6997,5 +7938,229 @@ mod tests {
         let error = validate_pipeline_submit_url(&config).expect_err("external URL rejected");
 
         assert!(error.contains("cluster-local"));
+    }
+
+    #[test]
+    fn public_source_catalog_covers_tradeable_and_macro_assets() {
+        let ids = public_source_ids();
+
+        assert!(ids.contains(&"treasury-debt-to-penny"));
+        assert!(ids.contains(&"worldbank-us-gdp-current-usd"));
+        assert!(ids.contains(&"coingecko-bitcoin-usd"));
+        assert!(ids.contains(&"fred-wti-oil"));
+        assert!(ids.contains(&"fred-gold"));
+        assert!(ids.contains(&"fred-silver"));
+        assert!(ids.contains(&"fred-sp500"));
+        assert!(ids.contains(&"fred-mortgage30"));
+        assert!(ids.contains(&"fred-usd-eur"));
+        assert!(public_source_hosts().contains(&"api.fiscaldata.treasury.gov"));
+    }
+
+    #[test]
+    fn source_id_template_fills_pull_metadata_and_rejects_url_override() {
+        let mut request = source_id_pull_request("treasury-debt-to-penny");
+        let template = apply_public_source_template(&mut request)
+            .expect("source template resolves")
+            .expect("template present");
+
+        assert_eq!(template.host, "api.fiscaldata.treasury.gov");
+        assert_eq!(request.instrument_id.as_deref(), Some("US-PUBLIC-DEBT"));
+        assert_eq!(request.parser, Some(SourceParser::JsonRecords));
+        validate_api_pull_request(&request, Some(&template)).expect("template request validates");
+
+        let mut override_request = source_id_pull_request("treasury-debt-to-penny");
+        override_request.url = Some("https://example.com/not-the-template.json".to_string());
+        let error = apply_public_source_template(&mut override_request)
+            .expect_err("sourceId URL override rejected");
+        assert!(error.contains("url overrides"));
+    }
+
+    #[test]
+    fn parses_treasury_fiscaldata_json_and_reports_quality() {
+        let mut request = source_id_pull_request("treasury-debt-to-penny");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        let body = br#"{
+            "data": [
+                {"record_date":"2026-06-03","tot_pub_debt_out_amt":"39204974715248.65"},
+                {"record_date":"2026-06-04","tot_pub_debt_out_amt":"39232150577283.87"},
+                {"record_date":"2026-06-05","tot_pub_debt_out_amt":null}
+            ]
+        }"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("treasury series parsed");
+
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "US-PUBLIC-DEBT");
+        assert_eq!(series.observations.len(), 2);
+        assert_eq!(quality.dropped_points, 1);
+        assert_eq!(quality.first_date.as_deref(), Some("2026-06-03"));
+        assert_eq!(quality.last_date.as_deref(), Some("2026-06-04"));
+    }
+
+    #[test]
+    fn parses_worldbank_records_and_skips_latest_null() {
+        let mut request = source_id_pull_request("worldbank-us-gdp-current-usd");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        let body = br#"[
+            {"page":1,"pages":1,"per_page":3,"total":3},
+            [
+                {"date":"2025","value":null},
+                {"date":"2024","value":28750956130731.2},
+                {"date":"2023","value":27292170793214.4}
+            ]
+        ]"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("worldbank series parsed");
+
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "US-GDP-CURRENT-USD");
+        assert_eq!(series.observations[0].date, "2023");
+        assert_eq!(quality.dropped_points, 1);
+    }
+
+    #[test]
+    fn parses_coingecko_tuple_arrays() {
+        let mut request = source_id_pull_request("coingecko-bitcoin-usd");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        let body = br#"{
+            "prices": [
+                [1780790400000,60861.88012897632],
+                [1780704000000,60921.79441516493]
+            ],
+            "market_caps": [],
+            "total_volumes": []
+        }"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("coingecko series parsed");
+
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "BTC-USD");
+        assert_eq!(series.observations[0].date, "1780704000000");
+        assert_eq!(quality.parser, SourceParser::JsonTupleArray);
+        assert_eq!(quality.observed_points, 2);
+    }
+
+    #[test]
+    fn parses_csv_records_and_drops_missing_values() {
+        let request = ApiPullRequest {
+            request_id: None,
+            source_id: None,
+            url: Some("https://example.com/dgs10.csv".to_string()),
+            parser: Some(SourceParser::CsvRecords),
+            instrument_id: Some("DGS10".to_string()),
+            display_name: Some("10-Year Treasury".to_string()),
+            asset_class: Some("rates".to_string()),
+            currency: Some("PCT".to_string()),
+            source: Some("unit-csv".to_string()),
+            root_pointer: None,
+            date_field: Some("observation_date".to_string()),
+            price_field: Some("DGS10".to_string()),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: None,
+            auth_header_name: None,
+        };
+        let body = "observation_date,DGS10\n2026-06-01,4.45\n2026-06-02,.\n2026-06-03,4.41\n";
+
+        let (series, quality) =
+            series_from_bytes(&request, body.as_bytes()).expect("csv series parsed");
+
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.observations.len(), 2);
+        assert_eq!(quality.dropped_points, 1);
+        assert_eq!(quality.min_price, Some(4.41));
+    }
+
+    #[test]
+    fn source_policy_blocks_private_redirect_targets_and_custom_ports() {
+        let link_local = reqwest::Url::parse("https://169.254.169.254/latest/meta-data").unwrap();
+        let error = validate_source_url(&link_local, false).expect_err("link-local blocked");
+        assert!(error.contains("ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS"));
+
+        let custom_port = reqwest::Url::parse("https://api.worldbank.org:8443/v2").unwrap();
+        let error = validate_source_url(&custom_port, false).expect_err("custom port blocked");
+        assert!(error.contains("custom source URL ports"));
+
+        let public_172 = reqwest::Url::parse("https://172.200.1.1/data.json").unwrap();
+        validate_source_url(&public_172, false).expect("172.200/16 is not RFC1918 private");
+    }
+
+    #[test]
+    fn source_host_allowlist_restricts_ad_hoc_public_pulls() {
+        let allowed = vec!["api.worldbank.org".to_string()];
+        let worldbank = reqwest::Url::parse("https://api.worldbank.org/v2/country/US").unwrap();
+        let coingecko = reqwest::Url::parse("https://api.coingecko.com/api/v3/ping").unwrap();
+
+        validate_source_host_allowlist(&worldbank, &allowed).expect("worldbank allowed");
+        let error = validate_source_host_allowlist(&coingecko, &allowed)
+            .expect_err("coingecko blocked by allowlist");
+        assert!(error.contains("ECONOMICS_ALLOWED_SOURCE_HOSTS"));
+    }
+
+    #[test]
+    fn duplicate_ingested_observation_dates_are_rejected() {
+        let series = MarketSeries {
+            instrument_id: "DUP".to_string(),
+            display_name: None,
+            asset_class: "equities".to_string(),
+            currency: Some("USD".to_string()),
+            source: Some("unit".to_string()),
+            observations: vec![
+                MarketObservation {
+                    date: "2026-01-01".to_string(),
+                    price: 100.0,
+                    volume: None,
+                },
+                MarketObservation {
+                    date: "2026-01-01".to_string(),
+                    price: 101.0,
+                    volume: None,
+                },
+            ],
+            features: None,
+        };
+
+        let error = validate_series(&[series]).expect_err("duplicate date rejected");
+        assert!(error.contains("duplicated"));
+    }
+
+    #[tokio::test]
+    #[ignore = "uses live public APIs and should be run manually"]
+    async fn public_source_templates_fetch_live_external_data_when_available() {
+        let state = test_state();
+        let mut successes = 0usize;
+        for source_id in [
+            "treasury-debt-to-penny",
+            "worldbank-us-gdp-current-usd",
+            "coingecko-bitcoin-usd",
+        ] {
+            match pull_source(&state, source_id_pull_request(source_id)).await {
+                Ok(response) => {
+                    assert!(response.stored_points >= 2);
+                    assert!(response.quality.is_some());
+                    successes += 1;
+                }
+                Err(error) => {
+                    eprintln!("live public source {source_id} unavailable or changed: {error}");
+                }
+            }
+        }
+        if successes == 0 {
+            eprintln!("no live public sources were reachable; skipping external assertions");
+            return;
+        }
+        let stored = state.series_store.read().unwrap().len();
+        assert!(stored >= successes);
     }
 }

@@ -4,7 +4,7 @@ Rust economics dashboard and forecast service for the remote runtime.
 
 The service blends observed market history with transparent economics priors. It is not an
 exchange executor and does not place trades. It serves a dashboard, accepts normalized market
-series, can pull JSON from approved public/private API URLs, tracks fiscal/labor and VC-flow
+series, can pull JSON/CSV from approved public/private API URLs, tracks fiscal/labor and VC-flow
 context, ranks invest/dump candidates, and projects each instrument for the next 18 months with
 confidence intervals.
 
@@ -19,7 +19,8 @@ confidence intervals.
 - `GET /schema` - request/response contract summary for `economics.forecast.v1`.
 - `GET /example` - sample forecast request.
 - `GET /sources` - public/private source catalog.
-- `POST /sources/pull` - authenticated JSON API pull and optional parse into a market series.
+- `GET /sources/public` - known public sourceId templates with URLs, parsers, and source docs.
+- `POST /sources/pull` - authenticated sourceId or custom API pull and optional parse into a market series.
 - `GET /sentiment/sources` - social/news sentiment provider catalog and configured credential flags.
 - `POST /sentiment/analyze` - authenticated placeholder sentiment analysis over supplied social/news snippets.
 - `GET /macro/indicators` - fiscal, borrowing, spending, GDP, labor participation, payroll, wage, and productivity context.
@@ -67,6 +68,7 @@ The default Kubernetes deployment runs with:
 - `ECONOMICS_PROJECTION_MONTHS=18`
 - `ECONOMICS_CONFIDENCE_LEVEL=0.90`
 - `ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=false`
+- `ECONOMICS_ALLOWED_SOURCE_HOSTS=api.fiscaldata.treasury.gov,api.worldbank.org,api.coingecko.com,fred.stlouisfed.org`
 - `ECONOMICS_FORECAST_REQUEST_SUBJECT=dd.remote.economics.forecast.requests`
 - `ECONOMICS_FORECAST_RESULT_SUBJECT=dd.remote.economics.forecast.results`
 - `ECONOMICS_MARKET_EVENT_SUBJECT=dd.remote.economics.market.events`
@@ -95,7 +97,8 @@ mounted from `dd-agent-secrets` when present:
 
 - Public macro/fiscal/labor: `ECONOMICS_FRED_API_KEY`, `ECONOMICS_BEA_API_KEY`,
   `ECONOMICS_BLS_API_KEY`, `ECONOMICS_TREASURY_API_KEY`, `ECONOMICS_CENSUS_API_KEY`
-- Commodities and filings: `ECONOMICS_EIA_API_KEY`, `ECONOMICS_SEC_API_KEY`
+- Commodities, crypto, and filings: `ECONOMICS_EIA_API_KEY`,
+  `ECONOMICS_COINGECKO_API_KEY`, `ECONOMICS_SEC_API_KEY`
 - VC/private markets: `ECONOMICS_CRUNCHBASE_API_KEY`, `ECONOMICS_PITCHBOOK_API_KEY`,
   `ECONOMICS_CB_INSIGHTS_API_KEY`, `ECONOMICS_DEALROOM_API_KEY`, `ECONOMICS_PREQIN_API_KEY`
 - Databricks managed workspace placeholders: `ECONOMICS_DATABRICKS_HOST`,
@@ -112,6 +115,32 @@ scores by source.
 then returns model-signal rankings with component ledgers. Rankings are research signals, not
 financial advice or trade execution instructions.
 
+## Public source templates
+
+`GET /sources/public` returns sourceId templates for official/public data that can be pulled with:
+
+```json
+{
+  "sourceId": "treasury-debt-to-penny"
+}
+```
+
+Current templates cover Treasury public debt, World Bank US GDP and labor participation,
+CoinGecko BTC/ETH public market charts, and FRED CSV feeds for 10-year Treasury rates, WTI oil,
+gold, silver, S&P 500, 30-year mortgage rates, and USD/EUR FX. `POST /sources/pull` resolves a
+sourceId to immutable URL/parser metadata and stores a normalized `MarketSeries` with a quality
+report containing observed points, dropped points, first/last date, and min/max price.
+
+Custom pulls remain available for private APIs, but are gated: source URLs cannot contain
+credentials or fragments, redirects are not followed, private/link-local hosts and custom ports are
+blocked unless `ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true`, and
+`ECONOMICS_ALLOWED_SOURCE_HOSTS` can restrict ad-hoc public egress. Known parser modes are
+`json-records`, `json-tuple-array`, and `csv-records`.
+
+CoinGecko's unauthenticated public API currently limits historical market chart pulls to the past
+365 days; use `ECONOMICS_COINGECKO_API_KEY` or a private exchange/vendor feed for longer crypto
+history.
+
 ## Big-data pipeline integration
 
 `POST /pipelines/plan` turns the current economics universe into redacted job intents for:
@@ -121,7 +150,20 @@ financial advice or trade execution instructions.
 - an Airflow `economics_market_refresh` DAG trigger blueprint
 - a Databricks Jobs API `run-now` blueprint
 - the generated NATS subject `dd.remote.public_data.pipeline.jobs`
+- public source IDs from `GET /sources/public` for upstream dataset refreshes
 
 `POST /pipelines/submit` submits only the Spark pipeline server intents, only to a cluster-local
 HTTP URL by default, and only when `ECONOMICS_ENABLE_PIPELINE_SUBMIT=true`. Airflow and Databricks
 remain plan-only until their service auth and audit flows are explicitly designed.
+
+## Local checks
+
+```sh
+cargo fmt
+cargo test
+cargo test public_source_templates_fetch_live_external_data_when_available -- --ignored --nocapture
+```
+
+The ignored test uses live public Treasury, World Bank, and CoinGecko endpoints. It is intentionally
+manual so CI does not fail when an external provider is down, rate-limited, or changes its public
+access policy.

@@ -26,9 +26,10 @@ Today there are several key runtime services:
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
 - [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard, projection,
-  recommendation, hardening-audit, and big-data pipeline-intent service that blends public/private market history,
-  fiscal/labor/VC context, social/news sentiment placeholders, and transparent theory priors from accepted macro,
-  asset-pricing, commodity, FX, bond, and stochastic-process equations.
+  recommendation, hardening-audit, public-source template, and big-data pipeline-intent service that blends
+  public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
+  reports, and transparent theory priors from accepted macro, asset-pricing, commodity, FX, bond, and
+  stochastic-process equations.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
   source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
   current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and

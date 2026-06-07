@@ -877,15 +877,20 @@ fn json_response(status: StatusCode, value: Value) -> Response {
     (status, Json(value)).into_response()
 }
 
-fn vapi_error_response(error: VapiError) -> Response {
+fn vapi_error_body(error: &VapiError) -> Value {
     let mut body = json!({
         "ok": false,
-        "error": error.message,
+        "error": &error.message,
         "generatedAtMs": now_ms(),
     });
-    if let Some(upstream) = error.upstream {
-        body["vapi"] = upstream;
+    if error.upstream.is_some() {
+        body["vapiResponseRedacted"] = json!(true);
     }
+    body
+}
+
+fn vapi_error_response(error: VapiError) -> Response {
+    let body = vapi_error_body(&error);
     json_response(error.status, body)
 }
 
@@ -969,6 +974,25 @@ fn extract_called_number(message: &Value) -> Option<String> {
                 .and_then(|phone_number| json_string(phone_number, "number"))
         })
         .or_else(|| json_string(message, "called_number"))
+}
+
+fn trusted_call_id(message: &Value, call: &ToolCall) -> String {
+    extract_call_id(message)
+        .or_else(|| json_string(&call.arguments, "call_id"))
+        .map(|value| truncate_text(&value, 160))
+        .unwrap_or_else(|| "unknown-call".to_string())
+}
+
+fn trusted_caller_hash(message: &Value, call: &ToolCall) -> Option<String> {
+    extract_caller_number(message)
+        .or_else(|| json_string(&call.arguments, "caller_number"))
+        .and_then(|value| normalize_hash_input(&value))
+}
+
+fn trusted_called_number_hash(message: &Value, call: &ToolCall) -> Option<String> {
+    extract_called_number(message)
+        .or_else(|| json_string(&call.arguments, "called_number"))
+        .and_then(|value| normalize_hash_input(&value))
 }
 
 fn extract_duration_seconds(message: &Value) -> Option<i32> {
@@ -1446,11 +1470,11 @@ fn extract_tool_calls(message: &Value) -> Vec<ToolCall> {
 
 async fn handle_recent_call_context_tool(
     state: &AppState,
+    message: &Value,
     call: &ToolCall,
 ) -> Result<Value, String> {
-    let caller_hash = json_string(&call.arguments, "caller_number")
-        .and_then(|value| normalize_hash_input(&value))
-        .ok_or_else(|| "trusted caller_number parameter was not supplied".to_string())?;
+    let caller_hash = trusted_caller_hash(message, call)
+        .ok_or_else(|| "trusted caller metadata was not supplied".to_string())?;
     let context = caller_context(state, &caller_hash).await?;
     Ok(json!({
         "ok": true,
@@ -1461,10 +1485,10 @@ async fn handle_recent_call_context_tool(
 
 async fn handle_record_screening_signal_tool(
     state: &AppState,
+    message: &Value,
     call: &ToolCall,
 ) -> Result<Value, String> {
-    let call_id =
-        json_string(&call.arguments, "call_id").unwrap_or_else(|| "unknown-call".to_string());
+    let call_id = trusted_call_id(message, call);
     let signal =
         json_string(&call.arguments, "screening_signal").unwrap_or_else(|| "uncertain".to_string());
     let signal = match signal.as_str() {
@@ -1476,10 +1500,8 @@ async fn handle_record_screening_signal_tool(
     let reason = json_string(&call.arguments, "reason")
         .map(|value| truncate_text(&value, 500))
         .unwrap_or_else(|| "no reason supplied".to_string());
-    let caller_hash = json_string(&call.arguments, "caller_number")
-        .and_then(|value| normalize_hash_input(&value));
-    let called_number_hash = json_string(&call.arguments, "called_number")
-        .and_then(|value| normalize_hash_input(&value));
+    let caller_hash = trusted_caller_hash(message, call);
+    let called_number_hash = trusted_called_number_hash(message, call);
 
     let payload = json!({
         "toolName": call.name,
@@ -1543,8 +1565,12 @@ async fn handle_tool_calls(state: &AppState, message: &Value) -> Response {
             .tool_calls_total
             .fetch_add(1, Ordering::Relaxed);
         let result = match call.name.as_str() {
-            "get_recent_call_context" => handle_recent_call_context_tool(state, &call).await,
-            "record_screening_signal" => handle_record_screening_signal_tool(state, &call).await,
+            "get_recent_call_context" => {
+                handle_recent_call_context_tool(state, message, &call).await
+            }
+            "record_screening_signal" => {
+                handle_record_screening_signal_tool(state, message, &call).await
+            }
             _ => Err(format!("unknown tool '{}'", call.name)),
         };
 
@@ -1998,7 +2024,10 @@ fn summarize_numbers(list: &Value) -> Value {
                 json!({
                     "id": item.get("id"),
                     "name": item.get("name"),
-                    "number": item.get("number"),
+                    "numberRedacted": item
+                        .get("number")
+                        .and_then(Value::as_str)
+                        .map(redact_phone_for_display),
                     "provider": item.get("provider"),
                     "assistantId": item.get("assistantId"),
                 })
@@ -2050,8 +2079,11 @@ async fn setup_http(headers: HeaderMap, State(state): State<AppState>) -> Respon
             "assistantId": assistant_id,
             "assistantName": state.config.assistant_name,
             "phoneNumberId": number.get("id"),
-            "phoneNumber": number.get("number"),
-            "forwardNumber": state.config.forward_number,
+            "phoneNumberRedacted": number
+                .get("number")
+                .and_then(Value::as_str)
+                .map(redact_phone_for_display),
+            "forwardNumberRedacted": redact_phone_for_display(&state.config.forward_number),
             "webhookUrl": state.config.webhook_url,
             "generatedAtMs": now_ms(),
         }),
@@ -2492,6 +2524,36 @@ mod tests {
     }
 
     #[test]
+    fn status_summary_redacts_phone_numbers() {
+        let numbers = summarize_numbers(&json!([
+            {
+                "id": "pn_123",
+                "name": "screening line",
+                "number": "+17372814824",
+                "provider": "vapi",
+                "assistantId": "asst_123"
+            }
+        ]));
+
+        assert!(numbers[0]["number"].is_null());
+        assert_eq!(numbers[0]["numberRedacted"], "redacted-4824");
+    }
+
+    #[test]
+    fn vapi_error_body_redacts_upstream_payload() {
+        let mut error = VapiError::new(StatusCode::BAD_GATEWAY, "upstream failed");
+        error.upstream = Some(json!({
+            "message": "full upstream body",
+            "number": "+17372814824"
+        }));
+
+        let body = vapi_error_body(&error);
+
+        assert!(body["vapi"].is_null());
+        assert_eq!(body["vapiResponseRedacted"], true);
+    }
+
+    #[test]
     fn tool_call_extraction_handles_vapi_tool_call_list() {
         let payload = json!({
             "type": "tool-calls",
@@ -2512,6 +2574,39 @@ mod tests {
         assert_eq!(calls[0].id, "toolu_123");
         assert_eq!(calls[0].name, "record_screening_signal");
         assert_eq!(calls[0].arguments["caller_number"], "+15551234567");
+    }
+
+    #[test]
+    fn trusted_tool_metadata_prefers_webhook_message_over_arguments() {
+        let call = ToolCall {
+            id: "toolu_123".to_string(),
+            name: "record_screening_signal".to_string(),
+            arguments: json!({
+                "call_id": "arg-call",
+                "caller_number": "+15550000000",
+                "called_number": "+15551111111",
+                "screening_signal": "human_likely",
+                "reason": "answered naturally"
+            }),
+        };
+        let message = json!({
+            "type": "tool-calls",
+            "call": {
+                "id": "trusted-call",
+                "customer": { "number": "+16660000000" },
+                "phoneNumber": { "number": "+16661111111" }
+            }
+        });
+
+        assert_eq!(trusted_call_id(&message, &call), "trusted-call");
+        assert_eq!(
+            trusted_caller_hash(&message, &call),
+            normalize_hash_input("+16660000000")
+        );
+        assert_eq!(
+            trusted_called_number_hash(&message, &call),
+            normalize_hash_input("+16661111111")
+        );
     }
 
     #[test]
