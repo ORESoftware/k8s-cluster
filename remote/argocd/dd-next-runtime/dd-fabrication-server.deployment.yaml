@@ -214,6 +214,7 @@ spec:
                 '"path": "/fabrication/strategy/result"' \
                 '"path": "/fabrication/schedule/catalog"' \
                 '"path": "/fabrication/schedule/result"' \
+                '"path": "/fabrication/execution/preflight/catalog"' \
                 '"path": "/fabrication/execution/plan"' \
                 '"path": "/fabrication/execution/result"' \
                 '"path": "/fabrication/simulation/catalog"' \

@@ -3635,11 +3635,22 @@ assert.match(source, /sheet-forming-evidence-missing/);
     /release_readiness_result_endpoint_reviews_final_gate_and_stores_artifacts/,
   );
   assert.match(source, /async fn execution_plan_http/);
+  assert.match(source, /async fn execution_preflight_catalog_http/);
+  assert.match(source, /fn execution_preflight_catalog_response/);
+  assert.match(source, /dd\.fabrication\.execution-preflight-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/execution\/preflight\/catalog"/);
+  assert.match(source, /program-run-and-machine-state/);
+  assert.match(source, /stop-point-human-intervention-and-automation-state/);
+  assert.match(source, /monitoring-recovery-and-release-state/);
   assert.match(source, /fn execution_planning_response/);
   assert.match(source, /dd\.fabrication\.execution-planning\.v1/);
   assert.match(source, /"POST \/fabrication\/execution\/plan"/);
   assert.match(source, /fabrication\.execution\.planned/);
   assert.match(source, /"operatorInterventionPlan\.evidenceGates"/);
+  assert.match(
+    source,
+    /execution_preflight_catalog_endpoint_exposes_run_readiness_gates/,
+  );
   assert.match(
     source,
     /execution_planning_endpoint_returns_stop_points_operator_actions_and_schedule_contract/,
@@ -5807,6 +5818,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
     /\.route\(\s*"\/fabrication\/release\/result",\s*post\(release_readiness_result_http\),\s*\)/,
   );
   assert.match(source, /\.route\("\/execution\/plan", post\(execution_plan_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/execution\/preflight\/catalog",\s*get\(execution_preflight_catalog_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/execution\/preflight\/catalog",\s*get\(execution_preflight_catalog_http\),\s*\)/,
+  );
   assert.match(
     source,
     /\.route\("\/fabrication\/execution\/plan", post\(execution_plan_http\)\)/,
@@ -8439,6 +8458,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /machine-release, controller, postprocess, simulation/);
   assert.match(readme, /POST \/execution\/plan/);
   assert.match(readme, /POST \/fabrication\/execution\/plan/);
+  assert.match(readme, /GET \/execution\/preflight\/catalog/);
+  assert.match(readme, /GET \/fabrication\/execution\/preflight\/catalog/);
+  assert.match(readme, /dd\.fabrication\.execution-preflight-catalog\.v1/);
+  assert.match(readme, /program-run\/machine state/);
+  assert.match(readme, /stop-point\/human-intervention\/automation state/);
+  assert.match(readme, /monitoring\/recovery\/release state/);
   assert.match(readme, /dd\.fabrication\.execution-planning\.v1/);
   assert.match(readme, /`executionPlan\.programRuns`/);
   assert.match(readme, /`operatorInterventionPlan\.evidenceGates`/);
