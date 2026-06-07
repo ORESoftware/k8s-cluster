@@ -124,6 +124,8 @@ outcomes.
 - `GET /fabrication/improvements/catalog`
 - `GET /boundaries/catalog`
 - `GET /fabrication/boundaries/catalog`
+- `GET /boundaries/preflight/catalog`
+- `GET /fabrication/boundaries/preflight/catalog`
 - `GET /remediation/catalog`
 - `GET /fabrication/remediation/catalog`
 - `POST /remediation/plan`
@@ -1902,6 +1904,24 @@ automation, postprocess, inspection, profile, or material boundary remains
 unresolved, and boundary kinds are emitted as MDP/POMDP/neural learning signals
 for regeneration, split/combine, automation-proof, or human-intervention policy
 updates.
+
+## `GET /fabrication/boundaries/preflight/catalog`
+
+`GET /boundaries/preflight/catalog` and the gateway-prefixed
+`GET /fabrication/boundaries/preflight/catalog` return the live
+`dd.fabrication.boundary-preflight-catalog.v1` evidence checklist for analyzer
+boundaries before machine-ready release. The catalog groups required evidence
+into machine-failure boundary evidence state, human-intervention and automation
+gap state, and split-combine/remediation boundary state.
+
+Boundary preflight entries describe evidence required before trusting
+machine-failure, human-intervention, automation-gap, and split/combine
+decisions; they are not controller-certified safety results. Machine-ready
+release remains blocked while boundary source evidence, remediation action,
+release probe, intervention owner, split/combine route, or learning feedback is
+absent. Failed checks feed DES, MDP/POMDP, and neural workers so future plans can
+reroute manufacturing, split parts, regenerate instructions, or require human
+intervention earlier.
 
 ## `GET /fabrication/remediation/catalog`
 

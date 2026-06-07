@@ -280,6 +280,7 @@ spec:
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
+                '"path": "/fabrication/boundaries/preflight/catalog"' \
                 '"path": "/fabrication/remediation/catalog"' \
                 '"path": "/fabrication/remediation/plan"' \
                 '"path": "/fabrication/remediation/result"' \
