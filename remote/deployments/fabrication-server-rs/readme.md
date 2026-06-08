@@ -427,12 +427,16 @@ identify the DES SDK surface, carry canonical DES MDP/POMDP schema names, and
 include DES-compatible `desMdpSpec`/`desPomdpSpec` payloads plus
 value-iteration `desMdpSolution` and QMDP-underlying `desPomdpSolution`
 previews for downstream policy workers. Plan responses also expose a DES Studio
-`desScheduleModel` queue graph so schedulers and learning workers can analyze
-machine-lane capacity from the same machine schedule. Instruction-analysis
-responses expose a matching DES Studio `desInstructionModel` queue graph and an
-`instructionIntentMap` so imported CNC, slicer, printer, probing, joining, and
-text instruction streams can be prioritized by review capacity,
-failure-boundary pressure, normalized process intent, and release handoff lane.
+`desScheduleModel` queue graph and `instructionIntentMap` so schedulers and
+learning workers can analyze machine-lane capacity and generated/submitted
+instruction intent from the same request. Instruction-analysis responses expose a
+matching DES Studio `desInstructionModel` queue graph and the same
+`instructionIntentMap` contract so imported CNC, slicer, printer, probing, joining, and text instruction streams can be prioritized by review capacity, failure-boundary pressure,
+normalized process intent, and release handoff lane.
+Its `reviewPriorities` rows give deterministic queue ordering for
+machine-failure boundaries, human-intervention checkpoints, split/combine or
+interface review, non-G-code job-sheet evidence extraction, and learning
+feedback after disposition.
 `GET /learning/capabilities`, `GET /fabrication/learning/capabilities`,
 `GET /learning/engines/catalog`, and
 `GET /fabrication/learning/engines/catalog` expose that local DES-backed
@@ -1932,23 +1936,33 @@ The response exposes `instructionReviewResult`, `reviewResultJobId`,
 `failureBoundaryCount`, `humanInterventionBoundaryCount`,
 `improvementDraftCount`, `humanApprovalDraftCount`, and the
 request/queue/result subjects for the instruction-review worker lane. It also
-includes a `dd.fabrication.instruction-review-learning-outcome-draft.v1` payload
+includes `priorityDispositions` rows that mirror
+`instructionIntentMap.reviewPriorities`, showing whether machine-failure,
+human-intervention, split/combine or interface, non-G-code job-sheet, and
+learning-feedback review queues are closed, partially reviewed, blocked, or ready
+to submit as learning feedback. The
+`dd.fabrication.instruction-review-learning-outcome-draft.v1` payload carries the
+same priority-disposition rows
 with reviewer, finding, boundary, improvement, human-approval, recommended-action,
 reward, and submit-route hints for `POST /fabrication/learning/outcomes`. Successful
 reviews are retained in the bounded job ledger under `reviewResultJobId`;
 `/jobs/:job_id` and `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `instruction-review-result`, `instruction-review-findings`,
 `instruction-review-failure-boundaries`,
-`instruction-review-improvement-drafts`, `instruction-review-warnings`,
+`instruction-review-improvement-drafts`,
+`instruction-review-priority-dispositions`, `instruction-review-warnings`,
 `instruction-review-release-update`, and
 `instruction-review-learning-observations`. Machine-ready release remains
 blocked while blocking findings, machine-failure or human-intervention
 boundaries, or human-approval improvement drafts remain open. Review
 observations include `instruction-review-boundary-kind:*`,
 `instruction-review-recommended-action:*`, and
-`instruction-review-improvement:*` signals so MDP/POMDP/neural workers can learn
-which validators, boundary analyzers, and repair drafts prevented machine
-failure or avoided unapproved human intervention.
+`instruction-review-improvement:*` plus
+`instruction-review-priority:<priority>:<disposition>` signals so
+MDP/POMDP/neural workers can learn which validators, boundary analyzers, and
+repair drafts closed or left open the highest-priority machine-failure,
+human-intervention, split/combine, non-G-code evidence, and learning feedback
+lanes.
 
 ## `GET /fabrication/machine-code/catalog`
 
@@ -5138,9 +5152,9 @@ Workflow catalog entries are route and evidence contracts, not certified machine
 release. Machine-ready release remains blocked until the matching workflow plan,
 retained artifacts, validation or simulation proof, controller/setup/quality
 evidence, and operator or automation signoff clear. The catalog names
-`workflow-plan` and `mdp-request` artifact surfaces so MDP/POMDP/DES/neural
-workers can learn where future jobs should reroute, split/combine, regenerate,
-remediate, or insert human checkpoints.
+`workflow-plan`, `instruction-intent-map`, and `mdp-request` artifact surfaces so
+MDP/POMDP/DES/neural workers can learn where future jobs should reroute,
+split/combine, regenerate, remediate, or insert human checkpoints.
 
 ## `POST /fabrication/workflow/plan`
 
@@ -5160,9 +5174,15 @@ Workflow plans are orchestration evidence, not machine-ready release. They keep
 `machineReady=false` while stage blockers, generated-program drafts,
 machine-release blockers, missing validation/simulation evidence, release-package
 gates, or operator and automation signoffs remain open, and they expose
-`workflow-plan` plus `mdp-request` artifact surfaces so MDP/POMDP/DES/neural
-workers can learn where to reroute, split/combine, regenerate, remediate, or add
-human checkpoints.
+`workflow-plan`, `instruction-intent-map`, and `mdp-request` artifact surfaces so
+MDP/POMDP/DES/neural workers can learn where to reroute, split/combine,
+regenerate, remediate, or add human checkpoints.
+
+The plan-level `instructionIntentMap` is retained as the `instruction-intent-map`
+artifact and embedded in the optimizer-shaped `mdp-request`. Workflow stages use
+it as an instruction/machine-code evidence surface so generated programs and
+submitted existing instructions share the same intent, review-priority,
+machine-failure, human-intervention, split/combine, and learning-feedback queues.
 
 The response also includes `workflowActionQueue` and
 `workflowPlan.actionQueue`, derived from blocked workflow stages. Queue entries
@@ -5192,15 +5212,26 @@ including positive work-envelope values, unique IDs, nonzero axis counts, and
 bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
 materials, process support, maintenance, release evidence, and retained blockers.
 
-The analysis response also includes `instructionIntentMap` and retains it as the
+Plan responses include `instructionIntentMap` for generated plus submitted
+instruction streams and retain it as `instruction-intent-map`; analysis responses
+include the same contract for submitted streams and retain it as the
 `analysis-instruction-intent-map` artifact. The map normalizes each submitted
 program into primary process intents such as additive print, subtractive
 machining, turning, joining, inspection, or general instruction work; language
 counts; machine-failure watchpoints; human-intervention watchpoints;
 split/combine hints; release handoff routes; and `instruction-intent:*`
-learning observations. These intent maps are routing and learning evidence only:
-validation, simulation or dry-run, provenance, and operator or automation signoff
-still gate any machine-ready release.
+learning observations. Its `reviewPriorities` array names the highest-value
+review queues first: machine-failure boundaries, human-intervention gates,
+split/combine or interface reviews, non-G-code job-sheet evidence extraction,
+and learning feedback after disposition. Each row lists triggering evidence,
+review order, response surfaces such as
+`instructionIntentMap.programs.machineFailureWatchpoints`,
+`operatorInterventionPlan.requiredOperatorActions`, `decompositionPlan`, and
+`learning.outcomeDraft`, plus the release policy that keeps `machineReady=false`
+until retained validation, simulation or dry-run, provenance, and operator or
+automation signoff clear. These intent maps are routing and learning evidence
+only: validation, simulation or dry-run, provenance, and operator or automation
+signoff still gate any machine-ready release.
 
 ```json
 {
@@ -5256,16 +5287,24 @@ The response normalizes those results into
 `machineReady`, `releaseReady`, finding/boundary/improvement blocker counts,
 human-intervention and split/combine flags, artifact evidence gaps, follow-up
 validation/simulation/release routes, learning observations, and a
-`dd.fabrication.instruction-validation-learning-outcome-draft.v1` payload with
-language, controller, finding, boundary, improvement, blocker, split/combine,
-and recommended-action hints for `POST /fabrication/learning/outcomes`.
+`priorityDispositions` array that mirrors `instructionIntentMap.reviewPriorities`
+for machine-failure, human-intervention, split/combine or interface,
+non-G-code job-sheet evidence, and learning-feedback lanes. The
+`dd.fabrication.instruction-validation-learning-outcome-draft.v1` payload carries
+the same priority dispositions with language, controller, finding, boundary,
+improvement, blocker, split/combine, and recommended-action hints for
+`POST /fabrication/learning/outcomes`.
 Review jobs retain `instruction-validation-result`,
 `instruction-validation-findings`, `instruction-validation-boundaries`,
-`instruction-validation-improvements`, `instruction-validation-artifacts`, and
+`instruction-validation-improvements`, `instruction-validation-artifacts`,
+`instruction-validation-priority-dispositions`, and
 `instruction-validation-learning-observations` artifacts. Release remains
 blocked until validation blockers, human/split/combine boundaries, retained
 URI/checksum/evidence artifacts, simulation or dry-run evidence, controller
-review, and signoff clear.
+review, and signoff clear. Validation observations include
+`instruction-validation-priority:<priority>:<disposition>` so MDP/POMDP/neural
+workers can learn which imported instruction validators closed or left open each
+review-priority lane.
 
 ## `POST /instructions/improve`
 
