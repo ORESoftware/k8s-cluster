@@ -133,6 +133,23 @@ test("promtail host log reader keeps root scope constrained", async () => {
   );
 });
 
+test("grafana anonymous access is viewer-only and git-provisioned", async () => {
+  const grafana = await readRepoFile(
+    "remote/argocd/observability/grafana.deployment.yaml",
+  );
+  const provisioning = await readRepoFile(
+    "remote/argocd/observability/grafana.provisioning.configmap.yaml",
+  );
+
+  assert.match(grafana, /GF_AUTH_ANONYMOUS_ENABLED[\s\S]*value:\s*"true"/);
+  assert.match(grafana, /GF_AUTH_ANONYMOUS_ORG_ROLE[\s\S]*value:\s*Viewer/);
+  assert.doesNotMatch(grafana, /GF_AUTH_ANONYMOUS_ORG_ROLE[\s\S]*value:\s*Admin/);
+  assert.match(grafana, /GF_AUTH_BASIC_ENABLED[\s\S]*value:\s*"false"/);
+  assert.match(grafana, /GF_AUTH_DISABLE_LOGIN_FORM[\s\S]*value:\s*"true"/);
+  assert.match(grafana, /GF_USERS_ALLOW_SIGN_UP[\s\S]*value:\s*"false"/);
+  assert.match(provisioning, /allowUiUpdates:\s*false/);
+});
+
 test("dd-dev-server-api declares resource requests and limits", async () => {
   const devServer = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",
