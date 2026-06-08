@@ -18,6 +18,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod alerts;
 mod associative;
 mod dashboard;
 mod hardening;
@@ -50,6 +51,7 @@ struct AppState {
     datasets: Arc<RwLock<BTreeMap<String, Dataset>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
+    alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
 }
 
 #[derive(Clone)]
@@ -73,6 +75,9 @@ struct Metrics {
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
+    alert_requests_total: AtomicU64,
+    alert_rules_saved_total: AtomicU64,
+    alert_evaluations_total: AtomicU64,
     rbac_denials_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
@@ -462,6 +467,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         datasets: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
+        alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let app = app_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
@@ -502,6 +508,9 @@ fn app_router(state: AppState) -> Router {
         .route("/associations/select", post(association_selection))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
+        .route("/alerts/rules", get(list_alert_rules).post(save_alert_rule))
+        .route("/alerts/rules/:rule_id", get(get_alert_rule))
+        .route("/alerts/rules/:rule_id/evaluate", post(evaluate_alert_rule))
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
@@ -683,7 +692,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
-            "observabilityPanels": "Grafana-style time-series panel catalog",
+            "observabilityPanels": "Grafana-style time-series panel catalog and alert rule evaluator",
             "programmaticRenderers": "D3, Plotly/Dash, Evidence, and Office export contracts"
         }
     }))
@@ -789,6 +798,15 @@ dd_data_viz_dashboard_requests_total {}
 # HELP dd_data_viz_dashboards_saved_total Dashboards saved.
 # TYPE dd_data_viz_dashboards_saved_total counter
 dd_data_viz_dashboards_saved_total {}
+# HELP dd_data_viz_alert_requests_total Alert rule requests handled.
+# TYPE dd_data_viz_alert_requests_total counter
+dd_data_viz_alert_requests_total {}
+# HELP dd_data_viz_alert_rules_saved_total Alert rules saved.
+# TYPE dd_data_viz_alert_rules_saved_total counter
+dd_data_viz_alert_rules_saved_total {}
+# HELP dd_data_viz_alert_evaluations_total Alert rule evaluations executed.
+# TYPE dd_data_viz_alert_evaluations_total counter
+dd_data_viz_alert_evaluations_total {}
 # HELP dd_data_viz_rbac_denials_total Role-based authorization denials.
 # TYPE dd_data_viz_rbac_denials_total counter
 dd_data_viz_rbac_denials_total {}
@@ -810,6 +828,9 @@ dd_data_viz_errors_total {}
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
+        metrics.alert_requests_total.load(Ordering::Relaxed),
+        metrics.alert_rules_saved_total.load(Ordering::Relaxed),
+        metrics.alert_evaluations_total.load(Ordering::Relaxed),
         metrics.rbac_denials_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.errors_total.load(Ordering::Relaxed),
@@ -1179,6 +1200,134 @@ async fn get_dashboard(
         .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("dashboard `{dashboard_id}` not found")))
+}
+
+async fn save_alert_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<alerts::SaveAlertRuleRequest>,
+) -> Result<Json<alerts::SaveAlertRuleResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .alert_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertWrite)?;
+
+    let mut rule = request.into_rule(now_ms()).map_err(ApiError::bad_request)?;
+    let plan = logical_plan_from_query(&rule.query)?;
+    let _dataset = get_dataset_snapshot(&state, &plan.source)?;
+    let mut warnings = Vec::new();
+    let mut alert_rules = state
+        .alert_rules
+        .write()
+        .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+    if let Some(existing) = alert_rules.get(&rule.rule_id) {
+        rule.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "alert rule {} replaced with a new in-memory definition",
+            rule.rule_id
+        ));
+    } else if alert_rules.len() >= alerts::max_alert_rules() {
+        return Err(ApiError::bad_request(format!(
+            "alert rule count exceeds max {}",
+            alerts::max_alert_rules()
+        )));
+    }
+    rule.updated_at_ms = now_ms();
+    alert_rules.insert(rule.rule_id.clone(), rule.clone());
+    state
+        .metrics
+        .alert_rules_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    Ok(Json(alerts::save_response(rule, warnings)))
+}
+
+async fn list_alert_rules(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .alert_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let alert_rules = state
+        .alert_rules
+        .read()
+        .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+    let summaries = alert_rules
+        .values()
+        .map(alerts::AlertRule::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(alerts::catalog_payload(summaries)))
+}
+
+async fn get_alert_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(rule_id): Path<String>,
+) -> Result<Json<alerts::AlertRule>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .alert_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let alert_rules = state
+        .alert_rules
+        .read()
+        .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+    alert_rules
+        .get(&rule_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("alert rule `{rule_id}` not found")))
+}
+
+async fn evaluate_alert_rule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(rule_id): Path<String>,
+) -> Result<Json<alerts::AlertEvaluationResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .alert_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertEvaluate)?;
+    let rule = {
+        let alert_rules = state
+            .alert_rules
+            .read()
+            .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+        alert_rules
+            .get(&rule_id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("alert rule `{rule_id}` not found")))?
+    };
+    let plan = logical_plan_from_query(&rule.query)?;
+    let dataset = get_dataset_snapshot(&state, &plan.source)?;
+    let response = execute_plan(&dataset, plan)?;
+    state
+        .metrics
+        .alert_evaluations_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(alerts::evaluate_rule(&rule, &response.rows)))
 }
 
 async fn get_dataset(
@@ -3009,6 +3158,30 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Read a saved dashboard definition.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/alerts/rules",
+            auth: "alert-write",
+            description: "Create or replace a Grafana-style alert rule over an analytical query.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/rules",
+            auth: "alert-read",
+            description: "List saved alert rule summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/rules/:rule_id",
+            auth: "alert-read",
+            description: "Read a saved alert rule definition.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/alerts/rules/:rule_id/evaluate",
+            auth: "alert-evaluate",
+            description: "Evaluate a saved alert rule and return normal, alerting, no-data, error, or disabled state.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/docs/api, /api/docs, /api/docs.json",
             auth: "public",
@@ -3612,6 +3785,7 @@ mod tests {
             datasets: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
+            alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -3765,6 +3939,9 @@ mod tests {
         assert!(paths.contains(&"/dashboards"));
         assert!(paths.contains(&"/dashboards/:dashboard_id"));
         assert!(paths.contains(&"/associations/select"));
+        assert!(paths.contains(&"/alerts/rules"));
+        assert!(paths.contains(&"/alerts/rules/:rule_id"));
+        assert!(paths.contains(&"/alerts/rules/:rule_id/evaluate"));
     }
 
     #[test]
