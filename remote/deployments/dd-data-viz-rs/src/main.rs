@@ -22,6 +22,7 @@ mod alerts;
 mod associative;
 mod connections;
 mod dashboard;
+mod dax;
 mod etl;
 mod hardening;
 mod infra_diagrams;
@@ -114,6 +115,7 @@ struct Metrics {
     notification_policies_saved_total: AtomicU64,
     semantic_requests_total: AtomicU64,
     semantic_models_saved_total: AtomicU64,
+    dax_compile_requests_total: AtomicU64,
     etl_plans_total: AtomicU64,
     infra_diagrams_total: AtomicU64,
     rbac_denials_total: AtomicU64,
@@ -567,6 +569,7 @@ fn app_router(state: AppState) -> Router {
             "/semantic/registry/:model_id/compile",
             post(compile_semantic_model),
         )
+        .route("/expressions/dax/compile", post(compile_dax_expression))
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
@@ -845,6 +848,13 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "measures": ["governed measure names"],
             "limit": "bounded SQL target rows"
         },
+        "daxExpression": {
+            "datasetId": "existing dataset id",
+            "expression": "bounded Power BI DAX subset",
+            "expressionKind": ["measure", "calculated-column", "filter"],
+            "limits": dax::limits_payload(),
+            "posture": "parser-backed DAX subset; validates field references and emits SQL preview without evaluating user formulas"
+        },
         "paritySurfaces": {
             "semanticLayer": "LookML-like governed registry with dataset validation and SQL compile targets",
             "associativeEngine": "Qlik-style categorical co-occurrence graph plus multi-dataset selection state over ingested datasets",
@@ -1020,6 +1030,9 @@ dd_data_viz_semantic_requests_total {}
 # HELP dd_data_viz_semantic_models_saved_total Semantic models saved.
 # TYPE dd_data_viz_semantic_models_saved_total counter
 dd_data_viz_semantic_models_saved_total {}
+# HELP dd_data_viz_dax_compile_requests_total DAX expression compile requests handled.
+# TYPE dd_data_viz_dax_compile_requests_total counter
+dd_data_viz_dax_compile_requests_total {}
 # HELP dd_data_viz_etl_plans_total ETL plans compiled.
 # TYPE dd_data_viz_etl_plans_total counter
 dd_data_viz_etl_plans_total {}
@@ -1072,6 +1085,7 @@ dd_data_viz_errors_total {}
             .load(Ordering::Relaxed),
         metrics.semantic_requests_total.load(Ordering::Relaxed),
         metrics.semantic_models_saved_total.load(Ordering::Relaxed),
+        metrics.dax_compile_requests_total.load(Ordering::Relaxed),
         metrics.etl_plans_total.load(Ordering::Relaxed),
         metrics.infra_diagrams_total.load(Ordering::Relaxed),
         metrics.rbac_denials_total.load(Ordering::Relaxed),
@@ -1610,6 +1624,40 @@ async fn compile_semantic_model(
         "compiled": compiled,
         "logicalPlan": logical_plan
     })))
+}
+
+async fn compile_dax_expression(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<dax::CompileDaxRequest>,
+) -> Result<Json<dax::CompileDaxResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .dax_compile_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::DaxCompile)?;
+    let dataset_id = clean_identifier(&request.dataset_id).ok_or_else(|| {
+        ApiError::bad_request(
+            "datasetId must contain letters, numbers, dash, underscore, dot, or colon",
+        )
+    })?;
+    let fields = {
+        let datasets = state
+            .datasets
+            .read()
+            .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+        let dataset = datasets
+            .get(&dataset_id)
+            .ok_or_else(|| ApiError::not_found(format!("dataset `{dataset_id}` not found")))?;
+        dataset.columns.keys().cloned().collect::<BTreeSet<_>>()
+    };
+    dax::compile(request, &fields)
+        .map(Json)
+        .map_err(ApiError::bad_request)
 }
 
 async fn workbook_blueprints(State(state): State<AppState>) -> Json<Value> {
@@ -4526,6 +4574,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Compile governed dimensions and measures into a SQL query target and LogicalPlan.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/expressions/dax/compile",
+            auth: "dax-compile",
+            description: "Compile a bounded Power BI DAX expression against an ingested dataset field set into AST, dependencies, and SQL preview.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/workbooks/blueprints",
             auth: "public",
@@ -5544,6 +5598,7 @@ mod tests {
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
+        assert!(paths.contains(&"/expressions/dax/compile"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
     }

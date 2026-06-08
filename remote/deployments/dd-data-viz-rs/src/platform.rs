@@ -149,9 +149,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "ETL planner primitives",
                 "bounded ETL flow validation endpoint",
                 "secretRef-backed warehouse connection metadata",
+                "bounded DAX subset compiler",
             ],
             next_engine_work: vec![
-                "DAX-compatible expression parser",
+                "broader DAX time-intelligence and row-context engine",
                 "Power Query M import surface",
                 "incremental refresh partitions",
             ],

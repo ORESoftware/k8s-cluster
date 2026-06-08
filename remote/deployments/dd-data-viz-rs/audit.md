@@ -15,11 +15,12 @@ This audit tracks the current hardening and visualization-platform parity postur
   `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
   hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard
   validation lives in `src/dashboard.rs`, publishing approval validation lives in
-  `src/publishing.rs`, self-service question/chart validation lives in `src/self_service.rs`,
-  natural-language question planning lives in `src/question_nl.rs`, SQL Lab history validation lives
-  in `src/sql_lab.rs`, query result cache bounds live in `src/query_cache.rs`, parser-backed SQL
-  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
-  server wires those modules through route handlers.
+  `src/publishing.rs`, Power BI-style DAX expression parsing lives in `src/dax.rs`, self-service
+  question/chart validation lives in `src/self_service.rs`, natural-language question planning lives
+  in `src/question_nl.rs`, SQL Lab history validation lives in `src/sql_lab.rs`, query result cache
+  bounds live in `src/query_cache.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`,
+  shared helpers live in `src/util.rs`, and the HTTP server wires those modules through route
+  handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -62,6 +63,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
+- Power BI-style DAX expressions are parsed through a bounded subset compiler at
+  `POST /expressions/dax/compile`, validated against ingested dataset fields, and returned as AST,
+  dependencies, logical hints, and SQL preview without evaluating user formulas.
 - Domo Magic ETL/Power Query-style flows are validated through `POST /etl/plans` against ingested
   dataset schemas, producing lineage, materialization, and connector pushdown hints without
   executing user formulas.
@@ -82,7 +86,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 
 - Tableau parity still needs persisted dashboard layouts, renderer screenshots, interaction tests,
   and durable workbook publication state beyond in-memory approvals.
-- Power BI parity still needs DAX and Power Query M parsers plus incremental refresh partitions.
+- Power BI parity still needs broader DAX time-intelligence and row-context semantics, a Power Query
+  M import parser, and incremental refresh partitions.
 - Qlik parity still needs persisted selection sessions, field-alias inference, and richer
   relationship confidence scoring.
 - Looker parity still needs full LookML project parsing, multi-view joins, Git-backed validation

@@ -40,6 +40,7 @@ pub(crate) enum Permission {
     SemanticRead,
     SemanticWrite,
     SemanticCompile,
+    DaxCompile,
     EtlPlan,
     InfraDiagramGenerate,
     PresentationExport,
@@ -107,6 +108,7 @@ impl Role {
                 Permission::SemanticRead,
                 Permission::SemanticWrite,
                 Permission::SemanticCompile,
+                Permission::DaxCompile,
                 Permission::EtlPlan,
                 Permission::InfraDiagramGenerate,
                 Permission::PresentationExport,
@@ -131,6 +133,7 @@ impl Role {
                 Permission::AlertEvaluate,
                 Permission::SemanticRead,
                 Permission::SemanticCompile,
+                Permission::DaxCompile,
                 Permission::InfraDiagramGenerate,
             ],
             Self::Viewer => vec![
@@ -220,6 +223,7 @@ impl Permission {
             Self::SemanticCompile => {
                 "Compile governed semantic model selections into query targets."
             }
+            Self::DaxCompile => "Compile bounded Power BI DAX expressions against dataset fields.",
             Self::EtlPlan => "Compile Domo/Power Query-style ETL flow plans from dataset metadata.",
             Self::InfraDiagramGenerate => {
                 "Generate Terraform, AWS, and GCP infrastructure diagram render targets."
@@ -291,6 +295,7 @@ fn all_permissions() -> Vec<Permission> {
         Permission::SemanticRead,
         Permission::SemanticWrite,
         Permission::SemanticCompile,
+        Permission::DaxCompile,
         Permission::EtlPlan,
         Permission::InfraDiagramGenerate,
         Permission::PresentationExport,
@@ -320,6 +325,7 @@ mod tests {
         assert!(Role::Builder.allows(Permission::QuestionWrite));
         assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::SemanticWrite));
+        assert!(Role::Builder.allows(Permission::DaxCompile));
         assert!(Role::Builder.allows(Permission::EvolutionRun));
         assert!(Role::Builder.allows(Permission::EtlPlan));
     }
@@ -334,6 +340,7 @@ mod tests {
     #[test]
     fn analyst_can_compile_but_not_write_semantic_models() {
         assert!(Role::Analyst.allows(Permission::SemanticCompile));
+        assert!(Role::Analyst.allows(Permission::DaxCompile));
         assert!(Role::Analyst.allows(Permission::ConnectionRead));
         assert!(!Role::Analyst.allows(Permission::ConnectionWrite));
         assert!(Role::Analyst.allows(Permission::SqlLabRead));
@@ -356,6 +363,7 @@ mod tests {
         assert!(!Role::Viewer.allows(Permission::QueryCacheRead));
         assert!(!Role::Viewer.allows(Permission::QuestionWrite));
         assert!(!Role::Viewer.allows(Permission::SemanticCompile));
+        assert!(!Role::Viewer.allows(Permission::DaxCompile));
     }
 
     #[test]

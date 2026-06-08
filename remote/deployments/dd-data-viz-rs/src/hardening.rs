@@ -152,6 +152,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/semantic.rs validates dimensions, measures, tags, and generated SQL targets before storing model definitions.",
         },
         ControlDescriptor {
+            id: "bounded-dax-expressions",
+            status: "implemented",
+            description: "Power BI-style DAX expressions are capped by byte size, token count, nesting depth, and function arity, reject secret-looking text, and validate all field references against an ingested dataset.",
+            evidence: "src/dax.rs parses a strict DAX subset and /expressions/dax/compile returns AST, dependencies, and SQL preview without evaluating user formulas.",
+        },
+        ControlDescriptor {
             id: "bounded-etl-plans",
             status: "implemented",
             description: "Domo Magic ETL/Power Query-style plans are capped by step count, output field count, aggregation count, and formula length, and formulas are treated as metadata instead of executed code.",
