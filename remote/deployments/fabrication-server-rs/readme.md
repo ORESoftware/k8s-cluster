@@ -4214,11 +4214,16 @@ material-conditioning, ambient/chamber, coolant, extraction, utility, vibration,
 and metrology-environment reviewers. The response uses
 `dd.fabrication.environment-result-review.v1` and captures condition checks,
 utility checks, metrology checks, retained artifacts, release blockers, warning
-counts, and MDP/POMDP/neural learning observations. The learning section includes
-a `dd.fabrication.environment-learning-outcome-draft.v1` `outcomeDraft` with
-environment-family, condition-scope, utility, metrology, artifact, recovery,
-recheck, and human-intervention hints ready for
-`POST /fabrication/learning/outcomes`.
+counts, and a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface review, non-G-code/job-sheet
+evidence, and learning feedback lanes. The learning section includes a
+`dd.fabrication.environment-learning-outcome-draft.v1` `outcomeDraft` with
+environment-family, condition-scope, utility, metrology, artifact,
+priority-disposition, recovery, recheck, and human-intervention hints ready for
+`POST /fabrication/learning/outcomes`. Environment priority observations such as
+`environment-priority:<priority>:<disposition>` let MDP/POMDP/neural workers
+learn which conditioning, utility, metrology, or operator-handoff blockers
+stopped machine release.
 
 Machine-ready and release-ready status remains blocked when environmental
 conditions are out of limits, drying or conditioning is incomplete, extraction or
@@ -4226,9 +4231,10 @@ utilities require recovery, metrology conditions are unstable, retained artifact
 evidence is missing, or human intervention is still required. The result is
 stored with `environment-result`, `environment-condition-checks`,
 `environment-utility-checks`, `environment-metrology-checks`,
-`environment-artifacts`, and `environment-learning-observations` artifacts so
-future planners can learn which material, machine, utility, inspection, and
-ambient conditions made generated/imported instructions releasable.
+`environment-artifacts`, `environment-priority-dispositions`, and
+`environment-learning-observations` artifacts so future planners can learn which
+material, machine, utility, inspection, and ambient conditions made
+generated/imported instructions releasable.
 
 ## `GET /fabrication/provenance/catalog`
 
@@ -5796,7 +5802,11 @@ runtime inspection boundary while the database contract is still being designed.
   artifacts. The bundle also includes `bundleManifest`, a compact category
   checklist for design/source, machine-code/instruction, setup/execution,
   simulation/quality/release, and learning/policy feedback evidence, with
-  present/missing counts in `summary`. `GET /fabrication/jobs/:job_id/release-bundle`
+  present/missing counts in `summary`. Its `releaseGateMatrix` maps the same
+  source-provenance, machine-envelope, process-readiness, simulation-evidence,
+  human-or-automation-handoff, and learning-disposition gates to the retained
+  manifest categories, present/missing counts, blocked release surfaces, and
+  evidence routes for that specific job. `GET /fabrication/jobs/:job_id/release-bundle`
   is the prefixed alias. Bundles are draft operator/worker evidence packets and
   remain blocked until release gates clear.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
