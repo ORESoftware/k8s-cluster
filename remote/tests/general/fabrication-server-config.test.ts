@@ -2803,6 +2803,24 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /OrcaSlicer/);
   assert.match(source, /Cura/);
   assert.match(source, /Bambu Studio/);
+  assert.match(source, /Release Gates/);
+  assert.match(
+    source,
+    /Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory/,
+  );
+  assert.match(source, /Source provenance/);
+  assert.match(source, /Machine envelope/);
+  assert.match(source, /Process readiness/);
+  assert.match(source, /Simulation evidence/);
+  assert.match(source, /Human or automation handoff/);
+  assert.match(source, /Learning disposition/);
+  assert.match(source, /Release Gates/);
+  assert.match(source, /Source provenance/);
+  assert.match(source, /Machine envelope/);
+  assert.match(source, /Process readiness/);
+  assert.match(source, /Simulation evidence/);
+  assert.match(source, /Human or automation handoff/);
+  assert.match(source, /Learning disposition/);
   assert.match(source, /\/fabrication\/intake\/catalog/);
   assert.match(source, /\/fabrication\/templates\/catalog/);
   assert.match(source, /intake guide/);
@@ -6678,6 +6696,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD/);
   assert.match(readme, /PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio/);
   assert.match(readme, /ambiguous `\.prt`\/`\.asm` extensions/);
+  assert.match(readme, /operator-facing release-gate matrix/);
+  assert.match(readme, /source provenance, machine envelope, process readiness, simulation evidence/);
+  assert.match(readme, /human or automation handoff, and learning disposition/);
+  assert.match(readme, /toolpaths, slicer plans, G-code, controller programs, and text job-sheet/);
   assert.match(readme, /`dd\.fabrication\.how-it-works\.v1` payload/);
   assert.match(readme, /six-step\s+intake-to-release flow for discovery, intake, generation, validation, release,\s+and learning/);
   assert.match(readme, /generated machine code, printer instructions, imported\s+CNC\/controller streams/);
