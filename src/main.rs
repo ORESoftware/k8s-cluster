@@ -88724,6 +88724,163 @@ fn safety_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn safety_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "safety-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn safety_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    safety_blocker_count: usize,
+    interlock_blocker_count: usize,
+    emergency_action_blocker_count: usize,
+    stop_point_required: bool,
+    restart_review_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        safety_priority_disposition(
+            "machine-failure-boundary-first",
+            if safety_blocker_count > 0
+                || interlock_blocker_count > 0
+                || emergency_action_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("safetyBlockerCount:{safety_blocker_count}"),
+                format!("interlockBlockerCount:{interlock_blocker_count}"),
+                format!("emergencyActionBlockerCount:{emergency_action_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/safety/result",
+                "POST /fabrication/failure-modes/result",
+                "POST /fabrication/release/result",
+            ],
+            if safety_blocker_count > 0
+                || interlock_blocker_count > 0
+                || emergency_action_blocker_count > 0
+            {
+                "machineReady remains blocked until safety hazards, interlocks, and emergency actions clear the machine-failure boundary"
+            } else {
+                "safety result did not report an open machine-failure priority blocker"
+            },
+        ),
+        safety_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required || stop_point_required || restart_review_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("stopPointRequired:{stop_point_required}"),
+                format!("restartReviewRequired:{restart_review_required}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/telemetry",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required || stop_point_required || restart_review_required {
+                "machineReady remains blocked until operator stop points, restart authorization, and human safety handoffs are retained"
+            } else {
+                "safety result did not report an open human-intervention priority blocker"
+            },
+        ),
+        safety_priority_disposition(
+            "split-combine-or-interface-review",
+            if stop_point_required || restart_review_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("stopPointRequired:{stop_point_required}"),
+                format!("restartReviewRequired:{restart_review_required}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if stop_point_required || restart_review_required {
+                "machineReady remains blocked until robot-cell interface, operator entry, restart, or split/combine handoff evidence clears"
+            } else {
+                "safety result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        safety_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/safety/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until safety reports, interlock records, E-stop evidence, or operator job sheets retain URI, checksum, format, and evidence"
+            } else {
+                "safety artifacts include retained release evidence for downstream review"
+            },
+        ),
+        safety_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked safety priority lanes before advisory promotion"
+            } else {
+                "safety result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "safety-result");
     let generated_at_ms = now_ms();
@@ -88841,6 +88998,23 @@ fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<V
     if human_intervention_required {
         learning_observations.push("safety:human-intervention-required".to_string());
     }
+    let priority_dispositions = safety_priority_dispositions(
+        request.success,
+        release_blocked,
+        safety_blocker_count,
+        interlock_blocker_count,
+        emergency_action_blocker_count,
+        stop_point_required,
+        restart_review_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(safety_checks.iter().filter_map(|check| {
         check
             .get("safetyFamily")
@@ -88895,6 +89069,7 @@ fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<V
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "safetyResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -88966,6 +89141,7 @@ fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<V
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -88975,6 +89151,7 @@ fn safety_result_review_response(request: SafetyResultReviewRequest) -> Result<V
             "safety-interlock-checks",
             "safety-emergency-actions",
             "safety-artifacts",
+            "safety-priority-dispositions",
             "safety-learning-observations",
             "mdp-request.artifacts.safetyResult"
         ]
@@ -89030,6 +89207,10 @@ fn stored_safety_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -89064,6 +89245,12 @@ fn stored_safety_result_job(response: &Value) -> StoredFabricationJob {
             "safety-artifacts".to_string(),
             "safety-artifacts",
             safety_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "safety-priority-dispositions".to_string(),
+            "safety-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -103926,6 +104113,44 @@ fn evidence_catalog_response() -> Value {
                 "examples": ["reward signal", "boundary resolution action", "split/combine result", "human-intervention outcome", "retained artifact checksum"],
                 "blocks": ["learning optimizer promotion", "future policy promotion"],
                 "learningSignals": ["reward:*", "boundary-kind:*", "split-combine:*", "human-intervention:*"]
+            }
+        ],
+        "releaseGateMatrix": [
+            {
+                "gateId": "source-provenance",
+                "evidenceFamilies": ["design-source-evidence", "instruction-controller-evidence"],
+                "requiredEvidence": ["source-system identity", "translator or postprocessor version", "checksum or retained original", "macro/subprogram dependency review"],
+                "blocks": ["translator release", "controller review", "machine-ready release"]
+            },
+            {
+                "gateId": "machine-envelope",
+                "evidenceFamilies": ["machine-process-evidence", "setup-execution-evidence"],
+                "requiredEvidence": ["machine profile", "fixture/workholding state", "tool/offset state", "axis and support envelope review"],
+                "blocks": ["toolpath release", "machine-code release", "unattended run release"]
+            },
+            {
+                "gateId": "process-readiness",
+                "evidenceFamilies": ["machine-process-evidence", "setup-execution-evidence", "quality-release-evidence"],
+                "requiredEvidence": ["material/feedstock state", "thermal/spindle/feed/support-media state", "process recipe and utility readiness"],
+                "blocks": ["printer instruction release", "subtractive cutting release", "sheet-cutting release"]
+            },
+            {
+                "gateId": "simulation-evidence",
+                "evidenceFamilies": ["instruction-controller-evidence", "quality-release-evidence"],
+                "requiredEvidence": ["simulation or dry-run artifact", "collision/reach/support review", "inspection or postprocess disposition"],
+                "blocks": ["release preview", "machine-ready release", "learning promotion"]
+            },
+            {
+                "gateId": "human-or-automation-handoff",
+                "evidenceFamilies": ["setup-execution-evidence", "quality-release-evidence"],
+                "requiredEvidence": ["operator signoff", "automation handoff result", "restart or split/combine join evidence"],
+                "blocks": ["restart release", "split/combine release", "machine-ready release"]
+            },
+            {
+                "gateId": "learning-disposition",
+                "evidenceFamilies": ["learning-outcome-evidence"],
+                "requiredEvidence": ["reward signal", "outcome memory", "replay or policy snapshot", "retained artifact reference"],
+                "blocks": ["policy promotion", "learned-route preference release", "unattended repeat-run release"]
             }
         ],
         "releasePolicy": [
@@ -134496,6 +134721,9 @@ mod tests {
             "safety-hazard:operator-entry",
             "safety-interlock:light-curtain-reset",
             "safety-emergency-action:emergency-stop-and-restart-authorization",
+            "safety-priority:machine-failure-boundary-first:blocked",
+            "safety-priority:human-intervention-required:blocked",
+            "safety-priority:split-combine-or-interface-review:blocked",
         ] {
             assert!(
                 observations
@@ -134504,6 +134732,34 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+                    && priority.get("disposition").and_then(Value::as_str) == Some("blocked")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("safety-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("safety-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("safety-priority:split-combine-or-interface-review:blocked")
+            })));
 
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
@@ -134550,6 +134806,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| { hint.as_str() == Some("restart-review-required:true") })));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let job = stored_safety_result_job(&response);
         assert_eq!(job.record.kind, "safety-result");
@@ -134560,6 +134823,7 @@ mod tests {
             "safety-checks",
             "safety-interlock-checks",
             "safety-emergency-actions",
+            "safety-priority-dispositions",
             "safety-learning-observations",
         ] {
             assert!(
@@ -137678,6 +137942,34 @@ mod tests {
             .is_some_and(|signals| signals
                 .iter()
                 .any(|signal| signal.as_str() == Some("split-combine:*")))));
+        let release_gate_matrix = payload
+            .get("releaseGateMatrix")
+            .and_then(Value::as_array)
+            .expect("release gate matrix should be present");
+        for gate_id in [
+            "source-provenance",
+            "machine-envelope",
+            "process-readiness",
+            "simulation-evidence",
+            "human-or-automation-handoff",
+            "learning-disposition",
+        ] {
+            assert!(
+                release_gate_matrix
+                    .iter()
+                    .any(|gate| gate.get("gateId").and_then(Value::as_str) == Some(gate_id)),
+                "missing release gate crosswalk {gate_id}"
+            );
+        }
+        assert!(release_gate_matrix.iter().any(|gate| {
+            gate.get("requiredEvidence")
+                .and_then(Value::as_array)
+                .is_some_and(|evidence| {
+                    evidence
+                        .iter()
+                        .any(|item| item.as_str() == Some("restart or split/combine join evidence"))
+                })
+        }));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
