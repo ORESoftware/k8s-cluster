@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-compliance-rs",
   "language": "rust",
-  "routeCount": 18,
+  "routeCount": 24,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 8,
+    "user-generated": 14,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -130,6 +130,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "controls"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/diagrams/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "diagram_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/diagrams/infrastructure",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "diagram_infrastructure"
       ],
       "sourceFiles": [
         "remote/deployments/dd-compliance-rs/src/routes.rs"
@@ -273,6 +307,40 @@
       "notes": ""
     },
     {
+      "path": "/reports/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "system_report_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/reports/system",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "system_report"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/schema",
       "methods": [
         "GET"
@@ -317,6 +385,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "standard"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/vulnerability-scan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "vulnerability_scan"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/vulnerability-scan/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "vulnerability_scan_example"
       ],
       "sourceFiles": [
         "remote/deployments/dd-compliance-rs/src/routes.rs"

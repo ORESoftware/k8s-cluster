@@ -191,10 +191,10 @@
     {
       "service": "dd-compliance-rs",
       "language": "rust",
-      "routeCount": 18,
+      "routeCount": 24,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 8,
+        "user-generated": 14,
         "runtime-config": 3
       },
       "generated": [

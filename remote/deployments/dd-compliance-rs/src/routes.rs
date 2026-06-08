@@ -13,9 +13,15 @@ use crate::{
     audit::{run_audit, validate_request},
     auth::require_auth,
     config::{Config, SCHEMA_VERSION, SERVICE_NAME},
+    diagrams::generate_infrastructure_diagram,
     jobs::JobStore,
     metrics::Metrics,
-    models::{example_request, schema_example, AuditRequest},
+    models::{
+        diagram_example_request, example_request, schema_example, system_report_example_request,
+        vulnerability_scan_example_request, AuditRequest, DiagramRequest, SystemReportRequest,
+        VulnerabilityScanRequest,
+    },
+    reports::{generate_system_report, scan_vulnerabilities},
     standards::{standard_by_id_or_alias, CONTROL_CATALOG, STANDARDS},
 };
 
@@ -39,6 +45,15 @@ pub fn router(state: AppState) -> Router {
         .route("/api/docs.json", get(api_docs_json))
         .route("/schema", get(schema))
         .route("/example", get(example))
+        .route("/diagrams/example", get(diagram_example))
+        .route("/diagrams/infrastructure", post(diagram_infrastructure))
+        .route("/reports/example", get(system_report_example))
+        .route("/reports/system", post(system_report))
+        .route(
+            "/vulnerability-scan/example",
+            get(vulnerability_scan_example),
+        )
+        .route("/vulnerability-scan", post(vulnerability_scan))
         .route("/standards", get(standards))
         .route("/standards/:standard_id", get(standard))
         .route("/controls", get(controls))
@@ -60,6 +75,8 @@ async fn descriptor() -> Json<serde_json::Value> {
             "health": ["/healthz", "/readyz", "/metrics"],
             "catalog": ["/standards", "/standards/:standardId", "/controls"],
             "audits": ["POST /audits", "GET /audits", "GET /audits/:jobId", "POST /audit-sync"],
+            "diagrams": ["GET /diagrams/example", "POST /diagrams/infrastructure"],
+            "reports": ["GET /reports/example", "POST /reports/system", "POST /vulnerability-scan"],
             "docs": ["/docs/api", "/api/docs", "/api/docs.json"]
         }
     }))
@@ -83,7 +100,9 @@ async fn healthz(State(state): State<AppState>) -> Json<serde_json::Value> {
             "total": counts.total()
         },
         "externalFetchEnabled": state.config.allow_external_fetch,
-        "repoCloneEnabled": state.config.allow_repo_clone
+        "repoCloneEnabled": state.config.allow_repo_clone,
+        "dataVizEnabled": state.config.data_viz_enabled,
+        "dataVizUrlConfigured": state.config.data_viz_url.is_some()
     }))
 }
 
@@ -124,6 +143,18 @@ async fn example() -> Json<AuditRequest> {
     Json(example_request())
 }
 
+async fn diagram_example() -> Json<DiagramRequest> {
+    Json(diagram_example_request())
+}
+
+async fn system_report_example() -> Json<SystemReportRequest> {
+    Json(system_report_example_request())
+}
+
+async fn vulnerability_scan_example() -> Json<VulnerabilityScanRequest> {
+    Json(vulnerability_scan_example_request())
+}
+
 async fn standards() -> Json<serde_json::Value> {
     Json(json!({
         "ok": true,
@@ -149,6 +180,64 @@ async fn controls() -> Json<serde_json::Value> {
         "count": CONTROL_CATALOG.len(),
         "controls": CONTROL_CATALOG
     }))
+}
+
+async fn diagram_infrastructure(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DiagramRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report =
+        generate_infrastructure_diagram(state.config.clone(), state.http.clone(), request).await;
+    state.metrics.diagrams_generated_total.fetch_add(1);
+    if report
+        .data_viz
+        .as_ref()
+        .is_some_and(|render| render.attempted && !render.ok)
+    {
+        state.metrics.data_viz_render_failures_total.fetch_add(1);
+    }
+    Json(report).into_response()
+}
+
+async fn system_report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<SystemReportRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = generate_system_report(state.config.clone(), state.http.clone(), request).await;
+    if report.diagram.is_some() {
+        state.metrics.diagrams_generated_total.fetch_add(1);
+    }
+    if report
+        .diagram
+        .as_ref()
+        .and_then(|diagram| diagram.data_viz.as_ref())
+        .is_some_and(|render| render.attempted && !render.ok)
+    {
+        state.metrics.data_viz_render_failures_total.fetch_add(1);
+    }
+    Json(report).into_response()
+}
+
+async fn vulnerability_scan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<VulnerabilityScanRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    Json(scan_vulnerabilities(&state.config, request)).into_response()
 }
 
 async fn submit_audit(

@@ -51,6 +51,13 @@ spec:
         - protocol: TCP
           port: 8110
     - to:
+        - podSelector:
+            matchLabels:
+              app: dd-data-viz-rs
+      ports:
+        - protocol: TCP
+          port: 8127
+    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:

@@ -19,6 +19,10 @@ pub struct Config {
     pub allowed_repo_prefixes: Vec<String>,
     pub allowed_file_extensions: Vec<String>,
     pub git_bin: String,
+    pub data_viz_enabled: bool,
+    pub data_viz_url: Option<String>,
+    pub data_viz_render_path: String,
+    pub data_viz_timeout: Duration,
     pub job_timeout: Duration,
     pub max_jobs: usize,
     pub max_concurrent_jobs: usize,
@@ -53,6 +57,12 @@ impl Config {
             .map(|ext| normalize_key(ext.trim_start_matches('.')))
             .collect(),
             git_bin: env_value("COMPLIANCE_GIT_BIN", "git"),
+            data_viz_enabled: env_bool("COMPLIANCE_DATA_VIZ_ENABLED", true),
+            data_viz_url: optional_env("COMPLIANCE_DATA_VIZ_URL").or_else(|| {
+                Some("http://dd-data-viz-rs.default.svc.cluster.local:8127".to_string())
+            }),
+            data_viz_render_path: env_value("COMPLIANCE_DATA_VIZ_RENDER_PATH", "/render/mermaid"),
+            data_viz_timeout: Duration::from_secs(env_u64("COMPLIANCE_DATA_VIZ_TIMEOUT_SECONDS", 15)),
             job_timeout: Duration::from_secs(env_u64("COMPLIANCE_JOB_TIMEOUT_SECONDS", 900)),
             max_jobs: env_usize("COMPLIANCE_MAX_JOBS", 200),
             max_concurrent_jobs: env_usize("COMPLIANCE_MAX_CONCURRENT_JOBS", 2),

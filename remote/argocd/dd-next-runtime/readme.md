@@ -714,8 +714,10 @@ egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
 `dd-compliance-rs` runs `remote/deployments/dd-compliance-rs` as an authenticated Rust compliance
 readiness job server. It serves `/compliance/healthz`, `/compliance/metrics`,
 `/compliance/standards`, `/compliance/controls`, `/compliance/schema`, `/compliance/example`,
-`POST /compliance/audits`, `GET /compliance/audits`, `GET /compliance/audits/<jobId>`, and
-`POST /compliance/audit-sync`. The registry currently covers HIPAA, SOC 2, FedRAMP, NIST CSF,
+`POST /compliance/audits`, `GET /compliance/audits`, `GET /compliance/audits/<jobId>`,
+`POST /compliance/audit-sync`, `POST /compliance/diagrams/infrastructure`,
+`POST /compliance/reports/system`, and `POST /compliance/vulnerability-scan`. The registry
+currently covers HIPAA, SOC 2, FedRAMP, NIST CSF,
 NIST SP 800-53, GDPR, ISO/IEC 27001/27017/27018/27701, CIS Controls, Cyber Essentials, Essential
 Eight, TISAX, CMMC, CCPA/CPRA, LGPD, PIPEDA, Singapore and Thailand PDPA, Privacy Act 1988, UK
 GDPR, Data Protection Act 2018, PCI DSS, SWIFT CSP, PSD2, SOX, GLBA, Basel III, HITECH, HITRUST
@@ -732,9 +734,15 @@ For production parity, the deployment runs one `Recreate` replica with durable h
 records under `/var/lib/dd-compliance-rs/jobs`, a startup init step that prepares permissions for
 the non-root server container, `COMPLIANCE_MAX_CONCURRENT_JOBS=2` backpressure, and a dedicated
 NetworkPolicy that limits ingress to the gateway, runtime-config, and observability while keeping
-egress to DNS, runtime-config, and bounded public HTTP(S). `/compliance/readyz` verifies the job
-store is writable. `/compliance/metrics` is scraped by Prometheus and the OpenTelemetry Collector,
-and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
+egress to DNS, runtime-config, the optional `dd-data-viz-rs` renderer, and bounded public HTTP(S).
+`/compliance/readyz` verifies the job store is writable. Infrastructure diagram requests compare
+submitted Terraform/GitOps desired-state evidence with submitted live inventory evidence, return a
+local Mermaid diagram, and attempt richer rendering through
+`COMPLIANCE_DATA_VIZ_URL=http://dd-data-viz-rs.default.svc.cluster.local:8127`. System reports can
+return Markdown and base64 PDF output, and the vulnerability scan route performs bounded static
+checks for secrets, public exposure, privileged Kubernetes settings, weak workload hardening, and
+insecure transport markers. `/compliance/metrics` is scraped by Prometheus and the OpenTelemetry
+Collector, and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
 
 ## AI/ML feature pipeline
 

@@ -67,6 +67,189 @@ pub struct AuditOptions {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DiagramRequest {
+    pub request_id: Option<String>,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub terraform: Vec<DiagramSource>,
+    #[serde(default)]
+    pub gitops: Vec<DiagramSource>,
+    #[serde(default)]
+    pub live: Vec<DiagramSource>,
+    #[serde(default)]
+    pub nodes: Vec<InfraNode>,
+    #[serde(default)]
+    pub edges: Vec<InfraEdge>,
+    pub options: Option<DiagramOptions>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramSource {
+    pub name: Option<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramOptions {
+    pub use_data_viz: Option<bool>,
+    pub include_local_mermaid: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct InfraNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub source: String,
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfraEdge {
+    pub from: String,
+    pub to: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramReport {
+    pub ok: bool,
+    pub request_id: String,
+    pub schema_version: String,
+    pub title: String,
+    pub summary: String,
+    pub desired_nodes: Vec<InfraNode>,
+    pub live_nodes: Vec<InfraNode>,
+    pub edges: Vec<InfraEdge>,
+    pub matches: Vec<InfraMatch>,
+    pub missing_in_live: Vec<InfraNode>,
+    pub unexpected_live: Vec<InfraNode>,
+    pub diagrams: Vec<DiagramArtifact>,
+    pub data_viz: Option<DataVizRender>,
+    pub generated_at_ms: u128,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfraMatch {
+    pub desired_id: String,
+    pub live_id: String,
+    pub normalized_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramArtifact {
+    pub kind: String,
+    pub format: String,
+    pub renderer: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataVizRender {
+    pub attempted: bool,
+    pub ok: bool,
+    pub url: String,
+    pub status: Option<u16>,
+    pub error: Option<String>,
+    pub artifact: Option<DiagramArtifact>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VulnerabilityScanRequest {
+    pub request_id: Option<String>,
+    pub title: Option<String>,
+    #[serde(default)]
+    pub artifacts: Vec<DiagramSource>,
+    pub inline_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VulnerabilityScanReport {
+    pub ok: bool,
+    pub request_id: String,
+    pub schema_version: String,
+    pub summary: String,
+    pub scanned_bytes: usize,
+    pub findings: Vec<VulnerabilityFinding>,
+    pub generated_at_ms: u128,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VulnerabilityFinding {
+    pub id: String,
+    pub severity: VulnerabilitySeverity,
+    pub category: String,
+    pub evidence_ref: String,
+    pub message: String,
+    pub recommendation: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum VulnerabilitySeverity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReportRequest {
+    pub request_id: Option<String>,
+    pub title: Option<String>,
+    pub system_name: Option<String>,
+    pub description: Option<String>,
+    pub audit: Option<AuditRequest>,
+    pub diagram: Option<DiagramRequest>,
+    #[serde(default)]
+    pub artifacts: Vec<DiagramSource>,
+    pub inline_text: Option<String>,
+    pub options: Option<SystemReportOptions>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReportOptions {
+    pub include_markdown: Option<bool>,
+    pub include_pdf: Option<bool>,
+    pub include_vulnerability_scan: Option<bool>,
+    pub include_diagram: Option<bool>,
+    pub use_data_viz: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReport {
+    pub ok: bool,
+    pub request_id: String,
+    pub schema_version: String,
+    pub title: String,
+    pub markdown: Option<String>,
+    pub pdf_base64: Option<String>,
+    pub pdf_bytes: Option<usize>,
+    pub vulnerability_scan: Option<VulnerabilityScanReport>,
+    pub diagram: Option<DiagramReport>,
+    pub generated_at_ms: u128,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditReport {
     pub ok: bool,
     pub request_id: String,
@@ -273,4 +456,70 @@ pub fn schema_example() -> serde_json::Value {
             }
         }
     })
+}
+
+pub fn diagram_example_request() -> DiagramRequest {
+    DiagramRequest {
+        request_id: Some("example-infra-parity".to_string()),
+        title: Some("Terraform vs live runtime".to_string()),
+        terraform: vec![DiagramSource {
+            name: Some("main.tf".to_string()),
+            content: r#"resource "aws_instance" "dd_runtime" {}
+resource "aws_security_group" "gateway" {}
+"#
+            .to_string(),
+        }],
+        gitops: vec![DiagramSource {
+            name: Some(
+                "remote/argocd/dd-next-runtime/dd-compliance-rs.deployment.yaml".to_string(),
+            ),
+            content: "kind: Deployment\nmetadata:\n  name: dd-compliance-rs\n".to_string(),
+        }],
+        live: vec![DiagramSource {
+            name: Some("kubectl get deploy dd-compliance-rs -o yaml".to_string()),
+            content:
+                "kind: Deployment\nmetadata:\n  name: dd-compliance-rs\n  namespace: default\n"
+                    .to_string(),
+        }],
+        nodes: vec![],
+        edges: vec![],
+        options: Some(DiagramOptions {
+            use_data_viz: Some(true),
+            include_local_mermaid: Some(true),
+        }),
+    }
+}
+
+pub fn vulnerability_scan_example_request() -> VulnerabilityScanRequest {
+    VulnerabilityScanRequest {
+        request_id: Some("example-vuln-scan".to_string()),
+        title: Some("Example static vulnerability scan".to_string()),
+        artifacts: vec![DiagramSource {
+            name: Some("deployment.yaml".to_string()),
+            content: "kind: Deployment\nspec:\n  template:\n    spec:\n      containers:\n        - securityContext:\n            allowPrivilegeEscalation: true\n".to_string(),
+        }],
+        inline_text: Some("security_group allows 0.0.0.0/0 and tls_insecure = true".to_string()),
+    }
+}
+
+pub fn system_report_example_request() -> SystemReportRequest {
+    SystemReportRequest {
+        request_id: Some("example-system-report".to_string()),
+        title: Some("Example compliance system report".to_string()),
+        system_name: Some("dd-next-runtime".to_string()),
+        description: Some("Operator-supplied evidence for the runtime cluster.".to_string()),
+        audit: None,
+        diagram: Some(diagram_example_request()),
+        artifacts: vulnerability_scan_example_request().artifacts,
+        inline_text: Some(
+            "MFA, logging, encryption, incident response, vulnerability scanning.".to_string(),
+        ),
+        options: Some(SystemReportOptions {
+            include_markdown: Some(true),
+            include_pdf: Some(true),
+            include_vulnerability_scan: Some(true),
+            include_diagram: Some(true),
+            use_data_viz: Some(true),
+        }),
+    }
 }

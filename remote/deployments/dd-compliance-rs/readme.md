@@ -10,6 +10,9 @@ frameworks. The result is readiness evidence, not legal advice, certification, o
 - `GET /standards`, `GET /standards/:standardId`
 - `GET /controls`
 - `GET /schema`, `GET /example`
+- `GET /diagrams/example`, `POST /diagrams/infrastructure`
+- `GET /reports/example`, `POST /reports/system`
+- `GET /vulnerability-scan/example`, `POST /vulnerability-scan`
 - `POST /audits` queues an async audit job.
 - `GET /audits`, `GET /audits/:jobId` read job state.
 - `POST /audit-sync` runs a bounded synchronous audit.
@@ -27,6 +30,10 @@ and `/metrics` exports retained job counts by status.
 
 The deployment runs one replica with `strategy: Recreate` because the hostPath-backed job store is a
 single-writer ledger. `COMPLIANCE_MAX_CONCURRENT_JOBS` bounds worker fan-out inside that replica.
+Infrastructure diagrams are generated locally as Mermaid and, when reachable, submitted to
+`dd-data-viz-rs` through `COMPLIANCE_DATA_VIZ_URL` for richer rendering. System reports can return
+Markdown plus a valid base64-encoded PDF, and vulnerability scans run bounded static checks over
+submitted IaC, Kubernetes YAML, dependency/config text, scanner exports, or operator evidence.
 
 ## Standards
 
@@ -46,6 +53,7 @@ but fail closed unless enabled at the service level:
 - `COMPLIANCE_ALLOW_REPO_CLONE=false`
 - `COMPLIANCE_ALLOW_PRIVATE_TARGETS=false`
 - `COMPLIANCE_MAX_CONCURRENT_JOBS=2`
+- `COMPLIANCE_DATA_VIZ_URL=http://dd-data-viz-rs.default.svc.cluster.local:8127`
 
 When repo cloning is enabled, use `COMPLIANCE_ALLOWED_REPO_PREFIXES` to restrict trusted sources.
 The scanner uses shallow clones, a blob-size filter, allowlisted file extensions, and byte/file
