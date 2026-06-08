@@ -146,6 +146,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/notifications.rs requires secretRef for webhook-like channels and /alerts/rules/:rule_id/notification-preview computes delivery plans without network side effects.",
         },
         ControlDescriptor {
+            id: "bounded-notification-dispatcher",
+            status: "implemented",
+            description: "Alert notification dispatches are capped by stored outbox records, reason bytes, and delivery attempts, and route only through secretRef-backed contact points.",
+            evidence: "src/notification_dispatch.rs records bounded in-memory dispatcher jobs; /alerts/rules/:rule_id/dispatch evaluates the rule, routes policies, and records delivery attempts without embedding raw secrets.",
+        },
+        ControlDescriptor {
             id: "bounded-loki-frames",
             status: "implemented",
             description: "Loki log frame conversion is capped by stream count, entry count, label count, query bytes, and line bytes, and common secret-bearing log fragments are redacted.",

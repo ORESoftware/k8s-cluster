@@ -53,6 +53,8 @@ concept in `main.rs`:
   evaluation responses.
 - `src/notifications.rs` owns Grafana-style contact point validation, notification policies, and
   dry-run delivery previews.
+- `src/notification_dispatch.rs` owns bounded Grafana-style alert notification dispatch records and
+  secretRef delivery-attempt outbox state.
 - `src/loki_frames.rs` owns bounded Loki-native and structured log stream conversion into redacted
   Grafana-style frame rows with label and level metadata.
 - `src/live_panels.rs` owns bounded Grafana-style WebSocket panel snapshots over ingested datasets.
@@ -107,7 +109,7 @@ Current first-class parity surfaces:
   approval requests.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route,
   bounded live panel WebSocket snapshots, Loki log frame adapter, alert rule evaluation, contact
-  points, and notification policy previews.
+  points, notification policy previews, and bounded notification dispatch outbox records.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, infrastructure diagram tool catalog, and Markdown-plus-SQL report blueprint.
 
@@ -194,6 +196,10 @@ Current first-class parity surfaces:
 - `GET /alerts/contact-points/:contact_id` - authenticated alert contact point definition.
 - `POST /alerts/notification-policies` - authenticated alert notification policy create/replace.
 - `GET /alerts/notification-policies` - authenticated alert notification policy catalog.
+- `POST /alerts/rules/:rule_id/dispatch` - authenticated alert evaluation plus notification policy
+  routing into bounded secretRef delivery-attempt outbox records.
+- `GET /alerts/dispatches` - authenticated alert notification dispatch catalog.
+- `GET /alerts/dispatches/:dispatch_id` - authenticated alert notification dispatch detail.
 - `POST /alerts/rules/:rule_id/notification-preview` - authenticated dry-run notification delivery
   preview.
 - `POST /query` - authenticated query translation and execution with an in-memory cache snapshot.

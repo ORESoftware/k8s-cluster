@@ -31,6 +31,7 @@ mod hardening;
 mod infra_diagrams;
 mod live_panels;
 mod loki_frames;
+mod notification_dispatch;
 mod notifications;
 mod platform;
 mod publishing;
@@ -76,6 +77,8 @@ struct AppState {
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
     alert_contacts: Arc<RwLock<BTreeMap<String, notifications::ContactPoint>>>,
     notification_policies: Arc<RwLock<BTreeMap<String, notifications::NotificationPolicy>>>,
+    notification_dispatches:
+        Arc<RwLock<BTreeMap<String, notification_dispatch::NotificationDispatchRecord>>>,
     semantic_models: Arc<RwLock<BTreeMap<String, semantic::SavedSemanticModel>>>,
     questions: Arc<RwLock<BTreeMap<String, self_service::SavedQuestion>>>,
 }
@@ -125,6 +128,8 @@ struct Metrics {
     notification_requests_total: AtomicU64,
     contact_points_saved_total: AtomicU64,
     notification_policies_saved_total: AtomicU64,
+    notification_dispatches_total: AtomicU64,
+    notification_delivery_attempts_total: AtomicU64,
     semantic_requests_total: AtomicU64,
     semantic_models_saved_total: AtomicU64,
     dax_compile_requests_total: AtomicU64,
@@ -529,6 +534,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
         alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
         notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
+        notification_dispatches: Arc::new(RwLock::new(BTreeMap::new())),
         semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
         questions: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -638,6 +644,15 @@ fn app_router(state: AppState) -> Router {
         .route(
             "/alerts/notification-policies",
             get(list_notification_policies).post(save_notification_policy),
+        )
+        .route("/alerts/dispatches", get(list_notification_dispatches))
+        .route(
+            "/alerts/dispatches/:dispatch_id",
+            get(get_notification_dispatch),
+        )
+        .route(
+            "/alerts/rules/:rule_id/dispatch",
+            post(dispatch_alert_notifications),
         )
         .route(
             "/alerts/rules/:rule_id/notification-preview",
@@ -835,6 +850,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "surfaces": ["bounded WebSocket snapshot stream", "panel field schema", "time-series/table hints"],
             "limits": live_panels::limits_payload(),
             "posture": "authenticated live stream over ingested in-memory datasets; capped by ticks, interval, rows, and fields until durable live diff streaming lands"
+        },
+        "notificationDispatch": {
+            "surfaces": ["alert evaluation dispatch", "policy routing", "secretRef delivery attempts", "in-memory outbox"],
+            "limits": notification_dispatch::limits_payload(),
+            "posture": "bounded dispatcher worker surface; records delivery attempts and secretRef handoff plans without embedding raw secrets"
         },
         "connectionRegistry": {
             "engines": ["postgres", "mysql", "bigquery", "snowflake", "redshift", "prometheus", "loki", "parquet", "csv-json"],
@@ -1087,6 +1107,12 @@ dd_data_viz_contact_points_saved_total {}
 # HELP dd_data_viz_notification_policies_saved_total Alert notification policies saved.
 # TYPE dd_data_viz_notification_policies_saved_total counter
 dd_data_viz_notification_policies_saved_total {}
+# HELP dd_data_viz_notification_dispatches_total Alert notification dispatches processed.
+# TYPE dd_data_viz_notification_dispatches_total counter
+dd_data_viz_notification_dispatches_total {}
+# HELP dd_data_viz_notification_delivery_attempts_total Alert notification delivery attempts queued or skipped.
+# TYPE dd_data_viz_notification_delivery_attempts_total counter
+dd_data_viz_notification_delivery_attempts_total {}
 # HELP dd_data_viz_semantic_requests_total Semantic registry requests handled.
 # TYPE dd_data_viz_semantic_requests_total counter
 dd_data_viz_semantic_requests_total {}
@@ -1152,6 +1178,10 @@ dd_data_viz_errors_total {}
         metrics.contact_points_saved_total.load(Ordering::Relaxed),
         metrics
             .notification_policies_saved_total
+            .load(Ordering::Relaxed),
+        metrics.notification_dispatches_total.load(Ordering::Relaxed),
+        metrics
+            .notification_delivery_attempts_total
             .load(Ordering::Relaxed),
         metrics.semantic_requests_total.load(Ordering::Relaxed),
         metrics.semantic_models_saved_total.load(Ordering::Relaxed),
@@ -2917,6 +2947,135 @@ async fn list_notification_policies(
         .map(notifications::NotificationPolicy::summary)
         .collect::<Vec<_>>();
     Ok(Json(notifications::policy_catalog_payload(summaries)))
+}
+
+async fn dispatch_alert_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(rule_id): Path<String>,
+    Json(request): Json<notification_dispatch::DispatchAlertRequest>,
+) -> Result<Json<notification_dispatch::NotificationDispatchRecord>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertEvaluate)?;
+    let rule = {
+        let alert_rules = state
+            .alert_rules
+            .read()
+            .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+        alert_rules
+            .get(&rule_id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("alert rule `{rule_id}` not found")))?
+    };
+    let plan = logical_plan_from_query(&rule.query)?;
+    let dataset = get_dataset_snapshot(&state, &plan.source)?;
+    let response = execute_plan(&dataset, plan)?;
+    let evaluation = alerts::evaluate_rule(&rule, &response.rows);
+    let evaluation_value = serde_json::to_value(&evaluation).map_err(|error| {
+        ApiError::bad_request(format!("failed to serialize alert evaluation: {error}"))
+    })?;
+    state
+        .metrics
+        .alert_evaluations_total
+        .fetch_add(1, Ordering::Relaxed);
+    let contacts = state
+        .alert_contacts
+        .read()
+        .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?
+        .clone();
+    let policies = state
+        .notification_policies
+        .read()
+        .map_err(|_| ApiError::bad_request("notification policy store lock poisoned"))?
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let record = notification_dispatch::dispatch(
+        request,
+        rule,
+        evaluation_value,
+        &policies,
+        &contacts,
+        now_ms(),
+    )
+    .map_err(ApiError::bad_request)?;
+    let attempt_count = record.attempt_count;
+    {
+        let mut dispatches = state
+            .notification_dispatches
+            .write()
+            .map_err(|_| ApiError::bad_request("notification dispatch store lock poisoned"))?;
+        notification_dispatch::store_record(&mut dispatches, record.clone());
+    }
+    state
+        .metrics
+        .notification_dispatches_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_delivery_attempts_total
+        .fetch_add(attempt_count as u64, Ordering::Relaxed);
+    Ok(Json(record))
+}
+
+async fn list_notification_dispatches(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let dispatches = state
+        .notification_dispatches
+        .read()
+        .map_err(|_| ApiError::bad_request("notification dispatch store lock poisoned"))?;
+    let mut records = dispatches.values().collect::<Vec<_>>();
+    records.sort_by(|left, right| right.processed_at_ms.cmp(&left.processed_at_ms));
+    let summaries = records
+        .into_iter()
+        .map(notification_dispatch::NotificationDispatchRecord::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(notification_dispatch::catalog_payload(summaries)))
+}
+
+async fn get_notification_dispatch(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(dispatch_id): Path<String>,
+) -> Result<Json<notification_dispatch::NotificationDispatchRecord>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let dispatches = state
+        .notification_dispatches
+        .read()
+        .map_err(|_| ApiError::bad_request("notification dispatch store lock poisoned"))?;
+    dispatches
+        .get(&dispatch_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| {
+            ApiError::not_found(format!("notification dispatch `{dispatch_id}` not found"))
+        })
 }
 
 async fn preview_alert_notifications(
@@ -5143,6 +5302,24 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/alerts/rules/:rule_id/dispatch",
+            auth: "alert-evaluate",
+            description: "Evaluate an alert rule, route matching notification policies, and record bounded secretRef delivery attempts in the dispatcher outbox.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/dispatches",
+            auth: "alert-read",
+            description: "List bounded alert notification dispatch summaries from the in-memory outbox.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/dispatches/:dispatch_id",
+            auth: "alert-read",
+            description: "Read a stored alert notification dispatch record with per-contact delivery attempts.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/alerts/rules/:rule_id/notification-preview",
             auth: "alert-evaluate",
             description: "Preview which contact points would receive an alert rule notification without sending messages.",
@@ -5788,6 +5965,7 @@ mod tests {
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
             alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
             notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
+            notification_dispatches: Arc::new(RwLock::new(BTreeMap::new())),
             semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
             questions: Arc::new(RwLock::new(BTreeMap::new())),
         }
@@ -5961,6 +6139,9 @@ mod tests {
         assert!(paths.contains(&"/alerts/contact-points"));
         assert!(paths.contains(&"/alerts/contact-points/:contact_id"));
         assert!(paths.contains(&"/alerts/notification-policies"));
+        assert!(paths.contains(&"/alerts/rules/:rule_id/dispatch"));
+        assert!(paths.contains(&"/alerts/dispatches"));
+        assert!(paths.contains(&"/alerts/dispatches/:dispatch_id"));
         assert!(paths.contains(&"/alerts/rules/:rule_id/notification-preview"));
         assert!(paths.contains(&"/connections"));
         assert!(paths.contains(&"/connections/:connection_id"));
