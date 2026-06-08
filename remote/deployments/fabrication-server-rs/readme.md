@@ -429,9 +429,10 @@ value-iteration `desMdpSolution` and QMDP-underlying `desPomdpSolution`
 previews for downstream policy workers. Plan responses also expose a DES Studio
 `desScheduleModel` queue graph so schedulers and learning workers can analyze
 machine-lane capacity from the same machine schedule. Instruction-analysis
-responses expose a matching DES Studio `desInstructionModel` queue graph so
-imported CNC, slicer, printer, and text instruction streams can be prioritized
-by review capacity and failure-boundary pressure.
+responses expose a matching DES Studio `desInstructionModel` queue graph and an
+`instructionIntentMap` so imported CNC, slicer, printer, probing, joining, and
+text instruction streams can be prioritized by review capacity,
+failure-boundary pressure, normalized process intent, and release handoff lane.
 `GET /learning/capabilities`, `GET /fabrication/learning/capabilities`,
 `GET /learning/engines/catalog`, and
 `GET /fabrication/learning/engines/catalog` expose that local DES-backed
@@ -818,6 +819,16 @@ not certified shop-floor assets; callers should attach bounded
 `profileEvidence` to harden or override them before planning, and machine-ready
 release remains blocked until profile evidence, controller/postprocessor checks,
 simulation or dry-run review, and operator or automation signoff pass.
+The catalog also exposes a `selectionEvidenceMatrix` for machine-family
+selection. It spells out the evidence required before choosing FDM or
+multi-material/pellet printers, resin and powder-bed printers, vertical,
+horizontal, five-axis, or indexed mills, routers and sheet cutters, and lathes,
+mill-turn, or Swiss machines. Selection rows connect machine choices to
+`machineSelection.candidates`, material, fixture, controller, postprocess,
+simulation, and release-package surfaces, and keep routing blocked when build
+envelopes, horizontal/rotary access, hold-down or slug support, thermal
+readiness, threading/feed synchronization, or controller dry-run evidence is
+missing.
 Resin-printer entries advertise `ctb-resin-job`, `photon-resin-job`,
 `lychee-resin-job`, and `chitubox-resin-job` alongside `sla-job` and `resin-job`
 so machine discovery aligns Lychee/Chitubox/Photon/CTB slice packages with the
@@ -5180,6 +5191,16 @@ snippets, `apply-instruction-patch-*` policy actions, and `instruction-patch:*` 
 including positive work-envelope values, unique IDs, nonzero axis counts, and
 bounded non-secret `profileEvidence` lists for calibration, tools, fixtures,
 materials, process support, maintenance, release evidence, and retained blockers.
+
+The analysis response also includes `instructionIntentMap` and retains it as the
+`analysis-instruction-intent-map` artifact. The map normalizes each submitted
+program into primary process intents such as additive print, subtractive
+machining, turning, joining, inspection, or general instruction work; language
+counts; machine-failure watchpoints; human-intervention watchpoints;
+split/combine hints; release handoff routes; and `instruction-intent:*`
+learning observations. These intent maps are routing and learning evidence only:
+validation, simulation or dry-run, provenance, and operator or automation signoff
+still gate any machine-ready release.
 
 ```json
 {
