@@ -66,7 +66,9 @@ Then open `http://localhost:8081/home`.
 ## Kubernetes Target
 
 - `k8s/ec2`: uses the EC2 host checkout at `/home/ec2-user/codes/dd/dd-next-1` and runs
-  `remote/deployments/gleamlang-ws-server` from source inside the `dd-gleamlang-server` pod.
+  `remote/deployments/gleamlang-ws-server` from prebuilt `build/dev/erlang` artifacts inside the
+  `dd-gleamlang-server` pod. Warm the EC2 host checkout with `gleam deps download && gleam build`
+  under `remote/deployments/gleamlang-ws-server` before rolling a pod onto a fresh checkout.
 
 ```bash
 kubectl apply -k remote/deployments/gleamlang-server/k8s/ec2

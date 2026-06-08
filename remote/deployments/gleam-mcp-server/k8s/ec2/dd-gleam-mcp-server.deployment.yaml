@@ -101,6 +101,11 @@ spec:
                 echo "preflight: see remote/deployments/gleam-mcp-server/readme.md \"Warming build/packages on the EC2 host\" for the exact nerdctl one-liner"
                 exit 1
               fi
+              if [ ! -f "$PROJ/build/dev/erlang/gleam_mcp_server/ebin/gleam_mcp_server@@main.beam" ]; then
+                echo "preflight: build/dev is missing the prebuilt MCP entry module"
+                echo "preflight: re-run 'gleam build' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
+                exit 1
+              fi
               echo "preflight: ok"
           resources:
             requests:
@@ -146,11 +151,12 @@ spec:
             # `build/dev/erlang/...` artifacts, so we copy the project plus
             # its local-path dependencies into a fully writable scratch dir
             # backed by an explicit, bounded emptyDir (mounted at
-            # /tmp/dd-gleam-mcp-server) and run gleam from there. The
-            # NetworkPolicy egress allowlist blocks hex.pm, so we
-            # deliberately do *not* call `gleam deps download` here and
-            # instead lean on the host having a populated `build/packages/`
-            # (the preflight init container fails fast if it isn't there).
+            # /tmp/dd-gleam-mcp-server) and start the prebuilt BEAM modules
+            # directly. The NetworkPolicy egress allowlist blocks hex.pm, so
+            # we deliberately do *not* call `gleam deps download` or compile
+            # here and instead lean on the host having populated
+            # `build/packages/` and `build/dev/erlang/` trees (the preflight
+            # init container fails fast if they are missing).
             # See commit 073e451 + follow-up for the original failure mode
             # (CrashLoop -> 502 at the public gateway) when this script
             # ran straight from the mount.
@@ -221,7 +227,11 @@ spec:
                 echo "boot: re-run 'gleam deps download' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
                 exit 1
               fi
-              exec gleam run
+              if [ ! -f build/dev/erlang/gleam_mcp_server/ebin/gleam_mcp_server@@main.beam ]; then
+                echo "boot: build/dev missing prebuilt MCP entry module; re-run 'gleam build' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
+                exit 1
+              fi
+              exec erl -pa build/dev/erlang/*/ebin -noshell -eval 'gleam_mcp_server@@main:run(gleam_mcp_server).'
           env:
             # Bound the BEAM runtime footprint on the shared EC2 node. If this
             # service needs more throughput, scale replicas horizontally rather

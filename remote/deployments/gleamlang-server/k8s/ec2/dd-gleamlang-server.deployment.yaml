@@ -38,9 +38,11 @@ spec:
                 exit 1
               fi
               cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
-              gleam clean || true
-              gleam deps download
-              exec gleam run
+              if [ ! -f build/dev/erlang/gleamlang_ws_server/ebin/gleamlang_ws_server@@main.beam ]; then
+                echo "boot: missing prebuilt Gleam BEAM artifacts; warm the EC2 host checkout with 'gleam build' under remote/deployments/gleamlang-ws-server before deploying"
+                exit 1
+              fi
+              exec erl -pa build/dev/erlang/*/ebin -noshell -eval 'gleamlang_ws_server@@main:run(gleamlang_ws_server).'
           ports:
             - name: http
               containerPort: 8081

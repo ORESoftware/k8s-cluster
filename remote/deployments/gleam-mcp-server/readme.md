@@ -210,7 +210,7 @@ because the `/mcp` JSON-RPC surface is intentionally read-only and the
 ops/runtime-config paths still require `X-Server-Auth
 (RUNTIME_CONFIG_SERVER_SECRET)`.
 
-## Warming `build/packages` on the EC2 host
+## Warming `build/packages` and BEAM artifacts on the EC2 host
 
 The pod boots from the `/home/ec2-user/codes/dd/dd-next-1` checkout on the EC2 node, and the
 NetworkPolicy intentionally blocks `repo.hex.pm`. That means `gleam run` inside the pod has to be
@@ -221,9 +221,9 @@ or as a `<name>.config_fingerprint` file (local-path deps such as `dd_pg_defs` a
 
 If `build/packages/` is stale (typical symptom: a new local-path dep was added but the host was
 never re-warmed) the `preflight` init container now fails fast and prints the missing names. The
-pod-side `boot:` block re-checks the same invariant after the copy-to-`/tmp` step, so the failure
-mode that previously surfaced as a public-gateway 502 (`Resolving versions` → `error sending
-request for url (https://repo.hex.pm/...)`) is now visible directly in `kubectl describe pod`.
+long-running container also starts the already-built `build/dev/erlang` BEAM modules directly so
+the steady pod can stay below the 300Mi memory cap; if the entry module is missing, `preflight`
+prints a `gleam build` hint before the pod starts.
 
 To warm the host checkout from any shell with AWS access (SSM Session Manager works; no VPN
 required):
@@ -234,7 +234,7 @@ sudo nerdctl run --rm --net=host --memory=2g \
   -v /home/ec2-user/codes/dd/dd-next-1:/opt/dd-next-1 \
   --workdir /opt/dd-next-1/remote/deployments/gleam-mcp-server \
   ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine \
-  /bin/sh -lc 'gleam deps download'
+  /bin/sh -lc 'gleam deps download && gleam build'
 sudo chown -R ec2-user:ec2-user \
   /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server/build
 kubectl -n default rollout restart deploy/dd-gleam-mcp-server
