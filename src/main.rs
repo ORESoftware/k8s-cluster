@@ -62789,6 +62789,8 @@ fn root_response() -> Value {
         "GET /fabrication/material-jetting/catalog",
         "GET /directed-energy-deposition/catalog",
         "GET /fabrication/directed-energy-deposition/catalog",
+        "GET /composite-fiber/catalog",
+        "GET /fabrication/composite-fiber/catalog",
         "GET /powder-bed/catalog",
         "GET /fabrication/powder-bed/catalog",
         "GET /printers/preflight/catalog",
@@ -63159,6 +63161,8 @@ fn root_response() -> Value {
         "GET /fabrication/learning/models/catalog",
         "GET /learning/replay/catalog",
         "GET /fabrication/learning/replay/catalog",
+        "GET /learning/scenarios/catalog",
+        "GET /fabrication/learning/scenarios/catalog",
         "GET /learning/beliefs/catalog",
         "GET /fabrication/learning/beliefs/catalog",
         "GET /learning/optimizers/catalog",
@@ -63683,7 +63687,7 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <li><strong>2. Import Or Generate</strong><br><a href="/fabrication/design/import/catalog">Design import</a>, <a href="/fabrication/design/generation/catalog">design generation</a>, <a href="/fabrication/instructions/languages">instruction languages</a>, and <a href="/fabrication/machine-code/catalog">machine-code generation</a>.</li>
         <li><strong>3. Validate And Improve</strong><br><a href="/fabrication/instructions/validation/catalog">Validation</a>, <a href="/fabrication/boundaries/catalog">failure boundaries</a>, <a href="/fabrication/remediation/catalog">remediation</a>, and <a href="/fabrication/improvements/catalog">instruction improvement</a>.</li>
         <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
-        <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
+        <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, <a href="/fabrication/learning/scenarios/catalog">training scenarios</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
         <li><strong>6. Operate</strong><br><a href="/grafana/fabrication">Fabrication Planner Grafana dashboard</a> shows request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity before operators trust generated work.</li>
       </ul>
     </section>
@@ -110508,6 +110512,120 @@ async fn directed_energy_deposition_catalog_http() -> impl IntoResponse {
     Json(directed_energy_deposition_catalog_response())
 }
 
+fn composite_fiber_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let composite_fiber_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_composite_fiber_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(composite_fiber_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(composite_fiber_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(composite_fiber_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.composite-fiber-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /composite-fiber/catalog", "GET /fabrication/composite-fiber/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "compositeFiberPrinterCount": composite_fiber_printers.len(),
+        "compositeFiberPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "matrix material lot, dry box, fiber spool lot, fiber type, cutter calibration, cut test, anchor length, fiber tension, nozzle purge, bed adhesion, and machine profile evidence",
+            "load direction, fiber orientation, reinforcement schedule, anisotropy review, load-case traceability, fiber volume, compaction, and continuous-fiber slicer evidence",
+            "FIBER_LAYUP, FIBER_CUT_ANCHOR, PRINT_COMPOSITE, matrix extrusion, void-risk, pause/resume, and generated composite-fiber job package evidence",
+            "coupon bend/tensile result, fiber continuity, void inspection, delamination review, exposed-fiber trim inspection, dimensional inspection, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "composite-fiber-layup-boundary",
+            "composite-fiber-process-inspection-boundary",
+            "additive-support-orientation-boundary",
+            "additive-build-surface-boundary",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/slicers/plan",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/simulation/run"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "composite-fiber catalog entries are continuous-fiber composite-printer planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until matrix, fiber spool, cutter, layup orientation, load-case, fiber volume, coupon, continuity, delamination, dimensional inspection, and signoff evidence are retained",
+            "composite-fiber outcomes should feed material, slicer, recipe, simulation, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to reorient fibers, split, reroute, change reinforcement schedules, or require human intervention"
+        ],
+        "compositeFiberPrinters": composite_fiber_printers
+    })
+}
+
+async fn composite_fiber_catalog_http() -> impl IntoResponse {
+    Json(composite_fiber_catalog_response())
+}
+
 fn powder_bed_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let powder_bed_printers = printer_payload
@@ -113567,6 +113685,125 @@ fn learning_replay_catalog_response() -> Value {
 
 async fn learning_replay_catalog_http() -> impl IntoResponse {
     Json(learning_replay_catalog_response())
+}
+
+fn learning_scenario_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-scenario-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/scenarios/catalog",
+            "GET /fabrication/learning/scenarios/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/learning/replay/catalog",
+            "GET /fabrication/learning/features/catalog",
+            "GET /fabrication/learning/rewards/catalog",
+            "GET /fabrication/learning/corpus",
+            "GET /fabrication/learning/outcomes",
+            "POST /fabrication/learning/outcomes",
+            "POST /fabrication/strategy/recommend"
+        ],
+        "engineTargets": ["DES", "MDP", "POMDP", "neural"],
+        "decisionSchemas": {
+            "mdp": MDP_SCHEMA,
+            "pomdp": POMDP_SCHEMA,
+            "studioGraph": STUDIO_GRAPH_SCHEMA
+        },
+        "scenarioFamilies": [
+            {
+                "id": "additive-printer-release-boundaries",
+                "covers": ["FDM", "resin", "powder-bed", "material-jetting", "DED/WAAM"],
+                "requiredEvidence": [
+                    "material/feedstock state",
+                    "thermal or exposure profile",
+                    "support, bed, vat, powder, tray, or substrate readiness",
+                    "simulation, quality, telemetry, and signoff evidence"
+                ],
+                "failureLabels": [
+                    "extrusion-before-ready",
+                    "resin-profile-or-postprocess-gap",
+                    "powder-bed-recoater-or-handling-gap",
+                    "ded-feedstock-energy-thermal-gap"
+                ],
+                "learningSurfaces": ["learning.neuralTrainingCorpus", "learning.pomdpBeliefState", "learning.outcomes"]
+            },
+            {
+                "id": "subtractive-controller-and-motion-boundaries",
+                "covers": ["vertical mill", "horizontal mill", "router", "lathe", "sheet cutter", "EDM"],
+                "requiredEvidence": [
+                    "controller/postprocessor dialect",
+                    "workholding, datum, tool, feed, spindle, coolant, support-media, and macro evidence",
+                    "simulation or dry-run proof",
+                    "machine envelope, arc, modal, and release-state review"
+                ],
+                "failureLabels": [
+                    "cut-before-process-ready",
+                    "arc-or-modal-state-risk",
+                    "unverified-controller-macro",
+                    "lathe-threading-or-partoff-support-gap"
+                ],
+                "learningSurfaces": ["instructionAnalysis.failureBoundaries", "simulation.riskProfile", "machineRelease.blockers"]
+            },
+            {
+                "id": "hybrid-split-combine-routing",
+                "covers": ["printed-plus-machined assemblies", "turned inserts", "milled datum features", "joined or recomposed parts"],
+                "requiredEvidence": [
+                    "decomposition plan",
+                    "interface control and assembly evidence",
+                    "per-route machine selection and scheduling evidence",
+                    "quality, fit, datum transfer, and release package evidence"
+                ],
+                "failureLabels": [
+                    "split-boundary-missing",
+                    "combine-or-interface-proof-missing",
+                    "human-intervention-required",
+                    "route-order-regression"
+                ],
+                "learningSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.controls", "splitCombinePreferences"]
+            },
+            {
+                "id": "imported-instruction-validation-and-improvement",
+                "covers": ["G-code", "CAM setup sheets", "slicer projects", "resin jobs", "powder-bed build packets", "text job sheets"],
+                "requiredEvidence": [
+                    "source provenance and checksum",
+                    "language/controller classification",
+                    "validation findings and improvement patch manifest",
+                    "retained simulation, quality, release, and operator review evidence"
+                ],
+                "failureLabels": [
+                    "unsupported-or-ambiguous-language",
+                    "machine-failure-boundary",
+                    "unsafe-improvement-without-review",
+                    "missing-human-checkpoint"
+                ],
+                "learningSurfaces": ["instructionValidationResult.findings", "improvedPrograms.patchManifest", "boundaryRemediationPlan.actions"]
+            }
+        ],
+        "scenarioEvidence": [
+            "scenario id, source job id, machine kind, material, route sequence, and instruction language",
+            "expected blockers and expected ready gates before replay or training",
+            "positive and negative outcome labels with reward, scrap, quality, human-intervention, and machine-failure fields",
+            "retained artifact URI/checksum references for design, instruction, simulation, quality, release, and learning surfaces"
+        ],
+        "promotionRequirements": [
+            "scenario set covers at least one additive, one subtractive, one imported-instruction, and one hybrid split/combine case",
+            "negative scenarios retain the exact blocker that prevented machine-ready release",
+            "positive scenarios include validation, simulation, quality, release, and signoff evidence",
+            "policy promotion must pass learning replay and cannot certify machine-ready release by score alone"
+        ],
+        "releasePolicy": [
+            "learning scenarios are training and replay coverage contracts, not machine instructions",
+            "DES, MDP, POMDP, and neural candidates remain advisory until scenario replay, validation, simulation, release, and signoff evidence clear",
+            "scenario failures should be preserved as learning outcomes so future plans learn when to split, combine, reroute, regenerate, or require human intervention"
+        ]
+    })
+}
+
+async fn learning_scenario_catalog_http() -> impl IntoResponse {
+    Json(learning_scenario_catalog_response())
 }
 
 fn learning_belief_catalog_response() -> Value {
@@ -121424,6 +121661,7 @@ async fn request_schema() -> impl IntoResponse {
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
             "directedEnergyDepositionCatalog": ["GET /directed-energy-deposition/catalog", "GET /fabrication/directed-energy-deposition/catalog"],
+            "compositeFiberCatalog": ["GET /composite-fiber/catalog", "GET /fabrication/composite-fiber/catalog"],
             "powderBedCatalog": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
@@ -121568,6 +121806,7 @@ async fn request_schema() -> impl IntoResponse {
             "learningOptimizerCatalog": ["GET /learning/optimizers/catalog", "GET /fabrication/learning/optimizers/catalog"],
             "learningOptimizerResult": ["POST /learning/optimizers/result", "POST /fabrication/learning/optimizers/result"],
             "learningReplayCatalog": ["GET /learning/replay/catalog", "GET /fabrication/learning/replay/catalog"],
+            "learningScenarioCatalog": ["GET /learning/scenarios/catalog", "GET /fabrication/learning/scenarios/catalog"],
             "requestTemplates": ["GET /templates/catalog", "GET /fabrication/templates/catalog"]
         },
         "intakeGuide": intake_guide(),
@@ -124630,6 +124869,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/directed-energy-deposition/catalog",
             get(directed_energy_deposition_catalog_http),
         )
+        .route(
+            "/composite-fiber/catalog",
+            get(composite_fiber_catalog_http),
+        )
+        .route(
+            "/fabrication/composite-fiber/catalog",
+            get(composite_fiber_catalog_http),
+        )
         .route("/powder-bed/catalog", get(powder_bed_catalog_http))
         .route(
             "/fabrication/powder-bed/catalog",
@@ -125494,6 +125741,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(learning_replay_catalog_http),
         )
         .route(
+            "/learning/scenarios/catalog",
+            get(learning_scenario_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/scenarios/catalog",
+            get(learning_scenario_catalog_http),
+        )
+        .route(
             "/learning/beliefs/catalog",
             get(learning_belief_catalog_http),
         )
@@ -125722,6 +125977,7 @@ mod tests {
             "/fabrication/learning/engines/catalog",
             "/fabrication/learning/rewards/catalog",
             "/fabrication/learning/replay/catalog",
+            "/fabrication/learning/scenarios/catalog",
             "/fabrication/learning/outcomes",
             "/grafana/fabrication",
             "/fabrication/schema",
@@ -152093,6 +152349,88 @@ mod tests {
     }
 
     #[test]
+    fn composite_fiber_catalog_endpoint_exposes_layup_process_and_coupon_release_contract() {
+        let payload = composite_fiber_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.composite-fiber-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/composite-fiber/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/printers/catalog"))));
+        assert!(payload
+            .get("compositeFiberPrinterCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let printer_kinds = payload
+            .get("compositeFiberPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("composite-fiber printer kinds should be present");
+        assert!(printer_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("composite-fiber-printer")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("composite-fiber setup evidence should be present");
+        for expected in [
+            "fiber spool lot",
+            "load direction, fiber orientation",
+            "FIBER_LAYUP",
+            "coupon bend/tensile result",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing composite-fiber setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("composite-fiber boundary families should be present");
+        for boundary in [
+            "composite-fiber-layup-boundary",
+            "composite-fiber-process-inspection-boundary",
+            "quality-dimensional-inspection-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing composite-fiber boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/composite-fiber/catalog")
+            })));
+    }
+
+    #[test]
     fn powder_bed_catalog_endpoint_exposes_pack_recoater_and_postprocess_release_contract() {
         let payload = powder_bed_catalog_response();
         assert_eq!(
@@ -153713,6 +154051,56 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("remain advisory")))));
+    }
+
+    #[test]
+    fn learning_scenario_catalog_endpoint_exposes_training_and_replay_scenarios() {
+        let payload = learning_scenario_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-scenario-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/scenarios/catalog")
+            })));
+        let families = payload
+            .get("scenarioFamilies")
+            .and_then(Value::as_array)
+            .expect("learning scenario families should be exposed");
+        for expected in [
+            "additive-printer-release-boundaries",
+            "subtractive-controller-and-motion-boundaries",
+            "hybrid-split-combine-routing",
+            "imported-instruction-validation-and-improvement",
+        ] {
+            assert!(
+                families
+                    .iter()
+                    .any(|family| family.get("id").and_then(Value::as_str) == Some(expected)),
+                "missing learning scenario family {expected}"
+            );
+        }
+        assert!(families.iter().any(|family| family
+            .get("failureLabels")
+            .and_then(Value::as_array)
+            .is_some_and(|labels| labels
+                .iter()
+                .any(|label| label.as_str() == Some("combine-or-interface-proof-missing")))));
+        assert!(payload
+            .get("promotionRequirements")
+            .and_then(Value::as_array)
+            .is_some_and(|requirements| requirements.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("one hybrid split/combine case")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not machine instructions")))));
     }
 
     #[test]
