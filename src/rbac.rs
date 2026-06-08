@@ -26,6 +26,9 @@ pub(crate) enum Permission {
     AlertRead,
     AlertWrite,
     AlertEvaluate,
+    SemanticRead,
+    SemanticWrite,
+    SemanticCompile,
     PresentationExport,
 }
 
@@ -77,6 +80,9 @@ impl Role {
                 Permission::AlertRead,
                 Permission::AlertWrite,
                 Permission::AlertEvaluate,
+                Permission::SemanticRead,
+                Permission::SemanticWrite,
+                Permission::SemanticCompile,
                 Permission::PresentationExport,
             ],
             Self::Analyst => vec![
@@ -88,6 +94,8 @@ impl Role {
                 Permission::AssociationRead,
                 Permission::AlertRead,
                 Permission::AlertEvaluate,
+                Permission::SemanticRead,
+                Permission::SemanticCompile,
             ],
             Self::Viewer => vec![
                 Permission::DatasetRead,
@@ -95,6 +103,7 @@ impl Role {
                 Permission::DashboardRead,
                 Permission::AssociationRead,
                 Permission::AlertRead,
+                Permission::SemanticRead,
             ],
             Self::Exporter => vec![
                 Permission::DatasetRead,
@@ -102,6 +111,7 @@ impl Role {
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
                 Permission::AlertRead,
+                Permission::SemanticRead,
                 Permission::PresentationExport,
             ],
         }
@@ -113,7 +123,7 @@ impl Role {
                 "Full operator access for all analytics, publishing, and hardening surfaces."
             }
             Self::Builder => {
-                "Creates datasets, dashboards, alert rules, visualizations, evolution runs, and exports."
+                "Creates datasets, semantic models, dashboards, alert rules, visualizations, evolution runs, and exports."
             }
             Self::Analyst => {
                 "Explores governed datasets and dashboards without mutating source data."
@@ -143,6 +153,11 @@ impl Permission {
             Self::AlertRead => "Read Grafana-style alert rules.",
             Self::AlertWrite => "Create or replace Grafana-style alert rules.",
             Self::AlertEvaluate => "Evaluate alert rules against analytical query results.",
+            Self::SemanticRead => "Read governed semantic model definitions.",
+            Self::SemanticWrite => "Create or replace governed semantic model definitions.",
+            Self::SemanticCompile => {
+                "Compile governed semantic model selections into query targets."
+            }
             Self::PresentationExport => "Generate presentation/export layers.",
         }
     }
@@ -196,6 +211,9 @@ fn all_permissions() -> Vec<Permission> {
         Permission::AlertRead,
         Permission::AlertWrite,
         Permission::AlertEvaluate,
+        Permission::SemanticRead,
+        Permission::SemanticWrite,
+        Permission::SemanticCompile,
         Permission::PresentationExport,
     ]
 }
@@ -215,6 +233,7 @@ mod tests {
     fn builder_can_publish_dashboards() {
         assert!(Role::Builder.allows(Permission::DashboardWrite));
         assert!(Role::Builder.allows(Permission::AlertWrite));
+        assert!(Role::Builder.allows(Permission::SemanticWrite));
         assert!(Role::Builder.allows(Permission::EvolutionRun));
     }
 
@@ -223,6 +242,14 @@ mod tests {
         assert!(Role::Analyst.allows(Permission::AlertEvaluate));
         assert!(!Role::Analyst.allows(Permission::AlertWrite));
         assert!(!Role::Viewer.allows(Permission::AlertEvaluate));
+    }
+
+    #[test]
+    fn analyst_can_compile_but_not_write_semantic_models() {
+        assert!(Role::Analyst.allows(Permission::SemanticCompile));
+        assert!(!Role::Analyst.allows(Permission::SemanticWrite));
+        assert!(Role::Viewer.allows(Permission::SemanticRead));
+        assert!(!Role::Viewer.allows(Permission::SemanticCompile));
     }
 
     #[test]

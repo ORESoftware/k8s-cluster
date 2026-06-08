@@ -24,6 +24,7 @@ mod dashboard;
 mod hardening;
 mod platform;
 mod rbac;
+mod semantic;
 mod sql_frontend;
 mod util;
 
@@ -52,6 +53,7 @@ struct AppState {
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
+    semantic_models: Arc<RwLock<BTreeMap<String, semantic::SavedSemanticModel>>>,
 }
 
 #[derive(Clone)]
@@ -78,6 +80,8 @@ struct Metrics {
     alert_requests_total: AtomicU64,
     alert_rules_saved_total: AtomicU64,
     alert_evaluations_total: AtomicU64,
+    semantic_requests_total: AtomicU64,
+    semantic_models_saved_total: AtomicU64,
     rbac_denials_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
@@ -468,6 +472,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
+        semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let app = app_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
@@ -498,6 +503,15 @@ fn app_router(state: AppState) -> Router {
         .route("/capabilities/parity", get(platform_capabilities))
         .route("/connectors/catalog", get(connector_catalog))
         .route("/semantic/models", get(semantic_models))
+        .route(
+            "/semantic/registry",
+            get(list_semantic_registry).post(save_semantic_model),
+        )
+        .route("/semantic/registry/:model_id", get(get_semantic_model))
+        .route(
+            "/semantic/registry/:model_id/compile",
+            post(compile_semantic_model),
+        )
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
@@ -686,8 +700,20 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
+        "semanticModel": {
+            "modelId": "string",
+            "datasetId": "existing dataset id",
+            "lookml": "optional LookML-like view text",
+            "dimensions": ["name + field + type metadata"],
+            "measures": ["name + aggregation + optional field"]
+        },
+        "semanticCompile": {
+            "dimensions": ["governed dimension names"],
+            "measures": ["governed measure names"],
+            "limit": "bounded SQL target rows"
+        },
         "paritySurfaces": {
-            "semanticLayer": "LookML/Power BI inspired dimensions, measures, and calculations",
+            "semanticLayer": "LookML-like governed registry with dataset validation and SQL compile targets",
             "associativeEngine": "Qlik-style categorical co-occurrence graph plus multi-dataset selection state over ingested datasets",
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
@@ -807,6 +833,12 @@ dd_data_viz_alert_rules_saved_total {}
 # HELP dd_data_viz_alert_evaluations_total Alert rule evaluations executed.
 # TYPE dd_data_viz_alert_evaluations_total counter
 dd_data_viz_alert_evaluations_total {}
+# HELP dd_data_viz_semantic_requests_total Semantic registry requests handled.
+# TYPE dd_data_viz_semantic_requests_total counter
+dd_data_viz_semantic_requests_total {}
+# HELP dd_data_viz_semantic_models_saved_total Semantic models saved.
+# TYPE dd_data_viz_semantic_models_saved_total counter
+dd_data_viz_semantic_models_saved_total {}
 # HELP dd_data_viz_rbac_denials_total Role-based authorization denials.
 # TYPE dd_data_viz_rbac_denials_total counter
 dd_data_viz_rbac_denials_total {}
@@ -831,6 +863,8 @@ dd_data_viz_errors_total {}
         metrics.alert_requests_total.load(Ordering::Relaxed),
         metrics.alert_rules_saved_total.load(Ordering::Relaxed),
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
+        metrics.semantic_requests_total.load(Ordering::Relaxed),
+        metrics.semantic_models_saved_total.load(Ordering::Relaxed),
         metrics.rbac_denials_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.errors_total.load(Ordering::Relaxed),
@@ -948,6 +982,139 @@ async fn semantic_models(State(state): State<AppState>) -> Json<Value> {
         "ok": true,
         "semanticModels": platform::semantic_models()
     }))
+}
+
+async fn save_semantic_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<semantic::SaveSemanticModelRequest>,
+) -> Result<Json<semantic::SaveSemanticModelResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .semantic_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SemanticWrite)?;
+
+    let dataset = get_dataset_snapshot(&state, &request.dataset_id)?;
+    let available_fields = dataset.columns.keys().cloned().collect::<BTreeSet<_>>();
+    let mut model = request
+        .into_model(now_ms(), &available_fields)
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut models = state
+        .semantic_models
+        .write()
+        .map_err(|_| ApiError::bad_request("semantic model store lock poisoned"))?;
+    if let Some(existing) = models.get(&model.model_id) {
+        model.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "semantic model {} replaced with a new in-memory definition",
+            model.model_id
+        ));
+    } else if models.len() >= semantic::max_semantic_models() {
+        return Err(ApiError::bad_request(format!(
+            "semantic model count exceeds max {}",
+            semantic::max_semantic_models()
+        )));
+    }
+    model.updated_at_ms = now_ms();
+    models.insert(model.model_id.clone(), model.clone());
+    state
+        .metrics
+        .semantic_models_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    Ok(Json(semantic::save_response(model, warnings)))
+}
+
+async fn list_semantic_registry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .semantic_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SemanticRead)?;
+    let models = state
+        .semantic_models
+        .read()
+        .map_err(|_| ApiError::bad_request("semantic model store lock poisoned"))?;
+    let summaries = models
+        .values()
+        .map(semantic::SavedSemanticModel::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(semantic::registry_payload(summaries)))
+}
+
+async fn get_semantic_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(model_id): Path<String>,
+) -> Result<Json<semantic::SavedSemanticModel>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .semantic_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SemanticRead)?;
+    let models = state
+        .semantic_models
+        .read()
+        .map_err(|_| ApiError::bad_request("semantic model store lock poisoned"))?;
+    models
+        .get(&model_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("semantic model `{model_id}` not found")))
+}
+
+async fn compile_semantic_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(model_id): Path<String>,
+    Json(request): Json<semantic::CompileSemanticQueryRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .semantic_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SemanticCompile)?;
+    let model = {
+        let models = state
+            .semantic_models
+            .read()
+            .map_err(|_| ApiError::bad_request("semantic model store lock poisoned"))?;
+        models
+            .get(&model_id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("semantic model `{model_id}` not found")))?
+    };
+    let compiled = model
+        .compile_query(request)
+        .map_err(ApiError::bad_request)?;
+    let logical_plan = logical_plan_from_query(&compiled.query)?;
+    Ok(Json(json!({
+        "ok": true,
+        "schemaVersion": "data-viz.semantic-compile.v1",
+        "compiled": compiled,
+        "logicalPlan": logical_plan
+    })))
 }
 
 async fn workbook_blueprints(State(state): State<AppState>) -> Json<Value> {
@@ -3092,6 +3259,30 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Looker/Power BI-inspired semantic model, dimensions, measures, and calculations.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/semantic/registry",
+            auth: "semantic-write",
+            description: "Create or replace a LookML-like governed semantic model validated against an ingested dataset.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/semantic/registry",
+            auth: "semantic-read",
+            description: "List saved governed semantic model summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/semantic/registry/:model_id",
+            auth: "semantic-read",
+            description: "Read a saved governed semantic model definition.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/semantic/registry/:model_id/compile",
+            auth: "semantic-compile",
+            description: "Compile governed dimensions and measures into a SQL query target and LogicalPlan.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/workbooks/blueprints",
             auth: "public",
@@ -3786,6 +3977,7 @@ mod tests {
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
+            semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -3942,6 +4134,9 @@ mod tests {
         assert!(paths.contains(&"/alerts/rules"));
         assert!(paths.contains(&"/alerts/rules/:rule_id"));
         assert!(paths.contains(&"/alerts/rules/:rule_id/evaluate"));
+        assert!(paths.contains(&"/semantic/registry"));
+        assert!(paths.contains(&"/semantic/registry/:model_id"));
+        assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
     }
 
     #[test]

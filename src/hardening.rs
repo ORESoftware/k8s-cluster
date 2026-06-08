@@ -140,6 +140,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/alerts.rs validates rule metadata and /alerts/rules/:rule_id/evaluate reuses the existing LogicalPlan executor.",
         },
         ControlDescriptor {
+            id: "bounded-semantic-models",
+            status: "implemented",
+            description: "LookML-like semantic models are capped, parsed as a strict subset, and validated against ingested dataset fields before compilation.",
+            evidence: "src/semantic.rs validates dimensions, measures, tags, and generated SQL targets before storing model definitions.",
+        },
+        ControlDescriptor {
             id: "route-derived-docs",
             status: "implemented",
             description: "API documentation is served by the same route catalog used by the router.",

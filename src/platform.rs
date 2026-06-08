@@ -144,6 +144,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             implemented_surfaces: vec![
                 "semantic model catalog",
                 "measure definitions",
+                "validated semantic model registry",
                 "ETL planner primitives",
             ],
             next_engine_work: vec![
@@ -175,13 +176,16 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             parity_goal: "Git-friendly semantic layer with governed dimensions and measures",
             implemented_surfaces: vec![
                 "LookML-inspired model descriptors",
+                "LookML subset parser",
+                "dataset-backed semantic validation",
+                "SQL compilation target",
                 "route-derived API docs",
                 "centralized metric definitions",
             ],
             next_engine_work: vec![
-                "LookML parser",
+                "full LookML project parser",
                 "model validation CLI",
-                "warehouse SQL compilation targets",
+                "multi-view joins and warehouse-specific SQL dialects",
             ],
         },
         ProductParity {

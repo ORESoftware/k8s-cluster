@@ -9,8 +9,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
   `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, Qlik-style selection state
-  lives in `src/associative.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives
-  in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
+  lives in `src/associative.rs`, semantic model parsing and compilation lives in
+  `src/semantic.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives in
+  `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
   compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
   server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
@@ -33,6 +34,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Grafana-style alert rules are validated, stored in memory, and evaluated through
   `POST /alerts/rules/:rule_id/evaluate` using reducer/threshold conditions over existing query
   results.
+- Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
+  ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
+  `POST /semantic/registry/:model_id/compile`.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -45,7 +49,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Power BI parity still needs DAX and Power Query M parsers plus incremental refresh partitions.
 - Qlik parity still needs persisted selection sessions, field-alias inference, and richer
   relationship confidence scoring.
-- Looker parity still needs LookML parsing, semantic-model validation, and SQL compilation targets.
+- Looker parity still needs full LookML project parsing, multi-view joins, Git-backed validation
+  workflows, and warehouse-specific SQL dialect targets.
 - Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
   result sets.
 - Domo parity still needs a connector SDK, streaming checkpoints, and a visual ETL job runner.
