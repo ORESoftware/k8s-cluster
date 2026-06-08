@@ -62180,6 +62180,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/failure-modes/result",
         "GET /safety/catalog",
         "GET /fabrication/safety/catalog",
+        "POST /safety/plan",
+        "POST /fabrication/safety/plan",
         "POST /safety/result",
         "POST /fabrication/safety/result",
         "GET /environment/catalog",
@@ -92188,6 +92190,8 @@ fn safety_catalog_response() -> Value {
         "machineKinds": machine_kinds,
         "hazards": hazards,
         "planningRoutes": [
+            "POST /safety/plan",
+            "POST /fabrication/safety/plan",
             "POST /monitoring/plan",
             "POST /fabrication/monitoring/plan",
             "POST /execution/plan",
@@ -92232,6 +92236,205 @@ fn safety_catalog_response() -> Value {
 
 async fn safety_catalog_http() -> impl IntoResponse {
     Json(safety_catalog_response())
+}
+
+fn safety_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let safety_blocked = response.operator_intervention_plan.machine_release_blocked
+        || response.execution_plan.machine_release_blocked
+        || response.monitoring_plan.human_review_required
+        || !response.monitoring_plan.unattended_run_allowed
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || response.boundary_summary.machine_failure_risks > 0
+        || response.boundary_summary.human_intervention_required > 0
+        || !response.validation.failure_boundaries.is_empty();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.safety-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /safety/plan", "POST /fabrication/safety/plan"]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!([
+            "POST /monitoring/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /execution/plan",
+            "POST /fabrication/execution/plan",
+            "POST /release/preview",
+            "POST /fabrication/release/preview"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /safety/catalog",
+            "GET /fabrication/safety/catalog",
+            "GET /failure-modes/catalog",
+            "GET /fabrication/failure-modes/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /safety/result",
+            "POST /fabrication/safety/result",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /execution/result",
+            "POST /fabrication/execution/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!safety_blocked));
+    object.insert("machineReleaseBlocked".to_string(), json!(safety_blocked));
+    object.insert(
+        "unattendedRunAllowed".to_string(),
+        json!(response.monitoring_plan.unattended_run_allowed && !safety_blocked),
+    );
+    object.insert(
+        "humanReviewRequired".to_string(),
+        json!(
+            response.monitoring_plan.human_review_required
+                || response.operator_intervention_plan.machine_release_blocked
+        ),
+    );
+    object.insert(
+        "operatorActionCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len()),
+    );
+    object.insert(
+        "interventionPointCount".to_string(),
+        json!(response.intervention_map.human_intervention_points.len()),
+    );
+    object.insert(
+        "executionStopPointCount".to_string(),
+        json!(response.execution_plan.stop_points.len()),
+    );
+    object.insert(
+        "monitorPointCount".to_string(),
+        json!(response.monitoring_plan.monitor_points.len()),
+    );
+    object.insert(
+        "alertRuleCount".to_string(),
+        json!(response.monitoring_plan.alert_rules.len()),
+    );
+    object.insert(
+        "releasePackageGateCount".to_string(),
+        json!(response.release_package_plan.release_gates.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "operatorInterventionPlan.requiredOperatorActions",
+            "operatorInterventionPlan.evidenceGates",
+            "interventionMap.humanInterventionPoints",
+            "executionPlan.stopPoints",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.interventionSignals"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "safety-plan",
+            "safety-catalog",
+            "operator-intervention-plan",
+            "monitoring-plan",
+            "execution-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.safetyEvidence"
+        ]),
+    );
+    object.insert(
+        "safetyPolicy".to_string(),
+        json!([
+            "safety planning returns draft guarding, interlock, extraction, emergency-stop, lockout, restart, and human-intervention evidence, not certified machine-safety approval",
+            "machineReady=false while guarding, emergency response, operator action, monitoring, release package, or split/combine safety evidence remains unresolved",
+            "interlock states, stop points, emergency actions, human interventions, and unattended-release outcomes are retained for MDP/POMDP/neural workers so future plans can choose safer machines, routes, and checkpoints"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "safetyPlan".to_string(),
+        json!({
+            "safetyContracts": safety_catalog_entries(),
+            "operatorInterventionPlan": &response.operator_intervention_plan,
+            "interventionMap": &response.intervention_map,
+            "executionPlan": &response.execution_plan,
+            "monitoringPlan": &response.monitoring_plan,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert(
+        "interventionMap".to_string(),
+        json!(&response.intervention_map),
+    );
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "monitoringPlan".to_string(),
+        json!(&response.monitoring_plan),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn validate_safety_result_checks(
@@ -116627,6 +116830,7 @@ async fn request_schema() -> impl IntoResponse {
         "failureModePlan": ["POST /failure-modes/plan", "POST /fabrication/failure-modes/plan"],
         "failureModeResult": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
             "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
+            "safetyPlan": ["POST /safety/plan", "POST /fabrication/safety/plan"],
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
             "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
@@ -117828,6 +118032,50 @@ async fn process_capability_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn safety_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.safety.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(safety_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -120013,6 +120261,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/safety/catalog", get(safety_catalog_http))
         .route("/fabrication/safety/catalog", get(safety_catalog_http))
+        .route("/safety/plan", post(safety_plan_http))
+        .route("/fabrication/safety/plan", post(safety_plan_http))
         .route("/safety/result", post(safety_result_http))
         .route("/fabrication/safety/result", post(safety_result_http))
         .route("/environment/catalog", get(environment_catalog_http))
@@ -140062,6 +140312,140 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified machine-safety approvals")))));
+    }
+
+    #[test]
+    fn safety_planning_endpoint_returns_interlock_operator_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 1,
+            successes: 0,
+            failures: 1,
+            average_reward: -0.65,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: vec![
+                "boundary-memory job=robotic-cell-entry success=false reward=-0.650 methods=robotic-additive machineKind=robotic-additive-cell operationSequence=print,operator-load assembly=none observations=human-intervention-required emergency-stop-required".to_string()
+            ],
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-safety-plan".to_string()),
+                objective:
+                    "robotic additive cell with operator load/unload, external axis motion, missing light curtain reset evidence, and unattended release risk"
+                        .to_string(),
+                material: Some(material("316 stainless", "metal")),
+                stock: Some(StockSpec {
+                    form: "powder".to_string(),
+                    dimensions_mm: Some(vec![180.0, 120.0, 60.0]),
+                }),
+                tolerance_mm: Some(0.12),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "robotic-cell-01".to_string(),
+                    kind: "robotic-additive-cell".to_string(),
+                    controller: Some("robot-job".to_string()),
+                    materials: Some(vec!["316 stainless".to_string()]),
+                    work_envelope_mm: Some(vec![300.0, 300.0, 300.0]),
+                    axes: Some(6),
+                    operations: Some(vec![
+                        "directed-energy-deposition".to_string(),
+                        "operator-load".to_string(),
+                    ]),
+                    profile_evidence: Some(MachineProfileEvidence {
+                        calibration: Some(vec!["robot TCP calibration current".to_string()]),
+                        tools: None,
+                        fixtures: Some(vec!["positioner fixture requires manual load".to_string()]),
+                        materials: Some(vec!["316 stainless powder lot retained".to_string()]),
+                        process: Some(vec!["DED recipe draft".to_string()]),
+                        maintenance: None,
+                        release: None,
+                        blockers: Some(vec![
+                            "light curtain reset evidence missing".to_string(),
+                            "operator load/unload stop point not released".to_string(),
+                        ]),
+                    }),
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(1),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "directed-energy-deposition".to_string(),
+                        "robotic-additive".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("operator-load-stop-point".to_string()),
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("safety planning should return release blockers");
+
+        let payload = safety_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.safety-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/safety/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("unattendedRunAllowed").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("safetyPlan")
+            .and_then(|plan| plan.get("safetyContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("safetyFamily")
+                .and_then(Value::as_str)
+                == Some("robotic-cell-and-external-axis-interlocks"))));
+        assert!(payload
+            .get("operatorActionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("monitorPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("alertRuleCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("operatorInterventionPlan.requiredOperatorActions")
+            })));
+        assert!(payload
+            .get("safetyPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("interventionSignals"))
+            .is_some());
     }
 
     #[test]
