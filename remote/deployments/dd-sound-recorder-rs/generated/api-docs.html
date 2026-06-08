@@ -42,10 +42,10 @@
     <h1>dd-sound-recorder-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>26 routes</span>
+      <span>28 routes</span>
       <span>rust</span>
       <span>7 service</span>
-      <span>19 user-generated</span>
+      <span>21 user-generated</span>
     </div>
   </header>
   <main>
@@ -75,6 +75,14 @@
   <td data-label="Purpose">Machine-readable generated API route metadata.</td>
   <td data-label="Handlers"><code>api_docs_json</code></td>
   <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/api/mobile/v1/alerts</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_alert</code></td>
+  <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
@@ -234,6 +242,14 @@
   <td data-label="Path"><code>/internal/retention/sweep</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>retention_sweep</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/listen/:alert_id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>listen_alert</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>

@@ -57,6 +57,8 @@ resources:
   - dd-economics-server.service.yaml
   - dd-public-data-server.deployment.yaml
   - dd-public-data-server.service.yaml
+  - dd-compliance-rs.deployment.yaml
+  - dd-compliance-rs.service.yaml
   - dd-patent-filing-rs.deployment.yaml
   - dd-patent-filing-rs.service.yaml
   - dd-live-mutex.deployment.yaml

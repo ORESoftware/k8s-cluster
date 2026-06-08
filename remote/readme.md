@@ -28,6 +28,11 @@ Today there are several key runtime services:
 - [`deployments/patent-filing-rs/`](./deployments/patent-filing-rs/) — Rust/Axum patent filing
   workbench with an htmx home page, invention intake, readiness scoring, provisional draft package
   generation, prior-art search planning, and Patent Center handoff checklists.
+- [`deployments/dd-compliance-rs/`](./deployments/dd-compliance-rs/) — Rust/Axum compliance
+  readiness job server for artifacts, codebases, networks, and systems. It keeps a modular registry
+  for SOC 2, ISO, GDPR, PCI DSS, HIPAA, FedRAMP, CMMC, NIST, AI, quality, and ESG frameworks,
+  scores mapped evidence against required control families, and exposes generated docs at the
+  standard `/docs/api`, `/api/docs`, and `/api/docs.json` routes.
 - [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard and projection
   service that blends public/private market history, social/news sentiment placeholders, and transparent theory priors
   from accepted macro, asset-pricing, commodity, FX, bond, and stochastic-process equations.

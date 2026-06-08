@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-sound-recorder-rs",
   "language": "rust",
-  "routeCount": 26,
+  "routeCount": 28,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 19
+    "user-generated": 21
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -59,6 +59,23 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/alerts",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_alert"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
@@ -399,6 +416,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "retention_sweep"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/listen/:alert_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "listen_alert"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"

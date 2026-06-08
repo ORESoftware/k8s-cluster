@@ -24,6 +24,9 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-escrow-rs` (Rust Solana escrow gateway for `solana.escrow.v1` validation and settlement)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
 - `dd-patent-filing-rs` (Rust/Axum patent filing preparation workbench with htmx intake and package generation)
+- `dd-compliance-rs` (Rust/Axum compliance readiness job server for artifact, codebase, network,
+  and system evidence audits across global security, privacy, payments, healthcare, government,
+  AI, quality, and sustainability frameworks)
 - `dd-economics-server` (Rust economics dashboard and `economics.forecast.v1` theory/data projection service)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
@@ -201,6 +204,11 @@ Gateway path map:
 - `/patents/`, `/patents/schema`, `/patents/example`, `POST /patents/packages/provisional`,
   `POST /patents/ui/packages`, `POST /patents/readiness`, `POST /patents/search/plan` ->
   `dd-patent-filing-rs:8116` (internal auth required)
+- `/compliance/`, `/compliance/schema`, `/compliance/example`, `/compliance/standards`,
+  `/compliance/controls`, `/compliance/audits`, `/compliance/audits/<jobId>`,
+  `POST /compliance/audits`, `POST /compliance/audit-sync`, `/compliance/docs/api`,
+  `/compliance/api/docs`, `/compliance/api/docs.json` -> `dd-compliance-rs:8118`
+  (internal auth required)
 - `/economics/`, `/economics/dashboard.json`, `/economics/model/equations`,
   `/economics/sources`, `POST /economics/forecast`, `POST /economics/ingest`,
   `POST /economics/sources/pull`, `/economics/sentiment/sources`,
@@ -700,6 +708,26 @@ and `dd-prometheus`.
 The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
 NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
 egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
+
+## Compliance readiness service
+
+`dd-compliance-rs` runs `remote/deployments/dd-compliance-rs` as an authenticated Rust compliance
+readiness job server. It serves `/compliance/healthz`, `/compliance/metrics`,
+`/compliance/standards`, `/compliance/controls`, `/compliance/schema`, `/compliance/example`,
+`POST /compliance/audits`, `GET /compliance/audits`, `GET /compliance/audits/<jobId>`, and
+`POST /compliance/audit-sync`. The registry currently covers HIPAA, SOC 2, FedRAMP, NIST CSF,
+NIST SP 800-53, GDPR, ISO/IEC 27001/27017/27018/27701, CIS Controls, Cyber Essentials, Essential
+Eight, TISAX, CMMC, CCPA/CPRA, LGPD, PIPEDA, Singapore and Thailand PDPA, Privacy Act 1988, UK
+GDPR, Data Protection Act 2018, PCI DSS, SWIFT CSP, PSD2, SOX, GLBA, Basel III, HITECH, HITRUST
+CSF, FDA 21 CFR Part 11, MDR, NIS2, FISMA, CJIS, ITAR, EAR, EU AI Act, ISO/IEC 42001, NIST AI RMF,
+ISO 9001/22301/31000/20000/14001, CSRD, TCFD, and GRI Standards.
+
+The service scores evidence against reusable control families instead of claiming formal
+certification. External artifact fetch and repository clone support exist in the code path, but the
+cluster deployment keeps both disabled by default with `COMPLIANCE_ALLOW_EXTERNAL_FETCH=false` and
+`COMPLIANCE_ALLOW_REPO_CLONE=false`; operators can still submit inline evidence or explicitly
+enable bounded collection for trusted use. `/compliance/metrics` is scraped by Prometheus and the
+OpenTelemetry Collector, and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
 
 ## AI/ML feature pipeline
 

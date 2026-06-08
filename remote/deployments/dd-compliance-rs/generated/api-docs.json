@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "generatedBy": "placeholder",
+  "service": "dd-compliance-rs",
+  "language": "rust",
+  "routeCount": 0,
+  "routeTypeCounts": {},
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": []
+}

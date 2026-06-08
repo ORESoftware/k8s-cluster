@@ -176,6 +176,19 @@
       ]
     },
     {
+      "service": "dd-benefactor-marketing-rs",
+      "language": "rust",
+      "routeCount": 36,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 29
+      },
+      "generated": [
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "dd-escrow-rs",
       "language": "rust",
       "routeCount": 16,
@@ -205,10 +218,10 @@
     {
       "service": "dd-sound-recorder-rs",
       "language": "rust",
-      "routeCount": 26,
+      "routeCount": 28,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 19
+        "user-generated": 21
       },
       "generated": [
         "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",

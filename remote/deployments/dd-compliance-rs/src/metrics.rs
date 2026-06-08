@@ -1,0 +1,89 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Default)]
+pub struct Metrics {
+    pub http_requests_total: Counter,
+    pub audit_submitted_total: Counter,
+    pub audit_completed_total: Counter,
+    pub audit_failed_total: Counter,
+    pub standards_evaluated_total: Counter,
+    pub findings_total: Counter,
+    pub auth_failures_total: Counter,
+    pub errors_total: Counter,
+}
+
+#[derive(Default)]
+pub struct Counter(AtomicU64);
+
+impl Counter {
+    pub fn fetch_add(&self, value: u64) -> u64 {
+        self.0.fetch_add(value, Ordering::Relaxed)
+    }
+
+    pub fn get(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+impl Metrics {
+    pub fn render_prometheus(&self) -> String {
+        let values = [
+            (
+                "dd_compliance_http_requests_total",
+                "HTTP requests handled by dd-compliance-rs.",
+                self.http_requests_total.get(),
+            ),
+            (
+                "dd_compliance_audit_submitted_total",
+                "Compliance audit jobs accepted.",
+                self.audit_submitted_total.get(),
+            ),
+            (
+                "dd_compliance_audit_completed_total",
+                "Compliance audit jobs completed.",
+                self.audit_completed_total.get(),
+            ),
+            (
+                "dd_compliance_audit_failed_total",
+                "Compliance audit jobs failed.",
+                self.audit_failed_total.get(),
+            ),
+            (
+                "dd_compliance_standards_evaluated_total",
+                "Compliance standards evaluated across audit jobs.",
+                self.standards_evaluated_total.get(),
+            ),
+            (
+                "dd_compliance_findings_total",
+                "Compliance findings emitted across audit jobs.",
+                self.findings_total.get(),
+            ),
+            (
+                "dd_compliance_auth_failures_total",
+                "Rejected authenticated requests.",
+                self.auth_failures_total.get(),
+            ),
+            (
+                "dd_compliance_errors_total",
+                "Unhandled or internal service errors.",
+                self.errors_total.get(),
+            ),
+        ];
+        let mut output = String::new();
+        for (name, help, value) in values {
+            output.push_str("# HELP ");
+            output.push_str(name);
+            output.push(' ');
+            output.push_str(help);
+            output.push('\n');
+            output.push_str("# TYPE ");
+            output.push_str(name);
+            output.push_str(" counter\n");
+            output.push_str(name);
+            output.push(' ');
+            output.push_str(&value.to_string());
+            output.push('\n');
+        }
+        output
+    }
+}

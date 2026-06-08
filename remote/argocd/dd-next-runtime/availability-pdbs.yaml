@@ -147,6 +147,19 @@ spec:
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
+  name: dd-compliance-rs
+  namespace: default
+  labels:
+    app: dd-compliance-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-compliance-rs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
   name: dd-web-scraper
   namespace: default
   labels:
