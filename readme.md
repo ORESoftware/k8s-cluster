@@ -160,6 +160,8 @@ outcomes.
 - `GET /fabrication/improvements/catalog`
 - `GET /improvements/preflight/catalog`
 - `GET /fabrication/improvements/preflight/catalog`
+- `POST /instructions/improvement/result`
+- `POST /fabrication/instructions/improvement/result`
 - `GET /boundaries/catalog`
 - `GET /fabrication/boundaries/catalog`
 - `GET /boundaries/preflight/catalog`
@@ -5922,6 +5924,24 @@ split-combine/interface, human-review, or general-review work. The summary keeps
 route hints for validation, simulation, boundary review, intervention, assembly,
 decomposition, and release-result lanes so generated patches remain review
 evidence rather than machine-ready edits.
+
+## `POST /fabrication/instructions/improvement/result`
+
+`POST /instructions/improvement/result` and the gateway-prefixed
+`POST /fabrication/instructions/improvement/result` let instruction-improvement
+workers report retained patch results independently of the synchronous
+`POST /fabrication/instructions/improve` review path. The
+`dd.fabrication.instruction-improvement-result-review.v1` response records
+improved program previews, patch operations, retained patch artifacts, warning
+state, machine-ready and release-ready dispositions, and a
+`dd.fabrication.instruction-improvement-result-learning-outcome-draft.v1` payload
+for MDP/POMDP/neural learning.
+
+Improvement results are retained patch evidence, not executable-certified
+controller code. Machine-ready release remains blocked until improved programs,
+patch operations, retained artifacts, validation, simulation,
+controller/postprocessor review, dry-run evidence, and operator or automation
+signoff clear.
 
 ## `POST /instructions/boundaries/review`
 

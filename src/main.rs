@@ -536,6 +536,70 @@ struct InstructionValidationResultArtifact {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct InstructionImprovementResultReviewRequest {
+    request_id: Option<String>,
+    plan_request_id: Option<String>,
+    job_id: Option<String>,
+    worker_id: String,
+    improver: String,
+    improver_version: Option<String>,
+    instruction_id: Option<String>,
+    language: Option<String>,
+    machine_id: Option<String>,
+    machine_kind: Option<String>,
+    controller: Option<String>,
+    success: bool,
+    machine_ready: bool,
+    release_ready: Option<bool>,
+    improved_programs: Option<Vec<InstructionImprovementResultProgram>>,
+    patch_operations: Option<Vec<InstructionImprovementResultPatchOperation>>,
+    artifacts: Option<Vec<InstructionImprovementResultArtifact>>,
+    warnings: Option<Vec<String>>,
+    review_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionImprovementResultProgram {
+    program_id: String,
+    source_program_id: Option<String>,
+    language: String,
+    status: String,
+    changed: Option<bool>,
+    machine_ready: Option<bool>,
+    release_blocker: Option<bool>,
+    requires_human_approval: Option<bool>,
+    preview_lines: Option<Vec<String>>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionImprovementResultPatchOperation {
+    operation_id: String,
+    program_id: Option<String>,
+    operation: String,
+    action: String,
+    summary: String,
+    requires_human_review: Option<bool>,
+    release_blocker: Option<bool>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionImprovementResultArtifact {
+    artifact_id: String,
+    artifact_kind: String,
+    program_id: Option<String>,
+    uri: Option<String>,
+    sha256: Option<String>,
+    format: Option<String>,
+    evidence: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct BoundaryRemediationResultReviewRequest {
     request_id: Option<String>,
     plan_request_id: Option<String>,
@@ -17364,6 +17428,516 @@ fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricati
 
 fn store_instruction_validation_result_response(state: &AppState, response: &Value) {
     store_job(state, stored_instruction_validation_result_job(response));
+}
+
+fn validate_instruction_improvement_result_programs(
+    programs: Option<Vec<InstructionImprovementResultProgram>>,
+) -> Result<Vec<Value>, String> {
+    let programs = programs.unwrap_or_default();
+    if programs.len() > MAX_PROGRAMS {
+        return Err(format!(
+            "improvedPrograms must contain at most {MAX_PROGRAMS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    programs
+        .into_iter()
+        .enumerate()
+        .map(|(index, program)| {
+            let program_id = validate_label(
+                &program.program_id,
+                &format!("improvedPrograms[{index}].programId"),
+            )?;
+            if !seen.insert(program_id.clone()) {
+                return Err(format!(
+                    "improvedPrograms must have unique programId values; duplicate {program_id}"
+                ));
+            }
+            Ok(json!({
+                "programId": program_id,
+                "sourceProgramId": validate_optional_label(program.source_program_id, &format!("improvedPrograms[{index}].sourceProgramId"))?,
+                "language": validate_label(&program.language, &format!("improvedPrograms[{index}].language"))?,
+                "status": validate_label(&program.status, &format!("improvedPrograms[{index}].status"))?,
+                "changed": program.changed.unwrap_or(true),
+                "machineReady": program.machine_ready.unwrap_or(false),
+                "releaseBlocker": program.release_blocker.unwrap_or(true),
+                "requiresHumanApproval": program.requires_human_approval.unwrap_or(true),
+                "previewLines": validate_signal_list(program.preview_lines, &format!("improvedPrograms[{index}].previewLines"), MAX_TEXT_LEN)?,
+                "evidence": validate_signal_list(program.evidence, &format!("improvedPrograms[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_instruction_improvement_result_patch_operations(
+    operations: Option<Vec<InstructionImprovementResultPatchOperation>>,
+) -> Result<Vec<Value>, String> {
+    let operations = operations.unwrap_or_default();
+    if operations.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "patchOperations must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    operations
+        .into_iter()
+        .enumerate()
+        .map(|(index, operation)| {
+            let operation_id = validate_label(
+                &operation.operation_id,
+                &format!("patchOperations[{index}].operationId"),
+            )?;
+            if !seen.insert(operation_id.clone()) {
+                return Err(format!(
+                    "patchOperations must have unique operationId values; duplicate {operation_id}"
+                ));
+            }
+            Ok(json!({
+                "operationId": operation_id,
+                "programId": validate_optional_label(operation.program_id, &format!("patchOperations[{index}].programId"))?,
+                "operation": validate_label(&operation.operation, &format!("patchOperations[{index}].operation"))?,
+                "action": validate_label(&operation.action, &format!("patchOperations[{index}].action"))?,
+                "summary": validate_text(&operation.summary, &format!("patchOperations[{index}].summary"), MAX_TEXT_LEN)?,
+                "requiresHumanReview": operation.requires_human_review.unwrap_or(true),
+                "releaseBlocker": operation.release_blocker.unwrap_or(true),
+                "evidence": validate_signal_list(operation.evidence, &format!("patchOperations[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn validate_instruction_improvement_result_artifacts(
+    artifacts: Option<Vec<InstructionImprovementResultArtifact>>,
+) -> Result<Vec<Value>, String> {
+    let artifacts = artifacts.unwrap_or_default();
+    if artifacts.len() > MAX_LEARNING_SIGNALS {
+        return Err(format!(
+            "artifacts must contain at most {MAX_LEARNING_SIGNALS} entries"
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    artifacts
+        .into_iter()
+        .enumerate()
+        .map(|(index, artifact)| {
+            let artifact_id = validate_label(
+                &artifact.artifact_id,
+                &format!("artifacts[{index}].artifactId"),
+            )?;
+            if !seen.insert(artifact_id.clone()) {
+                return Err(format!(
+                    "artifacts must have unique artifactId values; duplicate {artifact_id}"
+                ));
+            }
+            Ok(json!({
+                "artifactId": artifact_id,
+                "artifactKind": validate_label(&artifact.artifact_kind, &format!("artifacts[{index}].artifactKind"))?,
+                "programId": validate_optional_label(artifact.program_id, &format!("artifacts[{index}].programId"))?,
+                "uri": validate_optional_text(artifact.uri, &format!("artifacts[{index}].uri"), 2048)?,
+                "sha256": validate_optional_label(artifact.sha256, &format!("artifacts[{index}].sha256"))?,
+                "format": validate_optional_label(artifact.format, &format!("artifacts[{index}].format"))?,
+                "evidence": validate_signal_list(artifact.evidence, &format!("artifacts[{index}].evidence"), MAX_TEXT_LEN)?
+            }))
+        })
+        .collect()
+}
+
+fn instruction_improvement_result_program_blocks_release(program: &Value) -> bool {
+    let status = normalize_token(program.get("status").and_then(Value::as_str).unwrap_or(""));
+    let evidence_missing = program
+        .get("evidence")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    program
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || !program
+            .get("machineReady")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        || program
+            .get("requiresHumanApproval")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+        || evidence_missing
+        || status.contains("blocked")
+        || status.contains("failed")
+        || status.contains("review")
+}
+
+fn instruction_improvement_result_patch_blocks_release(operation: &Value) -> bool {
+    let evidence_missing = operation
+        .get("evidence")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    operation
+        .get("releaseBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+        || operation
+            .get("requiresHumanReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+        || evidence_missing
+}
+
+fn instruction_improvement_result_artifact_missing_evidence(artifact: &Value) -> bool {
+    artifact
+        .get("uri")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+        || artifact
+            .get("sha256")
+            .and_then(Value::as_str)
+            .is_none_or(|sha| sha.len() != 64)
+        || artifact
+            .get("format")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        || artifact
+            .get("evidence")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+}
+
+fn instruction_improvement_result_review_response(
+    request: InstructionImprovementResultReviewRequest,
+) -> Result<Value, String> {
+    let request_id = request_id(
+        request.request_id.as_ref(),
+        "instruction-improvement-result",
+    );
+    let generated_at_ms = now_ms();
+    let improvement_result_job_id = safe_job_id(
+        "instruction-improvement-result",
+        &request_id,
+        generated_at_ms,
+    );
+    let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
+    let job_id = validate_optional_label(request.job_id, "jobId")?;
+    let worker_id = validate_label(&request.worker_id, "workerId")?;
+    let improver = validate_label(&request.improver, "improver")?;
+    let improver_version =
+        validate_optional_text(request.improver_version, "improverVersion", MAX_LABEL_LEN)?;
+    let instruction_id = validate_optional_label(request.instruction_id, "instructionId")?;
+    let language = validate_optional_label(request.language, "language")?;
+    let machine_id = validate_optional_label(request.machine_id, "machineId")?;
+    let machine_kind = validate_optional_label(request.machine_kind, "machineKind")?;
+    let controller = validate_optional_label(request.controller, "controller")?;
+    let release_ready = request.release_ready.unwrap_or(false);
+    let improved_programs =
+        validate_instruction_improvement_result_programs(request.improved_programs)?;
+    let patch_operations =
+        validate_instruction_improvement_result_patch_operations(request.patch_operations)?;
+    let artifacts = validate_instruction_improvement_result_artifacts(request.artifacts)?;
+    let warnings = validate_signal_list(request.warnings, "warnings", MAX_TEXT_LEN)?;
+
+    let program_blocker_count = improved_programs
+        .iter()
+        .filter(|program| instruction_improvement_result_program_blocks_release(program))
+        .count();
+    let patch_blocker_count = patch_operations
+        .iter()
+        .filter(|operation| instruction_improvement_result_patch_blocks_release(operation))
+        .count();
+    let missing_artifact_evidence_count = artifacts
+        .iter()
+        .filter(|artifact| instruction_improvement_result_artifact_missing_evidence(artifact))
+        .count();
+    let human_review_required = improved_programs.iter().any(|program| {
+        program
+            .get("requiresHumanApproval")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    }) || patch_operations.iter().any(|operation| {
+        operation
+            .get("requiresHumanReview")
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    });
+    let release_blocked = !request.success
+        || !request.machine_ready
+        || !release_ready
+        || improved_programs.is_empty()
+        || patch_operations.is_empty()
+        || artifacts.is_empty()
+        || program_blocker_count > 0
+        || patch_blocker_count > 0
+        || missing_artifact_evidence_count > 0;
+    let review_status = if !request.success {
+        "instruction-improvement-result-worker-failed-release-blocked"
+    } else if improved_programs.is_empty() {
+        "instruction-improvement-result-programs-required"
+    } else if patch_operations.is_empty() {
+        "instruction-improvement-result-patches-required"
+    } else if artifacts.is_empty() || missing_artifact_evidence_count > 0 {
+        "instruction-improvement-result-artifact-evidence-required"
+    } else if program_blocker_count > 0 {
+        "instruction-improvement-result-program-release-blocked"
+    } else if patch_blocker_count > 0 {
+        "instruction-improvement-result-patch-release-blocked"
+    } else if !request.machine_ready {
+        "instruction-improvement-result-machine-ready-review-required"
+    } else if !release_ready {
+        "instruction-improvement-result-release-ready-review-required"
+    } else {
+        "instruction-improvement-result-ready-for-release-review"
+    };
+
+    let mut learning_observations = vec![
+        format!("instruction-improvement-worker:{worker_id}"),
+        format!("instruction-improvement-result:{review_status}"),
+        format!("instruction-improver:{}", normalize_token(&improver)),
+    ];
+    if release_blocked {
+        learning_observations.push("instruction-improvement-result:release-blocked".to_string());
+    }
+    if human_review_required {
+        learning_observations
+            .push("instruction-improvement-result:human-review-required".to_string());
+    }
+    learning_observations.extend(patch_operations.iter().filter_map(|operation| {
+        operation
+            .get("action")
+            .and_then(Value::as_str)
+            .map(|action| format!("instruction-improvement-patch:{}", normalize_token(action)))
+    }));
+    learning_observations.sort();
+    learning_observations.dedup();
+
+    Ok(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-improvement-result-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": request_id,
+        "improvementResultJobId": improvement_result_job_id,
+        "generatedAtMs": generated_at_ms,
+        "routes": [
+            "POST /instructions/improvement/result",
+            "POST /fabrication/instructions/improvement/result"
+        ],
+        "improvementRoutes": [
+            "POST /instructions/improve",
+            "POST /fabrication/instructions/improve"
+        ],
+        "validationRoutes": [
+            "POST /instructions/validate",
+            "POST /fabrication/instructions/validate",
+            "POST /instructions/validation/result",
+            "POST /fabrication/instructions/validation/result"
+        ],
+        "catalogRoutes": [
+            "GET /improvements/catalog",
+            "GET /fabrication/improvements/catalog",
+            "GET /improvements/preflight/catalog",
+            "GET /fabrication/improvements/preflight/catalog"
+        ],
+        "reviewStatus": review_status,
+        "machineReady": request.machine_ready && !release_blocked,
+        "releaseReady": release_ready && !release_blocked,
+        "releaseBlocked": release_blocked,
+        "improvedProgramCount": improved_programs.len(),
+        "patchOperationCount": patch_operations.len(),
+        "artifactCount": artifacts.len(),
+        "programBlockerCount": program_blocker_count,
+        "patchBlockerCount": patch_blocker_count,
+        "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+        "humanReviewRequired": human_review_required,
+        "warningCount": warnings.len(),
+        "instructionImprovementResult": {
+            "planRequestId": plan_request_id,
+            "jobId": job_id,
+            "workerId": worker_id,
+            "improver": improver,
+            "improverVersion": improver_version,
+            "instructionId": instruction_id,
+            "language": language,
+            "machineId": machine_id,
+            "machineKind": machine_kind,
+            "controller": controller,
+            "success": request.success,
+            "machineReady": request.machine_ready,
+            "releaseReady": release_ready,
+            "improvedPrograms": improved_programs,
+            "patchOperations": patch_operations,
+            "artifacts": artifacts,
+            "warnings": warnings,
+            "reviewMetadata": request.review_metadata
+        },
+        "releaseUpdate": {
+            "machineReleaseBlocked": release_blocked,
+            "requiredBeforeMachineReady": [
+                "improved programs retain preview lines, patch manifests, and machine-code deltas",
+                "patch operations include evidence and clear human-review dispositions",
+                "retained patch artifacts carry URI, checksum, format, and evidence labels",
+                "validation, simulation, controller/postprocessor, dry-run, and operator signoff evidence clear before machine-ready release"
+            ],
+            "targetSurfaces": [
+                "improvedPrograms",
+                "patchOperations",
+                "instructionValidationResult.improvementSuggestions",
+                "machineRelease",
+                "executionPlan",
+                "postprocessPlan",
+                "learning.outcomes"
+            ]
+        },
+        "learning": {
+            "observations": learning_observations,
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-improvement-result-learning-outcome-draft.v1",
+                "sourceKind": "instruction-improvement-result",
+                "sourceJobId": improvement_result_job_id,
+                "sourceRequestId": request_id,
+                "success": !release_blocked,
+                "rewardHint": if release_blocked { -0.55 } else { 0.55 },
+                "featureHints": {
+                    "releaseBlocked": release_blocked,
+                    "programBlockerCount": program_blocker_count,
+                    "patchBlockerCount": patch_blocker_count,
+                    "missingArtifactEvidenceCount": missing_artifact_evidence_count,
+                    "humanReviewRequired": human_review_required
+                },
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
+        "artifactSurfaces": [
+            "instruction-improvement-result",
+            "instruction-improvement-programs",
+            "instruction-improvement-patches",
+            "instruction-improvement-artifacts",
+            "instruction-improvement-learning-observations",
+            "improved-program-*",
+            "mdp-request.artifacts.instructionImprovementResult"
+        ],
+        "improvementPolicy": [
+            "instruction improvement results are retained patch evidence, not executable-certified controller code",
+            "machine-ready release remains blocked until improved programs, patch operations, retained artifacts, validation, simulation, controller/postprocessor review, and operator or automation signoff evidence clear",
+            "patch result observations feed MDP/POMDP/neural learning so future jobs can learn which repairs reduce machine-failure, human-intervention, split/combine, and controller-boundary failures"
+        ]
+    }))
+}
+
+fn instruction_improvement_result_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "reviewStatus", "");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("failed")
+        || status.contains("required")
+        || status.contains("release-blocked")
+    {
+        "error".to_string()
+    } else if release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_instruction_improvement_result_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "instruction-improvement-result");
+    let job_id = response_str_field(
+        response,
+        "improvementResultJobId",
+        &safe_job_id(
+            "instruction-improvement-result",
+            &request_id,
+            generated_at_ms,
+        ),
+    );
+    let review_status =
+        response_str_field(response, "reviewStatus", "instruction-improvement-result");
+    let release_blocked = response
+        .get("releaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let result = response
+        .get("instructionImprovementResult")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let improved_programs = result
+        .get("improvedPrograms")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let patch_operations = result
+        .get("patchOperations")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let retained_artifacts = result
+        .get("artifacts")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "instruction-improvement-result".to_string(),
+            "instruction-improvement-result",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-improvement-programs".to_string(),
+            "instruction-improvement-programs",
+            improved_programs,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-improvement-patches".to_string(),
+            "instruction-improvement-patches",
+            patch_operations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-improvement-artifacts".to_string(),
+            "instruction-improvement-artifacts",
+            retained_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-improvement-learning-observations".to_string(),
+            "instruction-improvement-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "instruction-improvement-result".to_string(),
+            status: review_status.clone(),
+            ok: !release_blocked,
+            severity: instruction_improvement_result_job_severity(response),
+            summary: format!("instruction improvement result review: {review_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_instruction_improvement_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_improvement_result_job(response));
 }
 
 fn validate_boundary_remediation_result_actions(
@@ -62027,6 +62601,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/improvements/catalog",
         "GET /improvements/preflight/catalog",
         "GET /fabrication/improvements/preflight/catalog",
+        "POST /instructions/improvement/result",
+        "POST /fabrication/instructions/improvement/result",
         "GET /boundaries/catalog",
         "GET /fabrication/boundaries/catalog",
         "GET /boundaries/preflight/catalog",
@@ -118964,6 +119540,7 @@ async fn request_schema() -> impl IntoResponse {
             "instructionGenerationResult": ["POST /instructions/generation/result", "POST /fabrication/instructions/generation/result"],
             "instructionReviewResult": ["POST /instructions/review/result", "POST /fabrication/instructions/review/result"],
             "instructionValidationResult": ["POST /instructions/validation/result", "POST /fabrication/instructions/validation/result"],
+            "instructionImprovementResult": ["POST /instructions/improvement/result", "POST /fabrication/instructions/improvement/result"],
             "machineCodeCatalog": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
             "machineCodePreflightCatalog": ["GET /machine-code/preflight/catalog", "GET /fabrication/machine-code/preflight/catalog"],
             "machineCodeGeneration": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
@@ -120011,6 +120588,23 @@ async fn instruction_validation_result_http(
     match instruction_validation_result_review_response(request) {
         Ok(response) => {
             store_instruction_validation_result_response(&state, &response);
+            Json(response).into_response()
+        }
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+async fn instruction_improvement_result_http(
+    State(state): State<AppState>,
+    Json(request): Json<InstructionImprovementResultReviewRequest>,
+) -> Response {
+    match instruction_improvement_result_review_response(request) {
+        Ok(response) => {
+            store_instruction_improvement_result_response(&state, &response);
             Json(response).into_response()
         }
         Err(error) => (
@@ -122383,6 +122977,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/instructions/validation/result",
             post(instruction_validation_result_http),
+        )
+        .route(
+            "/instructions/improvement/result",
+            post(instruction_improvement_result_http),
+        )
+        .route(
+            "/fabrication/instructions/improvement/result",
+            post(instruction_improvement_result_http),
         )
         .route("/machine-code/catalog", get(machine_code_catalog_http))
         .route(
@@ -130929,6 +131531,136 @@ mod tests {
     }
 
     #[test]
+    fn instruction_improvement_result_endpoint_reviews_patch_artifacts_and_learning() {
+        let payload = instruction_improvement_result_review_response(
+            InstructionImprovementResultReviewRequest {
+                request_id: Some("unit-instruction-improvement-result".to_string()),
+                plan_request_id: Some("unit-plan-improve".to_string()),
+                job_id: Some("analysis-job-improve".to_string()),
+                worker_id: "patch-worker-01".to_string(),
+                improver: "instruction-patch-reviewer".to_string(),
+                improver_version: Some("0.2.0".to_string()),
+                instruction_id: Some("legacy-print".to_string()),
+                language: Some("marlin-gcode".to_string()),
+                machine_id: Some("printer-1".to_string()),
+                machine_kind: Some("fdm-printer".to_string()),
+                controller: Some("marlin".to_string()),
+                success: true,
+                machine_ready: false,
+                release_ready: Some(false),
+                improved_programs: Some(vec![InstructionImprovementResultProgram {
+                    program_id: "legacy-print-improved".to_string(),
+                    source_program_id: Some("legacy-print".to_string()),
+                    language: "marlin-gcode".to_string(),
+                    status: "review-required".to_string(),
+                    changed: Some(true),
+                    machine_ready: Some(false),
+                    release_blocker: Some(true),
+                    requires_human_approval: Some(true),
+                    preview_lines: Some(vec![
+                        "G28 ; added coordinate reference before motion".to_string(),
+                        "G1 X10 Y10 E2.0 F900".to_string(),
+                    ]),
+                    evidence: Some(vec![
+                        "patch manifest retained".to_string(),
+                        "coordinate-reference boundary reduced".to_string(),
+                    ]),
+                }]),
+                patch_operations: Some(vec![InstructionImprovementResultPatchOperation {
+                    operation_id: "insert-home-before-motion".to_string(),
+                    program_id: Some("legacy-print-improved".to_string()),
+                    operation: "insert-before-program".to_string(),
+                    action: "add-coordinate-reference".to_string(),
+                    summary: "Insert homing before first extrusion move".to_string(),
+                    requires_human_review: Some(true),
+                    release_blocker: Some(true),
+                    evidence: Some(vec!["preview diff retained".to_string()]),
+                }]),
+                artifacts: Some(vec![InstructionImprovementResultArtifact {
+                    artifact_id: "patch-manifest".to_string(),
+                    artifact_kind: "instruction-patch-manifest".to_string(),
+                    program_id: Some("legacy-print-improved".to_string()),
+                    uri: Some("s3://fabrication/patches/legacy-print.patch.json".to_string()),
+                    sha256: Some("d".repeat(64)),
+                    format: Some("json".to_string()),
+                    evidence: Some(vec!["patch artifact checksum retained".to_string()]),
+                }]),
+                warnings: Some(vec![
+                    "operator approval required before print release".to_string()
+                ]),
+                review_metadata: Some(json!({ "policy": "patch-result-release" })),
+            },
+        )
+        .expect("instruction improvement result should review");
+
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-result-review.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/improvement/result")
+            })));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("instruction-improvement-result-program-release-blocked")
+        );
+        assert_eq!(
+            payload.get("releaseBlocked").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("programBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert_eq!(
+            payload.get("patchBlockerCount").and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(payload
+            .pointer("/learning/observations")
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("instruction-improvement-patch:add-coordinate-reference")
+            })));
+        assert_eq!(
+            payload
+                .pointer("/learning/outcomeDraft/schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.instruction-improvement-result-learning-outcome-draft.v1")
+        );
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.instructionImprovementResult")
+            })));
+
+        let job = stored_instruction_improvement_result_job(&payload);
+        assert_eq!(job.record.kind, "instruction-improvement-result");
+        assert_eq!(job.record.severity, "error");
+        for artifact_id in [
+            "instruction-improvement-result",
+            "instruction-improvement-programs",
+            "instruction-improvement-patches",
+            "instruction-improvement-artifacts",
+            "instruction-improvement-learning-observations",
+        ] {
+            assert!(
+                job.artifacts.contains_key(artifact_id),
+                "missing retained artifact {artifact_id}"
+            );
+        }
+    }
+
+    #[test]
     fn instruction_boundary_review_endpoint_returns_resolution_and_intervention_contract() {
         let response = analyze_instruction_request(InstructionAnalysisRequest {
             request_id: Some("unit-instruction-boundary-review".to_string()),
@@ -136010,7 +136742,7 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_planning_endpoint_exposes_split_combine_routes_and_learning_contract() {
+    fn hybrid_planning_response_exposes_split_combine_routes_and_learning_contract() {
         let policy = LearningPolicySnapshot {
             outcome_count: 0,
             successes: 0,
