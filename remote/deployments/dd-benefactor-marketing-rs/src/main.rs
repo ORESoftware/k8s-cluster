@@ -512,6 +512,18 @@ fn build_router(state: AppState) -> Router {
         .route("/clients", get(list_clients).post(create_client))
         .route("/clients/{client_id}/overview", get(client_dashboard))
         .route("/clients/{client_id}/dashboard", get(client_dashboard))
+        .route(
+            "/clients/{client_id}/lead-intelligence",
+            get(client_lead_intelligence),
+        )
+        .route(
+            "/clients/{client_id}/revenue-attribution",
+            get(client_revenue_attribution),
+        )
+        .route(
+            "/clients/{client_id}/operations",
+            get(client_operations_summary),
+        )
         .route("/clients/{client_id}/contacts", post(create_contact))
         .route("/clients/{client_id}/contracts", post(create_contract))
         .route("/clients/{client_id}/invoices", post(create_invoice))
@@ -899,7 +911,7 @@ async fn create_client(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, model.id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -909,6 +921,10 @@ async fn client_dashboard(
     Path(client_id): Path<Uuid>,
 ) -> AppResult<Json<Value>> {
     require_auth(&state, &headers)?;
+    let cache_key = client_dashboard_cache_key(client_id);
+    if let Some(cached) = cache_get_json(&state, &cache_key).await {
+        return Ok(Json(cached));
+    }
     let client = clients::Entity::find_by_id(client_id)
         .one(&state.db)
         .await?
@@ -950,7 +966,7 @@ async fn client_dashboard(
         .limit(10)
         .all(&state.db)
         .await?;
-    Ok(Json(json!({
+    let payload = json!({
         "client": client,
         "counts": {
             "leads": lead_count,
@@ -963,6 +979,171 @@ async fn client_dashboard(
             "campaigns": recent_campaigns,
             "reports": recent_reports,
             "openTasks": open_tasks
+        }
+    });
+    cache_set_json(&state, &cache_key, &payload).await;
+    Ok(Json(payload))
+}
+
+async fn client_lead_intelligence(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let total_leads = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let enrichment_pending = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .filter(leads::Column::EnrichmentStatus.eq("pending"))
+        .count(&state.db)
+        .await?;
+    let enrichment_running = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .filter(leads::Column::EnrichmentStatus.eq("running"))
+        .count(&state.db)
+        .await?;
+    let verified_contacts = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .filter(leads::Column::VerificationStatus.eq("verified"))
+        .count(&state.db)
+        .await?;
+    let high_fit_leads = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .filter(leads::Column::IcpFitScore.gte(80))
+        .count(&state.db)
+        .await?;
+    let top_leads = leads::Entity::find()
+        .filter(leads::Column::ClientId.eq(client_id))
+        .order_by_desc(leads::Column::LeadScore)
+        .order_by_desc(leads::Column::IcpFitScore)
+        .order_by_desc(leads::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({
+        "clientId": client_id,
+        "counts": {
+            "total": total_leads,
+            "enrichmentPending": enrichment_pending,
+            "enrichmentRunning": enrichment_running,
+            "verifiedContacts": verified_contacts,
+            "highFit": high_fit_leads
+        },
+        "topLeads": top_leads
+    })))
+}
+
+async fn client_revenue_attribution(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let attribution_event_count = attribution_events::Entity::find()
+        .filter(attribution_events::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let recent_attribution_events = attribution_events::Entity::find()
+        .filter(attribution_events::Column::ClientId.eq(client_id))
+        .order_by_desc(attribution_events::Column::OccurredAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let recent_value_cents: i64 = recent_attribution_events
+        .iter()
+        .map(|event| i64::from(event.value_cents))
+        .sum();
+    let open_opportunities = opportunities::Entity::find()
+        .filter(opportunities::Column::ClientId.eq(client_id))
+        .filter(opportunities::Column::Status.eq("open"))
+        .order_by_desc(opportunities::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let forecast_cents: i64 = open_opportunities
+        .iter()
+        .map(|opportunity| {
+            i64::from(opportunity.amount_cents) * i64::from(opportunity.probability_micros)
+                / 1_000_000
+        })
+        .sum();
+    Ok(Json(json!({
+        "clientId": client_id,
+        "attribution": {
+            "eventCount": attribution_event_count,
+            "recentValueCents": recent_value_cents,
+            "recentEvents": recent_attribution_events
+        },
+        "pipeline": {
+            "openOpportunityCount": open_opportunities.len(),
+            "forecastCents": forecast_cents,
+            "openOpportunities": open_opportunities
+        }
+    })))
+}
+
+async fn client_operations_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let now = now_fixed();
+    let open_task_count = project_tasks::Entity::find()
+        .filter(project_tasks::Column::ClientId.eq(client_id))
+        .filter(project_tasks::Column::Status.is_in(["todo", "in_progress", "blocked"]))
+        .count(&state.db)
+        .await?;
+    let blocked_task_count = project_tasks::Entity::find()
+        .filter(project_tasks::Column::ClientId.eq(client_id))
+        .filter(project_tasks::Column::Status.eq("blocked"))
+        .count(&state.db)
+        .await?;
+    let sla_risk_task_count = project_tasks::Entity::find()
+        .filter(project_tasks::Column::ClientId.eq(client_id))
+        .filter(project_tasks::Column::Status.is_in(["todo", "in_progress", "blocked"]))
+        .filter(project_tasks::Column::SlaDueAt.lt(now))
+        .count(&state.db)
+        .await?;
+    let pending_approval_count = client_approvals::Entity::find()
+        .filter(client_approvals::Column::ClientId.eq(client_id))
+        .filter(client_approvals::Column::Status.eq("pending"))
+        .count(&state.db)
+        .await?;
+    let open_ticket_count = tickets_count(&state.db, client_id).await?;
+    let recent_tasks = project_tasks::Entity::find()
+        .filter(project_tasks::Column::ClientId.eq(client_id))
+        .order_by_desc(project_tasks::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let recent_tickets = tickets::Entity::find()
+        .filter(tickets::Column::ClientId.eq(client_id))
+        .order_by_desc(tickets::Column::LastActivityAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({
+        "clientId": client_id,
+        "counts": {
+            "openTasks": open_task_count,
+            "blockedTasks": blocked_task_count,
+            "slaRiskTasks": sla_risk_task_count,
+            "pendingApprovals": pending_approval_count,
+            "openTickets": open_ticket_count
+        },
+        "recent": {
+            "tasks": recent_tasks,
+            "tickets": recent_tickets
         }
     })))
 }
@@ -990,7 +1171,7 @@ async fn create_contact(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1016,7 +1197,7 @@ async fn create_contract(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1041,7 +1222,7 @@ async fn create_invoice(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1065,7 +1246,7 @@ async fn create_integration(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1075,7 +1256,9 @@ async fn import_leads(
     Json(req): Json<LeadImportRequest>,
 ) -> AppResult<(StatusCode, Json<LeadImportResponse>)> {
     require_write_access(&state, &headers, "leads.import").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    let source_integration_id = req.source_integration_id;
+    ensure_client(&state.db, client_id).await?;
     if req.leads.is_empty() {
         return Err(AppError::BadRequest(
             "leads must contain at least one item".to_string(),
@@ -1089,8 +1272,8 @@ async fn import_leads(
     let mut inserted = Vec::with_capacity(req.leads.len());
     for draft in req.leads {
         let model = leads::ActiveModel {
-            client_id: Set(req.client_id),
-            source_integration_id: Set(req.source_integration_id),
+            client_id: Set(client_id),
+            source_integration_id: Set(source_integration_id),
             status: Set("new".to_string()),
             company_name: Set(draft.company_name),
             domain: Set(draft.domain),
@@ -1117,7 +1300,17 @@ async fn import_leads(
         .metrics
         .lead_imports_total
         .fetch_add(1, Ordering::Relaxed);
-    record_mutation(&state);
+    publish_job_event(
+        &state,
+        "lead_import_batch",
+        json!({
+            "clientId": client_id,
+            "imported": inserted.len(),
+            "leadIds": inserted.iter().map(|lead| lead.id).collect::<Vec<_>>()
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
     Ok((
         StatusCode::CREATED,
         Json(LeadImportResponse {
@@ -1156,6 +1349,8 @@ async fn queue_enrichment_job(
         .one(&state.db)
         .await?
         .ok_or(AppError::NotFound("lead"))?;
+    let client_id = lead.client_id;
+    let lead_id = lead.id;
     let job_id = Uuid::new_v4();
     let handoff_url = req.scraper_handoff_url.or_else(|| {
         state
@@ -1166,8 +1361,8 @@ async fn queue_enrichment_job(
     });
     let model = enrichment_jobs::ActiveModel {
         id: Set(job_id),
-        client_id: Set(lead.client_id),
-        lead_id: Set(Some(lead.id)),
+        client_id: Set(client_id),
+        lead_id: Set(Some(lead_id)),
         job_kind: Set(req.job_kind),
         status: Set("queued".to_string()),
         external_job_id: Set(req.external_job_id),
@@ -1186,7 +1381,19 @@ async fn queue_enrichment_job(
         .metrics
         .enrichment_jobs_total
         .fetch_add(1, Ordering::Relaxed);
-    record_mutation(&state);
+    publish_job_event(
+        &state,
+        "lead_enrichment_queued",
+        json!({
+            "clientId": client_id,
+            "leadId": lead_id,
+            "jobId": model.id,
+            "jobKind": &model.job_kind,
+            "scraperHandoffUrl": &model.scraper_handoff_url
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1201,6 +1408,7 @@ async fn score_lead(
         .one(&state.db)
         .await?
         .ok_or(AppError::NotFound("lead"))?;
+    let client_id = lead.client_id;
     let mut active: leads::ActiveModel = lead.into();
     if let Some(value) = req.lead_score {
         active.lead_score = Set(score(value)?);
@@ -1225,7 +1433,7 @@ async fn score_lead(
     }
     active.updated_at = Set(now_fixed());
     let model = active.update(&state.db).await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok(Json(model))
 }
 
@@ -1235,9 +1443,10 @@ async fn create_campaign(
     Json(req): Json<CreateCampaignRequest>,
 ) -> AppResult<(StatusCode, Json<campaigns::Model>)> {
     require_write_access(&state, &headers, "campaigns.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = campaigns::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
         campaign_kind: Set(req
             .campaign_kind
@@ -1254,7 +1463,7 @@ async fn create_campaign(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1295,7 +1504,7 @@ async fn create_campaign_channel(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, campaign.client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1321,7 +1530,7 @@ async fn create_campaign_experiment(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, campaign.client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1331,9 +1540,10 @@ async fn create_automation_workflow(
     Json(req): Json<CreateAutomationWorkflowRequest>,
 ) -> AppResult<(StatusCode, Json<automation_workflows::Model>)> {
     require_write_access(&state, &headers, "automation.workflows.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = automation_workflows::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
         name: Set(req.name),
         trigger_kind: Set(req.trigger_kind),
@@ -1343,7 +1553,7 @@ async fn create_automation_workflow(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1353,9 +1563,10 @@ async fn record_automation_event(
     Json(req): Json<AutomationEventRequest>,
 ) -> AppResult<(StatusCode, Json<automation_events::Model>)> {
     require_write_access(&state, &headers, "automation.events.record").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = automation_events::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         workflow_id: Set(req.workflow_id),
         lead_id: Set(req.lead_id),
         event_kind: Set(req.event_kind),
@@ -1365,7 +1576,20 @@ async fn record_automation_event(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    publish_job_event(
+        &state,
+        "automation_event_recorded",
+        json!({
+            "clientId": client_id,
+            "eventId": model.id,
+            "workflowId": model.workflow_id,
+            "leadId": model.lead_id,
+            "eventKind": &model.event_kind,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1375,9 +1599,10 @@ async fn create_report_snapshot(
     Json(req): Json<ReportSnapshotRequest>,
 ) -> AppResult<(StatusCode, Json<reports::Model>)> {
     require_write_access(&state, &headers, "reports.snapshots.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = reports::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         campaign_id: Set(req.campaign_id),
         report_kind: Set(req.report_kind.unwrap_or_else(|| "dashboard".to_string())),
         status: Set(req.status.unwrap_or_else(|| "ready".to_string())),
@@ -1391,7 +1616,19 @@ async fn create_report_snapshot(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    publish_job_event(
+        &state,
+        "report_snapshot_ready",
+        json!({
+            "clientId": client_id,
+            "reportId": model.id,
+            "campaignId": model.campaign_id,
+            "reportKind": &model.report_kind,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1401,9 +1638,10 @@ async fn record_attribution_event(
     Json(req): Json<AttributionEventRequest>,
 ) -> AppResult<(StatusCode, Json<attribution_events::Model>)> {
     require_write_access(&state, &headers, "attribution.events.record").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = attribution_events::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         campaign_id: Set(req.campaign_id),
         lead_id: Set(req.lead_id),
         event_type: Set(req.event_type),
@@ -1416,7 +1654,21 @@ async fn record_attribution_event(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    publish_job_event(
+        &state,
+        "attribution_event_recorded",
+        json!({
+            "clientId": client_id,
+            "eventId": model.id,
+            "campaignId": model.campaign_id,
+            "leadId": model.lead_id,
+            "eventType": &model.event_type,
+            "sourcePlatform": &model.source_platform,
+            "valueCents": model.value_cents
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1426,9 +1678,10 @@ async fn create_opportunity(
     Json(req): Json<CreateOpportunityRequest>,
 ) -> AppResult<(StatusCode, Json<opportunities::Model>)> {
     require_write_access(&state, &headers, "opportunities.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = opportunities::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         lead_id: Set(req.lead_id),
         status: Set(req.status.unwrap_or_else(|| "open".to_string())),
         stage: Set(req.stage.unwrap_or_else(|| "prospecting".to_string())),
@@ -1442,7 +1695,7 @@ async fn create_opportunity(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1452,9 +1705,10 @@ async fn create_content_asset(
     Json(req): Json<CreateContentAssetRequest>,
 ) -> AppResult<(StatusCode, Json<content_assets::Model>)> {
     require_write_access(&state, &headers, "content.assets.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = content_assets::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         campaign_id: Set(req.campaign_id),
         status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
         asset_kind: Set(req.asset_kind),
@@ -1470,7 +1724,7 @@ async fn create_content_asset(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1480,9 +1734,10 @@ async fn create_project_task(
     Json(req): Json<CreateProjectTaskRequest>,
 ) -> AppResult<(StatusCode, Json<project_tasks::Model>)> {
     require_write_access(&state, &headers, "projects.tasks.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = project_tasks::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         campaign_id: Set(req.campaign_id),
         content_asset_id: Set(req.content_asset_id),
         status: Set(req.status.unwrap_or_else(|| "todo".to_string())),
@@ -1498,7 +1753,7 @@ async fn create_project_task(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1508,9 +1763,10 @@ async fn create_approval(
     Json(req): Json<CreateApprovalRequest>,
 ) -> AppResult<(StatusCode, Json<client_approvals::Model>)> {
     require_write_access(&state, &headers, "approvals.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = client_approvals::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         campaign_id: Set(req.campaign_id),
         content_asset_id: Set(req.content_asset_id),
         requested_by: Set(req.requested_by),
@@ -1523,7 +1779,7 @@ async fn create_approval(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1543,13 +1799,14 @@ async fn decide_approval(
         .one(&state.db)
         .await?
         .ok_or(AppError::NotFound("approval"))?;
+    let client_id = approval.client_id;
     let mut active: client_approvals::ActiveModel = approval.into();
     active.status = Set(req.status);
     active.response_note = Set(req.response_note);
     active.decided_at = Set(Some(now_fixed()));
     active.updated_at = Set(now_fixed());
     let model = active.update(&state.db).await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok(Json(model))
 }
 
@@ -1559,9 +1816,10 @@ async fn create_ticket(
     Json(req): Json<CreateTicketRequest>,
 ) -> AppResult<(StatusCode, Json<tickets::Model>)> {
     require_write_access(&state, &headers, "tickets.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = tickets::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         status: Set(req.status.unwrap_or_else(|| "open".to_string())),
         priority: Set(req.priority.unwrap_or_else(|| "normal".to_string())),
         subject: Set(req.subject),
@@ -1574,7 +1832,7 @@ async fn create_ticket(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1584,9 +1842,10 @@ async fn create_meeting(
     Json(req): Json<CreateMeetingRequest>,
 ) -> AppResult<(StatusCode, Json<meetings::Model>)> {
     require_write_access(&state, &headers, "meetings.create").await?;
-    ensure_client(&state.db, req.client_id).await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
     let model = meetings::ActiveModel {
-        client_id: Set(req.client_id),
+        client_id: Set(client_id),
         lead_id: Set(req.lead_id),
         opportunity_id: Set(req.opportunity_id),
         status: Set(req.status.unwrap_or_else(|| "scheduled".to_string())),
@@ -1604,7 +1863,7 @@ async fn create_meeting(
     }
     .insert(&state.db)
     .await?;
-    record_mutation(&state);
+    record_client_mutation(&state, client_id).await;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1677,6 +1936,283 @@ fn require_auth(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
     Err(AppError::Unauthorized)
 }
 
+async fn require_write_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    action: &'static str,
+) -> AppResult<()> {
+    require_auth(state, headers)?;
+    enforce_rate_limit(state, headers, action).await
+}
+
+async fn enforce_rate_limit(
+    state: &AppState,
+    headers: &HeaderMap,
+    action: &'static str,
+) -> AppResult<()> {
+    if state.cfg.rate_limit_per_minute == 0 || state.redis.is_none() {
+        return Ok(());
+    }
+
+    let key = format!(
+        "benefactor:marketing:rate:{action}:{}",
+        auth_actor_hash(headers)
+    );
+    let Some(count) = redis_incr_with_ttl(state, &key, 60).await else {
+        return Ok(());
+    };
+    if count > state.cfg.rate_limit_per_minute as i64 {
+        state
+            .metrics
+            .rate_limit_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        return Err(AppError::RateLimited);
+    }
+    Ok(())
+}
+
+fn auth_actor_hash(headers: &HeaderMap) -> String {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let legacy_auth = headers
+        .get("Auth")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let actor = if authorization.is_empty() {
+        legacy_auth
+    } else {
+        authorization
+    };
+    let mut hasher = DefaultHasher::new();
+    actor.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+async fn redis_ping(state: &AppState) -> bool {
+    if state.redis.is_none() {
+        return false;
+    }
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return false;
+    }
+    let result: redis::RedisResult<String> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("PING").query_async(conn).await
+    };
+    match result {
+        Ok(_) => true,
+        Err(err) => {
+            *guard = None;
+            record_redis_error(state, "ping", &err);
+            false
+        }
+    }
+}
+
+async fn cache_get_json(state: &AppState, key: &str) -> Option<Value> {
+    if state.redis.is_none() || state.cfg.cache_ttl_seconds == 0 {
+        return None;
+    }
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return None;
+    }
+    let result: redis::RedisResult<Option<String>> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("GET").arg(key).query_async(conn).await
+    };
+    match result {
+        Ok(Some(body)) => match serde_json::from_str(&body) {
+            Ok(value) => {
+                state
+                    .metrics
+                    .cache_hits_total
+                    .fetch_add(1, Ordering::Relaxed);
+                Some(value)
+            }
+            Err(err) => {
+                warn!(error = %err, key, "redis cache payload was not valid JSON");
+                state
+                    .metrics
+                    .cache_misses_total
+                    .fetch_add(1, Ordering::Relaxed);
+                None
+            }
+        },
+        Ok(None) => {
+            state
+                .metrics
+                .cache_misses_total
+                .fetch_add(1, Ordering::Relaxed);
+            None
+        }
+        Err(err) => {
+            *guard = None;
+            record_redis_error(state, "cache_get", &err);
+            None
+        }
+    }
+}
+
+async fn cache_set_json(state: &AppState, key: &str, value: &Value) {
+    if state.redis.is_none() || state.cfg.cache_ttl_seconds == 0 {
+        return;
+    }
+    let Ok(body) = serde_json::to_string(value) else {
+        return;
+    };
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return;
+    }
+    let result: redis::RedisResult<()> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("SETEX")
+            .arg(key)
+            .arg(state.cfg.cache_ttl_seconds)
+            .arg(body)
+            .query_async(conn)
+            .await
+    };
+    if let Err(err) = result {
+        *guard = None;
+        record_redis_error(state, "cache_set", &err);
+    }
+}
+
+async fn cache_delete(state: &AppState, key: &str) {
+    if state.redis.is_none() {
+        return;
+    }
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return;
+    }
+    let result: redis::RedisResult<u64> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("DEL").arg(key).query_async(conn).await
+    };
+    match result {
+        Ok(deleted) if deleted > 0 => {
+            state
+                .metrics
+                .cache_invalidations_total
+                .fetch_add(deleted, Ordering::Relaxed);
+        }
+        Ok(_) => {}
+        Err(err) => {
+            *guard = None;
+            record_redis_error(state, "cache_delete", &err);
+        }
+    }
+}
+
+async fn redis_incr_with_ttl(state: &AppState, key: &str, ttl_seconds: i64) -> Option<i64> {
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return None;
+    }
+    let result: redis::RedisResult<i64> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("INCR").arg(key).query_async(conn).await
+    };
+    match result {
+        Ok(count) => {
+            if count == 1 {
+                let expire_result: redis::RedisResult<bool> = {
+                    let conn = guard.as_mut().expect("redis connection ensured");
+                    redis::cmd("EXPIRE")
+                        .arg(key)
+                        .arg(ttl_seconds)
+                        .query_async(conn)
+                        .await
+                };
+                if let Err(err) = expire_result {
+                    record_redis_error(state, "rate_limit_expire", &err);
+                }
+            }
+            Some(count)
+        }
+        Err(err) => {
+            *guard = None;
+            record_redis_error(state, "rate_limit_incr", &err);
+            None
+        }
+    }
+}
+
+async fn publish_job_event(state: &AppState, event_kind: &'static str, payload: Value) {
+    if state.redis.is_none() {
+        return;
+    }
+    let Ok(payload_body) = serde_json::to_string(&payload) else {
+        return;
+    };
+    let mut guard = state.redis_connection.lock().await;
+    if !ensure_redis_connection(state, &mut *guard).await {
+        return;
+    }
+    let result: redis::RedisResult<String> = {
+        let conn = guard.as_mut().expect("redis connection ensured");
+        redis::cmd("XADD")
+            .arg(&state.cfg.job_stream)
+            .arg("*")
+            .arg("service")
+            .arg(SERVICE_NAME)
+            .arg("eventKind")
+            .arg(event_kind)
+            .arg("payload")
+            .arg(payload_body)
+            .query_async(conn)
+            .await
+    };
+    match result {
+        Ok(_) => {
+            state
+                .metrics
+                .redis_jobs_published_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        Err(err) => {
+            *guard = None;
+            record_redis_error(state, "stream_publish", &err);
+        }
+    }
+}
+
+async fn ensure_redis_connection(
+    state: &AppState,
+    connection: &mut Option<redis::aio::MultiplexedConnection>,
+) -> bool {
+    if connection.is_some() {
+        return true;
+    }
+    let Some(client) = state.redis.as_ref() else {
+        return false;
+    };
+    match client.get_multiplexed_async_connection().await {
+        Ok(conn) => {
+            *connection = Some(conn);
+            true
+        }
+        Err(err) => {
+            record_redis_error(state, "connect", &err);
+            false
+        }
+    }
+}
+
+fn record_redis_error(state: &AppState, context: &'static str, err: &redis::RedisError) {
+    state
+        .metrics
+        .redis_errors_total
+        .fetch_add(1, Ordering::Relaxed);
+    warn!(context, error = %err, "redis operation failed");
+}
+
 fn object_or_default(value: Option<Value>, field: &str) -> AppResult<Value> {
     match value {
         Some(value) if value.is_object() => Ok(value),
@@ -1721,11 +2257,20 @@ fn probability(value: i32) -> AppResult<i32> {
     }
 }
 
+fn client_dashboard_cache_key(client_id: Uuid) -> String {
+    format!("benefactor:marketing:client-dashboard:{client_id}")
+}
+
 fn record_mutation(state: &AppState) {
     state
         .metrics
         .mutations_total
         .fetch_add(1, Ordering::Relaxed);
+}
+
+async fn record_client_mutation(state: &AppState, client_id: Uuid) {
+    record_mutation(state);
+    cache_delete(state, &client_dashboard_cache_key(client_id)).await;
 }
 
 fn env_bool(name: &str, default: bool) -> bool {
@@ -1736,6 +2281,13 @@ fn env_bool(name: &str, default: bool) -> bool {
                 "1" | "true" | "yes" | "on"
             )
         })
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
         .unwrap_or(default)
 }
 

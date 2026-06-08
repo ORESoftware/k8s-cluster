@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-benefactor-marketing-rs",
   "language": "rust",
-  "routeCount": 37,
+  "routeCount": 40,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 30
+    "user-generated": 33
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -340,6 +340,23 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/lead-intelligence",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "client_lead_intelligence"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/leads",
       "methods": [
         "GET"
@@ -357,6 +374,23 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/operations",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "client_operations_summary"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/overview",
       "methods": [
         "GET"
@@ -367,6 +401,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "client_dashboard"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/revenue-attribution",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "client_revenue_attribution"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"

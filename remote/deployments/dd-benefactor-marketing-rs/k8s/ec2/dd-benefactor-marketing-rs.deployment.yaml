@@ -18,9 +18,10 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-08-initial'
+        dd.dev/telemetry-revision: '2026-06-08-redis-runtime'
       labels:
         app: dd-benefactor-marketing-rs
+        dd.dev/redis-cache-client: 'true'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -57,6 +58,16 @@ spec:
               value: json
             - name: BENEFACTOR_MARKETING_ALLOW_UNAUTHENTICATED
               value: 'false'
+            - name: BENEFACTOR_MARKETING_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: BENEFACTOR_MARKETING_REDIS_REQUIRED_FOR_READY
+              value: 'false'
+            - name: BENEFACTOR_MARKETING_CACHE_TTL_SECONDS
+              value: '120'
+            - name: BENEFACTOR_MARKETING_RATE_LIMIT_PER_MINUTE
+              value: '600'
+            - name: BENEFACTOR_MARKETING_JOB_STREAM
+              value: benefactor:marketing:jobs
             - name: RUST_LOG
               value: dd_benefactor_marketing_rs=info,sea_orm=warn,sqlx=warn,tower_http=info
             - name: BENEFACTOR_MARKETING_DATABASE_URL

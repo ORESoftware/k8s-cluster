@@ -35,11 +35,25 @@ Optional:
 - `BENEFACTOR_MARKETING_PORT` (default `8134`)
 - `BENEFACTOR_MARKETING_LOG_FORMAT=json`
 - `BENEFACTOR_MARKETING_SCRAPER_BASE_URL`
+- `BENEFACTOR_MARKETING_REDIS_URL` or `REDIS_URL` (default EC2 manifest points at
+  `redis://dd-redis-cache.default.svc.cluster.local:6379/0`)
+- `BENEFACTOR_MARKETING_REDIS_REQUIRED_FOR_READY=true` when Redis must participate in readiness
+- `BENEFACTOR_MARKETING_CACHE_TTL_SECONDS` (default `120`; `0` disables cache writes)
+- `BENEFACTOR_MARKETING_RATE_LIMIT_PER_MINUTE` (default `600`; `0` disables Redis throttling)
+- `BENEFACTOR_MARKETING_JOB_STREAM` (default `benefactor:marketing:jobs`)
 - `BENEFACTOR_MARKETING_ALLOW_UNAUTHENTICATED=true` for local-only development
 
 Web scraping is intentionally offloaded. `POST /leads/{lead_id}/enrichment-jobs` records the
 handoff job and, when `BENEFACTOR_MARKETING_SCRAPER_BASE_URL` is set, stamps a deterministic
-external handoff URL for the scraper service.
+external handoff URL for the scraper service. When Redis is configured, lead imports, enrichment
+handoffs, automation events, report snapshots, and attribution events are also published to the
+configured Redis stream for workers or ETL services.
+
+Redis is used for:
+
+- client dashboard cache entries under `benefactor:marketing:client-dashboard:*`
+- per-actor write throttling under `benefactor:marketing:rate:*`
+- worker handoff events on `benefactor:marketing:jobs`
 
 ## Routes
 
@@ -55,11 +69,15 @@ Operational routes:
 - `GET /readyz`
 - `GET /metrics`
 - `GET /capabilities`
+- `GET /runtime/redis`
 
 Core domain routes include:
 
 - `GET|POST /clients`
 - `GET /clients/{client_id}/dashboard`
+- `GET /clients/{client_id}/lead-intelligence`
+- `GET /clients/{client_id}/revenue-attribution`
+- `GET /clients/{client_id}/operations`
 - `POST /clients/{client_id}/contacts`
 - `POST /leads/import`
 - `POST /leads/{lead_id}/enrichment-jobs`
