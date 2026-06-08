@@ -40,6 +40,7 @@ mod query_cache;
 mod question_nl;
 mod rbac;
 mod renderer_packages;
+mod renderer_verification;
 mod self_service;
 mod semantic;
 mod sql_frontend;
@@ -108,6 +109,7 @@ struct Metrics {
     platform_requests_total: AtomicU64,
     evidence_reports_compiled_total: AtomicU64,
     renderer_client_packages_total: AtomicU64,
+    renderer_artifact_verifications_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
     connections_saved_total: AtomicU64,
@@ -600,6 +602,10 @@ fn app_router(state: AppState) -> Router {
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
         .route("/renderers/client-package", get(renderer_client_package))
+        .route(
+            "/renderers/artifacts/verify",
+            post(verify_renderer_artifact),
+        )
         .route("/diagrams/tools", get(diagram_tool_catalog))
         .route("/diagrams/infra", post(generate_infra_diagram))
         .route("/reports/evidence", get(evidence_report_blueprint))
@@ -778,6 +784,7 @@ async fn descriptor(State(state): State<AppState>) -> Json<Value> {
             "dashboardPanels": platform::dashboard_panel_catalog(),
             "rendererContracts": platform::renderer_contracts(),
             "rendererClientPackage": renderer_packages::summary_payload(),
+            "rendererArtifactVerification": renderer_verification::limits_payload(),
             "selfService": platform::self_service_surfaces()
         },
         "presentationLayers": ["powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"],
@@ -847,6 +854,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "surfaces": ["generated TypeScript package blueprint", "D3 final-layer helper", "Plotly/Dash figure helper", "Evidence report helper", "infrastructure graph helper"],
             "limits": renderer_packages::limits_payload(),
             "posture": "static source package response; no user code is executed and no external package manager is called"
+        },
+        "rendererArtifactVerification": {
+            "surfaces": ["D3 SVG/HTML static checks", "Plotly figure checks", "Evidence markdown checks", "final-layer JSON checks", "screenshot metadata checks"],
+            "limits": renderer_verification::limits_payload(),
+            "posture": "authenticated static artifact verification; no browser, package manager, network, or user code execution"
         },
         "evidenceReportCompiler": {
             "surfaces": ["bounded Markdown sections", "embedded SQL validation", "Evidence.dev chart components", "dataset dependency catalog"],
@@ -1058,6 +1070,9 @@ dd_data_viz_evidence_reports_compiled_total {}
 # HELP dd_data_viz_renderer_client_packages_total Renderer client packages generated.
 # TYPE dd_data_viz_renderer_client_packages_total counter
 dd_data_viz_renderer_client_packages_total {}
+# HELP dd_data_viz_renderer_artifact_verifications_total Renderer artifact verification requests handled.
+# TYPE dd_data_viz_renderer_artifact_verifications_total counter
+dd_data_viz_renderer_artifact_verifications_total {}
 # HELP dd_data_viz_hardening_requests_total Hardening policy requests handled.
 # TYPE dd_data_viz_hardening_requests_total counter
 dd_data_viz_hardening_requests_total {}
@@ -1177,6 +1192,9 @@ dd_data_viz_errors_total {}
             .load(Ordering::Relaxed),
         metrics
             .renderer_client_packages_total
+            .load(Ordering::Relaxed),
+        metrics
+            .renderer_artifact_verifications_total
             .load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
@@ -1971,6 +1989,24 @@ async fn renderer_client_package(
         .renderer_client_packages_total
         .fetch_add(1, Ordering::Relaxed);
     Json(renderer_packages::client_package())
+}
+
+async fn verify_renderer_artifact(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<renderer_verification::VerifyRendererArtifactRequest>,
+) -> Result<Json<renderer_verification::VerifyRendererArtifactResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::VisualizationSuggest)?;
+    let response = renderer_verification::verify(request).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .renderer_artifact_verifications_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
 }
 
 async fn generate_infra_diagram(
@@ -5200,6 +5236,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Generated TypeScript renderer client package blueprint for D3 final layers, Plotly/Dash figures, Evidence reports, and infrastructure graphs.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/renderers/artifacts/verify",
+            auth: "visualization-suggest",
+            description: "Verify bounded D3, Plotly/Dash, Evidence, final-layer, and screenshot metadata artifacts for nonblank output, dimensions, active scripts, console errors, and text overlap.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/diagrams/tools",
             auth: "public",
@@ -6262,6 +6304,7 @@ mod tests {
         assert!(paths.contains(&"/live/panels/:dataset_id"));
         assert!(paths.contains(&"/renderers/contracts"));
         assert!(paths.contains(&"/renderers/client-package"));
+        assert!(paths.contains(&"/renderers/artifacts/verify"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
         assert!(paths.contains(&"/reports/evidence"));

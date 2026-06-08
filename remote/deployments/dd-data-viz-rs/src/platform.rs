@@ -119,6 +119,10 @@ pub fn platform_capabilities_payload() -> Value {
             "moduleFormat": "typescript-esm",
             "targets": ["D3 final layers", "Plotly/Dash figures", "Evidence reports", "infrastructure graphs"]
         },
+        "rendererArtifactVerification": {
+            "route": "POST /renderers/artifacts/verify",
+            "checks": ["nonblank marks", "dimensions", "active script hooks", "console errors", "text overlap"]
+        },
         "selfService": self_service_surfaces(),
         "presentationTargets": presentation_targets()
     })
@@ -297,9 +301,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "evolution-generated encodings",
                 "Terraform/HCL, Terraform plan, AWS, and GCP infrastructure diagram tool catalog",
                 "generated TypeScript renderer client package",
+                "bounded static artifact verifier",
             ],
             next_engine_work: vec![
-                "SVG/canvas regression screenshots",
+                "browser-backed SVG/canvas pixel regression screenshots",
                 "animation/tween timeline specs",
             ],
         },
@@ -313,6 +318,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "presentation layer export",
                 "generated TypeScript client package",
                 "Dash callback blueprint helper",
+                "bounded Plotly figure verifier",
             ],
             next_engine_work: vec!["scientific chart catalog", "Python/R client bindings"],
         },
@@ -326,6 +332,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "Reveal markdown export",
                 "SQL query examples",
                 "generated TypeScript report helper package",
+                "bounded Evidence markdown artifact verifier",
             ],
             next_engine_work: vec!["repo build artifacts", "scheduled report publication"],
         },
