@@ -1061,11 +1061,11 @@ blockers, and learning signals. The catalog links `process-plan`,
 `process-graph`, `hybrid-make-plan`, `manufacturing-handoff`,
 `release-package-plan`, and `mdp-request` artifacts to response surfaces such as
 `machineSelection`, `materialPlan`, `toolingPlan`, `fixturePlan`, `qualityPlan`,
-`postprocessPlan`, and `interventionMap`. Process catalog entries are draft
-operation sequencing contracts, not certified CAM, slicer, controller, fixture,
-or quality instructions; machine-ready release remains blocked until every
-process graph node has retained design, material, tooling, simulation, quality,
-intervention, and release-package evidence.
+`postprocessPlan`, and `interventionMap`. Process catalog entries are
+draft operation sequencing contracts, not certified CAM, slicer, controller,
+fixture, or quality instructions; machine-ready release remains blocked until
+every process graph node has retained design, material, tooling, simulation,
+quality, intervention, and release-package evidence.
 
 ## `GET /fabrication/materials/catalog`
 
@@ -2499,10 +2499,13 @@ envelope. The response focuses on `machineRelease.status`,
 `postprocessPlan.blockers`, `controllerPlan.compatibilityTargets`,
 `simulation.riskProfile`, operator intervention requirements,
 split/combine decisions, release-probe learning surfaces, and
-`manufacturingHandoff`. Release previews do not retain full plan jobs, publish
-controller code, or certify machine-ready artifacts; they keep
-`machineReady=false` while machine-release, controller, postprocess, simulation,
-setup, intervention, split/combine, schedule, or package gates remain blocked.
+`manufacturingHandoff`. Release previews are retained as compact
+`release-preview` jobs with machine-release, package, execution, simulation,
+operator-intervention, and policy-summary artifacts for later release-bundle
+inspection. They do not publish controller code or certify machine-ready
+artifacts; they keep `machineReady=false` while machine-release, controller,
+postprocess, simulation, setup, intervention, split/combine, schedule, or package
+gates remain blocked.
 
 ## `POST /fabrication/release/result`
 
