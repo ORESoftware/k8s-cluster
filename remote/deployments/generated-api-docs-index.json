@@ -220,10 +220,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 459,
+      "routeCount": 463,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 449,
+        "user-generated": 453,
         "runtime-config": 3
       },
       "generated": [
