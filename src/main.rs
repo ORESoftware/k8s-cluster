@@ -39,6 +39,7 @@ mod publishing;
 mod query_cache;
 mod question_nl;
 mod rbac;
+mod renderer_packages;
 mod self_service;
 mod semantic;
 mod sql_frontend;
@@ -106,6 +107,7 @@ struct Metrics {
     live_panel_frames_total: AtomicU64,
     platform_requests_total: AtomicU64,
     evidence_reports_compiled_total: AtomicU64,
+    renderer_client_packages_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
     connections_saved_total: AtomicU64,
@@ -597,6 +599,7 @@ fn app_router(state: AppState) -> Router {
         .route("/live/panels/:dataset_id", get(live_panel_stream))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
+        .route("/renderers/client-package", get(renderer_client_package))
         .route("/diagrams/tools", get(diagram_tool_catalog))
         .route("/diagrams/infra", post(generate_infra_diagram))
         .route("/reports/evidence", get(evidence_report_blueprint))
@@ -774,6 +777,7 @@ async fn descriptor(State(state): State<AppState>) -> Json<Value> {
             "etl": platform::etl_primitives(),
             "dashboardPanels": platform::dashboard_panel_catalog(),
             "rendererContracts": platform::renderer_contracts(),
+            "rendererClientPackage": renderer_packages::summary_payload(),
             "selfService": platform::self_service_surfaces()
         },
         "presentationLayers": ["powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"],
@@ -838,6 +842,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         },
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
+        },
+        "rendererClientPackage": {
+            "surfaces": ["generated TypeScript package blueprint", "D3 final-layer helper", "Plotly/Dash figure helper", "Evidence report helper", "infrastructure graph helper"],
+            "limits": renderer_packages::limits_payload(),
+            "posture": "static source package response; no user code is executed and no external package manager is called"
         },
         "evidenceReportCompiler": {
             "surfaces": ["bounded Markdown sections", "embedded SQL validation", "Evidence.dev chart components", "dataset dependency catalog"],
@@ -1046,6 +1055,9 @@ dd_data_viz_platform_requests_total {}
 # HELP dd_data_viz_evidence_reports_compiled_total Evidence-style Markdown reports compiled.
 # TYPE dd_data_viz_evidence_reports_compiled_total counter
 dd_data_viz_evidence_reports_compiled_total {}
+# HELP dd_data_viz_renderer_client_packages_total Renderer client packages generated.
+# TYPE dd_data_viz_renderer_client_packages_total counter
+dd_data_viz_renderer_client_packages_total {}
 # HELP dd_data_viz_hardening_requests_total Hardening policy requests handled.
 # TYPE dd_data_viz_hardening_requests_total counter
 dd_data_viz_hardening_requests_total {}
@@ -1162,6 +1174,9 @@ dd_data_viz_errors_total {}
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics
             .evidence_reports_compiled_total
+            .load(Ordering::Relaxed),
+        metrics
+            .renderer_client_packages_total
             .load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
@@ -1938,6 +1953,24 @@ async fn renderer_contracts(State(state): State<AppState>) -> Json<Value> {
         "rendererContracts": platform::renderer_contracts(),
         "presentationTargets": platform::presentation_targets()
     }))
+}
+
+async fn renderer_client_package(
+    State(state): State<AppState>,
+) -> Json<renderer_packages::RendererClientPackageResponse> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .renderer_client_packages_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(renderer_packages::client_package())
 }
 
 async fn generate_infra_diagram(
@@ -5162,6 +5195,12 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "GET",
+            path: "/renderers/client-package",
+            auth: "public",
+            description: "Generated TypeScript renderer client package blueprint for D3 final layers, Plotly/Dash figures, Evidence reports, and infrastructure graphs.",
+        },
+        RouteDoc {
+            method: "GET",
             path: "/diagrams/tools",
             auth: "public",
             description: "Catalog Terraform, AWS, GCP, diagram-as-code, whiteboard, web graph, graph analytics, spatial, and presentation infrastructure diagram tooling.",
@@ -6221,6 +6260,8 @@ mod tests {
         assert!(paths.contains(&"/workbooks/grid/page"));
         assert!(paths.contains(&"/observability/loki/frame"));
         assert!(paths.contains(&"/live/panels/:dataset_id"));
+        assert!(paths.contains(&"/renderers/contracts"));
+        assert!(paths.contains(&"/renderers/client-package"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
         assert!(paths.contains(&"/reports/evidence"));

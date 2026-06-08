@@ -15,15 +15,16 @@ This audit tracks the current hardening and visualization-platform parity postur
   `src/associative.rs`, semantic model parsing and compilation lives in `src/semantic.rs`, ETL flow
   planning lives in `src/etl.rs`, secretRef-backed data connection metadata lives in
   `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
-  Evidence-style report compilation lives in `src/evidence_reports.rs`, hardening posture lives in
-  `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard validation lives in
-  `src/dashboard.rs`, publishing approval validation lives in `src/publishing.rs`, Power BI-style
-  DAX expression parsing lives in `src/dax.rs`, self-service question/chart validation lives in
-  `src/self_service.rs`, natural-language question planning lives in `src/question_nl.rs`, SQL Lab
-  history validation lives in `src/sql_lab.rs`, query result cache bounds live in
-  `src/query_cache.rs`, Sigma-style workbook grid paging lives in `src/workbook_grid.rs`,
-  parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared helpers live in
-  `src/util.rs`, and the HTTP server wires those modules through route handlers.
+  Evidence-style report compilation lives in `src/evidence_reports.rs`, renderer client package
+  blueprints live in `src/renderer_packages.rs`, hardening posture lives in `src/hardening.rs`, RBAC
+  policy lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, publishing
+  approval validation lives in `src/publishing.rs`, Power BI-style DAX expression parsing lives in
+  `src/dax.rs`, self-service question/chart validation lives in `src/self_service.rs`,
+  natural-language question planning lives in `src/question_nl.rs`, SQL Lab history validation lives
+  in `src/sql_lab.rs`, query result cache bounds live in `src/query_cache.rs`, Sigma-style workbook
+  grid paging lives in `src/workbook_grid.rs`, parser-backed SQL compilation lives in
+  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
+  modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -102,6 +103,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Evidence-style Markdown reports compile through `POST /reports/evidence/compile`, validating
   embedded SQL against ingested datasets before returning Markdown, chart placeholders, and dataset
   dependency metadata.
+- Generated TypeScript renderer client package blueprints are exposed through
+  `GET /renderers/client-package`, including D3 final-layer helpers, Plotly/Dash figure helpers,
+  Evidence report helpers, infrastructure graph helpers, and deterministic file checksums.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -125,10 +129,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   in-memory role-gated connection/SQL-Lab/cache/question/chart/publishing catalog.
 - Grafana parity still needs external notification channel drivers and durable dispatch state beyond
   the current bounded in-memory outbox.
-- D3 and Plotly/Dash parity still need generated client packages and rendered artifact verification;
-  Evidence parity still needs repo build artifacts and scheduled publication; infrastructure
-  diagram parity still needs live cloud inventory connectors and richer cloud-native relationship
-  extraction beyond topology hints.
+- D3 and Plotly/Dash parity still need rendered artifact verification; Evidence parity still needs
+  repo build artifacts and scheduled publication; infrastructure diagram parity still needs live
+  cloud inventory connectors and richer cloud-native relationship extraction beyond topology hints.
 
 ## Hardening gaps
 

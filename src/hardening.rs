@@ -230,6 +230,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/evidence_reports.rs validates report structure; /reports/evidence/compile requires QueryExecute and compiles SQL blocks through the existing LogicalPlan parser before returning Markdown.",
         },
         ControlDescriptor {
+            id: "static-renderer-client-package",
+            status: "implemented",
+            description: "Renderer client package generation returns a fixed, bounded TypeScript source blueprint with per-file checksums and does not execute package-manager, build, or user-supplied code.",
+            evidence: "src/renderer_packages.rs emits D3, Plotly/Dash, Evidence, and infrastructure graph helper files through /renderers/client-package with static integrity metadata.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed across the expanded renderer bundle.",

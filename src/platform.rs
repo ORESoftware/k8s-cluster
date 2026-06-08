@@ -114,6 +114,11 @@ pub fn platform_capabilities_payload() -> Value {
         "etl": etl_primitives(),
         "dashboardPanels": dashboard_panel_catalog(),
         "rendererContracts": renderer_contracts(),
+        "rendererClientPackage": {
+            "route": "GET /renderers/client-package",
+            "moduleFormat": "typescript-esm",
+            "targets": ["D3 final layers", "Plotly/Dash figures", "Evidence reports", "infrastructure graphs"]
+        },
         "selfService": self_service_surfaces(),
         "presentationTargets": presentation_targets()
     })
@@ -291,9 +296,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "final-layer JSON",
                 "evolution-generated encodings",
                 "Terraform/HCL, Terraform plan, AWS, and GCP infrastructure diagram tool catalog",
+                "generated TypeScript renderer client package",
             ],
             next_engine_work: vec![
-                "generated TypeScript renderer package",
                 "SVG/canvas regression screenshots",
                 "animation/tween timeline specs",
             ],
@@ -306,12 +311,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "Plotly trace contract",
                 "3d surface/volume candidates",
                 "presentation layer export",
+                "generated TypeScript client package",
+                "Dash callback blueprint helper",
             ],
-            next_engine_work: vec![
-                "Dash callback blueprint export",
-                "scientific chart catalog",
-                "Python/R client bindings",
-            ],
+            next_engine_work: vec!["scientific chart catalog", "Python/R client bindings"],
         },
         ProductParity {
             product: "Evidence.dev",
@@ -322,6 +325,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "bounded Markdown report compiler",
                 "Reveal markdown export",
                 "SQL query examples",
+                "generated TypeScript report helper package",
             ],
             next_engine_work: vec!["repo build artifacts", "scheduled report publication"],
         },
