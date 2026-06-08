@@ -4158,10 +4158,17 @@ interlock, extraction, robot-cell, emergency-stop, restart, and human
 intervention reviewers. The response uses
 `dd.fabrication.safety-result-review.v1` and captures safety checks, interlock
 checks, emergency actions, retained artifacts, release blockers, warning counts,
-and MDP/POMDP/neural learning observations. The learning section includes a
+and a `priorityDispositions` array for machine-failure, human-intervention,
+split/combine or interface review, non-G-code/job-sheet evidence, and learning
+feedback lanes. Retained jobs include a `safety-priority-dispositions` artifact
+beside the safety checks, interlock checks, emergency actions, safety artifacts,
+and `safety-learning-observations`. The learning section includes a
 `dd.fabrication.safety-learning-outcome-draft.v1` `outcomeDraft` with safety
-family, hazard, interlock, emergency-action, artifact, stop-point, restart-review,
-and human-intervention hints ready for `POST /fabrication/learning/outcomes`.
+family, hazard, interlock, emergency-action, artifact, priority-disposition,
+stop-point, restart-review, and human-intervention hints ready for
+`POST /fabrication/learning/outcomes`. Safety priority observations such as
+`safety-priority:<priority>:<disposition>` let MDP/POMDP/neural workers learn
+which safety, interlock, restart, and operator-handoff blockers stopped release.
 
 Machine-ready and release-ready status remains blocked when hazards are not
 cleared, interlocks are not verified, stop points or restart reviews remain
@@ -4588,6 +4595,14 @@ profile and material/feedstock state, controller modal-state and postprocessor
 review, datum/probe/workholding records, inspection and traveler signoff,
 reward signals, boundary resolution actions, split/combine results, and
 human-intervention outcomes.
+
+The payload also includes a `releaseGateMatrix` crosswalk from the six
+how-it-works gate IDs to evidence families, required evidence, and blocked
+release surfaces: `source-provenance`, `machine-envelope`, `process-readiness`,
+`simulation-evidence`, `human-or-automation-handoff`, and
+`learning-disposition`. That lets CAD/CAM, slicer, controller, operator, and
+learning workers map evidence requirements to machine-ready blockers without
+scraping the human landing page.
 
 Evidence catalog entries are intake and review requirements, not certified
 shop-floor approval. `machineReady` remains false until required design,
