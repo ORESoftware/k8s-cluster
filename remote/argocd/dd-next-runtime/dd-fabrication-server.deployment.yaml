@@ -282,6 +282,7 @@ spec:
                 '"path": "/fabrication/safety/plan"' \
                 '"path": "/fabrication/safety/result"' \
                 '"path": "/fabrication/environment/catalog"' \
+                '"path": "/fabrication/environment/plan"' \
                 '"path": "/fabrication/environment/result"' \
                 '"path": "/fabrication/provenance/catalog"' \
                 '"path": "/fabrication/as-built/catalog"' \
