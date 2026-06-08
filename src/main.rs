@@ -13817,6 +13817,119 @@ fn validate_instruction_generation_result_blockers(
         .collect()
 }
 
+fn instruction_generation_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "instruction-generation-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn instruction_generation_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    artifact_count: usize,
+    blocker_count: usize,
+    missing_release_evidence: bool,
+) -> Vec<Value> {
+    vec![
+        instruction_generation_priority_disposition(
+            "generated-artifact-readiness",
+            if artifact_count == 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("artifactCount:{artifact_count}")],
+            vec![
+                "POST /fabrication/instructions/generation/result",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/release/result",
+            ],
+            if artifact_count == 0 {
+                "machineReady remains blocked until generated instruction artifacts are retained"
+            } else {
+                "generated instruction artifacts are present for downstream review"
+            },
+        ),
+        instruction_generation_priority_disposition(
+            "blocker-review-closure",
+            if blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("blockerCount:{blocker_count}")],
+            vec![
+                "POST /fabrication/instructions/review/result",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/release/result",
+            ],
+            if blocker_count > 0 {
+                "machineReady remains blocked until instruction-generation blockers are reviewed into remediation or release gates"
+            } else {
+                "instruction-generation worker did not report open blockers"
+            },
+        ),
+        instruction_generation_priority_disposition(
+            "release-evidence-retention",
+            if missing_release_evidence {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("missingReleaseEvidence:{missing_release_evidence}")],
+            vec![
+                "POST /fabrication/instructions/generation/result",
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/release/result",
+            ],
+            if missing_release_evidence {
+                "machineReady remains blocked until generated instruction artifacts carry URI, checksum, and evidence labels"
+            } else {
+                "generated instruction artifacts retain release evidence"
+            },
+        ),
+        instruction_generation_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked instruction-generation priorities before advisory promotion"
+            } else {
+                "instruction-generation result can be submitted as positive generated-instruction learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn instruction_generation_result_review_response(
     request: InstructionGenerationResultReviewRequest,
 ) -> Result<Value, String> {
@@ -13882,6 +13995,19 @@ fn instruction_generation_result_review_response(
     if release_blocked {
         learning_observations.push("instruction-generation:release-blocked".to_string());
     }
+    let priority_dispositions = instruction_generation_priority_dispositions(
+        request.success,
+        release_blocked,
+        artifacts.len(),
+        blockers.len(),
+        missing_release_evidence,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(blockers.iter().filter_map(|blocker| {
         blocker
             .get("code")
@@ -13923,6 +14049,7 @@ fn instruction_generation_result_review_response(
         "blockerCount": blockers.len(),
         "warningCount": warnings.len(),
         "missingReleaseEvidence": missing_release_evidence,
+        "priorityDispositions": priority_dispositions.clone(),
         "instructionGenerationResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -13982,6 +14109,7 @@ fn instruction_generation_result_review_response(
                     format!("blocker-count:{}", blockers.len()),
                     format!("missing-release-evidence:{missing_release_evidence}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -13993,6 +14121,7 @@ fn instruction_generation_result_review_response(
             "controller-plan",
             "execution-plan",
             "release-package-plan",
+            "instruction-generation-priority-dispositions",
             "mdp-request.artifacts.generatedPrograms"
         ],
         "releasePolicy": [
@@ -14053,6 +14182,10 @@ fn stored_instruction_generation_result_job(response: &Value) -> StoredFabricati
         .get("releaseUpdate")
         .cloned()
         .unwrap_or_else(|| json!({}));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -14087,6 +14220,12 @@ fn stored_instruction_generation_result_job(response: &Value) -> StoredFabricati
             "instruction-generation-release-update".to_string(),
             "instruction-generation-release-update",
             release_update,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-generation-priority-dispositions".to_string(),
+            "instruction-generation-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -61419,6 +61558,17 @@ fn how_it_works_response() -> Value {
             "methods": ["MDP", "POMDP", "DES", "neural policy evidence", "reward replay"],
             "promotionRule": "policy recommendations cannot promote to machine-ready release without retained evidence and cleared blockers"
         },
+        "priorityDispositionContract": {
+            "responseSurface": "priorityDispositions",
+            "appliesTo": [
+                "worker result review routes",
+                "machine-code, simulation, remediation, interface, release, and learning handoffs",
+                "human-intervention and split/combine boundary closure"
+            ],
+            "dispositions": ["blocked", "needs-review", "closed", "pending-blocker-resolution", "ready-for-learning"],
+            "learningObservationShape": "<family>:<priority>:<disposition>",
+            "releaseRule": "blocked and pending-blocker-resolution priority dispositions keep machineReady false until retained evidence clears the matching release gate"
+        },
         "humanPage": "/fabrication/landing",
         "docs": "/api/docs"
     })
@@ -61598,6 +61748,11 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <li><strong>Human or automation handoff</strong><br>Required operator interventions, split/combine joins, and restart steps are signed off.</li>
         <li><strong>Learning disposition</strong><br>MDP/POMDP/DES/neural recommendations remain advisory until retained outcomes support promotion.</li>
       </ul>
+    </section>
+
+    <section>
+      <h2>Priority Dispositions</h2>
+      <p>Worker result routes publish <code>priorityDispositions</code> so review workers can see which evidence lanes are blocked, need review, are closed, or are ready for learning. Blocked and <code>pending-blocker-resolution</code> dispositions keep <code>machineReady</code> false until the matching release gate has retained evidence.</p>
     </section>
 
     <p class="note">Start with <a href="/docs/api">API docs</a>, <a href="/fabrication/capabilities">capabilities</a>, <a href="/fabrication/intake/catalog">intake guide</a>, <a href="/fabrication/templates/catalog">request templates</a>, <a href="/fabrication/schema">schema</a>, or <a href="/fabrication/examples">examples</a>. This service produces planning and evidence packets; machine-ready release stays gated until validation, simulation, controller/postprocessor review, setup, quality, and signoff evidence clear.</p>
@@ -118292,6 +118447,9 @@ mod tests {
             "Simulation evidence",
             "Human or automation handoff",
             "Learning disposition",
+            "Priority Dispositions",
+            "priorityDispositions",
+            "pending-blocker-resolution",
             "3D printing",
             "CNC mills and routers",
             "CAM intermediate files such as APT/CLDATA",
@@ -118377,6 +118535,9 @@ mod tests {
             "machineReady remains false",
             "POST /fabrication/interventions/result",
             "unattended repeat-run release",
+            "priorityDispositionContract",
+            "<family>:<priority>:<disposition>",
+            "pending-blocker-resolution",
         ] {
             assert!(
                 payload_text.contains(expected),
@@ -123422,6 +123583,64 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|observation| {
                 observation.as_str() == Some("instruction-generation-generator:orca-slicer")
             })));
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("instruction generation observations should be retained");
+        for expected in [
+            "instruction-generation-priority:generated-artifact-readiness:closed",
+            "instruction-generation-priority:blocker-review-closure:closed",
+            "instruction-generation-priority:release-evidence-retention:closed",
+            "instruction-generation-priority:learning-feedback-after-disposition:ready-for-learning",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing instruction-generation learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("instruction generation priority dispositions should be retained");
+        for expected in [
+            (
+                "generated-artifact-readiness",
+                "closed",
+                "instruction-generation-priority:generated-artifact-readiness:closed",
+            ),
+            (
+                "blocker-review-closure",
+                "closed",
+                "instruction-generation-priority:blocker-review-closure:closed",
+            ),
+            (
+                "release-evidence-retention",
+                "closed",
+                "instruction-generation-priority:release-evidence-retention:closed",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "ready-for-learning",
+                "instruction-generation-priority:learning-feedback-after-disposition:ready-for-learning",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing instruction generation priority disposition {}",
+                expected.0
+            );
+        }
         let outcome_draft = payload
             .pointer("/learning/outcomeDraft")
             .expect("instruction generation learning outcome draft");
@@ -123463,6 +123682,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("blocker-count:0"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("generated-artifact-readiness")
+            })));
         let job = stored_instruction_generation_result_job(&payload);
         assert_eq!(job.record.kind, "instruction-generation-result");
         assert!(job.artifacts.contains_key("instruction-generation-result"));
@@ -123472,6 +123698,9 @@ mod tests {
         assert!(job
             .artifacts
             .contains_key("instruction-generation-release-update"));
+        assert!(job
+            .artifacts
+            .contains_key("instruction-generation-priority-dispositions"));
         assert!(job
             .artifacts
             .contains_key("instruction-generation-learning-observations"));

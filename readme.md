@@ -1911,12 +1911,17 @@ The response exposes `instructionGenerationResult`, `generationResultJobId`,
 the request/queue/result subjects for the instruction-generation worker lane,
 and a `dd.fabrication.instruction-generation-learning-outcome-draft.v1` payload
 with generator, artifact format, target, blocker, evidence, reward, and
-submit-route hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded job ledger under
+submit-route hints for `POST /fabrication/learning/outcomes`, plus a
+`priorityDispositions` array for generated artifact readiness, blocker review
+closure, retained release evidence, and learning-feedback lanes.
+`instruction-generation-priority:<priority>:<disposition>` observations are
+mirrored into the learning draft. Successful reviews are retained in the bounded job ledger under
 `generationResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `instruction-generation-result`, `instruction-generation-artifacts`,
 `instruction-generation-blockers`, `instruction-generation-warnings`,
-`instruction-generation-release-update`, and
+`instruction-generation-release-update`,
+`instruction-generation-priority-dispositions`, and
 `instruction-generation-learning-observations`. Machine-ready release remains
 blocked until generated artifacts are retained with checksums, worker evidence
 is attached to controller/slicer/setup/simulation/inspection targets, blockers
@@ -5031,6 +5036,9 @@ for source provenance, machine envelope, process readiness, simulation evidence,
 human or automation handoff, and learning disposition so generated designs,
 toolpaths, slicer plans, G-code, controller programs, and text job-sheet
 interpretations are visibly advisory until the release packet proves each gate.
+It also calls out `priorityDispositions`, the result-review lanes that mark
+blocked, needs-review, closed, pending-blocker-resolution, and ready-for-learning
+states before any machine-ready release.
 
 ## `GET /fabrication/how-it-works`
 
@@ -5056,6 +5064,11 @@ The `learningContract` section identifies
 local DES primitive source and keeps MDP, POMDP, DES, neural-policy evidence,
 reward replay, and policy promotion advisory until replay, simulation, retained
 evidence, and release blockers clear.
+The `priorityDispositionContract` section names the shared
+`priorityDispositions` response surface, the
+`<family>:<priority>:<disposition>` learning-observation shape, and the rule
+that blocked or pending-blocker-resolution lanes keep `machineReady=false` until
+retained evidence clears the matching release gate.
 
 ## `GET /fabrication/intake/catalog`
 
