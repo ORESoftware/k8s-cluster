@@ -95138,10 +95138,14 @@ async fn instruction_import_preflight_catalog_http() -> impl IntoResponse {
 }
 
 async fn instruction_import_review_http(
+    State(state): State<AppState>,
     Json(request): Json<InstructionImportReviewRequest>,
 ) -> Response {
     match instruction_import_review_response(request) {
-        Ok(response) => Json(response).into_response(),
+        Ok(response) => {
+            store_instruction_import_review_response(&state, &response);
+            Json(response).into_response()
+        }
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "ok": false, "error": error })),
@@ -95214,6 +95218,7 @@ fn instruction_import_review_response(
     } else {
         "imported-instructions-ready-for-release-review"
     };
+    let generated_at_ms = analysis.generated_at_ms;
 
     Ok(json!({
         "ok": analysis.ok,
@@ -95222,6 +95227,7 @@ fn instruction_import_review_response(
         "serviceSchemaVersion": SCHEMA_VERSION,
         "requestId": &analysis.request_id,
         "jobId": &analysis.job_id,
+        "generatedAtMs": generated_at_ms,
         "routes": [
             "POST /instructions/import/review",
             "POST /fabrication/instructions/import/review"
@@ -95343,6 +95349,140 @@ fn instruction_import_review_response(
             "learning": &analysis.learning
         }
     }))
+}
+
+fn instruction_import_review_job_severity(response: &Value) -> String {
+    let status = response_str_field(response, "status", "");
+    let import_release_blocked = response
+        .get("importReleaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    if status.contains("boundary-review-required") {
+        "error".to_string()
+    } else if import_release_blocked {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_instruction_import_review_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "instruction-import-review");
+    let job_id = response_str_field(
+        response,
+        "jobId",
+        &safe_job_id("instruction-import-review", &request_id, generated_at_ms),
+    );
+    let status = response_str_field(response, "status", "instruction-import-review");
+    let import_release_blocked = response
+        .get("importReleaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let analysis = response.get("analysis").cloned().unwrap_or(Value::Null);
+    let package_actions = response
+        .get("packageActions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let validation = analysis
+        .get("validation")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let boundary_summary = analysis
+        .get("boundarySummary")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let machine_release = analysis
+        .get("machineRelease")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let improved_programs = analysis
+        .get("improvedPrograms")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let learning_observations = response
+        .get("learning")
+        .and_then(|learning| learning.get("observations"))
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let artifacts = vec![
+        json_artifact(
+            "instruction-import-review".to_string(),
+            "instruction-import-review",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-analysis".to_string(),
+            "instruction-import-analysis",
+            analysis,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-package-actions".to_string(),
+            "instruction-import-package-actions",
+            package_actions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-validation".to_string(),
+            "instruction-import-validation",
+            validation,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-boundary-summary".to_string(),
+            "instruction-import-boundary-summary",
+            boundary_summary,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-machine-release".to_string(),
+            "instruction-import-machine-release",
+            machine_release,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-improved-programs".to_string(),
+            "instruction-import-improved-programs",
+            improved_programs,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-import-learning-observations".to_string(),
+            "instruction-import-learning-observations",
+            learning_observations,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "instruction-import-review".to_string(),
+            status: status.clone(),
+            ok: !import_release_blocked,
+            severity: instruction_import_review_job_severity(response),
+            summary: format!("instruction import review: {status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_instruction_import_review_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_import_review_job(response));
 }
 
 fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
@@ -115656,6 +115796,10 @@ mod tests {
             Some("dd.fabrication.instruction-import-review.v1")
         );
         assert!(response
+            .get("generatedAtMs")
+            .and_then(Value::as_u64)
+            .is_some_and(|generated_at_ms| generated_at_ms > 0));
+        assert!(response
             .get("routes")
             .and_then(Value::as_array)
             .is_some_and(|routes| routes.iter().any(|route| {
@@ -115698,6 +115842,21 @@ mod tests {
             .and_then(|release| release.get("blockers"))
             .and_then(Value::as_array)
             .is_some_and(|blockers| !blockers.is_empty()));
+
+        let stored = stored_instruction_import_review_job(&response);
+        assert_eq!(stored.record.kind, "instruction-import-review");
+        assert_eq!(
+            stored.record.status,
+            "imported-instructions-boundary-review-required"
+        );
+        assert_eq!(stored.record.severity, "error");
+        assert!(stored.artifacts.contains_key("instruction-import-review"));
+        assert!(stored
+            .artifacts
+            .contains_key("instruction-import-machine-release"));
+        assert!(stored
+            .artifacts
+            .contains_key("instruction-import-learning-observations"));
     }
 
     #[test]
