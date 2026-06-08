@@ -4356,7 +4356,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"interventionResult"/);
   assert.match(source, /intervention-operator-actions/);
   assert.match(source, /intervention-automation-handoffs/);
+  assert.match(source, /fn intervention_priority_dispositions/);
+  assert.match(source, /intervention-priority-dispositions/);
   assert.match(source, /intervention-learning-observations/);
+  assert.match(source, /intervention-priority:machine-failure-boundary-first:blocked/);
   assert.match(
     source,
     /intervention_result_endpoint_reviews_operator_automation_and_learning/,
@@ -4601,6 +4604,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"capabilityFamilyHints"/);
   assert.match(source, /"alternateRouteHints"/);
   assert.match(source, /process-capability-result-findings-release-blocked/);
+  assert.match(source, /fn process_capability_priority_dispositions/);
+  assert.match(source, /"process-capability-priority-dispositions"/);
+  assert.match(source, /process-capability-priority:machine-failure-boundary-first:blocked/);
   assert.match(
     source,
     /process_capability_result_endpoint_reviews_routes_measurements_and_learning/,
@@ -6535,6 +6541,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.process-capability-result-review\.v1/);
   assert.match(readme, /dd\.fabrication\.process-capability-learning-outcome-draft\.v1/);
   assert.match(readme, /process-capability-alternate-routes/);
+  assert.match(readme, /`priorityDispositions`/);
+  assert.match(readme, /`process-capability-priority-dispositions`/);
+  assert.match(readme, /`process-capability-priority:<priority>:<disposition>`/);
   assert.match(readme, /process-capability-learning-observations/);
   assert.match(readme, /capability-family, capability-scope, alternate-route/);
   assert.match(readme, /printer, mill, lathe, sheet-cut, or hybrid routes/);
@@ -7441,6 +7450,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`POST \/fabrication\/interventions\/result`/);
   assert.match(readme, /dd\.fabrication\.intervention-result-review\.v1/);
   assert.match(readme, /operator actions are incomplete/);
+  assert.match(readme, /`priorityDispositions` array/);
+  assert.match(readme, /intervention-priority-dispositions/);
+  assert.match(readme, /`intervention-priority:<priority>:<disposition>`/);
   assert.match(readme, /intervention-automation-handoffs/);
   assert.match(readme, /dd\.fabrication\.intervention-learning-outcome-draft\.v1/);
   assert.match(readme, /`GET \/setup\/catalog`/);

@@ -3492,14 +3492,21 @@ intervention gate is attempted or cleared.
 The review blocks machine-ready release when operator actions are incomplete,
 automation handoffs are unverified or require fallback, split/combine interface
 or recomposition evidence is missing, evidence gates are unacknowledged, or
-retained artifacts lack URI, checksum, format, and evidence labels. Accepted
-responses store `intervention-result`, `intervention-operator-actions`,
+retained artifacts lack URI, checksum, format, and evidence labels. The response
+also includes a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface, non-G-code/job-sheet evidence,
+and learning-feedback lanes. Accepted responses store `intervention-result`,
+`intervention-operator-actions`,
 `intervention-automation-handoffs`, `intervention-split-combine-reviews`,
 `intervention-evidence-gates`, `intervention-artifacts`, and
-`intervention-learning-observations` artifacts. They also emit
+`intervention-priority-dispositions`, and `intervention-learning-observations`
+artifacts. They also emit
 `dd.fabrication.intervention-learning-outcome-draft.v1` so MDP/POMDP/neural
 workers can learn which human checkpoints, automation substitutions,
-split/combine reviews, and restart paths cleared or blocked release.
+split/combine reviews, and restart paths cleared or blocked release. Learning
+observations include `intervention-priority:<priority>:<disposition>` signals
+so blocked operator, automation, evidence, and recomposition lanes can train
+future routing decisions.
 
 ## `GET /fabrication/setup/catalog`
 
@@ -3988,12 +3995,14 @@ capability outcomes from printability, tool-access, workholding, kerf/pierce,
 turning, and hybrid split/combine reviewers. The response uses
 `dd.fabrication.process-capability-result-review.v1` and captures capability
 findings, alternate route decisions, measured coupon or first-article results,
-retained artifacts, release blockers, warning counts, and MDP/POMDP/neural
+retained artifacts, release blockers, warning counts, a `priorityDispositions`
+array for machine-failure, human-intervention, split/combine or interface,
+non-G-code/job-sheet evidence, and learning-feedback lanes, plus MDP/POMDP/neural
 learning observations. The learning section also emits a
 `dd.fabrication.process-capability-learning-outcome-draft.v1` `outcomeDraft`
 with capability-family, capability-scope, alternate-route, measurement,
-artifact, split/combine, redesign, human-intervention, blocker, reward, and
-submit-route hints for `POST /fabrication/learning/outcomes`.
+artifact, priority-disposition, split/combine, redesign, human-intervention,
+blocker, reward, and submit-route hints for `POST /fabrication/learning/outcomes`.
 
 Machine-ready and release-ready status remains blocked when requested geometry
 exceeds a reviewed process envelope, alternate routes are not accepted,
@@ -4001,10 +4010,12 @@ measurements are out of limits, retained artifact evidence is missing, or the
 job still requires redesign, split/combine planning, or human intervention. The
 result is stored with `process-capability-result`,
 `process-capability-findings`, `process-capability-alternate-routes`,
-`process-capability-measurements`, `process-capability-artifacts`, and
+`process-capability-measurements`, `process-capability-artifacts`,
+`process-capability-priority-dispositions`, and
 `process-capability-learning-observations` artifacts so future planners can
 learn which printer, mill, lathe, sheet-cut, or hybrid routes actually made the
-requested part releasable.
+requested part releasable. Capability observations include
+`process-capability-priority:<priority>:<disposition>` signals.
 
 ## `GET /fabrication/manufacturability/catalog`
 
