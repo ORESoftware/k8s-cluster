@@ -2332,7 +2332,11 @@ observations for downstream MDP/POMDP/neural outcome memory. It also includes a
 `dd.fabrication.boundary-remediation-learning-outcome-draft.v1` payload with
 remediator, action, boundary, blocker, artifact, validation/simulation evidence,
 human-signoff, reward, and submit-route hints for
-`POST /fabrication/learning/outcomes`.
+`POST /fabrication/learning/outcomes`, plus a `priorityDispositions` array for
+remediation-action closure, release-blocker disposition, human-signoff,
+validation/simulation proof, retained artifact evidence, and learning-feedback
+lanes. `boundary-remediation-priority:<priority>:<disposition>` observations are
+mirrored into the learning draft.
 
 The result route is still a review gate, not a machine certification. Even when a
 worker reports success, `machineReady=false` and `releaseBlocked=true` remain in
@@ -2535,12 +2539,17 @@ The response exposes `interfaceResult`, `interfaceResultJobId`, `generatedAtMs`,
 `missingArtifactEvidenceCount`. It also includes a
 `dd.fabrication.interface-learning-outcome-draft.v1` payload with interface,
 join, split/combine, artifact, human-intervention, reward, and submit-route
-hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained
-in the bounded job ledger under `interfaceResultJobId`; `/jobs/:job_id` and
+hints for `POST /fabrication/learning/outcomes`, plus a
+`priorityDispositions` array for fit/datum, join, split/combine,
+human-intervention, retained artifact evidence, and learning-feedback lanes.
+`interface-priority:<priority>:<disposition>` observations are mirrored into the
+learning draft. Successful reviews are retained in the bounded job ledger under
+`interfaceResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `interface-result`,
 `interface-checks`, `interface-join-evidence`,
-`interface-split-combine-decisions`, `interface-artifacts`, and
-`interface-learning-observations`. Machine-ready release remains blocked until
+`interface-split-combine-decisions`, `interface-artifacts`,
+`interface-priority-dispositions`, and `interface-learning-observations`.
+Machine-ready release remains blocked until
 datum transfer, fit, join recipe, operator or automation proof, split/combine
 decision, and artifact evidence clear. Result observations include
 `interface-kind:*`, `interface-join:*`, `interface-split-combine:*`, and

@@ -16883,6 +16883,175 @@ fn boundary_remediation_result_artifact_missing_release_evidence(artifact: &Valu
             .is_none_or(Vec::is_empty)
 }
 
+fn boundary_remediation_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "boundary-remediation-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn boundary_remediation_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    action_blocker_count: usize,
+    missing_action_evidence_count: usize,
+    release_blocker_count: usize,
+    human_signoff_required_count: usize,
+    artifact_evidence_missing: bool,
+    validation_evidence_missing: bool,
+    simulation_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        boundary_remediation_priority_disposition(
+            "remediation-action-closure",
+            if action_blocker_count > 0 || missing_action_evidence_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("actionBlockerCount:{action_blocker_count}"),
+                format!("missingActionEvidenceCount:{missing_action_evidence_count}"),
+            ],
+            vec![
+                "POST /fabrication/remediation/result",
+                "POST /fabrication/instructions/validation/result",
+                "POST /fabrication/release/result",
+            ],
+            if action_blocker_count > 0 || missing_action_evidence_count > 0 {
+                "machineReady remains blocked until remediation actions are completed and carry retained evidence"
+            } else {
+                "remediation actions did not report an open closure blocker"
+            },
+        ),
+        boundary_remediation_priority_disposition(
+            "release-blocker-disposition",
+            if release_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("releaseBlockerCount:{release_blocker_count}")],
+            vec![
+                "POST /fabrication/remediation/result",
+                "POST /fabrication/release/preview",
+                "POST /fabrication/release/result",
+            ],
+            if release_blocker_count > 0 {
+                "machineReady remains blocked until remediation release blockers are explicitly dispositioned"
+            } else {
+                "remediation result did not retain open release blockers"
+            },
+        ),
+        boundary_remediation_priority_disposition(
+            "human-signoff-required",
+            if human_signoff_required_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanSignoffRequiredCount:{human_signoff_required_count}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/remediation/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_signoff_required_count > 0 {
+                "machineReady remains blocked until operator or automation signoff clears remediated boundaries"
+            } else {
+                "remediation result did not require human signoff"
+            },
+        ),
+        boundary_remediation_priority_disposition(
+            "validation-simulation-proof",
+            if validation_evidence_missing || simulation_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("validationEvidenceMissing:{validation_evidence_missing}"),
+                format!("simulationEvidenceMissing:{simulation_evidence_missing}"),
+            ],
+            vec![
+                "POST /fabrication/instructions/validation/result",
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/remediation/result",
+            ],
+            if validation_evidence_missing || simulation_evidence_missing {
+                "machineReady remains blocked until validation and simulation or dry-run proof show the remediated boundary is clear"
+            } else {
+                "remediation result retained validation and simulation proof"
+            },
+        ),
+        boundary_remediation_priority_disposition(
+            "result-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/remediation/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until remediated artifacts retain URI, checksum, and boundary evidence"
+            } else {
+                "remediation result artifacts include retained release evidence"
+            },
+        ),
+        boundary_remediation_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked remediation priorities before advisory promotion"
+            } else {
+                "remediation result can be submitted as positive boundary-repair learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn boundary_remediation_result_review_response(
     request: BoundaryRemediationResultReviewRequest,
 ) -> Result<Value, String> {
@@ -17019,6 +17188,23 @@ fn boundary_remediation_result_review_response(
     if human_signoff_required_count > 0 {
         learning_observations.push("remediation-result:human-signoff-required".to_string());
     }
+    let priority_dispositions = boundary_remediation_priority_dispositions(
+        request.success,
+        release_blocked,
+        action_blocker_count,
+        missing_action_evidence_count,
+        release_blockers.len(),
+        human_signoff_required_count,
+        artifact_evidence_missing,
+        validation_evidence_missing,
+        simulation_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(actions.iter().filter_map(|action| {
         action
             .get("actionId")
@@ -17119,6 +17305,7 @@ fn boundary_remediation_result_review_response(
         "releaseBlockerCount": release_blockers.len(),
         "humanSignoffRequiredCount": human_signoff_required_count,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "boundaryRemediationResult": {
             "planRequestId": plan_request_id,
             "analysisJobId": analysis_job_id,
@@ -17199,6 +17386,7 @@ fn boundary_remediation_result_review_response(
                     format!("validation-evidence-missing:{validation_evidence_missing}"),
                     format!("simulation-evidence-missing:{simulation_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -17209,6 +17397,7 @@ fn boundary_remediation_result_review_response(
             "remediation-result-release-blockers",
             "remediation-result-validation-evidence",
             "remediation-result-simulation-evidence",
+            "remediation-result-priority-dispositions",
             "remediation-result-learning-observations",
             "validation-result-report",
             "simulation-or-dry-run-report",
@@ -17275,6 +17464,10 @@ fn stored_boundary_remediation_result_job(response: &Value) -> StoredFabrication
         .get("simulationEvidence")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -17315,6 +17508,12 @@ fn stored_boundary_remediation_result_job(response: &Value) -> StoredFabrication
             "remediation-result-simulation-evidence".to_string(),
             "remediation-result-simulation-evidence",
             simulation_evidence,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "remediation-result-priority-dispositions".to_string(),
+            "remediation-result-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -20460,6 +20659,132 @@ fn interface_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn interface_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "interface-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn interface_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    interface_blocker_count: usize,
+    join_blocker_count: usize,
+    decision_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    let recomposition_blocked =
+        interface_blocker_count > 0 || join_blocker_count > 0 || decision_blocker_count > 0;
+
+    vec![
+        interface_priority_disposition(
+            "interface-fit-and-datum-first",
+            if recomposition_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("interfaceBlockerCount:{interface_blocker_count}"),
+                format!("joinBlockerCount:{join_blocker_count}"),
+                format!("splitCombineBlockerCount:{decision_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/result",
+                "POST /fabrication/release/result",
+            ],
+            if recomposition_blocked {
+                "machineReady remains blocked until fit, datum, join, and split/combine interface evidence is dispositioned"
+            } else {
+                "interface result did not report an open recomposition boundary"
+            },
+        ),
+        interface_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator or automation signoff clears interface fit, join, or recomposition gates"
+            } else {
+                "interface result did not report an open human-intervention priority blocker"
+            },
+        ),
+        interface_priority_disposition(
+            "result-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until interface result artifacts retain URI, checksum, and recomposition evidence"
+            } else {
+                "interface result artifacts include retained release evidence for downstream review"
+            },
+        ),
+        interface_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked interface priorities before advisory promotion"
+            } else {
+                "interface result can be submitted as positive recomposition learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn interface_result_review_response(
     request: InterfaceResultReviewRequest,
 ) -> Result<Value, String> {
@@ -20552,6 +20877,21 @@ fn interface_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("interface-result:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = interface_priority_dispositions(
+        request.success,
+        release_blocked,
+        interface_blocker_count,
+        join_blocker_count,
+        decision_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(interfaces.iter().filter_map(|check| {
         check
             .get("interfaceKind")
@@ -20612,6 +20952,7 @@ fn interface_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "interfaceResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -20678,6 +21019,7 @@ fn interface_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -20687,6 +21029,7 @@ fn interface_result_review_response(
             "interface-join-evidence",
             "interface-split-combine-decisions",
             "interface-artifacts",
+            "interface-priority-dispositions",
             "interface-learning-observations",
             "interface-control-plan",
             "assembly-plan",
@@ -20758,6 +21101,10 @@ fn stored_interface_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "interface-result".to_string(),
@@ -20787,6 +21134,12 @@ fn stored_interface_result_job(response: &Value) -> StoredFabricationJob {
             "interface-artifacts".to_string(),
             "interface-artifacts",
             interface_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "interface-priority-dispositions".to_string(),
+            "interface-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -126908,6 +127261,70 @@ mod tests {
                     .is_some_and(|observation| observation
                         == "remediation-result-action:rerun-dry-run-after-patch"))
             ));
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("boundary remediation learning observations should be retained");
+        for expected in [
+            "boundary-remediation-priority:remediation-action-closure:blocked",
+            "boundary-remediation-priority:release-blocker-disposition:blocked",
+            "boundary-remediation-priority:human-signoff-required:blocked",
+            "boundary-remediation-priority:validation-simulation-proof:blocked",
+            "boundary-remediation-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing boundary remediation learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("boundary remediation priority dispositions should be present");
+        for expected in [
+            (
+                "remediation-action-closure",
+                "blocked",
+                "boundary-remediation-priority:remediation-action-closure:blocked",
+            ),
+            (
+                "release-blocker-disposition",
+                "blocked",
+                "boundary-remediation-priority:release-blocker-disposition:blocked",
+            ),
+            (
+                "human-signoff-required",
+                "blocked",
+                "boundary-remediation-priority:human-signoff-required:blocked",
+            ),
+            (
+                "validation-simulation-proof",
+                "blocked",
+                "boundary-remediation-priority:validation-simulation-proof:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "boundary-remediation-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing boundary remediation priority disposition {}",
+                expected.0
+            );
+        }
         assert!(payload
             .get("artifactSurfaces")
             .and_then(Value::as_array)
@@ -126953,6 +127370,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("simulation-evidence-missing:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("validation-simulation-proof")
+            })));
 
         let job = stored_boundary_remediation_result_job(&payload);
         assert_eq!(job.record.kind, "boundary-remediation-result");
@@ -126964,6 +127388,7 @@ mod tests {
             "remediation-result-release-blockers",
             "remediation-result-validation-evidence",
             "remediation-result-simulation-evidence",
+            "remediation-result-priority-dispositions",
             "remediation-result-learning-observations",
         ] {
             assert!(
@@ -128251,6 +128676,9 @@ mod tests {
             .expect("interface learning observations should be retained");
         for expected in [
             "interface-result:human-intervention-required",
+            "interface-priority:interface-fit-and-datum-first:blocked",
+            "interface-priority:human-intervention-required:blocked",
+            "interface-priority:learning-feedback-after-disposition:pending-blocker-resolution",
             "interface-kind:printed-machined-press-fit",
             "interface-join:press-fit-insert",
             "interface-split-combine:combine-after-ream-and-fit-check",
@@ -128261,6 +128689,41 @@ mod tests {
                     .iter()
                     .any(|observation| observation.as_str() == Some(expected)),
                 "missing interface learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("interface priority dispositions should be retained");
+        for expected in [
+            (
+                "interface-fit-and-datum-first",
+                "blocked",
+                "interface-priority:interface-fit-and-datum-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "interface-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "interface-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing interface priority disposition {}",
+                expected.0
             );
         }
         let outcome_draft = payload
@@ -128292,6 +128755,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("join-blockers:1"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("interface-fit-and-datum-first")
+            })));
 
         let interface_result_job_id = payload
             .get("interfaceResultJobId")
@@ -128313,6 +128783,7 @@ mod tests {
             "interface-join-evidence",
             "interface-split-combine-decisions",
             "interface-artifacts",
+            "interface-priority-dispositions",
             "interface-learning-observations",
         ] {
             assert!(
