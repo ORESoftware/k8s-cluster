@@ -62192,6 +62192,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/environment/result",
         "GET /provenance/catalog",
         "GET /fabrication/provenance/catalog",
+        "POST /provenance/plan",
+        "POST /fabrication/provenance/plan",
         "GET /as-built/catalog",
         "GET /fabrication/as-built/catalog",
         "POST /as-built/result",
@@ -94597,6 +94599,8 @@ fn provenance_catalog_response() -> Value {
         "machineKinds": machine_kinds,
         "evidenceScopes": evidence_scopes,
         "planningRoutes": [
+            "POST /provenance/plan",
+            "POST /fabrication/provenance/plan",
             "POST /design/import/review",
             "POST /fabrication/design/import/review",
             "POST /instructions/validate",
@@ -94642,6 +94646,214 @@ fn provenance_catalog_response() -> Value {
 
 async fn provenance_catalog_http() -> impl IntoResponse {
     Json(provenance_catalog_response())
+}
+
+fn provenance_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let provenance_blocked = response.design_input_review.review_required_count > 0
+        || response.design_exports.summary.blocked_exports > 0
+        || response
+            .generated_programs
+            .iter()
+            .any(|program| program.draft)
+        || response
+            .generated_programs
+            .iter()
+            .any(|program| !program.machine_ready)
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || response.boundary_summary.human_intervention_required > 0
+        || !response.validation.failure_boundaries.is_empty();
+    let generated_draft_count = response
+        .generated_programs
+        .iter()
+        .filter(|program| program.draft)
+        .count();
+    let generated_non_ready_count = response
+        .generated_programs
+        .iter()
+        .filter(|program| !program.machine_ready)
+        .count();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.provenance-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /provenance/plan", "POST /fabrication/provenance/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /provenance/catalog",
+            "GET /fabrication/provenance/catalog",
+            "GET /formats/catalog",
+            "GET /fabrication/formats/catalog",
+            "GET /artifacts/catalog",
+            "GET /fabrication/artifacts/catalog",
+            "GET /packages/catalog",
+            "GET /fabrication/packages/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /provenance/result",
+            "POST /fabrication/provenance/result",
+            "POST /design/import/result",
+            "POST /fabrication/design/import/result",
+            "POST /instructions/generation/result",
+            "POST /fabrication/instructions/generation/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!provenance_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(provenance_blocked),
+    );
+    object.insert(
+        "designInputCount".to_string(),
+        json!(response.design_input_review.input_count),
+    );
+    object.insert(
+        "designInputReviewRequiredCount".to_string(),
+        json!(response.design_input_review.review_required_count),
+    );
+    object.insert(
+        "conversionBlockerCount".to_string(),
+        json!(response
+            .design_input_review
+            .conversion_plan
+            .iter()
+            .map(|step| step.release_blockers.len())
+            .sum::<usize>()),
+    );
+    object.insert(
+        "designExportCount".to_string(),
+        json!(response.design_exports.summary.export_count),
+    );
+    object.insert(
+        "blockedDesignExportCount".to_string(),
+        json!(response.design_exports.summary.blocked_exports),
+    );
+    object.insert(
+        "generatedProgramCount".to_string(),
+        json!(response.generated_programs.len()),
+    );
+    object.insert(
+        "draftProgramCount".to_string(),
+        json!(generated_draft_count),
+    );
+    object.insert(
+        "nonReadyProgramCount".to_string(),
+        json!(generated_non_ready_count),
+    );
+    object.insert(
+        "releasePackageRequiredArtifactCount".to_string(),
+        json!(response.release_package_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "designInputReview.inputs",
+            "designInputReview.conversionPlan",
+            "designPackage.parts",
+            "designExports.partExports",
+            "generatedPrograms",
+            "instructionPrograms",
+            "materialPlan.routeRequirements",
+            "qualityPlan.measurementTargets",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "provenance-plan",
+            "provenance-catalog",
+            "design-package",
+            "design-export-bundle",
+            "machine-code-package",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.provenanceLedger"
+        ]),
+    );
+    object.insert(
+        "provenancePolicy".to_string(),
+        json!([
+            "provenance planning returns a draft lineage ledger for design inputs, generated exports, imported or generated controller programs, material lots, inspection targets, release packages, and learning outcomes",
+            "machineReady=false while CAD/model/slicer conversion reviews, export blockers, draft programs, non-ready machine code, release bundles, or machine-release blockers remain unresolved",
+            "artifact hashes, CAD/source-system metadata, controller program digests, inspection dispositions, and learning-outcome lineage are retained for MDP/POMDP/neural workers so future hybrid plans can explain why an object was split, combined, printed, machined, or blocked"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "provenancePlan".to_string(),
+        json!({
+            "provenanceContracts": provenance_catalog_entries(),
+            "designInputReview": &response.design_input_review,
+            "designPackage": &response.design_package,
+            "designExports": &response.design_exports,
+            "generatedPrograms": &response.generated_programs,
+            "instructionPrograms": &response.instruction_programs,
+            "materialPlan": &response.material_plan,
+            "qualityPlan": &response.quality_plan,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "designInputReview".to_string(),
+        json!(&response.design_input_review),
+    );
+    object.insert("designExports".to_string(), json!(&response.design_exports));
+    object.insert(
+        "generatedPrograms".to_string(),
+        json!(&response.generated_programs),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn as_built_catalog_entries() -> Vec<Value> {
@@ -117031,6 +117243,7 @@ async fn request_schema() -> impl IntoResponse {
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
             "environmentPlan": ["POST /environment/plan", "POST /fabrication/environment/plan"],
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
+            "provenancePlan": ["POST /provenance/plan", "POST /fabrication/provenance/plan"],
             "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
             "asBuiltResult": ["POST /as-built/result", "POST /fabrication/as-built/result"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
@@ -118352,6 +118565,50 @@ async fn environment_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn provenance_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.provenance.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(provenance_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -120524,6 +120781,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/provenance/catalog",
             get(provenance_catalog_http),
         )
+        .route("/provenance/plan", post(provenance_plan_http))
+        .route("/fabrication/provenance/plan", post(provenance_plan_http))
         .route("/as-built/catalog", get(as_built_catalog_http))
         .route("/fabrication/as-built/catalog", get(as_built_catalog_http))
         .route("/as-built/result", post(as_built_result_http))
@@ -141422,6 +141681,146 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified quality records")))));
+    }
+
+    #[test]
+    fn provenance_planning_endpoint_returns_lineage_artifact_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 2,
+            successes: 1,
+            failures: 1,
+            average_reward: 0.15,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "neural-example job=traceable-hybrid-bracket source=solidworks-export release=blocked"
+                    .to_string(),
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-provenance-plan".to_string()),
+                objective:
+                    "make a traceable aluminum printer jig from Creo and SOLIDWORKS source CAD with generated machine code, inspection, release bundle, and learning lineage"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![160.0, 120.0, 20.0]),
+                }),
+                tolerance_mm: Some(0.05),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "vmc-provenance-01".to_string(),
+                    kind: "vertical-mill".to_string(),
+                    controller: Some("fanuc".to_string()),
+                    materials: Some(vec!["6061 aluminum".to_string()]),
+                    work_envelope_mm: Some(vec![400.0, 300.0, 250.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["milling".to_string()]),
+                    profile_evidence: Some(MachineProfileEvidence {
+                        calibration: Some(vec!["probe calibration current".to_string()]),
+                        tools: Some(vec!["tool offset table draft".to_string()]),
+                        fixtures: Some(vec!["fixture proof pending".to_string()]),
+                        materials: Some(vec!["material cert pending".to_string()]),
+                        process: Some(vec!["dry-run required before release".to_string()]),
+                        maintenance: None,
+                        release: None,
+                        blockers: Some(vec![
+                            "program digest not signed".to_string(),
+                            "release bundle missing inspection disposition".to_string(),
+                        ]),
+                    }),
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["milling".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: Some(vec![
+                    DesignInputFile {
+                        id: Some("creo-source".to_string()),
+                        file_name: Some("printer-jig.prt".to_string()),
+                        source_uri: None,
+                        format: Some("Pro/ENGINEER part".to_string()),
+                        source_system: Some("PTC Creo".to_string()),
+                        role: Some("source CAD".to_string()),
+                        notes: None,
+                    },
+                    DesignInputFile {
+                        id: Some("solidworks-source".to_string()),
+                        file_name: Some("printer-jig.SLDPRT".to_string()),
+                        source_uri: None,
+                        format: Some("SLDPRT".to_string()),
+                        source_system: Some("SOLIDWORKS".to_string()),
+                        role: Some("source CAD".to_string()),
+                        notes: None,
+                    },
+                ]),
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("provenance planning should return lineage blockers");
+
+        let payload = provenance_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.provenance-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/provenance/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("provenancePlan")
+            .and_then(|plan| plan.get("provenanceContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("provenanceFamily")
+                .and_then(Value::as_str)
+                == Some("design-input-and-cad-lineage"))));
+        assert_eq!(
+            payload.get("designInputCount").and_then(Value::as_u64),
+            Some(2)
+        );
+        assert!(payload
+            .get("generatedProgramCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("releasePackageRequiredArtifactCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("learning.neuralTrainingCorpus") })));
+        assert!(payload
+            .get("provenancePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
     }
 
     #[test]
