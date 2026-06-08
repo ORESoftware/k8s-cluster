@@ -76,6 +76,14 @@ fn compile_flags2env_parser() {
     println!("cargo:rerun-if-changed={}", parser.display());
     println!("cargo:rerun-if-changed={}", header.display());
 
+    if !parser.is_file() || !header.is_file() {
+        panic!(
+            "missing vendored flags2env C parser; expected {} and {}. Make sure third_party/flags2env is present when building or installing this crate.",
+            parser.display(),
+            header.display()
+        );
+    }
+
     cc::Build::new()
         .file(parser)
         .include(source_dir)
