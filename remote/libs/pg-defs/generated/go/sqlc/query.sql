@@ -1020,3 +1020,108 @@ update benefactor_marketing_team_allocations set client_id = $2, campaign_id = $
 
 -- name: DeleteBenefactorMarketingTeamAllocations :exec
 delete from benefactor_marketing_team_allocations where id = $1;
+
+-- name: ListBenefactorMarketingIntegrationSyncRuns :many
+select id, integration_id, client_id, sync_kind, direction, status, records_seen, records_changed, cursor_before, cursor_after, payload, error_summary, started_at, completed_at, created_at, updated_at from benefactor_marketing_integration_sync_runs;
+
+-- name: GetBenefactorMarketingIntegrationSyncRuns :one
+select id, integration_id, client_id, sync_kind, direction, status, records_seen, records_changed, cursor_before, cursor_after, payload, error_summary, started_at, completed_at, created_at, updated_at from benefactor_marketing_integration_sync_runs where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingIntegrationSyncRuns :one
+insert into benefactor_marketing_integration_sync_runs (id, integration_id, client_id, sync_kind, direction, status, records_seen, records_changed, cursor_before, cursor_after, payload, error_summary, started_at, completed_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, integration_id, client_id, sync_kind, direction, status, records_seen, records_changed, cursor_before, cursor_after, payload, error_summary, started_at, completed_at, created_at, updated_at;
+
+-- name: UpdateBenefactorMarketingIntegrationSyncRuns :one
+update benefactor_marketing_integration_sync_runs set integration_id = $2, client_id = $3, sync_kind = $4, direction = $5, status = $6, records_seen = $7, records_changed = $8, cursor_before = $9, cursor_after = $10, payload = $11, error_summary = $12, started_at = $13, completed_at = $14, updated_at = $15 where id = $1 returning id, integration_id, client_id, sync_kind, direction, status, records_seen, records_changed, cursor_before, cursor_after, payload, error_summary, started_at, completed_at, created_at, updated_at;
+
+-- name: DeleteBenefactorMarketingIntegrationSyncRuns :exec
+delete from benefactor_marketing_integration_sync_runs where id = $1;
+
+-- name: ListBenefactorMarketingOutreachSequences :many
+select id, client_id, campaign_id, status, channel, name, audience_filter, cadence, meta_data, created_at, updated_at from benefactor_marketing_outreach_sequences;
+
+-- name: GetBenefactorMarketingOutreachSequences :one
+select id, client_id, campaign_id, status, channel, name, audience_filter, cadence, meta_data, created_at, updated_at from benefactor_marketing_outreach_sequences where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingOutreachSequences :one
+insert into benefactor_marketing_outreach_sequences (id, client_id, campaign_id, status, channel, name, audience_filter, cadence, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id, client_id, campaign_id, status, channel, name, audience_filter, cadence, meta_data, created_at, updated_at;
+
+-- name: UpdateBenefactorMarketingOutreachSequences :one
+update benefactor_marketing_outreach_sequences set client_id = $2, campaign_id = $3, status = $4, channel = $5, name = $6, audience_filter = $7, cadence = $8, meta_data = $9, updated_at = $10 where id = $1 returning id, client_id, campaign_id, status, channel, name, audience_filter, cadence, meta_data, created_at, updated_at;
+
+-- name: DeleteBenefactorMarketingOutreachSequences :exec
+delete from benefactor_marketing_outreach_sequences where id = $1;
+
+-- name: ListBenefactorMarketingOutreachSteps :many
+select id, sequence_id, status, step_order, channel, delay_minutes, subject, body_template, personalization_hints, experiment_key, created_at, updated_at from benefactor_marketing_outreach_steps;
+
+-- name: GetBenefactorMarketingOutreachSteps :one
+select id, sequence_id, status, step_order, channel, delay_minutes, subject, body_template, personalization_hints, experiment_key, created_at, updated_at from benefactor_marketing_outreach_steps where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingOutreachSteps :one
+insert into benefactor_marketing_outreach_steps (id, sequence_id, status, step_order, channel, delay_minutes, subject, body_template, personalization_hints, experiment_key, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, sequence_id, status, step_order, channel, delay_minutes, subject, body_template, personalization_hints, experiment_key, created_at, updated_at;
+
+-- name: UpdateBenefactorMarketingOutreachSteps :one
+update benefactor_marketing_outreach_steps set sequence_id = $2, status = $3, step_order = $4, channel = $5, delay_minutes = $6, subject = $7, body_template = $8, personalization_hints = $9, experiment_key = $10, updated_at = $11 where id = $1 returning id, sequence_id, status, step_order, channel, delay_minutes, subject, body_template, personalization_hints, experiment_key, created_at, updated_at;
+
+-- name: DeleteBenefactorMarketingOutreachSteps :exec
+delete from benefactor_marketing_outreach_steps where id = $1;
+
+-- name: ListBenefactorMarketingOutreachEnrollments :many
+select id, client_id, sequence_id, lead_id, contact_id, status, current_step_order, enrollment_context, last_touch_at, next_touch_at, outcome, created_at, updated_at from benefactor_marketing_outreach_enrollments;
+
+-- name: GetBenefactorMarketingOutreachEnrollments :one
+select id, client_id, sequence_id, lead_id, contact_id, status, current_step_order, enrollment_context, last_touch_at, next_touch_at, outcome, created_at, updated_at from benefactor_marketing_outreach_enrollments where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingOutreachEnrollments :one
+insert into benefactor_marketing_outreach_enrollments (id, client_id, sequence_id, lead_id, contact_id, status, current_step_order, enrollment_context, last_touch_at, next_touch_at, outcome, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, client_id, sequence_id, lead_id, contact_id, status, current_step_order, enrollment_context, last_touch_at, next_touch_at, outcome, created_at, updated_at;
+
+-- name: UpdateBenefactorMarketingOutreachEnrollments :one
+update benefactor_marketing_outreach_enrollments set client_id = $2, sequence_id = $3, lead_id = $4, contact_id = $5, status = $6, current_step_order = $7, enrollment_context = $8, last_touch_at = $9, next_touch_at = $10, outcome = $11, updated_at = $12 where id = $1 returning id, client_id, sequence_id, lead_id, contact_id, status, current_step_order, enrollment_context, last_touch_at, next_touch_at, outcome, created_at, updated_at;
+
+-- name: DeleteBenefactorMarketingOutreachEnrollments :exec
+delete from benefactor_marketing_outreach_enrollments where id = $1;
+
+-- name: ListBenefactorMarketingOutreachTouchpoints :many
+select id, client_id, sequence_id, enrollment_id, campaign_id, lead_id, contact_id, channel, direction, status, subject, body_excerpt, external_message_id, occurred_at, payload, created_at from benefactor_marketing_outreach_touchpoints;
+
+-- name: GetBenefactorMarketingOutreachTouchpoints :one
+select id, client_id, sequence_id, enrollment_id, campaign_id, lead_id, contact_id, channel, direction, status, subject, body_excerpt, external_message_id, occurred_at, payload, created_at from benefactor_marketing_outreach_touchpoints where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingOutreachTouchpoints :one
+insert into benefactor_marketing_outreach_touchpoints (id, client_id, sequence_id, enrollment_id, campaign_id, lead_id, contact_id, channel, direction, status, subject, body_excerpt, external_message_id, occurred_at, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, client_id, sequence_id, enrollment_id, campaign_id, lead_id, contact_id, channel, direction, status, subject, body_excerpt, external_message_id, occurred_at, payload, created_at;
+
+-- name: UpdateBenefactorMarketingOutreachTouchpoints :one
+update benefactor_marketing_outreach_touchpoints set client_id = $2, sequence_id = $3, enrollment_id = $4, campaign_id = $5, lead_id = $6, contact_id = $7, channel = $8, direction = $9, status = $10, subject = $11, body_excerpt = $12, external_message_id = $13, occurred_at = $14, payload = $15 where id = $1 returning id, client_id, sequence_id, enrollment_id, campaign_id, lead_id, contact_id, channel, direction, status, subject, body_excerpt, external_message_id, occurred_at, payload, created_at;
+
+-- name: DeleteBenefactorMarketingOutreachTouchpoints :exec
+delete from benefactor_marketing_outreach_touchpoints where id = $1;
+
+-- name: ListBenefactorMarketingProspectResearchBriefs :many
+select id, client_id, lead_id, status, research_kind, source, summary, findings, recommended_actions, confidence_micros, model_name, generated_at, created_at, updated_at from benefactor_marketing_prospect_research_briefs;
+
+-- name: GetBenefactorMarketingProspectResearchBriefs :one
+select id, client_id, lead_id, status, research_kind, source, summary, findings, recommended_actions, confidence_micros, model_name, generated_at, created_at, updated_at from benefactor_marketing_prospect_research_briefs where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingProspectResearchBriefs :one
+insert into benefactor_marketing_prospect_research_briefs (id, client_id, lead_id, status, research_kind, source, summary, findings, recommended_actions, confidence_micros, model_name, generated_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, client_id, lead_id, status, research_kind, source, summary, findings, recommended_actions, confidence_micros, model_name, generated_at, created_at, updated_at;
+
+-- name: UpdateBenefactorMarketingProspectResearchBriefs :one
+update benefactor_marketing_prospect_research_briefs set client_id = $2, lead_id = $3, status = $4, research_kind = $5, source = $6, summary = $7, findings = $8, recommended_actions = $9, confidence_micros = $10, model_name = $11, generated_at = $12, updated_at = $13 where id = $1 returning id, client_id, lead_id, status, research_kind, source, summary, findings, recommended_actions, confidence_micros, model_name, generated_at, created_at, updated_at;
+
+-- name: DeleteBenefactorMarketingProspectResearchBriefs :exec
+delete from benefactor_marketing_prospect_research_briefs where id = $1;
+
+-- name: ListBenefactorMarketingConversionEvents :many
+select id, client_id, campaign_id, lead_id, content_asset_id, event_type, source_platform, source_event_id, session_id, visitor_key, occurred_at, value_cents, utm, payload, created_at from benefactor_marketing_conversion_events;
+
+-- name: GetBenefactorMarketingConversionEvents :one
+select id, client_id, campaign_id, lead_id, content_asset_id, event_type, source_platform, source_event_id, session_id, visitor_key, occurred_at, value_cents, utm, payload, created_at from benefactor_marketing_conversion_events where id = $1 limit 1;
+
+-- name: CreateBenefactorMarketingConversionEvents :one
+insert into benefactor_marketing_conversion_events (id, client_id, campaign_id, lead_id, content_asset_id, event_type, source_platform, source_event_id, session_id, visitor_key, occurred_at, value_cents, utm, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, client_id, campaign_id, lead_id, content_asset_id, event_type, source_platform, source_event_id, session_id, visitor_key, occurred_at, value_cents, utm, payload, created_at;
+
+-- name: UpdateBenefactorMarketingConversionEvents :one
+update benefactor_marketing_conversion_events set client_id = $2, campaign_id = $3, lead_id = $4, content_asset_id = $5, event_type = $6, source_platform = $7, source_event_id = $8, session_id = $9, visitor_key = $10, occurred_at = $11, value_cents = $12, utm = $13, payload = $14 where id = $1 returning id, client_id, campaign_id, lead_id, content_asset_id, event_type, source_platform, source_event_id, session_id, visitor_key, occurred_at, value_cents, utm, payload, created_at;
+
+-- name: DeleteBenefactorMarketingConversionEvents :exec
+delete from benefactor_marketing_conversion_events where id = $1;

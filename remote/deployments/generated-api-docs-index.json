@@ -178,10 +178,10 @@
     {
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
-      "routeCount": 40,
+      "routeCount": 53,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 33
+        "user-generated": 46
       },
       "generated": [
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",

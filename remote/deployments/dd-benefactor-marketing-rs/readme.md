@@ -2,8 +2,9 @@
 
 Rust Axum backend for a B2B marketing agency platform. The service covers client workspaces,
 contacts, packages, contracts, invoices, lead imports, enrichment/scraper handoffs, lead scoring,
-campaigns, channel plans, A/B experiments, automation workflows, attribution events, reports,
-opportunities, content assets, project tasks, approvals, tickets, and meetings.
+CRM sync runs, campaigns, channel plans, A/B experiments, outreach sequences, prospect research,
+conversion tracking, automation workflows, attribution events, reports, opportunities, content
+assets, project tasks, team allocations, approvals, tickets, and meetings.
 
 ## Database Contract
 
@@ -46,8 +47,9 @@ Optional:
 Web scraping is intentionally offloaded. `POST /leads/{lead_id}/enrichment-jobs` records the
 handoff job and, when `BENEFACTOR_MARKETING_SCRAPER_BASE_URL` is set, stamps a deterministic
 external handoff URL for the scraper service. When Redis is configured, lead imports, enrichment
-handoffs, automation events, report snapshots, and attribution events are also published to the
-configured Redis stream for workers or ETL services.
+handoffs, CRM sync runs, outreach events, prospect research briefs, conversion events, automation
+events, report snapshots, and attribution events are also published to the configured Redis stream
+for workers or ETL services.
 
 Redis is used for:
 
@@ -78,17 +80,32 @@ Core domain routes include:
 - `GET /clients/{client_id}/lead-intelligence`
 - `GET /clients/{client_id}/revenue-attribution`
 - `GET /clients/{client_id}/operations`
+- `GET|POST /clients/{client_id}/team-allocations`
+- `GET /clients/{client_id}/sync-runs`
+- `GET /clients/{client_id}/outreach`
+- `GET /clients/{client_id}/outreach/sequences`
+- `GET /clients/{client_id}/research/briefs`
+- `GET /clients/{client_id}/conversion-events`
 - `POST /clients/{client_id}/contacts`
+- `POST /integrations/{integration_id}/sync-runs`
 - `POST /leads/import`
 - `POST /leads/{lead_id}/enrichment-jobs`
 - `POST /leads/{lead_id}/score`
 - `POST /campaigns`
 - `POST /campaigns/{campaign_id}/channels`
+- `POST /campaigns/{campaign_id}/experiments`
+- `POST /outreach/sequences`
+- `POST /outreach/sequences/{sequence_id}/steps`
+- `POST /outreach/enrollments`
+- `POST /outreach/touchpoints`
 - `POST /automation/workflows`
+- `POST /automation/events`
 - `POST /reports/snapshots`
 - `POST /attribution/events`
 - `POST /opportunities`
 - `POST /content/assets`
+- `POST /research/briefs`
+- `POST /conversion/events`
 - `POST /projects/tasks`
 - `POST /approvals`
 - `PATCH /approvals/{approval_id}/decision`

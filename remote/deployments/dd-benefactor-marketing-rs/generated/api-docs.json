@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-benefactor-marketing-rs",
   "language": "rust",
-  "routeCount": 40,
+  "routeCount": 53,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 33
+    "user-generated": 46
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -289,6 +289,23 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/conversion-events",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_client_conversion_events"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/dashboard",
       "methods": [
         "GET"
@@ -391,6 +408,40 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/outreach",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "client_outreach_summary"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/outreach/sequences",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_client_outreach_sequences"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/overview",
       "methods": [
         "GET"
@@ -401,6 +452,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "client_dashboard"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/research/briefs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_client_research_briefs"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -425,6 +493,42 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/sync-runs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_client_sync_runs"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/team-allocations",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_team_allocation",
+        "list_client_team_allocations"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/content/assets",
       "methods": [
         "POST"
@@ -435,6 +539,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "create_content_asset"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/conversion/events",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "record_conversion_event"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -486,6 +607,23 @@
       "purpose": "Health check.",
       "handlers": [
         "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/integrations/{integration_id}/sync-runs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_integration_sync_run"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -595,6 +733,74 @@
       "notes": ""
     },
     {
+      "path": "/outreach/enrollments",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_outreach_enrollment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/outreach/sequences",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_outreach_sequence"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/outreach/sequences/{sequence_id}/steps",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_outreach_step"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/outreach/touchpoints",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "record_outreach_touchpoint"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/projects/tasks",
       "methods": [
         "POST"
@@ -639,6 +845,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "create_report_snapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/research/briefs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_research_brief"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"

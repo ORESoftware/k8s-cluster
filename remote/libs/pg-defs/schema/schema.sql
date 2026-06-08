@@ -3414,3 +3414,345 @@ alter table if exists benefactor_marketing_team_allocations
 alter table if exists benefactor_marketing_team_allocations
   add constraint benefactor_marketing_team_allocations_campaign_fk
   foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+create table if not exists benefactor_marketing_integration_sync_runs (
+  id uuid primary key default gen_random_uuid(),
+  integration_id uuid not null,
+  client_id uuid,
+  sync_kind varchar(48) default 'incremental' not null,
+  direction varchar(24) default 'import' not null,
+  status varchar(32) default 'queued' not null,
+  records_seen integer default 0 not null,
+  records_changed integer default 0 not null,
+  cursor_before text,
+  cursor_after text,
+  payload jsonb default '{}'::jsonb not null,
+  error_summary text,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_integration_sync_runs_kind_chk
+    check (sync_kind in ('incremental', 'full', 'webhook', 'backfill', 'export')),
+  constraint benefactor_marketing_integration_sync_runs_direction_chk
+    check (direction in ('import', 'export', 'bidirectional')),
+  constraint benefactor_marketing_integration_sync_runs_status_chk
+    check (status in ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+  constraint benefactor_marketing_integration_sync_runs_counts_chk
+    check (records_seen >= 0 and records_changed >= 0),
+  constraint benefactor_marketing_integration_sync_runs_cursor_before_size_chk
+    check (cursor_before is null or octet_length(cursor_before) <= 4000),
+  constraint benefactor_marketing_integration_sync_runs_cursor_after_size_chk
+    check (cursor_after is null or octet_length(cursor_after) <= 4000),
+  constraint benefactor_marketing_integration_sync_runs_payload_object_chk
+    check (jsonb_typeof(payload) = 'object'),
+  constraint benefactor_marketing_integration_sync_runs_error_summary_size_chk
+    check (error_summary is null or octet_length(error_summary) <= 4000)
+);
+
+create index if not exists benefactor_marketing_integration_sync_runs_integration_idx
+  on benefactor_marketing_integration_sync_runs (integration_id, status, created_at desc);
+
+create index if not exists benefactor_marketing_integration_sync_runs_client_idx
+  on benefactor_marketing_integration_sync_runs (client_id, created_at desc)
+  where client_id is not null;
+
+alter table if exists benefactor_marketing_integration_sync_runs
+  add constraint benefactor_marketing_integration_sync_runs_integration_fk
+  foreign key (integration_id) references benefactor_marketing_integrations(id);
+
+alter table if exists benefactor_marketing_integration_sync_runs
+  add constraint benefactor_marketing_integration_sync_runs_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+create table if not exists benefactor_marketing_outreach_sequences (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  campaign_id uuid,
+  status varchar(32) default 'draft' not null,
+  channel varchar(32) default 'email' not null,
+  name varchar(220) not null,
+  audience_filter jsonb default '{}'::jsonb not null,
+  cadence jsonb default '{}'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_outreach_sequences_status_chk
+    check (status in ('draft', 'active', 'paused', 'completed', 'archived')),
+  constraint benefactor_marketing_outreach_sequences_channel_chk
+    check (channel in ('email', 'linkedin', 'sms', 'phone', 'multi_channel')),
+  constraint benefactor_marketing_outreach_sequences_name_size_chk
+    check (octet_length(name) between 1 and 220),
+  constraint benefactor_marketing_outreach_sequences_audience_object_chk
+    check (jsonb_typeof(audience_filter) = 'object'),
+  constraint benefactor_marketing_outreach_sequences_cadence_object_chk
+    check (jsonb_typeof(cadence) = 'object'),
+  constraint benefactor_marketing_outreach_sequences_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_outreach_sequences_client_status_idx
+  on benefactor_marketing_outreach_sequences (client_id, status, updated_at desc);
+
+alter table if exists benefactor_marketing_outreach_sequences
+  add constraint benefactor_marketing_outreach_sequences_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_outreach_sequences
+  add constraint benefactor_marketing_outreach_sequences_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+create table if not exists benefactor_marketing_outreach_steps (
+  id uuid primary key default gen_random_uuid(),
+  sequence_id uuid not null,
+  status varchar(32) default 'active' not null,
+  step_order integer not null,
+  channel varchar(32) not null,
+  delay_minutes integer default 0 not null,
+  subject varchar(240),
+  body_template text,
+  personalization_hints jsonb default '[]'::jsonb not null,
+  experiment_key varchar(120),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_outreach_steps_status_chk
+    check (status in ('active', 'disabled', 'archived')),
+  constraint benefactor_marketing_outreach_steps_order_chk
+    check (step_order between 1 and 100),
+  constraint benefactor_marketing_outreach_steps_channel_chk
+    check (channel in ('email', 'linkedin', 'sms', 'phone', 'task')),
+  constraint benefactor_marketing_outreach_steps_delay_chk
+    check (delay_minutes between 0 and 525600),
+  constraint benefactor_marketing_outreach_steps_subject_size_chk
+    check (subject is null or octet_length(subject) <= 240),
+  constraint benefactor_marketing_outreach_steps_body_size_chk
+    check (body_template is null or octet_length(body_template) <= 100000),
+  constraint benefactor_marketing_outreach_steps_hints_array_chk
+    check (jsonb_typeof(personalization_hints) = 'array'),
+  constraint benefactor_marketing_outreach_steps_experiment_key_size_chk
+    check (experiment_key is null or octet_length(experiment_key) <= 120)
+);
+
+create unique index if not exists benefactor_marketing_outreach_steps_sequence_order_uq
+  on benefactor_marketing_outreach_steps (sequence_id, step_order);
+
+alter table if exists benefactor_marketing_outreach_steps
+  add constraint benefactor_marketing_outreach_steps_sequence_fk
+  foreign key (sequence_id) references benefactor_marketing_outreach_sequences(id);
+
+create table if not exists benefactor_marketing_outreach_enrollments (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  sequence_id uuid not null,
+  lead_id uuid,
+  contact_id uuid,
+  status varchar(32) default 'active' not null,
+  current_step_order integer default 1 not null,
+  enrollment_context jsonb default '{}'::jsonb not null,
+  last_touch_at timestamptz,
+  next_touch_at timestamptz,
+  outcome varchar(64),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_outreach_enrollments_target_chk
+    check (lead_id is not null or contact_id is not null),
+  constraint benefactor_marketing_outreach_enrollments_status_chk
+    check (status in ('active', 'paused', 'completed', 'bounced', 'unsubscribed', 'failed')),
+  constraint benefactor_marketing_outreach_enrollments_step_chk
+    check (current_step_order between 1 and 100),
+  constraint benefactor_marketing_outreach_enrollments_context_object_chk
+    check (jsonb_typeof(enrollment_context) = 'object'),
+  constraint benefactor_marketing_outreach_enrollments_outcome_size_chk
+    check (outcome is null or octet_length(outcome) <= 64)
+);
+
+create index if not exists benefactor_marketing_outreach_enrollments_sequence_idx
+  on benefactor_marketing_outreach_enrollments (sequence_id, status, next_touch_at);
+
+create index if not exists benefactor_marketing_outreach_enrollments_client_idx
+  on benefactor_marketing_outreach_enrollments (client_id, status, updated_at desc);
+
+alter table if exists benefactor_marketing_outreach_enrollments
+  add constraint benefactor_marketing_outreach_enrollments_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_outreach_enrollments
+  add constraint benefactor_marketing_outreach_enrollments_sequence_fk
+  foreign key (sequence_id) references benefactor_marketing_outreach_sequences(id);
+
+alter table if exists benefactor_marketing_outreach_enrollments
+  add constraint benefactor_marketing_outreach_enrollments_lead_fk
+  foreign key (lead_id) references benefactor_marketing_leads(id);
+
+alter table if exists benefactor_marketing_outreach_enrollments
+  add constraint benefactor_marketing_outreach_enrollments_contact_fk
+  foreign key (contact_id) references benefactor_marketing_contacts(id);
+
+create table if not exists benefactor_marketing_outreach_touchpoints (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  sequence_id uuid,
+  enrollment_id uuid,
+  campaign_id uuid,
+  lead_id uuid,
+  contact_id uuid,
+  channel varchar(32) not null,
+  direction varchar(24) default 'outbound' not null,
+  status varchar(32) default 'planned' not null,
+  subject varchar(240),
+  body_excerpt text,
+  external_message_id varchar(200),
+  occurred_at timestamptz default now() not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint benefactor_marketing_outreach_touchpoints_channel_chk
+    check (channel in ('email', 'linkedin', 'sms', 'phone', 'task', 'meeting')),
+  constraint benefactor_marketing_outreach_touchpoints_direction_chk
+    check (direction in ('outbound', 'inbound', 'internal')),
+  constraint benefactor_marketing_outreach_touchpoints_status_chk
+    check (status in ('planned', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'failed', 'bounced')),
+  constraint benefactor_marketing_outreach_touchpoints_subject_size_chk
+    check (subject is null or octet_length(subject) <= 240),
+  constraint benefactor_marketing_outreach_touchpoints_body_size_chk
+    check (body_excerpt is null or octet_length(body_excerpt) <= 4000),
+  constraint benefactor_marketing_outreach_touchpoints_external_message_size_chk
+    check (external_message_id is null or octet_length(external_message_id) <= 200),
+  constraint benefactor_marketing_outreach_touchpoints_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create index if not exists benefactor_marketing_outreach_touchpoints_client_idx
+  on benefactor_marketing_outreach_touchpoints (client_id, occurred_at desc);
+
+create unique index if not exists benefactor_marketing_outreach_touchpoints_external_uq
+  on benefactor_marketing_outreach_touchpoints (channel, external_message_id)
+  where external_message_id is not null;
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_sequence_fk
+  foreign key (sequence_id) references benefactor_marketing_outreach_sequences(id);
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_enrollment_fk
+  foreign key (enrollment_id) references benefactor_marketing_outreach_enrollments(id);
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_lead_fk
+  foreign key (lead_id) references benefactor_marketing_leads(id);
+
+alter table if exists benefactor_marketing_outreach_touchpoints
+  add constraint benefactor_marketing_outreach_touchpoints_contact_fk
+  foreign key (contact_id) references benefactor_marketing_contacts(id);
+
+create table if not exists benefactor_marketing_prospect_research_briefs (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  lead_id uuid,
+  status varchar(32) default 'draft' not null,
+  research_kind varchar(48) default 'account_research' not null,
+  source varchar(48) default 'ai_assisted' not null,
+  summary text,
+  findings jsonb default '[]'::jsonb not null,
+  recommended_actions jsonb default '[]'::jsonb not null,
+  confidence_micros integer default 0 not null,
+  model_name varchar(120),
+  generated_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_prospect_research_briefs_status_chk
+    check (status in ('draft', 'ready', 'stale', 'failed')),
+  constraint benefactor_marketing_prospect_research_briefs_kind_chk
+    check (research_kind in ('account_research', 'contact_research', 'competitive_intel', 'proposal_brief', 'outreach_personalization')),
+  constraint benefactor_marketing_prospect_research_briefs_source_chk
+    check (source in ('ai_assisted', 'analyst', 'scraper', 'integration')),
+  constraint benefactor_marketing_prospect_research_briefs_summary_size_chk
+    check (summary is null or octet_length(summary) <= 20000),
+  constraint benefactor_marketing_prospect_research_briefs_findings_array_chk
+    check (jsonb_typeof(findings) = 'array'),
+  constraint benefactor_marketing_prospect_research_briefs_actions_array_chk
+    check (jsonb_typeof(recommended_actions) = 'array'),
+  constraint benefactor_marketing_prospect_research_briefs_confidence_chk
+    check (confidence_micros between 0 and 1000000),
+  constraint benefactor_marketing_prospect_research_briefs_model_size_chk
+    check (model_name is null or octet_length(model_name) <= 120)
+);
+
+create index if not exists benefactor_marketing_prospect_research_briefs_client_idx
+  on benefactor_marketing_prospect_research_briefs (client_id, status, updated_at desc);
+
+create index if not exists benefactor_marketing_prospect_research_briefs_lead_idx
+  on benefactor_marketing_prospect_research_briefs (lead_id, generated_at desc)
+  where lead_id is not null;
+
+alter table if exists benefactor_marketing_prospect_research_briefs
+  add constraint benefactor_marketing_prospect_research_briefs_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_prospect_research_briefs
+  add constraint benefactor_marketing_prospect_research_briefs_lead_fk
+  foreign key (lead_id) references benefactor_marketing_leads(id);
+
+create table if not exists benefactor_marketing_conversion_events (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  campaign_id uuid,
+  lead_id uuid,
+  content_asset_id uuid,
+  event_type varchar(64) not null,
+  source_platform varchar(64),
+  source_event_id varchar(200),
+  session_id varchar(200),
+  visitor_key varchar(200),
+  occurred_at timestamptz default now() not null,
+  value_cents integer default 0 not null,
+  utm jsonb default '{}'::jsonb not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint benefactor_marketing_conversion_events_type_chk
+    check (event_type in ('landing_page_view', 'form_submit', 'chat_started', 'calendar_booked', 'asset_download', 'trial_signup', 'purchase', 'custom')),
+  constraint benefactor_marketing_conversion_events_source_platform_size_chk
+    check (source_platform is null or octet_length(source_platform) <= 64),
+  constraint benefactor_marketing_conversion_events_source_event_id_size_chk
+    check (source_event_id is null or octet_length(source_event_id) <= 200),
+  constraint benefactor_marketing_conversion_events_session_size_chk
+    check (session_id is null or octet_length(session_id) <= 200),
+  constraint benefactor_marketing_conversion_events_visitor_size_chk
+    check (visitor_key is null or octet_length(visitor_key) <= 200),
+  constraint benefactor_marketing_conversion_events_value_chk
+    check (value_cents >= 0),
+  constraint benefactor_marketing_conversion_events_utm_object_chk
+    check (jsonb_typeof(utm) = 'object'),
+  constraint benefactor_marketing_conversion_events_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create index if not exists benefactor_marketing_conversion_events_client_type_idx
+  on benefactor_marketing_conversion_events (client_id, event_type, occurred_at desc);
+
+create unique index if not exists benefactor_marketing_conversion_events_source_uq
+  on benefactor_marketing_conversion_events (source_platform, source_event_id)
+  where source_platform is not null and source_event_id is not null;
+
+alter table if exists benefactor_marketing_conversion_events
+  add constraint benefactor_marketing_conversion_events_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_conversion_events
+  add constraint benefactor_marketing_conversion_events_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+alter table if exists benefactor_marketing_conversion_events
+  add constraint benefactor_marketing_conversion_events_lead_fk
+  foreign key (lead_id) references benefactor_marketing_leads(id);
+
+alter table if exists benefactor_marketing_conversion_events
+  add constraint benefactor_marketing_conversion_events_content_asset_fk
+  foreign key (content_asset_id) references benefactor_marketing_content_assets(id);

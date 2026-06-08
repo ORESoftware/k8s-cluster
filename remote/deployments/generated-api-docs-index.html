@@ -47,7 +47,7 @@
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
       <span>43 services</span>
-      <span>1071 routes</span>
+      <span>1084 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -1663,7 +1663,7 @@
 <details>
   <summary>
     <span><strong>dd-benefactor-marketing-rs</strong> <span class="muted">rust</span></span>
-    <span>40 routes</span>
+    <span>53 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json</code></span>
@@ -1788,6 +1788,13 @@
   <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/conversion-events</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/clients/{client_id}/dashboard</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
@@ -1830,7 +1837,28 @@
   <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/outreach</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/outreach/sequences</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/clients/{client_id}/overview</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/research/briefs</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
@@ -1843,8 +1871,29 @@
 <tr>
   <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/sync-runs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/team-allocations</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/content/assets</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/conversion/events</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
@@ -1867,6 +1916,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
   <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/integrations/{integration_id}/sync-runs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
   <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
@@ -1914,6 +1970,34 @@
   <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/outreach/enrollments</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/outreach/sequences</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/outreach/sequences/{sequence_id}/steps</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/outreach/touchpoints</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/projects/tasks</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
@@ -1929,6 +2013,13 @@
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/reports/snapshots</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-benefactor-marketing-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/research/briefs</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>

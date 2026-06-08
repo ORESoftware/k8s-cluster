@@ -29,12 +29,21 @@ use dd_pg_defs_sea_orm::{
     benefactor_marketing_clients as clients, benefactor_marketing_contacts as contacts,
     benefactor_marketing_content_assets as content_assets,
     benefactor_marketing_contracts as contracts,
+    benefactor_marketing_conversion_events as conversion_events,
     benefactor_marketing_enrichment_jobs as enrichment_jobs,
+    benefactor_marketing_integration_sync_runs as integration_sync_runs,
     benefactor_marketing_integrations as integrations, benefactor_marketing_invoices as invoices,
     benefactor_marketing_leads as leads, benefactor_marketing_meetings as meetings,
     benefactor_marketing_opportunities as opportunities,
-    benefactor_marketing_project_tasks as project_tasks, benefactor_marketing_reports as reports,
+    benefactor_marketing_outreach_enrollments as outreach_enrollments,
+    benefactor_marketing_outreach_sequences as outreach_sequences,
+    benefactor_marketing_outreach_steps as outreach_steps,
+    benefactor_marketing_outreach_touchpoints as outreach_touchpoints,
+    benefactor_marketing_project_tasks as project_tasks,
+    benefactor_marketing_prospect_research_briefs as research_briefs,
+    benefactor_marketing_reports as reports,
     benefactor_marketing_service_packages as service_packages,
+    benefactor_marketing_team_allocations as team_allocations,
     benefactor_marketing_tickets as tickets,
 };
 use sea_orm::{
@@ -100,6 +109,10 @@ struct Metrics {
     cache_invalidations_total: AtomicU64,
     rate_limit_rejections_total: AtomicU64,
     redis_jobs_published_total: AtomicU64,
+    integration_sync_runs_total: AtomicU64,
+    outreach_touchpoints_total: AtomicU64,
+    research_briefs_total: AtomicU64,
+    conversion_events_total: AtomicU64,
 }
 
 #[derive(Debug, Error)]
@@ -223,6 +236,23 @@ struct CreateIntegrationRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CreateIntegrationSyncRunRequest {
+    client_id: Option<Uuid>,
+    sync_kind: Option<String>,
+    direction: Option<String>,
+    status: Option<String>,
+    records_seen: Option<i32>,
+    records_changed: Option<i32>,
+    cursor_before: Option<String>,
+    cursor_after: Option<String>,
+    payload: Option<Value>,
+    error_summary: Option<String>,
+    started_at: Option<DateTime<FixedOffset>>,
+    completed_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LeadImportRequest {
     client_id: Uuid,
     source_integration_id: Option<Uuid>,
@@ -305,6 +335,66 @@ struct CreateCampaignExperimentRequest {
     result_summary: Option<Value>,
     started_at: Option<DateTime<FixedOffset>>,
     ended_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateOutreachSequenceRequest {
+    client_id: Uuid,
+    campaign_id: Option<Uuid>,
+    status: Option<String>,
+    channel: Option<String>,
+    name: String,
+    audience_filter: Option<Value>,
+    cadence: Option<Value>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateOutreachStepRequest {
+    status: Option<String>,
+    step_order: i32,
+    channel: String,
+    delay_minutes: Option<i32>,
+    subject: Option<String>,
+    body_template: Option<String>,
+    personalization_hints: Option<Value>,
+    experiment_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateOutreachEnrollmentRequest {
+    client_id: Uuid,
+    sequence_id: Uuid,
+    lead_id: Option<Uuid>,
+    contact_id: Option<Uuid>,
+    status: Option<String>,
+    current_step_order: Option<i32>,
+    enrollment_context: Option<Value>,
+    last_touch_at: Option<DateTime<FixedOffset>>,
+    next_touch_at: Option<DateTime<FixedOffset>>,
+    outcome: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordOutreachTouchpointRequest {
+    client_id: Uuid,
+    sequence_id: Option<Uuid>,
+    enrollment_id: Option<Uuid>,
+    campaign_id: Option<Uuid>,
+    lead_id: Option<Uuid>,
+    contact_id: Option<Uuid>,
+    channel: String,
+    direction: Option<String>,
+    status: Option<String>,
+    subject: Option<String>,
+    body_excerpt: Option<String>,
+    external_message_id: Option<String>,
+    occurred_at: Option<DateTime<FixedOffset>>,
+    payload: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -392,6 +482,40 @@ struct CreateContentAssetRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CreateResearchBriefRequest {
+    client_id: Uuid,
+    lead_id: Option<Uuid>,
+    status: Option<String>,
+    research_kind: Option<String>,
+    source: Option<String>,
+    summary: Option<String>,
+    findings: Option<Value>,
+    recommended_actions: Option<Value>,
+    confidence_micros: Option<i32>,
+    model_name: Option<String>,
+    generated_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordConversionEventRequest {
+    client_id: Uuid,
+    campaign_id: Option<Uuid>,
+    lead_id: Option<Uuid>,
+    content_asset_id: Option<Uuid>,
+    event_type: String,
+    source_platform: Option<String>,
+    source_event_id: Option<String>,
+    session_id: Option<String>,
+    visitor_key: Option<String>,
+    occurred_at: Option<DateTime<FixedOffset>>,
+    value_cents: Option<i32>,
+    utm: Option<Value>,
+    payload: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateProjectTaskRequest {
     client_id: Uuid,
     campaign_id: Option<Uuid>,
@@ -454,6 +578,18 @@ struct CreateMeetingRequest {
     notes: Option<String>,
     recording_uri: Option<String>,
     transcript_summary: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateTeamAllocationRequest {
+    campaign_id: Option<Uuid>,
+    user_id: Uuid,
+    role: String,
+    allocation_percent: Option<i32>,
+    starts_on: Option<String>,
+    ends_on: Option<String>,
+    billable: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -524,6 +660,27 @@ fn build_router(state: AppState) -> Router {
             "/clients/{client_id}/operations",
             get(client_operations_summary),
         )
+        .route(
+            "/clients/{client_id}/team-allocations",
+            get(list_client_team_allocations).post(create_team_allocation),
+        )
+        .route("/clients/{client_id}/sync-runs", get(list_client_sync_runs))
+        .route(
+            "/clients/{client_id}/outreach",
+            get(client_outreach_summary),
+        )
+        .route(
+            "/clients/{client_id}/outreach/sequences",
+            get(list_client_outreach_sequences),
+        )
+        .route(
+            "/clients/{client_id}/research/briefs",
+            get(list_client_research_briefs),
+        )
+        .route(
+            "/clients/{client_id}/conversion-events",
+            get(list_client_conversion_events),
+        )
         .route("/clients/{client_id}/contacts", post(create_contact))
         .route("/clients/{client_id}/contracts", post(create_contract))
         .route("/clients/{client_id}/invoices", post(create_invoice))
@@ -533,6 +690,10 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/clients/{client_id}/leads", get(list_client_leads))
         .route("/clients/{client_id}/campaigns", get(list_client_campaigns))
+        .route(
+            "/integrations/{integration_id}/sync-runs",
+            post(create_integration_sync_run),
+        )
         .route("/leads/import", post(import_leads))
         .route(
             "/leads/{lead_id}/enrichment-jobs",
@@ -548,12 +709,21 @@ fn build_router(state: AppState) -> Router {
             "/campaigns/{campaign_id}/experiments",
             post(create_campaign_experiment),
         )
+        .route("/outreach/sequences", post(create_outreach_sequence))
+        .route(
+            "/outreach/sequences/{sequence_id}/steps",
+            post(create_outreach_step),
+        )
+        .route("/outreach/enrollments", post(create_outreach_enrollment))
+        .route("/outreach/touchpoints", post(record_outreach_touchpoint))
         .route("/automation/workflows", post(create_automation_workflow))
         .route("/automation/events", post(record_automation_event))
         .route("/reports/snapshots", post(create_report_snapshot))
         .route("/attribution/events", post(record_attribution_event))
         .route("/opportunities", post(create_opportunity))
         .route("/content/assets", post(create_content_asset))
+        .route("/research/briefs", post(create_research_brief))
+        .route("/conversion/events", post(record_conversion_event))
         .route("/projects/tasks", post(create_project_task))
         .route("/approvals", post(create_approval))
         .route("/approvals/{approval_id}/decision", patch(decide_approval))
@@ -665,9 +835,13 @@ async fn capabilities() -> Json<Value> {
             "clientManagement",
             "leadGeneration",
             "campaignManagement",
+            "crmSync",
+            "outreachSequencing",
             "marketingAutomation",
             "analyticsReporting",
+            "conversionTracking",
             "salesPipeline",
+            "prospectResearch",
             "contentOperations",
             "projectManagement",
             "clientCommunication",
@@ -790,9 +964,21 @@ benefactor_marketing_auth_failures_total {}\n\
 	# HELP benefactor_marketing_rate_limit_rejections_total Write requests rejected by Redis-backed rate limits.\n\
 	# TYPE benefactor_marketing_rate_limit_rejections_total counter\n\
 	benefactor_marketing_rate_limit_rejections_total {}\n\
-	# HELP benefactor_marketing_redis_jobs_published_total Marketing job handoff events published to Redis streams.\n\
-	# TYPE benefactor_marketing_redis_jobs_published_total counter\n\
-	benefactor_marketing_redis_jobs_published_total {}\n",
+		# HELP benefactor_marketing_redis_jobs_published_total Marketing job handoff events published to Redis streams.\n\
+		# TYPE benefactor_marketing_redis_jobs_published_total counter\n\
+		benefactor_marketing_redis_jobs_published_total {}\n\
+		# HELP benefactor_marketing_integration_sync_runs_total CRM or analytics sync runs recorded.\n\
+		# TYPE benefactor_marketing_integration_sync_runs_total counter\n\
+		benefactor_marketing_integration_sync_runs_total {}\n\
+		# HELP benefactor_marketing_outreach_touchpoints_total Outreach touchpoints recorded.\n\
+		# TYPE benefactor_marketing_outreach_touchpoints_total counter\n\
+		benefactor_marketing_outreach_touchpoints_total {}\n\
+		# HELP benefactor_marketing_research_briefs_total Prospect research briefs created.\n\
+		# TYPE benefactor_marketing_research_briefs_total counter\n\
+		benefactor_marketing_research_briefs_total {}\n\
+		# HELP benefactor_marketing_conversion_events_total Conversion events recorded.\n\
+		# TYPE benefactor_marketing_conversion_events_total counter\n\
+		benefactor_marketing_conversion_events_total {}\n",
         uptime,
         state.metrics.mutations_total.load(Ordering::Relaxed),
         state.metrics.enrichment_jobs_total.load(Ordering::Relaxed),
@@ -813,6 +999,22 @@ benefactor_marketing_auth_failures_total {}\n\
         state
             .metrics
             .redis_jobs_published_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .integration_sync_runs_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .outreach_touchpoints_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .research_briefs_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .conversion_events_total
             .load(Ordering::Relaxed)
     );
     ([("content-type", "text/plain; version=0.0.4")], body)
@@ -947,6 +1149,18 @@ async fn client_dashboard(
         .filter(client_approvals::Column::Status.eq("pending"))
         .count(&state.db)
         .await?;
+    let outreach_sequence_count = outreach_sequences::Entity::find()
+        .filter(outreach_sequences::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let research_brief_count = research_briefs::Entity::find()
+        .filter(research_briefs::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let conversion_event_count = conversion_events::Entity::find()
+        .filter(conversion_events::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
     let recent_campaigns = campaigns::Entity::find()
         .filter(campaigns::Column::ClientId.eq(client_id))
         .order_by_desc(campaigns::Column::UpdatedAt)
@@ -966,6 +1180,12 @@ async fn client_dashboard(
         .limit(10)
         .all(&state.db)
         .await?;
+    let recent_conversions = conversion_events::Entity::find()
+        .filter(conversion_events::Column::ClientId.eq(client_id))
+        .order_by_desc(conversion_events::Column::OccurredAt)
+        .limit(8)
+        .all(&state.db)
+        .await?;
     let payload = json!({
         "client": client,
         "counts": {
@@ -973,12 +1193,16 @@ async fn client_dashboard(
             "campaigns": campaign_count,
             "opportunities": opportunity_count,
             "openTickets": open_ticket_count,
-            "pendingApprovals": pending_approval_count
+            "pendingApprovals": pending_approval_count,
+            "outreachSequences": outreach_sequence_count,
+            "researchBriefs": research_brief_count,
+            "conversionEvents": conversion_event_count
         },
         "recent": {
             "campaigns": recent_campaigns,
             "reports": recent_reports,
-            "openTasks": open_tasks
+            "openTasks": open_tasks,
+            "conversions": recent_conversions
         }
     });
     cache_set_json(&state, &cache_key, &payload).await;
@@ -1060,6 +1284,20 @@ async fn client_revenue_attribution(
         .iter()
         .map(|event| i64::from(event.value_cents))
         .sum();
+    let conversion_event_count = conversion_events::Entity::find()
+        .filter(conversion_events::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let recent_conversion_events = conversion_events::Entity::find()
+        .filter(conversion_events::Column::ClientId.eq(client_id))
+        .order_by_desc(conversion_events::Column::OccurredAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let recent_conversion_value_cents: i64 = recent_conversion_events
+        .iter()
+        .map(|event| i64::from(event.value_cents))
+        .sum();
     let open_opportunities = opportunities::Entity::find()
         .filter(opportunities::Column::ClientId.eq(client_id))
         .filter(opportunities::Column::Status.eq("open"))
@@ -1080,6 +1318,11 @@ async fn client_revenue_attribution(
             "eventCount": attribution_event_count,
             "recentValueCents": recent_value_cents,
             "recentEvents": recent_attribution_events
+        },
+        "conversions": {
+            "eventCount": conversion_event_count,
+            "recentValueCents": recent_conversion_value_cents,
+            "recentEvents": recent_conversion_events
         },
         "pipeline": {
             "openOpportunityCount": open_opportunities.len(),
@@ -1146,6 +1389,171 @@ async fn client_operations_summary(
             "tickets": recent_tickets
         }
     })))
+}
+
+async fn list_client_team_allocations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = team_allocations::Entity::find()
+        .filter(team_allocations::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(team_allocations::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "teamAllocations": rows })))
+}
+
+async fn create_team_allocation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateTeamAllocationRequest>,
+) -> AppResult<(StatusCode, Json<team_allocations::Model>)> {
+    require_write_access(&state, &headers, "team.allocations.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    if let Some(campaign_id) = req.campaign_id {
+        let campaign = ensure_campaign(&state.db, campaign_id).await?;
+        if campaign.client_id != client_id {
+            return Err(AppError::BadRequest(
+                "campaignId must belong to the route client".to_string(),
+            ));
+        }
+    }
+    let model = team_allocations::ActiveModel {
+        client_id: Set(Some(client_id)),
+        campaign_id: Set(req.campaign_id),
+        user_id: Set(req.user_id),
+        role: Set(req.role),
+        allocation_percent: Set(percent(req.allocation_percent.unwrap_or(100))?),
+        starts_on: Set(req.starts_on),
+        ends_on: Set(req.ends_on),
+        billable: Set(req.billable.unwrap_or(true)),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_sync_runs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = integration_sync_runs::Entity::find()
+        .filter(integration_sync_runs::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(integration_sync_runs::Column::CreatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "syncRuns": rows })))
+}
+
+async fn client_outreach_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let sequence_count = outreach_sequences::Entity::find()
+        .filter(outreach_sequences::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let active_sequence_count = outreach_sequences::Entity::find()
+        .filter(outreach_sequences::Column::ClientId.eq(client_id))
+        .filter(outreach_sequences::Column::Status.eq("active"))
+        .count(&state.db)
+        .await?;
+    let active_enrollment_count = outreach_enrollments::Entity::find()
+        .filter(outreach_enrollments::Column::ClientId.eq(client_id))
+        .filter(outreach_enrollments::Column::Status.eq("active"))
+        .count(&state.db)
+        .await?;
+    let recent_touchpoints = outreach_touchpoints::Entity::find()
+        .filter(outreach_touchpoints::Column::ClientId.eq(client_id))
+        .order_by_desc(outreach_touchpoints::Column::OccurredAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let upcoming_enrollments = outreach_enrollments::Entity::find()
+        .filter(outreach_enrollments::Column::ClientId.eq(client_id))
+        .filter(outreach_enrollments::Column::Status.eq("active"))
+        .order_by_asc(outreach_enrollments::Column::NextTouchAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({
+        "clientId": client_id,
+        "counts": {
+            "sequences": sequence_count,
+            "activeSequences": active_sequence_count,
+            "activeEnrollments": active_enrollment_count
+        },
+        "recentTouchpoints": recent_touchpoints,
+        "upcomingEnrollments": upcoming_enrollments
+    })))
+}
+
+async fn list_client_outreach_sequences(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = outreach_sequences::Entity::find()
+        .filter(outreach_sequences::Column::ClientId.eq(client_id))
+        .order_by_desc(outreach_sequences::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "outreachSequences": rows })))
+}
+
+async fn list_client_research_briefs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = research_briefs::Entity::find()
+        .filter(research_briefs::Column::ClientId.eq(client_id))
+        .order_by_desc(research_briefs::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "researchBriefs": rows })))
+}
+
+async fn list_client_conversion_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = conversion_events::Entity::find()
+        .filter(conversion_events::Column::ClientId.eq(client_id))
+        .order_by_desc(conversion_events::Column::OccurredAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "conversionEvents": rows })))
 }
 
 async fn create_contact(
@@ -1247,6 +1655,75 @@ async fn create_integration(
     .insert(&state.db)
     .await?;
     record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn create_integration_sync_run(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(integration_id): Path<Uuid>,
+    Json(req): Json<CreateIntegrationSyncRunRequest>,
+) -> AppResult<(StatusCode, Json<integration_sync_runs::Model>)> {
+    require_write_access(&state, &headers, "integrations.sync-runs.create").await?;
+    let integration = ensure_integration(&state.db, integration_id).await?;
+    let client_id = req.client_id.or(integration.client_id);
+    if let Some(client_id) = client_id {
+        ensure_client(&state.db, client_id).await?;
+    }
+    let model = integration_sync_runs::ActiveModel {
+        integration_id: Set(integration_id),
+        client_id: Set(client_id),
+        sync_kind: Set(req.sync_kind.unwrap_or_else(|| "incremental".to_string())),
+        direction: Set(req.direction.unwrap_or_else(|| "import".to_string())),
+        status: Set(req.status.unwrap_or_else(|| "queued".to_string())),
+        records_seen: Set(non_negative(req.records_seen.unwrap_or(0), "recordsSeen")?),
+        records_changed: Set(non_negative(
+            req.records_changed.unwrap_or(0),
+            "recordsChanged",
+        )?),
+        cursor_before: Set(req.cursor_before),
+        cursor_after: Set(req.cursor_after),
+        payload: Set(object_or_default(req.payload, "payload")?),
+        error_summary: Set(req.error_summary),
+        started_at: Set(req.started_at),
+        completed_at: Set(req.completed_at),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+
+    if model.status == "succeeded" {
+        let mut active_integration: integrations::ActiveModel = integration.into();
+        active_integration.last_sync_at = Set(Some(model.completed_at.unwrap_or_else(now_fixed)));
+        if let Some(cursor_after) = model.cursor_after.clone() {
+            active_integration.sync_cursor = Set(Some(cursor_after));
+        }
+        active_integration.updated_at = Set(now_fixed());
+        active_integration.update(&state.db).await?;
+    }
+
+    state
+        .metrics
+        .integration_sync_runs_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "integration_sync_run_recorded",
+        json!({
+            "integrationId": integration_id,
+            "clientId": client_id,
+            "syncRunId": model.id,
+            "syncKind": &model.sync_kind,
+            "direction": &model.direction,
+            "status": &model.status
+        }),
+    )
+    .await;
+    if let Some(client_id) = client_id {
+        record_client_mutation(&state, client_id).await;
+    } else {
+        record_mutation(&state);
+    }
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -1534,6 +2011,196 @@ async fn create_campaign_experiment(
     Ok((StatusCode::CREATED, Json(model)))
 }
 
+async fn create_outreach_sequence(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateOutreachSequenceRequest>,
+) -> AppResult<(StatusCode, Json<outreach_sequences::Model>)> {
+    require_write_access(&state, &headers, "outreach.sequences.create").await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
+    if let Some(campaign_id) = req.campaign_id {
+        let campaign = ensure_campaign(&state.db, campaign_id).await?;
+        if campaign.client_id != client_id {
+            return Err(AppError::BadRequest(
+                "campaignId must belong to the sequence client".to_string(),
+            ));
+        }
+    }
+    let model = outreach_sequences::ActiveModel {
+        client_id: Set(client_id),
+        campaign_id: Set(req.campaign_id),
+        status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
+        channel: Set(req.channel.unwrap_or_else(|| "email".to_string())),
+        name: Set(req.name),
+        audience_filter: Set(object_or_default(req.audience_filter, "audienceFilter")?),
+        cadence: Set(object_or_default(req.cadence, "cadence")?),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn create_outreach_step(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(sequence_id): Path<Uuid>,
+    Json(req): Json<CreateOutreachStepRequest>,
+) -> AppResult<(StatusCode, Json<outreach_steps::Model>)> {
+    require_write_access(&state, &headers, "outreach.steps.create").await?;
+    let sequence = ensure_outreach_sequence(&state.db, sequence_id).await?;
+    let model = outreach_steps::ActiveModel {
+        sequence_id: Set(sequence_id),
+        status: Set(req.status.unwrap_or_else(|| "active".to_string())),
+        step_order: Set(step_order(req.step_order)?),
+        channel: Set(req.channel),
+        delay_minutes: Set(non_negative(
+            req.delay_minutes.unwrap_or(0),
+            "delayMinutes",
+        )?),
+        subject: Set(req.subject),
+        body_template: Set(req.body_template),
+        personalization_hints: Set(array_or_default(
+            req.personalization_hints,
+            "personalizationHints",
+        )?),
+        experiment_key: Set(req.experiment_key),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    record_client_mutation(&state, sequence.client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn create_outreach_enrollment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateOutreachEnrollmentRequest>,
+) -> AppResult<(StatusCode, Json<outreach_enrollments::Model>)> {
+    require_write_access(&state, &headers, "outreach.enrollments.create").await?;
+    if req.lead_id.is_none() && req.contact_id.is_none() {
+        return Err(AppError::BadRequest(
+            "leadId or contactId is required".to_string(),
+        ));
+    }
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
+    let sequence = ensure_outreach_sequence(&state.db, req.sequence_id).await?;
+    if sequence.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "sequenceId must belong to the enrollment client".to_string(),
+        ));
+    }
+    ensure_optional_lead(&state.db, client_id, req.lead_id).await?;
+    ensure_optional_contact(&state.db, client_id, req.contact_id).await?;
+    let model = outreach_enrollments::ActiveModel {
+        client_id: Set(client_id),
+        sequence_id: Set(req.sequence_id),
+        lead_id: Set(req.lead_id),
+        contact_id: Set(req.contact_id),
+        status: Set(req.status.unwrap_or_else(|| "active".to_string())),
+        current_step_order: Set(step_order(req.current_step_order.unwrap_or(1))?),
+        enrollment_context: Set(object_or_default(
+            req.enrollment_context,
+            "enrollmentContext",
+        )?),
+        last_touch_at: Set(req.last_touch_at),
+        next_touch_at: Set(req.next_touch_at),
+        outcome: Set(req.outcome),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    publish_job_event(
+        &state,
+        "outreach_enrollment_created",
+        json!({
+            "clientId": client_id,
+            "sequenceId": model.sequence_id,
+            "enrollmentId": model.id,
+            "leadId": model.lead_id,
+            "contactId": model.contact_id,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn record_outreach_touchpoint(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<RecordOutreachTouchpointRequest>,
+) -> AppResult<(StatusCode, Json<outreach_touchpoints::Model>)> {
+    require_write_access(&state, &headers, "outreach.touchpoints.record").await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
+    if let Some(sequence_id) = req.sequence_id {
+        let sequence = ensure_outreach_sequence(&state.db, sequence_id).await?;
+        if sequence.client_id != client_id {
+            return Err(AppError::BadRequest(
+                "sequenceId must belong to the touchpoint client".to_string(),
+            ));
+        }
+    }
+    ensure_optional_enrollment(&state.db, client_id, req.enrollment_id).await?;
+    if let Some(campaign_id) = req.campaign_id {
+        let campaign = ensure_campaign(&state.db, campaign_id).await?;
+        if campaign.client_id != client_id {
+            return Err(AppError::BadRequest(
+                "campaignId must belong to the touchpoint client".to_string(),
+            ));
+        }
+    }
+    ensure_optional_lead(&state.db, client_id, req.lead_id).await?;
+    ensure_optional_contact(&state.db, client_id, req.contact_id).await?;
+    let model = outreach_touchpoints::ActiveModel {
+        client_id: Set(client_id),
+        sequence_id: Set(req.sequence_id),
+        enrollment_id: Set(req.enrollment_id),
+        campaign_id: Set(req.campaign_id),
+        lead_id: Set(req.lead_id),
+        contact_id: Set(req.contact_id),
+        channel: Set(req.channel),
+        direction: Set(req.direction.unwrap_or_else(|| "outbound".to_string())),
+        status: Set(req.status.unwrap_or_else(|| "planned".to_string())),
+        subject: Set(req.subject),
+        body_excerpt: Set(req.body_excerpt),
+        external_message_id: Set(req.external_message_id),
+        occurred_at: Set(req.occurred_at.unwrap_or_else(now_fixed)),
+        payload: Set(object_or_default(req.payload, "payload")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .outreach_touchpoints_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "outreach_touchpoint_recorded",
+        json!({
+            "clientId": client_id,
+            "touchpointId": model.id,
+            "sequenceId": model.sequence_id,
+            "enrollmentId": model.enrollment_id,
+            "leadId": model.lead_id,
+            "contactId": model.contact_id,
+            "channel": &model.channel,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
 async fn create_automation_workflow(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1728,6 +2395,115 @@ async fn create_content_asset(
     Ok((StatusCode::CREATED, Json(model)))
 }
 
+async fn create_research_brief(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateResearchBriefRequest>,
+) -> AppResult<(StatusCode, Json<research_briefs::Model>)> {
+    require_write_access(&state, &headers, "research.briefs.create").await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_lead(&state.db, client_id, req.lead_id).await?;
+    let model = research_briefs::ActiveModel {
+        client_id: Set(client_id),
+        lead_id: Set(req.lead_id),
+        status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
+        research_kind: Set(req
+            .research_kind
+            .unwrap_or_else(|| "account_research".to_string())),
+        source: Set(req.source.unwrap_or_else(|| "ai_assisted".to_string())),
+        summary: Set(req.summary),
+        findings: Set(array_or_default(req.findings, "findings")?),
+        recommended_actions: Set(array_or_default(
+            req.recommended_actions,
+            "recommendedActions",
+        )?),
+        confidence_micros: Set(probability(req.confidence_micros.unwrap_or(0))?),
+        model_name: Set(req.model_name),
+        generated_at: Set(req.generated_at.or_else(|| Some(now_fixed()))),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .research_briefs_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "prospect_research_brief_created",
+        json!({
+            "clientId": client_id,
+            "briefId": model.id,
+            "leadId": model.lead_id,
+            "researchKind": &model.research_kind,
+            "source": &model.source,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn record_conversion_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<RecordConversionEventRequest>,
+) -> AppResult<(StatusCode, Json<conversion_events::Model>)> {
+    require_write_access(&state, &headers, "conversion.events.record").await?;
+    let client_id = req.client_id;
+    ensure_client(&state.db, client_id).await?;
+    if let Some(campaign_id) = req.campaign_id {
+        let campaign = ensure_campaign(&state.db, campaign_id).await?;
+        if campaign.client_id != client_id {
+            return Err(AppError::BadRequest(
+                "campaignId must belong to the conversion client".to_string(),
+            ));
+        }
+    }
+    ensure_optional_lead(&state.db, client_id, req.lead_id).await?;
+    ensure_optional_content_asset(&state.db, client_id, req.content_asset_id).await?;
+    let model = conversion_events::ActiveModel {
+        client_id: Set(client_id),
+        campaign_id: Set(req.campaign_id),
+        lead_id: Set(req.lead_id),
+        content_asset_id: Set(req.content_asset_id),
+        event_type: Set(req.event_type),
+        source_platform: Set(req.source_platform),
+        source_event_id: Set(req.source_event_id),
+        session_id: Set(req.session_id),
+        visitor_key: Set(req.visitor_key),
+        occurred_at: Set(req.occurred_at.unwrap_or_else(now_fixed)),
+        value_cents: Set(non_negative(req.value_cents.unwrap_or(0), "valueCents")?),
+        utm: Set(object_or_default(req.utm, "utm")?),
+        payload: Set(object_or_default(req.payload, "payload")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .conversion_events_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "conversion_event_recorded",
+        json!({
+            "clientId": client_id,
+            "eventId": model.id,
+            "campaignId": model.campaign_id,
+            "leadId": model.lead_id,
+            "eventType": &model.event_type,
+            "sourcePlatform": &model.source_platform,
+            "valueCents": model.value_cents
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
 async fn create_project_task(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1893,6 +2669,106 @@ async fn ensure_campaign(
         .one(db)
         .await?
         .ok_or(AppError::NotFound("campaign"))
+}
+
+async fn ensure_integration(
+    db: &DatabaseConnection,
+    integration_id: Uuid,
+) -> AppResult<integrations::Model> {
+    integrations::Entity::find_by_id(integration_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("integration"))
+}
+
+async fn ensure_outreach_sequence(
+    db: &DatabaseConnection,
+    sequence_id: Uuid,
+) -> AppResult<outreach_sequences::Model> {
+    outreach_sequences::Entity::find_by_id(sequence_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("outreach sequence"))
+}
+
+async fn ensure_optional_lead(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    lead_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(lead_id) = lead_id else {
+        return Ok(());
+    };
+    let lead = leads::Entity::find_by_id(lead_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("lead"))?;
+    if lead.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "leadId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_contact(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    contact_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(contact_id) = contact_id else {
+        return Ok(());
+    };
+    let contact = contacts::Entity::find_by_id(contact_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("contact"))?;
+    if contact.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "contactId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_content_asset(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    content_asset_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(content_asset_id) = content_asset_id else {
+        return Ok(());
+    };
+    let asset = content_assets::Entity::find_by_id(content_asset_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("content asset"))?;
+    if asset.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "contentAssetId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_enrollment(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    enrollment_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(enrollment_id) = enrollment_id else {
+        return Ok(());
+    };
+    let enrollment = outreach_enrollments::Entity::find_by_id(enrollment_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("outreach enrollment"))?;
+    if enrollment.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "enrollmentId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 async fn tickets_count(db: &DatabaseConnection, client_id: Uuid) -> AppResult<u64> {
@@ -2254,6 +3130,36 @@ fn probability(value: i32) -> AppResult<i32> {
         Err(AppError::BadRequest(
             "probabilityMicros must be between 0 and 1000000".to_string(),
         ))
+    }
+}
+
+fn percent(value: i32) -> AppResult<i32> {
+    if (0..=100).contains(&value) {
+        Ok(value)
+    } else {
+        Err(AppError::BadRequest(
+            "allocationPercent must be between 0 and 100".to_string(),
+        ))
+    }
+}
+
+fn step_order(value: i32) -> AppResult<i32> {
+    if (1..=100).contains(&value) {
+        Ok(value)
+    } else {
+        Err(AppError::BadRequest(
+            "step order must be between 1 and 100".to_string(),
+        ))
+    }
+}
+
+fn non_negative(value: i32, field: &str) -> AppResult<i32> {
+    if value >= 0 {
+        Ok(value)
+    } else {
+        Err(AppError::BadRequest(format!(
+            "{field} must be non-negative"
+        )))
     }
 }
 

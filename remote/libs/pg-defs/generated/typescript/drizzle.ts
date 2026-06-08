@@ -5155,3 +5155,549 @@ export const benefactorMarketingTeamAllocationsUpdateSchema = benefactorMarketin
 export type BenefactorMarketingTeamAllocationsRow = z.infer<typeof benefactorMarketingTeamAllocationsRowSchema>;
 export type BenefactorMarketingTeamAllocationsInsert = z.infer<typeof benefactorMarketingTeamAllocationsInsertSchema>;
 export type BenefactorMarketingTeamAllocationsUpdate = z.infer<typeof benefactorMarketingTeamAllocationsUpdateSchema>;
+
+export const benefactorMarketingIntegrationSyncRunsSyncKindValues = ["incremental","full","webhook","backfill","export"] as const;
+export const benefactorMarketingIntegrationSyncRunsSyncKindSchema = z.enum(benefactorMarketingIntegrationSyncRunsSyncKindValues);
+export type BenefactorMarketingIntegrationSyncRunsSyncKind = z.infer<typeof benefactorMarketingIntegrationSyncRunsSyncKindSchema>;
+
+export const benefactorMarketingIntegrationSyncRunsDirectionValues = ["import","export","bidirectional"] as const;
+export const benefactorMarketingIntegrationSyncRunsDirectionSchema = z.enum(benefactorMarketingIntegrationSyncRunsDirectionValues);
+export type BenefactorMarketingIntegrationSyncRunsDirection = z.infer<typeof benefactorMarketingIntegrationSyncRunsDirectionSchema>;
+
+export const benefactorMarketingIntegrationSyncRunsStatusValues = ["queued","running","succeeded","failed","canceled"] as const;
+export const benefactorMarketingIntegrationSyncRunsStatusSchema = z.enum(benefactorMarketingIntegrationSyncRunsStatusValues);
+export type BenefactorMarketingIntegrationSyncRunsStatus = z.infer<typeof benefactorMarketingIntegrationSyncRunsStatusSchema>;
+
+export const benefactorMarketingIntegrationSyncRuns = pgTable(
+  "benefactor_marketing_integration_sync_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    integrationId: uuid("integration_id").notNull(),
+    clientId: uuid("client_id"),
+    syncKind: varchar("sync_kind", { length: 48 }).default(sql`'incremental'`).notNull(),
+    direction: varchar("direction", { length: 24 }).default(sql`'import'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
+    recordsSeen: integer("records_seen").default(sql`0`).notNull(),
+    recordsChanged: integer("records_changed").default(sql`0`).notNull(),
+    cursorBefore: text("cursor_before"),
+    cursorAfter: text("cursor_after"),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    errorSummary: text("error_summary"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingIntegrationSyncRunsKindChk: check("benefactor_marketing_integration_sync_runs_kind_chk", sql.raw("sync_kind in ('incremental', 'full', 'webhook', 'backfill', 'export')")),
+    benefactorMarketingIntegrationSyncRunsDirectionChk: check("benefactor_marketing_integration_sync_runs_direction_chk", sql.raw("direction in ('import', 'export', 'bidirectional')")),
+    benefactorMarketingIntegrationSyncRunsStatusChk: check("benefactor_marketing_integration_sync_runs_status_chk", sql.raw("status in ('queued', 'running', 'succeeded', 'failed', 'canceled')")),
+    benefactorMarketingIntegrationSyncRunsCountsChk: check("benefactor_marketing_integration_sync_runs_counts_chk", sql.raw("records_seen >= 0 and records_changed >= 0")),
+    benefactorMarketingIntegrationSyncRunsCursorBeforeSizeChk: check("benefactor_marketing_integration_sync_runs_cursor_before_size_chk", sql.raw("cursor_before is null or octet_length(cursor_before) <= 4000")),
+    benefactorMarketingIntegrationSyncRunsCursorAfterSizeChk: check("benefactor_marketing_integration_sync_runs_cursor_after_size_chk", sql.raw("cursor_after is null or octet_length(cursor_after) <= 4000")),
+    benefactorMarketingIntegrationSyncRunsPayloadObjectChk: check("benefactor_marketing_integration_sync_runs_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    benefactorMarketingIntegrationSyncRunsErrorSummarySizeChk: check("benefactor_marketing_integration_sync_runs_error_summary_size_chk", sql.raw("error_summary is null or octet_length(error_summary) <= 4000")),
+    benefactorMarketingIntegrationSyncRunsIntegrationIdx: index("benefactor_marketing_integration_sync_runs_integration_idx").on(table.integrationId, table.status, table.createdAt.desc()),
+    benefactorMarketingIntegrationSyncRunsClientIdx: index("benefactor_marketing_integration_sync_runs_client_idx").on(table.clientId, table.createdAt.desc()).where(sql.raw("client_id is not null")),
+  }),
+);
+
+export const benefactorMarketingIntegrationSyncRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  integrationId: z.string().uuid(),
+  clientId: z.string().uuid().nullable(),
+  syncKind: benefactorMarketingIntegrationSyncRunsSyncKindSchema,
+  direction: benefactorMarketingIntegrationSyncRunsDirectionSchema,
+  status: benefactorMarketingIntegrationSyncRunsStatusSchema,
+  recordsSeen: z.number().int().min(0),
+  recordsChanged: z.number().int().min(0),
+  cursorBefore: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  cursorAfter: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  payload: jsonObjectSchema,
+  errorSummary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingIntegrationSyncRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  integrationId: z.string().uuid(),
+  clientId: z.string().uuid().nullable().optional(),
+  syncKind: benefactorMarketingIntegrationSyncRunsSyncKindSchema.optional().default("incremental"),
+  direction: benefactorMarketingIntegrationSyncRunsDirectionSchema.optional().default("import"),
+  status: benefactorMarketingIntegrationSyncRunsStatusSchema.optional().default("queued"),
+  recordsSeen: z.number().int().min(0).optional().default(0),
+  recordsChanged: z.number().int().min(0).optional().default(0),
+  cursorBefore: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  cursorAfter: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  payload: jsonObjectSchema.optional().default({}),
+  errorSummary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingIntegrationSyncRunsUpdateSchema = benefactorMarketingIntegrationSyncRunsInsertSchema.partial();
+export type BenefactorMarketingIntegrationSyncRunsRow = z.infer<typeof benefactorMarketingIntegrationSyncRunsRowSchema>;
+export type BenefactorMarketingIntegrationSyncRunsInsert = z.infer<typeof benefactorMarketingIntegrationSyncRunsInsertSchema>;
+export type BenefactorMarketingIntegrationSyncRunsUpdate = z.infer<typeof benefactorMarketingIntegrationSyncRunsUpdateSchema>;
+
+export const benefactorMarketingOutreachSequencesStatusValues = ["draft","active","paused","completed","archived"] as const;
+export const benefactorMarketingOutreachSequencesStatusSchema = z.enum(benefactorMarketingOutreachSequencesStatusValues);
+export type BenefactorMarketingOutreachSequencesStatus = z.infer<typeof benefactorMarketingOutreachSequencesStatusSchema>;
+
+export const benefactorMarketingOutreachSequencesChannelValues = ["email","linkedin","sms","phone","multi_channel"] as const;
+export const benefactorMarketingOutreachSequencesChannelSchema = z.enum(benefactorMarketingOutreachSequencesChannelValues);
+export type BenefactorMarketingOutreachSequencesChannel = z.infer<typeof benefactorMarketingOutreachSequencesChannelSchema>;
+
+export const benefactorMarketingOutreachSequences = pgTable(
+  "benefactor_marketing_outreach_sequences",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    campaignId: uuid("campaign_id"),
+    status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
+    channel: varchar("channel", { length: 32 }).default(sql`'email'`).notNull(),
+    name: varchar("name", { length: 220 }).notNull(),
+    audienceFilter: jsonb("audience_filter").default(sql`'{}'::jsonb`).notNull(),
+    cadence: jsonb("cadence").default(sql`'{}'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingOutreachSequencesStatusChk: check("benefactor_marketing_outreach_sequences_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'completed', 'archived')")),
+    benefactorMarketingOutreachSequencesChannelChk: check("benefactor_marketing_outreach_sequences_channel_chk", sql.raw("channel in ('email', 'linkedin', 'sms', 'phone', 'multi_channel')")),
+    benefactorMarketingOutreachSequencesNameSizeChk: check("benefactor_marketing_outreach_sequences_name_size_chk", sql.raw("octet_length(name) between 1 and 220")),
+    benefactorMarketingOutreachSequencesAudienceObjectChk: check("benefactor_marketing_outreach_sequences_audience_object_chk", sql.raw("jsonb_typeof(audience_filter) = 'object'")),
+    benefactorMarketingOutreachSequencesCadenceObjectChk: check("benefactor_marketing_outreach_sequences_cadence_object_chk", sql.raw("jsonb_typeof(cadence) = 'object'")),
+    benefactorMarketingOutreachSequencesMetaObjectChk: check("benefactor_marketing_outreach_sequences_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingOutreachSequencesClientStatusIdx: index("benefactor_marketing_outreach_sequences_client_status_idx").on(table.clientId, table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const benefactorMarketingOutreachSequencesRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable(),
+  status: benefactorMarketingOutreachSequencesStatusSchema,
+  channel: benefactorMarketingOutreachSequencesChannelSchema,
+  name: z.string().max(220).refine((value) => byteLength(value) <= 220, "Must be at most 220 bytes"),
+  audienceFilter: jsonObjectSchema,
+  cadence: jsonObjectSchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingOutreachSequencesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable().optional(),
+  status: benefactorMarketingOutreachSequencesStatusSchema.optional().default("draft"),
+  channel: benefactorMarketingOutreachSequencesChannelSchema.optional().default("email"),
+  name: z.string().max(220).refine((value) => byteLength(value) <= 220, "Must be at most 220 bytes"),
+  audienceFilter: jsonObjectSchema.optional().default({}),
+  cadence: jsonObjectSchema.optional().default({}),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingOutreachSequencesUpdateSchema = benefactorMarketingOutreachSequencesInsertSchema.partial();
+export type BenefactorMarketingOutreachSequencesRow = z.infer<typeof benefactorMarketingOutreachSequencesRowSchema>;
+export type BenefactorMarketingOutreachSequencesInsert = z.infer<typeof benefactorMarketingOutreachSequencesInsertSchema>;
+export type BenefactorMarketingOutreachSequencesUpdate = z.infer<typeof benefactorMarketingOutreachSequencesUpdateSchema>;
+
+export const benefactorMarketingOutreachStepsStatusValues = ["active","disabled","archived"] as const;
+export const benefactorMarketingOutreachStepsStatusSchema = z.enum(benefactorMarketingOutreachStepsStatusValues);
+export type BenefactorMarketingOutreachStepsStatus = z.infer<typeof benefactorMarketingOutreachStepsStatusSchema>;
+
+export const benefactorMarketingOutreachStepsChannelValues = ["email","linkedin","sms","phone","task"] as const;
+export const benefactorMarketingOutreachStepsChannelSchema = z.enum(benefactorMarketingOutreachStepsChannelValues);
+export type BenefactorMarketingOutreachStepsChannel = z.infer<typeof benefactorMarketingOutreachStepsChannelSchema>;
+
+export const benefactorMarketingOutreachSteps = pgTable(
+  "benefactor_marketing_outreach_steps",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    sequenceId: uuid("sequence_id").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    stepOrder: integer("step_order").notNull(),
+    channel: varchar("channel", { length: 32 }).notNull(),
+    delayMinutes: integer("delay_minutes").default(sql`0`).notNull(),
+    subject: varchar("subject", { length: 240 }),
+    bodyTemplate: text("body_template"),
+    personalizationHints: jsonb("personalization_hints").default(sql`'[]'::jsonb`).notNull(),
+    experimentKey: varchar("experiment_key", { length: 120 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingOutreachStepsStatusChk: check("benefactor_marketing_outreach_steps_status_chk", sql.raw("status in ('active', 'disabled', 'archived')")),
+    benefactorMarketingOutreachStepsOrderChk: check("benefactor_marketing_outreach_steps_order_chk", sql.raw("step_order between 1 and 100")),
+    benefactorMarketingOutreachStepsChannelChk: check("benefactor_marketing_outreach_steps_channel_chk", sql.raw("channel in ('email', 'linkedin', 'sms', 'phone', 'task')")),
+    benefactorMarketingOutreachStepsDelayChk: check("benefactor_marketing_outreach_steps_delay_chk", sql.raw("delay_minutes between 0 and 525600")),
+    benefactorMarketingOutreachStepsSubjectSizeChk: check("benefactor_marketing_outreach_steps_subject_size_chk", sql.raw("subject is null or octet_length(subject) <= 240")),
+    benefactorMarketingOutreachStepsBodySizeChk: check("benefactor_marketing_outreach_steps_body_size_chk", sql.raw("body_template is null or octet_length(body_template) <= 100000")),
+    benefactorMarketingOutreachStepsHintsArrayChk: check("benefactor_marketing_outreach_steps_hints_array_chk", sql.raw("jsonb_typeof(personalization_hints) = 'array'")),
+    benefactorMarketingOutreachStepsExperimentKeySizeChk: check("benefactor_marketing_outreach_steps_experiment_key_size_chk", sql.raw("experiment_key is null or octet_length(experiment_key) <= 120")),
+    benefactorMarketingOutreachStepsSequenceOrderUq: uniqueIndex("benefactor_marketing_outreach_steps_sequence_order_uq").on(table.sequenceId, table.stepOrder),
+  }),
+);
+
+export const benefactorMarketingOutreachStepsRowSchema = z.object({
+  id: z.string().uuid(),
+  sequenceId: z.string().uuid(),
+  status: benefactorMarketingOutreachStepsStatusSchema,
+  stepOrder: z.number().int().min(1).max(100),
+  channel: benefactorMarketingOutreachStepsChannelSchema,
+  delayMinutes: z.number().int().min(0).max(525600),
+  subject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  bodyTemplate: z.string().refine((value) => byteLength(value) <= 100000, "Must be at most 100000 bytes").nullable(),
+  personalizationHints: jsonArraySchema,
+  experimentKey: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingOutreachStepsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  sequenceId: z.string().uuid(),
+  status: benefactorMarketingOutreachStepsStatusSchema.optional().default("active"),
+  stepOrder: z.number().int().min(1).max(100),
+  channel: benefactorMarketingOutreachStepsChannelSchema,
+  delayMinutes: z.number().int().min(0).max(525600).optional().default(0),
+  subject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  bodyTemplate: z.string().refine((value) => byteLength(value) <= 100000, "Must be at most 100000 bytes").nullable().optional(),
+  personalizationHints: jsonArraySchema.optional().default([]),
+  experimentKey: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingOutreachStepsUpdateSchema = benefactorMarketingOutreachStepsInsertSchema.partial();
+export type BenefactorMarketingOutreachStepsRow = z.infer<typeof benefactorMarketingOutreachStepsRowSchema>;
+export type BenefactorMarketingOutreachStepsInsert = z.infer<typeof benefactorMarketingOutreachStepsInsertSchema>;
+export type BenefactorMarketingOutreachStepsUpdate = z.infer<typeof benefactorMarketingOutreachStepsUpdateSchema>;
+
+export const benefactorMarketingOutreachEnrollmentsStatusValues = ["active","paused","completed","bounced","unsubscribed","failed"] as const;
+export const benefactorMarketingOutreachEnrollmentsStatusSchema = z.enum(benefactorMarketingOutreachEnrollmentsStatusValues);
+export type BenefactorMarketingOutreachEnrollmentsStatus = z.infer<typeof benefactorMarketingOutreachEnrollmentsStatusSchema>;
+
+export const benefactorMarketingOutreachEnrollments = pgTable(
+  "benefactor_marketing_outreach_enrollments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    sequenceId: uuid("sequence_id").notNull(),
+    leadId: uuid("lead_id"),
+    contactId: uuid("contact_id"),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    currentStepOrder: integer("current_step_order").default(sql`1`).notNull(),
+    enrollmentContext: jsonb("enrollment_context").default(sql`'{}'::jsonb`).notNull(),
+    lastTouchAt: timestamp("last_touch_at", { withTimezone: true, mode: "string" }),
+    nextTouchAt: timestamp("next_touch_at", { withTimezone: true, mode: "string" }),
+    outcome: varchar("outcome", { length: 64 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingOutreachEnrollmentsTargetChk: check("benefactor_marketing_outreach_enrollments_target_chk", sql.raw("lead_id is not null or contact_id is not null")),
+    benefactorMarketingOutreachEnrollmentsStatusChk: check("benefactor_marketing_outreach_enrollments_status_chk", sql.raw("status in ('active', 'paused', 'completed', 'bounced', 'unsubscribed', 'failed')")),
+    benefactorMarketingOutreachEnrollmentsStepChk: check("benefactor_marketing_outreach_enrollments_step_chk", sql.raw("current_step_order between 1 and 100")),
+    benefactorMarketingOutreachEnrollmentsContextObjectChk: check("benefactor_marketing_outreach_enrollments_context_object_chk", sql.raw("jsonb_typeof(enrollment_context) = 'object'")),
+    benefactorMarketingOutreachEnrollmentsOutcomeSizeChk: check("benefactor_marketing_outreach_enrollments_outcome_size_chk", sql.raw("outcome is null or octet_length(outcome) <= 64")),
+    benefactorMarketingOutreachEnrollmentsSequenceIdx: index("benefactor_marketing_outreach_enrollments_sequence_idx").on(table.sequenceId, table.status, table.nextTouchAt),
+    benefactorMarketingOutreachEnrollmentsClientIdx: index("benefactor_marketing_outreach_enrollments_client_idx").on(table.clientId, table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const benefactorMarketingOutreachEnrollmentsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  sequenceId: z.string().uuid(),
+  leadId: z.string().uuid().nullable(),
+  contactId: z.string().uuid().nullable(),
+  status: benefactorMarketingOutreachEnrollmentsStatusSchema,
+  currentStepOrder: z.number().int().min(1).max(100),
+  enrollmentContext: jsonObjectSchema,
+  lastTouchAt: z.string().datetime().nullable(),
+  nextTouchAt: z.string().datetime().nullable(),
+  outcome: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingOutreachEnrollmentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  sequenceId: z.string().uuid(),
+  leadId: z.string().uuid().nullable().optional(),
+  contactId: z.string().uuid().nullable().optional(),
+  status: benefactorMarketingOutreachEnrollmentsStatusSchema.optional().default("active"),
+  currentStepOrder: z.number().int().min(1).max(100).optional().default(1),
+  enrollmentContext: jsonObjectSchema.optional().default({}),
+  lastTouchAt: z.string().datetime().nullable().optional(),
+  nextTouchAt: z.string().datetime().nullable().optional(),
+  outcome: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingOutreachEnrollmentsUpdateSchema = benefactorMarketingOutreachEnrollmentsInsertSchema.partial();
+export type BenefactorMarketingOutreachEnrollmentsRow = z.infer<typeof benefactorMarketingOutreachEnrollmentsRowSchema>;
+export type BenefactorMarketingOutreachEnrollmentsInsert = z.infer<typeof benefactorMarketingOutreachEnrollmentsInsertSchema>;
+export type BenefactorMarketingOutreachEnrollmentsUpdate = z.infer<typeof benefactorMarketingOutreachEnrollmentsUpdateSchema>;
+
+export const benefactorMarketingOutreachTouchpointsChannelValues = ["email","linkedin","sms","phone","task","meeting"] as const;
+export const benefactorMarketingOutreachTouchpointsChannelSchema = z.enum(benefactorMarketingOutreachTouchpointsChannelValues);
+export type BenefactorMarketingOutreachTouchpointsChannel = z.infer<typeof benefactorMarketingOutreachTouchpointsChannelSchema>;
+
+export const benefactorMarketingOutreachTouchpointsDirectionValues = ["outbound","inbound","internal"] as const;
+export const benefactorMarketingOutreachTouchpointsDirectionSchema = z.enum(benefactorMarketingOutreachTouchpointsDirectionValues);
+export type BenefactorMarketingOutreachTouchpointsDirection = z.infer<typeof benefactorMarketingOutreachTouchpointsDirectionSchema>;
+
+export const benefactorMarketingOutreachTouchpointsStatusValues = ["planned","sent","delivered","opened","clicked","replied","failed","bounced"] as const;
+export const benefactorMarketingOutreachTouchpointsStatusSchema = z.enum(benefactorMarketingOutreachTouchpointsStatusValues);
+export type BenefactorMarketingOutreachTouchpointsStatus = z.infer<typeof benefactorMarketingOutreachTouchpointsStatusSchema>;
+
+export const benefactorMarketingOutreachTouchpoints = pgTable(
+  "benefactor_marketing_outreach_touchpoints",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    sequenceId: uuid("sequence_id"),
+    enrollmentId: uuid("enrollment_id"),
+    campaignId: uuid("campaign_id"),
+    leadId: uuid("lead_id"),
+    contactId: uuid("contact_id"),
+    channel: varchar("channel", { length: 32 }).notNull(),
+    direction: varchar("direction", { length: 24 }).default(sql`'outbound'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'planned'`).notNull(),
+    subject: varchar("subject", { length: 240 }),
+    bodyExcerpt: text("body_excerpt"),
+    externalMessageId: varchar("external_message_id", { length: 200 }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingOutreachTouchpointsChannelChk: check("benefactor_marketing_outreach_touchpoints_channel_chk", sql.raw("channel in ('email', 'linkedin', 'sms', 'phone', 'task', 'meeting')")),
+    benefactorMarketingOutreachTouchpointsDirectionChk: check("benefactor_marketing_outreach_touchpoints_direction_chk", sql.raw("direction in ('outbound', 'inbound', 'internal')")),
+    benefactorMarketingOutreachTouchpointsStatusChk: check("benefactor_marketing_outreach_touchpoints_status_chk", sql.raw("status in ('planned', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'failed', 'bounced')")),
+    benefactorMarketingOutreachTouchpointsSubjectSizeChk: check("benefactor_marketing_outreach_touchpoints_subject_size_chk", sql.raw("subject is null or octet_length(subject) <= 240")),
+    benefactorMarketingOutreachTouchpointsBodySizeChk: check("benefactor_marketing_outreach_touchpoints_body_size_chk", sql.raw("body_excerpt is null or octet_length(body_excerpt) <= 4000")),
+    benefactorMarketingOutreachTouchpointsExternalMessageSizeChk: check("benefactor_marketing_outreach_touchpoints_external_message_size_chk", sql.raw("external_message_id is null or octet_length(external_message_id) <= 200")),
+    benefactorMarketingOutreachTouchpointsPayloadObjectChk: check("benefactor_marketing_outreach_touchpoints_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    benefactorMarketingOutreachTouchpointsClientIdx: index("benefactor_marketing_outreach_touchpoints_client_idx").on(table.clientId, table.occurredAt.desc()),
+    benefactorMarketingOutreachTouchpointsExternalUq: uniqueIndex("benefactor_marketing_outreach_touchpoints_external_uq").on(table.channel, table.externalMessageId).where(sql.raw("external_message_id is not null")),
+  }),
+);
+
+export const benefactorMarketingOutreachTouchpointsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  sequenceId: z.string().uuid().nullable(),
+  enrollmentId: z.string().uuid().nullable(),
+  campaignId: z.string().uuid().nullable(),
+  leadId: z.string().uuid().nullable(),
+  contactId: z.string().uuid().nullable(),
+  channel: benefactorMarketingOutreachTouchpointsChannelSchema,
+  direction: benefactorMarketingOutreachTouchpointsDirectionSchema,
+  status: benefactorMarketingOutreachTouchpointsStatusSchema,
+  subject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  bodyExcerpt: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  externalMessageId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  occurredAt: z.string().datetime(),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const benefactorMarketingOutreachTouchpointsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  sequenceId: z.string().uuid().nullable().optional(),
+  enrollmentId: z.string().uuid().nullable().optional(),
+  campaignId: z.string().uuid().nullable().optional(),
+  leadId: z.string().uuid().nullable().optional(),
+  contactId: z.string().uuid().nullable().optional(),
+  channel: benefactorMarketingOutreachTouchpointsChannelSchema,
+  direction: benefactorMarketingOutreachTouchpointsDirectionSchema.optional().default("outbound"),
+  status: benefactorMarketingOutreachTouchpointsStatusSchema.optional().default("planned"),
+  subject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  bodyExcerpt: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  externalMessageId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  occurredAt: z.string().datetime().optional(),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingOutreachTouchpointsUpdateSchema = benefactorMarketingOutreachTouchpointsInsertSchema.partial();
+export type BenefactorMarketingOutreachTouchpointsRow = z.infer<typeof benefactorMarketingOutreachTouchpointsRowSchema>;
+export type BenefactorMarketingOutreachTouchpointsInsert = z.infer<typeof benefactorMarketingOutreachTouchpointsInsertSchema>;
+export type BenefactorMarketingOutreachTouchpointsUpdate = z.infer<typeof benefactorMarketingOutreachTouchpointsUpdateSchema>;
+
+export const benefactorMarketingProspectResearchBriefsStatusValues = ["draft","ready","stale","failed"] as const;
+export const benefactorMarketingProspectResearchBriefsStatusSchema = z.enum(benefactorMarketingProspectResearchBriefsStatusValues);
+export type BenefactorMarketingProspectResearchBriefsStatus = z.infer<typeof benefactorMarketingProspectResearchBriefsStatusSchema>;
+
+export const benefactorMarketingProspectResearchBriefsResearchKindValues = ["account_research","contact_research","competitive_intel","proposal_brief","outreach_personalization"] as const;
+export const benefactorMarketingProspectResearchBriefsResearchKindSchema = z.enum(benefactorMarketingProspectResearchBriefsResearchKindValues);
+export type BenefactorMarketingProspectResearchBriefsResearchKind = z.infer<typeof benefactorMarketingProspectResearchBriefsResearchKindSchema>;
+
+export const benefactorMarketingProspectResearchBriefsSourceValues = ["ai_assisted","analyst","scraper","integration"] as const;
+export const benefactorMarketingProspectResearchBriefsSourceSchema = z.enum(benefactorMarketingProspectResearchBriefsSourceValues);
+export type BenefactorMarketingProspectResearchBriefsSource = z.infer<typeof benefactorMarketingProspectResearchBriefsSourceSchema>;
+
+export const benefactorMarketingProspectResearchBriefs = pgTable(
+  "benefactor_marketing_prospect_research_briefs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    leadId: uuid("lead_id"),
+    status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
+    researchKind: varchar("research_kind", { length: 48 }).default(sql`'account_research'`).notNull(),
+    source: varchar("source", { length: 48 }).default(sql`'ai_assisted'`).notNull(),
+    summary: text("summary"),
+    findings: jsonb("findings").default(sql`'[]'::jsonb`).notNull(),
+    recommendedActions: jsonb("recommended_actions").default(sql`'[]'::jsonb`).notNull(),
+    confidenceMicros: integer("confidence_micros").default(sql`0`).notNull(),
+    modelName: varchar("model_name", { length: 120 }),
+    generatedAt: timestamp("generated_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingProspectResearchBriefsStatusChk: check("benefactor_marketing_prospect_research_briefs_status_chk", sql.raw("status in ('draft', 'ready', 'stale', 'failed')")),
+    benefactorMarketingProspectResearchBriefsKindChk: check("benefactor_marketing_prospect_research_briefs_kind_chk", sql.raw("research_kind in ('account_research', 'contact_research', 'competitive_intel', 'proposal_brief', 'outreach_personalization')")),
+    benefactorMarketingProspectResearchBriefsSourceChk: check("benefactor_marketing_prospect_research_briefs_source_chk", sql.raw("source in ('ai_assisted', 'analyst', 'scraper', 'integration')")),
+    benefactorMarketingProspectResearchBriefsSummarySizeChk: check("benefactor_marketing_prospect_research_briefs_summary_size_chk", sql.raw("summary is null or octet_length(summary) <= 20000")),
+    benefactorMarketingProspectResearchBriefsFindingsArrayChk: check("benefactor_marketing_prospect_research_briefs_findings_array_chk", sql.raw("jsonb_typeof(findings) = 'array'")),
+    benefactorMarketingProspectResearchBriefsActionsArrayChk: check("benefactor_marketing_prospect_research_briefs_actions_array_chk", sql.raw("jsonb_typeof(recommended_actions) = 'array'")),
+    benefactorMarketingProspectResearchBriefsConfidenceChk: check("benefactor_marketing_prospect_research_briefs_confidence_chk", sql.raw("confidence_micros between 0 and 1000000")),
+    benefactorMarketingProspectResearchBriefsModelSizeChk: check("benefactor_marketing_prospect_research_briefs_model_size_chk", sql.raw("model_name is null or octet_length(model_name) <= 120")),
+    benefactorMarketingProspectResearchBriefsClientIdx: index("benefactor_marketing_prospect_research_briefs_client_idx").on(table.clientId, table.status, table.updatedAt.desc()),
+    benefactorMarketingProspectResearchBriefsLeadIdx: index("benefactor_marketing_prospect_research_briefs_lead_idx").on(table.leadId, table.generatedAt.desc()).where(sql.raw("lead_id is not null")),
+  }),
+);
+
+export const benefactorMarketingProspectResearchBriefsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  leadId: z.string().uuid().nullable(),
+  status: benefactorMarketingProspectResearchBriefsStatusSchema,
+  researchKind: benefactorMarketingProspectResearchBriefsResearchKindSchema,
+  source: benefactorMarketingProspectResearchBriefsSourceSchema,
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable(),
+  findings: jsonArraySchema,
+  recommendedActions: jsonArraySchema,
+  confidenceMicros: z.number().int().min(0).max(1000000),
+  modelName: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  generatedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingProspectResearchBriefsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  leadId: z.string().uuid().nullable().optional(),
+  status: benefactorMarketingProspectResearchBriefsStatusSchema.optional().default("draft"),
+  researchKind: benefactorMarketingProspectResearchBriefsResearchKindSchema.optional().default("account_research"),
+  source: benefactorMarketingProspectResearchBriefsSourceSchema.optional().default("ai_assisted"),
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable().optional(),
+  findings: jsonArraySchema.optional().default([]),
+  recommendedActions: jsonArraySchema.optional().default([]),
+  confidenceMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  modelName: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  generatedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingProspectResearchBriefsUpdateSchema = benefactorMarketingProspectResearchBriefsInsertSchema.partial();
+export type BenefactorMarketingProspectResearchBriefsRow = z.infer<typeof benefactorMarketingProspectResearchBriefsRowSchema>;
+export type BenefactorMarketingProspectResearchBriefsInsert = z.infer<typeof benefactorMarketingProspectResearchBriefsInsertSchema>;
+export type BenefactorMarketingProspectResearchBriefsUpdate = z.infer<typeof benefactorMarketingProspectResearchBriefsUpdateSchema>;
+
+export const benefactorMarketingConversionEventsEventTypeValues = ["landing_page_view","form_submit","chat_started","calendar_booked","asset_download","trial_signup","purchase","custom"] as const;
+export const benefactorMarketingConversionEventsEventTypeSchema = z.enum(benefactorMarketingConversionEventsEventTypeValues);
+export type BenefactorMarketingConversionEventsEventType = z.infer<typeof benefactorMarketingConversionEventsEventTypeSchema>;
+
+export const benefactorMarketingConversionEvents = pgTable(
+  "benefactor_marketing_conversion_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    campaignId: uuid("campaign_id"),
+    leadId: uuid("lead_id"),
+    contentAssetId: uuid("content_asset_id"),
+    eventType: varchar("event_type", { length: 64 }).notNull(),
+    sourcePlatform: varchar("source_platform", { length: 64 }),
+    sourceEventId: varchar("source_event_id", { length: 200 }),
+    sessionId: varchar("session_id", { length: 200 }),
+    visitorKey: varchar("visitor_key", { length: 200 }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    valueCents: integer("value_cents").default(sql`0`).notNull(),
+    utm: jsonb("utm").default(sql`'{}'::jsonb`).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingConversionEventsTypeChk: check("benefactor_marketing_conversion_events_type_chk", sql.raw("event_type in ('landing_page_view', 'form_submit', 'chat_started', 'calendar_booked', 'asset_download', 'trial_signup', 'purchase', 'custom')")),
+    benefactorMarketingConversionEventsSourcePlatformSizeChk: check("benefactor_marketing_conversion_events_source_platform_size_chk", sql.raw("source_platform is null or octet_length(source_platform) <= 64")),
+    benefactorMarketingConversionEventsSourceEventIdSizeChk: check("benefactor_marketing_conversion_events_source_event_id_size_chk", sql.raw("source_event_id is null or octet_length(source_event_id) <= 200")),
+    benefactorMarketingConversionEventsSessionSizeChk: check("benefactor_marketing_conversion_events_session_size_chk", sql.raw("session_id is null or octet_length(session_id) <= 200")),
+    benefactorMarketingConversionEventsVisitorSizeChk: check("benefactor_marketing_conversion_events_visitor_size_chk", sql.raw("visitor_key is null or octet_length(visitor_key) <= 200")),
+    benefactorMarketingConversionEventsValueChk: check("benefactor_marketing_conversion_events_value_chk", sql.raw("value_cents >= 0")),
+    benefactorMarketingConversionEventsUtmObjectChk: check("benefactor_marketing_conversion_events_utm_object_chk", sql.raw("jsonb_typeof(utm) = 'object'")),
+    benefactorMarketingConversionEventsPayloadObjectChk: check("benefactor_marketing_conversion_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    benefactorMarketingConversionEventsClientTypeIdx: index("benefactor_marketing_conversion_events_client_type_idx").on(table.clientId, table.eventType, table.occurredAt.desc()),
+    benefactorMarketingConversionEventsSourceUq: uniqueIndex("benefactor_marketing_conversion_events_source_uq").on(table.sourcePlatform, table.sourceEventId).where(sql.raw("source_platform is not null and source_event_id is not null")),
+  }),
+);
+
+export const benefactorMarketingConversionEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable(),
+  leadId: z.string().uuid().nullable(),
+  contentAssetId: z.string().uuid().nullable(),
+  eventType: benefactorMarketingConversionEventsEventTypeSchema,
+  sourcePlatform: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable(),
+  sourceEventId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  visitorKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  occurredAt: z.string().datetime(),
+  valueCents: z.number().int().min(0),
+  utm: jsonObjectSchema,
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const benefactorMarketingConversionEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable().optional(),
+  leadId: z.string().uuid().nullable().optional(),
+  contentAssetId: z.string().uuid().nullable().optional(),
+  eventType: benefactorMarketingConversionEventsEventTypeSchema,
+  sourcePlatform: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable().optional(),
+  sourceEventId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  visitorKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  occurredAt: z.string().datetime().optional(),
+  valueCents: z.number().int().min(0).optional().default(0),
+  utm: jsonObjectSchema.optional().default({}),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingConversionEventsUpdateSchema = benefactorMarketingConversionEventsInsertSchema.partial();
+export type BenefactorMarketingConversionEventsRow = z.infer<typeof benefactorMarketingConversionEventsRowSchema>;
+export type BenefactorMarketingConversionEventsInsert = z.infer<typeof benefactorMarketingConversionEventsInsertSchema>;
+export type BenefactorMarketingConversionEventsUpdate = z.infer<typeof benefactorMarketingConversionEventsUpdateSchema>;
