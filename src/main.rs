@@ -95202,6 +95202,66 @@ async fn instruction_validation_catalog_http() -> impl IntoResponse {
     Json(instruction_validation_catalog_response())
 }
 
+fn instruction_validation_stream_readiness_matrix() -> Vec<Value> {
+    vec![
+        json!({
+            "streamKind": "imported-cnc-controller-program",
+            "appliesTo": ["mill", "router", "lathe", "mill-turn", "swiss", "sheet-cutting", "EDM"],
+            "requiredEvidence": [
+                "source artifact checksum, controller dialect, postprocessor or CAM provenance, and machine profile",
+                "modal state, units, work offset, tool offsets, compensation, canned cycles, macros, and subprogram dependencies",
+                "simulation, dry-run, backplot, or controller-equivalent review before release"
+            ],
+            "blocks": ["validation.failureBoundaries", "controllerPlan.releaseGates", "machineRelease.blockers"],
+            "learningSignals": ["validation-stream:imported-cnc", "controller-modal-state:*", "macro-dependency:*"]
+        }),
+        json!({
+            "streamKind": "generated-machine-code",
+            "appliesTo": ["printer G-code", "CAM-posted CNC", "sheet-cutting job", "robotic path", "postprocess program"],
+            "requiredEvidence": [
+                "generation request, source design or CAM artifact, generator version, and output checksum",
+                "postprocessor, controller target, material route, setup, and simulation handoff",
+                "diff or regeneration review when improved instructions replace generated drafts"
+            ],
+            "blocks": ["generatedPrograms", "postprocessPlan.controllerTargets", "releasePackagePlan.packages"],
+            "learningSignals": ["validation-stream:generated-code", "program-generation:*", "instruction-patch:*"]
+        }),
+        json!({
+            "streamKind": "additive-slicer-or-printer-gcode",
+            "appliesTo": ["FDM", "multi-material FDM", "pellet FGF", "resin", "powder-bed", "material jetting"],
+            "requiredEvidence": [
+                "printer firmware, slicer profile, material lot, thermal state, build surface, and support/orientation evidence",
+                "homing, bed/nozzle wait, extrusion mode, purge/prime, runout, resume, and postprocess state as applicable",
+                "first-layer, exposure, powder, or build-profile review before machine-ready release"
+            ],
+            "blocks": ["validation.findings", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["validation-stream:additive-gcode", "printer-state:*", "slicer-profile:*"]
+        }),
+        json!({
+            "streamKind": "non-gcode-job-sheet-or-operator-instructions",
+            "appliesTo": ["resin postprocess", "powder handling", "thermal postprocess", "surface finishing", "assembly", "manual special process"],
+            "requiredEvidence": [
+                "job-sheet template/schema, material/process recipe, safety/PPE, setup, completion, and signoff gates",
+                "human-intervention and automation capability review",
+                "quality, traceability, and release-package evidence for each manual or special-process step"
+            ],
+            "blocks": ["interventionMap", "executionPlan.stopPoints", "qualityPlan.releaseGates"],
+            "learningSignals": ["validation-stream:text-job-sheet", "human-intervention:*", "manual-process:*"]
+        }),
+        json!({
+            "streamKind": "hybrid-split-combine-instruction-package",
+            "appliesTo": ["printed plus milled assemblies", "turned inserts", "sheet-cut subparts", "postprocess and assembly kits"],
+            "requiredEvidence": [
+                "child instruction packages, interface-control plan, recomposition sequence, and datum transfer",
+                "per-route machine-release evidence and final assembly quality gates",
+                "split/combine boundary review when a single machine cannot complete the job safely"
+            ],
+            "blocks": ["interventionMap.splitCombineDecisions", "interfaceControlPlan.releaseGates", "releasePackagePlan.packages"],
+            "learningSignals": ["validation-stream:hybrid-package", "split-combine:*", "interface-control:*"]
+        }),
+    ]
+}
+
 fn instruction_validation_preflight_catalog_response() -> Value {
     let check_contracts = instruction_validation_catalog_check_contracts();
     let check_families = unique_sorted(check_contracts.iter().filter_map(|contract| {
@@ -95266,6 +95326,7 @@ fn instruction_validation_preflight_catalog_response() -> Value {
                 "blocks": ["validation.failureBoundaries", "improvedPrograms.patchManifest", "learning.outcomes"]
             }
         ],
+        "streamReadinessMatrix": instruction_validation_stream_readiness_matrix(),
         "responseSurfaces": [
             "programs",
             "validation.findings",
@@ -114993,6 +115054,36 @@ mod tests {
                 "missing validation preflight group {group}"
             );
         }
+        let matrix = payload
+            .get("streamReadinessMatrix")
+            .and_then(Value::as_array)
+            .expect("stream readiness matrix should be present");
+        for stream_kind in [
+            "imported-cnc-controller-program",
+            "generated-machine-code",
+            "additive-slicer-or-printer-gcode",
+            "non-gcode-job-sheet-or-operator-instructions",
+            "hybrid-split-combine-instruction-package",
+        ] {
+            assert!(
+                matrix
+                    .iter()
+                    .any(|item| item.get("streamKind").and_then(Value::as_str) == Some(stream_kind)),
+                "missing validation stream readiness entry {stream_kind}"
+            );
+        }
+        assert!(matrix.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|entry| entry.as_str() == Some("machineRelease.blockers")))));
+        assert!(matrix.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("validation-stream:hybrid-package"))))));
         assert!(payload
             .get("responseSurfaces")
             .and_then(Value::as_array)

@@ -1669,6 +1669,15 @@ setup state, and boundary/improvement/release/learning state. It names the
 learning-signal surfaces that keep machine-ready release blocked while evidence
 is missing.
 
+The same payload includes a `streamReadinessMatrix` for imported CNC/controller
+programs, generated machine code, additive slicer or printer G-code, non-G-code
+job sheets or operator instructions, and hybrid split/combine instruction
+packages. Each stream entry lists required provenance, dialect, setup,
+simulation, human-intervention, recomposition, and release evidence plus blocked
+surfaces such as `controllerPlan.releaseGates`, `postprocessPlan.controllerTargets`,
+`interventionMap.splitCombineDecisions`, `interfaceControlPlan.releaseGates`,
+and `machineRelease.blockers`.
+
 Catalog contracts cover controller modal state, additive printer
 heat/extrusion/material state, subtractive spindle/feed/tool/workholding state,
 sheet-cutting and EDM process-media state, text job-sheet evidence, and
