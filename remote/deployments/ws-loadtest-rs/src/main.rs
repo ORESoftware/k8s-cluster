@@ -945,24 +945,58 @@ fn parse_gcs_marker_bytes(bytes: &[u8], out: &mut Vec<u64>) {
     while let Some(pos) = find_bytes(&bytes[idx..], needle.as_bytes()) {
         let start = idx + pos;
         let rest = &bytes[start..];
-        // The marker is `gcsrt-<client>-<seq>-<micros>`; every char is in
-        // [0-9a-zA-Z-]. Stop at the first byte outside that set so we don't pick
-        // up a trailing quote or escape character regardless of how the frame is
-        // (re)serialized.
-        let marker_len = rest
-            .iter()
-            .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'-')
-            .count();
-        let marker = std::str::from_utf8(&rest[..marker_len]).unwrap_or("");
-        if let Some(send_us) = marker
-            .rsplit('-')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-        {
+        if let Some((marker_len, send_us)) = parse_gcs_marker_send_us(rest) {
             out.push(now_micros().saturating_sub(send_us));
+            idx = start + marker_len;
+        } else {
+            idx = start + needle.len();
         }
-        idx = start + marker_len.max(needle.len());
     }
+}
+
+fn parse_gcs_marker_send_us(bytes: &[u8]) -> Option<(usize, u64)> {
+    let prefix = b"gcsrt-";
+    if !bytes.starts_with(prefix) {
+        return None;
+    }
+
+    let mut idx = prefix.len();
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+
+    let micros_start = idx;
+    idx = consume_ascii_digits(bytes, idx)?;
+    let send_us = parse_ascii_u64(&bytes[micros_start..idx])?;
+    Some((idx, send_us))
+}
+
+fn consume_ascii_digits(bytes: &[u8], mut idx: usize) -> Option<usize> {
+    let start = idx;
+    while matches!(bytes.get(idx), Some(b'0'..=b'9')) {
+        idx += 1;
+    }
+    if idx == start {
+        None
+    } else {
+        Some(idx)
+    }
+}
+
+fn parse_ascii_u64(bytes: &[u8]) -> Option<u64> {
+    let mut value = 0u64;
+    for &b in bytes {
+        let digit = (b as char).to_digit(10)? as u64;
+        value = value.checked_mul(10)?.checked_add(digit)?;
+    }
+    Some(value)
 }
 
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -1215,7 +1249,7 @@ async fn report_stats(
 
             // received/sent ratio approximates conversation fan-out in gcs mode.
             println!(
-                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} \
+                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} messages={} \
                  sent={} received={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
                 config.load_mode,
@@ -1223,6 +1257,7 @@ async fn report_stats(
                 connected,
                 failed,
                 open,
+                messages,
                 sent,
                 received,
                 in_flight,
@@ -1344,5 +1379,44 @@ async fn main() {
 
     loop {
         sleep(Duration::from_secs(60)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gcs_marker_parser_handles_text_delimiter() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let frame = format!(r#"{{"Messages":["gcsrt-12-34-{send_us}"]}}"#);
+        let mut latencies = Vec::new();
+
+        parse_gcs_markers(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_stops_before_following_protobuf_field_key() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let mut frame = format!("prefix-gcsrt-12-34-{send_us}").into_bytes();
+        frame.extend_from_slice(&[0x78, 0x80, 0x81, 0x01]);
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_skips_malformed_marker() {
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(b"gcsrt-12-nope-123 gcsrt-12-34-", &mut latencies);
+
+        assert!(latencies.is_empty());
     }
 }
