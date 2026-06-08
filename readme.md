@@ -61,6 +61,8 @@ concept in `main.rs`:
   preview compilation.
 - `src/etl.rs` owns Domo Magic ETL/Power Query-style metadata flow validation, lineage, and
   connector pushdown hints.
+- `src/workbook_grid.rs` owns Sigma-style virtual workbook grid paging, projection, filters, sorts,
+  and formula-column planning over ingested datasets.
 - `src/connections.rs` owns secretRef-backed data connection metadata and dry-run connection test
   plans for warehouse and BI planner surfaces.
 - `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
@@ -92,8 +94,8 @@ Current first-class parity surfaces:
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
   selection state, `POST /associations/relationships` scores cross-dataset field aliases, and
   `/associations/sessions` saves reusable selection sessions.
-- Sigma: workbook blueprints for live-grid and executive-card workflows plus warehouse connection
-  metadata for live-query planning.
+- Sigma: workbook blueprints for live-grid and executive-card workflows, virtual grid paging over
+  ingested datasets, and warehouse connection metadata for live-query planning.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
 - Superset / Metabase: bounded SQL Lab history, natural-language question proposals, visual
@@ -124,6 +126,8 @@ Current first-class parity surfaces:
 - `POST /expressions/dax/compile` - authenticated bounded Power BI DAX expression parser with AST,
   dependency extraction, and SQL preview.
 - `GET /workbooks/blueprints` - spreadsheet/workbook and self-service query surfaces.
+- `POST /workbooks/grid/page` - authenticated Sigma-style virtual workbook grid page with
+  projection, filters, sorts, lazy offset/limit paging, and formula-column planning.
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.

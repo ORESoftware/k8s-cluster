@@ -18,9 +18,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   `src/publishing.rs`, Power BI-style DAX expression parsing lives in `src/dax.rs`, self-service
   question/chart validation lives in `src/self_service.rs`, natural-language question planning lives
   in `src/question_nl.rs`, SQL Lab history validation lives in `src/sql_lab.rs`, query result cache
-  bounds live in `src/query_cache.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`,
-  shared helpers live in `src/util.rs`, and the HTTP server wires those modules through route
-  handlers.
+  bounds live in `src/query_cache.rs`, Sigma-style workbook grid paging lives in
+  `src/workbook_grid.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
+  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -75,6 +75,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Domo Magic ETL/Power Query-style flows are validated through `POST /etl/plans` against ingested
   dataset schemas, producing lineage, materialization, and connector pushdown hints without
   executing user formulas.
+- Sigma-style virtual workbook grid pages are exposed through `POST /workbooks/grid/page`, returning
+  bounded row windows with projection, filters, sorts, paging metadata, and validated formula-column
+  plans over the in-memory columnar dataset.
 - SecretRef-backed data connection metadata is validated through `POST /connections` and exposed
   through `GET /connections`, `GET /connections/:connection_id`, and
   `POST /connections/:connection_id/test-plan`; dry-run test plans do not open sockets or call cloud
@@ -98,8 +101,7 @@ This audit tracks the current hardening and visualization-platform parity postur
   override maps, and semantic relationship inference beyond categorical value overlap.
 - Looker parity still needs full LookML project parsing, multi-view joins, Git-backed validation
   workflows, and live warehouse-specific SQL execution targets.
-- Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
-  result sets.
+- Sigma parity still needs warehouse-backed lazy paging/execution and collaborative workbook state.
 - Domo parity still needs a connector SDK, streaming checkpoints, durable ETL job execution, and a
   drag-and-drop visual flow builder.
 - Superset and Metabase parity still need richer natural-language intent parsing, actual external

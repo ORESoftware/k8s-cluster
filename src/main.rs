@@ -37,6 +37,7 @@ mod semantic;
 mod sql_frontend;
 mod sql_lab;
 mod util;
+mod workbook_grid;
 
 use util::{
     clean_field, clean_identifier, env_flag, find_ascii_case, header_value, html_escape, now_ms,
@@ -90,6 +91,7 @@ struct Metrics {
     visualizations_total: AtomicU64,
     evolution_runs_total: AtomicU64,
     presentation_exports_total: AtomicU64,
+    workbook_grid_pages_total: AtomicU64,
     platform_requests_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
@@ -574,6 +576,7 @@ fn app_router(state: AppState) -> Router {
         )
         .route("/expressions/dax/compile", post(compile_dax_expression))
         .route("/workbooks/blueprints", get(workbook_blueprints))
+        .route("/workbooks/grid/page", post(workbook_grid_page))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
         .route("/diagrams/tools", get(diagram_tool_catalog))
@@ -808,6 +811,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
+        "workbookGrid": {
+            "surfaces": ["virtual sheet page", "projection", "filters", "sorts", "formula-column planning"],
+            "limits": workbook_grid::limits_payload(),
+            "posture": "bounded in-memory page over columnar datasets; request shape is ready for future warehouse pushdown"
+        },
         "connectionRegistry": {
             "engines": ["postgres", "mysql", "bigquery", "snowflake", "redshift", "prometheus", "loki", "parquet", "csv-json"],
             "modes": ["live-query", "import", "metadata-only"],
@@ -972,6 +980,9 @@ dd_data_viz_evolution_runs_total {}
 # HELP dd_data_viz_presentation_exports_total Presentation export requests handled.
 # TYPE dd_data_viz_presentation_exports_total counter
 dd_data_viz_presentation_exports_total {}
+# HELP dd_data_viz_workbook_grid_pages_total Workbook grid pages served.
+# TYPE dd_data_viz_workbook_grid_pages_total counter
+dd_data_viz_workbook_grid_pages_total {}
 # HELP dd_data_viz_platform_requests_total Platform parity requests handled.
 # TYPE dd_data_viz_platform_requests_total counter
 dd_data_viz_platform_requests_total {}
@@ -1078,6 +1089,7 @@ dd_data_viz_errors_total {}
         metrics.visualizations_total.load(Ordering::Relaxed),
         metrics.evolution_runs_total.load(Ordering::Relaxed),
         metrics.presentation_exports_total.load(Ordering::Relaxed),
+        metrics.workbook_grid_pages_total.load(Ordering::Relaxed),
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
@@ -1700,6 +1712,30 @@ async fn workbook_blueprints(State(state): State<AppState>) -> Json<Value> {
         "workbooks": platform::workbook_blueprints(),
         "selfService": platform::self_service_surfaces()
     }))
+}
+
+async fn workbook_grid_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<workbook_grid::WorkbookGridPageRequest>,
+) -> Result<Json<workbook_grid::WorkbookGridPageResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::DatasetRead)?;
+    let dataset_id = clean_identifier(&request.dataset_id).ok_or_else(|| {
+        ApiError::bad_request(
+            "datasetId must contain letters, numbers, dash, underscore, dot, or colon",
+        )
+    })?;
+    let dataset = get_dataset_snapshot(&state, &dataset_id)?;
+    let page = workbook_grid::page(&dataset, request).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .workbook_grid_pages_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(page))
 }
 
 async fn dashboard_panels(State(state): State<AppState>) -> Json<Value> {
@@ -4751,6 +4787,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Sigma/Metabase-style workbook and self-service query-builder blueprints.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/workbooks/grid/page",
+            auth: "dataset-read",
+            description: "Read a bounded Sigma-style virtual workbook grid page with projection, filters, sorts, offset/limit paging, and formula-column planning.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/dashboards/panels",
             auth: "public",
@@ -5792,6 +5834,7 @@ mod tests {
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
         assert!(paths.contains(&"/expressions/dax/compile"));
+        assert!(paths.contains(&"/workbooks/grid/page"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
     }
