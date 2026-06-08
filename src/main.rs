@@ -58689,10 +58689,14 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/postprocess/plan",
         "POST /postprocess/result",
         "POST /fabrication/postprocess/result",
+        "GET /evidence/catalog",
+        "GET /fabrication/evidence/catalog",
         "GET /artifacts/catalog",
         "GET /fabrication/artifacts/catalog",
         "GET /packages/catalog",
         "GET /fabrication/packages/catalog",
+        "POST /packages/plan",
+        "POST /fabrication/packages/plan",
         "GET /learning/capabilities",
         "GET /fabrication/learning/capabilities",
         "GET /learning/engines/catalog",
@@ -100039,6 +100043,73 @@ fn artifact_catalog_contracts() -> Vec<Value> {
     ]
 }
 
+fn evidence_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.evidence-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /evidence/catalog", "GET /fabrication/evidence/catalog"],
+        "purpose": "global evidence taxonomy for moving fabrication requests from CAD/model intake through machine-code, setup, execution, release, and learning review",
+        "evidenceFamilies": [
+            {
+                "family": "design-source-evidence",
+                "requiredFor": ["designInputReview", "designPackage", "designExports", "manufacturingHandoff"],
+                "examples": ["native CAD source-system", "translator version", "neutral export checksum", "units and coordinate frame", "mesh repair report"],
+                "blocks": ["machineRelease.blockers", "releasePackagePlan.releaseGates"],
+                "learningSignals": ["design-source:*", "translator-readiness:*", "geometry-conversion-risk:*"]
+            },
+            {
+                "family": "machine-process-evidence",
+                "requiredFor": ["machineSelection", "processGraph", "machineSchedule", "materialPlan"],
+                "examples": ["machine profile", "controller dialect", "material lot or feedstock state", "tooling and workholding capacity", "operator or automation coverage"],
+                "blocks": ["machineRelease.blockers", "executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions"],
+                "learningSignals": ["machine-kind:*", "process-route:*", "availability-risk:*"]
+            },
+            {
+                "family": "instruction-controller-evidence",
+                "requiredFor": ["generatedPrograms", "improvedPrograms", "controllerPlan", "validation"],
+                "examples": ["postprocessor identity", "controller modal state", "simulation or dry-run artifact", "patch review manifest", "macro/subprogram dependency review"],
+                "blocks": ["controllerPlan.releaseGates", "validation.failureBoundaries", "machineRelease.blockers"],
+                "learningSignals": ["instruction-patch-action:*", "controller-modal-state:*", "machine-failure-boundary:*"]
+            },
+            {
+                "family": "setup-execution-evidence",
+                "requiredFor": ["fixturePlan", "toolingPlan", "executionPlan", "monitoringPlan"],
+                "examples": ["datum and probe records", "fixture or clamp verification", "tool length/radius offsets", "process support media state", "runtime monitoring channel health"],
+                "blocks": ["executionPlan.stopPoints", "monitoringPlan.releaseBlockers", "machineRelease.blockers"],
+                "learningSignals": ["setup-risk:*", "workholding-risk:*", "runtime-monitoring:*"]
+            },
+            {
+                "family": "quality-release-evidence",
+                "requiredFor": ["qualityPlan", "postprocessPlan", "releasePackagePlan", "machineRelease"],
+                "examples": ["inspection results", "postprocess traveler signoff", "nonconformance disposition", "release bundle manifest", "operator or automation signoff"],
+                "blocks": ["qualityPlan.releaseGates", "postprocessPlan.blockers", "releasePackagePlan.blockers"],
+                "learningSignals": ["quality-result:*", "release-readiness:*", "postprocess-signoff:*"]
+            },
+            {
+                "family": "learning-outcome-evidence",
+                "requiredFor": ["learningPolicySnapshot", "learningOutcomes", "mdp-request", "neuralTrainingCorpus"],
+                "examples": ["reward signal", "boundary resolution action", "split/combine result", "human-intervention outcome", "retained artifact checksum"],
+                "blocks": ["learning optimizer promotion", "future policy promotion"],
+                "learningSignals": ["reward:*", "boundary-kind:*", "split-combine:*", "human-intervention:*"]
+            }
+        ],
+        "releasePolicy": [
+            "evidence catalog entries are intake and review requirements, not certified shop-floor approval",
+            "machineReady remains false until required design, machine, instruction, setup, quality, release, and signoff evidence clear",
+            "DES, MDP/POMDP, and neural workers may reprioritize routes from evidence and outcomes, but learned preferences stay advisory until release gates clear"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/intake/catalog",
+            "GET /fabrication/artifacts/catalog",
+            "GET /fabrication/packages/catalog",
+            "GET /fabrication/jobs/catalog",
+            "POST /fabrication/learning/outcomes"
+        ]
+    })
+}
+
 fn artifact_catalog_response() -> Value {
     let artifact_contracts = artifact_catalog_contracts();
     let families = unique_sorted(artifact_contracts.iter().filter_map(|item| {
@@ -100100,6 +100171,10 @@ fn artifact_catalog_response() -> Value {
         ],
         "artifactContracts": artifact_contracts
     })
+}
+
+async fn evidence_catalog_http() -> impl IntoResponse {
+    Json(evidence_catalog_response())
 }
 
 async fn artifact_catalog_http() -> impl IntoResponse {
@@ -102140,8 +102215,10 @@ async fn capabilities() -> impl IntoResponse {
                 "POST /fabrication/postprocess/plan",
                 "POST /postprocess/result",
                 "POST /fabrication/postprocess/result",
-        "GET /artifacts/catalog",
-        "GET /fabrication/artifacts/catalog",
+                "GET /evidence/catalog",
+                "GET /fabrication/evidence/catalog",
+                "GET /artifacts/catalog",
+                "GET /fabrication/artifacts/catalog",
         "GET /learning/capabilities",
         "GET /fabrication/learning/capabilities",
         "GET /learning/engines/catalog",
@@ -106245,6 +106322,194 @@ async fn fabrication_package_catalog_http() -> impl IntoResponse {
     Json(fabrication_package_catalog_response())
 }
 
+fn fabrication_package_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let validation_boundary_count = response.validation.failure_boundaries.len();
+    let simulation_boundary_count = response.simulation.failure_boundaries.len();
+    let generated_program_count = response.generated_programs.len();
+    let machine_ready_program_count = response
+        .generated_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let human_intervention_count = response
+        .operator_intervention_plan
+        .required_operator_actions
+        .len()
+        + response
+            .operator_intervention_plan
+            .split_combine_reviews
+            .len()
+        + response.execution_plan.stop_points.len();
+    let package_blocked = response.machine_release.machine_release_blocked
+        || response.release_package_plan.blocked_package_count > 0
+        || validation_boundary_count > 0
+        || simulation_boundary_count > 0
+        || human_intervention_count > 0
+        || machine_ready_program_count < generated_program_count;
+
+    json!({
+        "ok": response.ok,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.package-planning.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": &response.request_id,
+        "jobId": &response.job_id,
+        "routes": ["POST /packages/plan", "POST /fabrication/packages/plan"],
+        "catalogRoutes": ["GET /packages/catalog", "GET /fabrication/packages/catalog"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /workflow/plan", "POST /fabrication/workflow/plan"],
+        "machineReady": !package_blocked,
+        "packageReleaseBlocked": package_blocked,
+        "generatedProgramCount": generated_program_count,
+        "machineReadyProgramCount": machine_ready_program_count,
+        "designExportCount": response.design_exports.summary.export_count,
+        "processNodeCount": response.process_graph.nodes.len(),
+        "splitCombineDecisionCount": response.hybrid_make_plan.split_combine_decisions.len(),
+        "humanInterventionCount": human_intervention_count,
+        "validationBoundaryCount": validation_boundary_count,
+        "simulationBoundaryCount": simulation_boundary_count,
+        "releaseBlockerCount": response.machine_release.blockers.len(),
+        "packagePlan": {
+            "schemaVersion": "dd.fabrication.package-plan.v1",
+            "status": if package_blocked { "package-release-blocked" } else { "package-ready-for-release-review" },
+            "packageChecklist": intake_request_package_checklist(),
+            "phases": [
+                {
+                    "phase": "design-and-source-package",
+                    "status": if response.design_input_review.unsupported_count > 0 { "design-review-blocked" } else { &response.design_exports.release_state },
+                    "blocked": response.design_input_review.unsupported_count > 0 || response.design_input_review.review_required_count > 0,
+                    "requiredArtifacts": ["design-input-review", "design-package", "design-export-bundle", "generated-design-export"],
+                    "responseSurfaces": ["designInputReview", "designPackage", "designExports"],
+                    "nextRoutes": ["POST /fabrication/design/import/review", "POST /fabrication/design/generate", "POST /fabrication/design/convert/result"],
+                    "blockers": ["designInputReview.blockers", "designExports.reviewGates", "machineRelease.blockers"]
+                },
+                {
+                    "phase": "machine-and-process-package",
+                    "status": &response.material_plan.status,
+                    "blocked": response.material_plan.review_required || !response.material_plan.release_gates.is_empty(),
+                    "requiredArtifacts": ["machine-selection", "process-plan", "process-graph", "material-plan", "tooling-plan", "fixture-plan"],
+                    "responseSurfaces": ["machineSelection", "processGraph", "materialPlan", "toolingPlan", "fixturePlan"],
+                    "nextRoutes": ["POST /fabrication/machines/select", "POST /fabrication/materials/plan", "POST /fabrication/toolpaths/plan"],
+                    "blockers": ["processGraph.releaseGates", "machineSelection.candidates.status", "materialPlan.routeRequirements", "fixturePlan.setups.clearanceChecks"]
+                },
+                {
+                    "phase": "instruction-and-controller-package",
+                    "status": if machine_ready_program_count < generated_program_count { "instruction-release-blocked" } else { "instruction-package-ready-for-review" },
+                    "blocked": machine_ready_program_count < generated_program_count || validation_boundary_count > 0,
+                    "requiredArtifacts": ["instruction-analysis", "instruction-validation-result", "machine-code-result", "improved-program-*", "controller-postprocessor-result"],
+                    "responseSurfaces": ["generatedPrograms", "validation", "controllerPlan", "improvedPrograms"],
+                    "nextRoutes": ["POST /fabrication/instructions/analyze", "POST /fabrication/instructions/validate", "POST /fabrication/machine-code/generate", "POST /fabrication/instructions/improve"],
+                    "blockers": ["validation.findings", "controllerPlan.releaseGates", "machineRelease.blockers", "operatorInterventionPlan.requiredOperatorActions"]
+                },
+                {
+                    "phase": "hybrid-boundary-and-release-package",
+                    "status": if response.release_package_plan.blocked_package_count > 0 { "release-package-blocked" } else { &response.machine_release.status },
+                    "blocked": response.release_package_plan.blocked_package_count > 0 || human_intervention_count > 0,
+                    "requiredArtifacts": ["decomposition-plan", "interface-control-plan", "assembly-plan", "boundary-remediation-plan", "release-package-plan"],
+                    "responseSurfaces": ["decompositionPlan", "interfaceControlPlan", "assembly", "interventionMap", "releasePackagePlan"],
+                    "nextRoutes": ["POST /fabrication/decomposition/plan", "POST /fabrication/assembly/plan", "POST /fabrication/interfaces/result", "POST /fabrication/release/preview"],
+                    "blockers": ["interventionMap.splitCombineDecisions", "interfaceControlPlan.releaseGates", "releasePackagePlan.releaseGates"]
+                },
+                {
+                    "phase": "learning-feedback-package",
+                    "status": if policy.outcome_count == 0 { "learning-feedback-seed-required" } else { "learning-feedback-linked" },
+                    "blocked": false,
+                    "requiredArtifacts": ["mdp-request", "learning-policy-snapshot", "learning-outcome-memory", "learning-corpus"],
+                    "responseSurfaces": ["learning.enginePolicy", "learning.releaseProbePlan", "learning.neuralTrainingCorpus"],
+                    "nextRoutes": ["POST /fabrication/learning/observe", "POST /fabrication/learning/outcomes"],
+                    "blockers": ["learning.promotionBlockers", "policyImpactPreview", "release-gate-bypass"]
+                }
+            ]
+        },
+        "artifactSurfaces": [
+            "design-input-review",
+            "design-package",
+            "generated-design-export",
+            "machine-selection",
+            "process-plan",
+            "machine-code-result",
+            "instruction-validation-result",
+            "interface-control-plan",
+            "release-package-plan",
+            "mdp-request",
+            "learning-outcome-memory"
+        ],
+        "learningFeedback": {
+            "outcomeCount": policy.outcome_count,
+            "methodPreferenceCount": policy.method_preferences.len(),
+            "machineKindPreferenceCount": policy.machine_kind_preferences.len(),
+            "operationSequencePreferenceCount": policy.operation_sequence_preferences.len(),
+            "neuralExampleCount": policy.neural_training_examples.len(),
+            "releaseProbeCount": response.learning.release_probe_plan.probe_count
+        },
+        "releasePolicy": [
+            "package planning is retained evidence orchestration, not certified manufacturing release",
+            "machineReady remains false until every package phase clears design, process, instruction, validation, boundary, operator, interface, release, and learning-feedback gates",
+            "generated and improved instruction packages must preserve original program, patch, validation, simulation, and boundary-review artifacts",
+            "MDP/POMDP/neural feedback can reprioritize future package plans but cannot bypass release gates"
+        ],
+        "designInputReview": &response.design_input_review,
+        "designExports": &response.design_exports,
+        "machineSelection": &response.machine_selection,
+        "processGraph": &response.process_graph,
+        "generatedPrograms": &response.generated_programs,
+        "validation": &response.validation,
+        "interventionMap": &response.intervention_map,
+        "releasePackagePlan": &response.release_package_plan,
+        "machineRelease": &response.machine_release
+    })
+}
+
+async fn fabrication_package_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.package.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(fabrication_package_planning_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
 fn request_templates() -> Value {
     json!([
         {
@@ -107409,8 +107674,10 @@ async fn request_schema() -> impl IntoResponse {
             "postprocessCatalog": ["GET /postprocess/catalog", "GET /fabrication/postprocess/catalog"],
             "postprocessPlan": ["POST /postprocess/plan", "POST /fabrication/postprocess/plan"],
             "postprocessResult": ["POST /postprocess/result", "POST /fabrication/postprocess/result"],
+            "evidenceCatalog": ["GET /evidence/catalog", "GET /fabrication/evidence/catalog"],
             "artifactCatalog": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
             "packageCatalog": ["GET /packages/catalog", "GET /fabrication/packages/catalog"],
+            "packagePlan": ["POST /packages/plan", "POST /fabrication/packages/plan"],
             "jobEvidenceCatalog": ["GET /jobs/catalog", "GET /fabrication/jobs/catalog"],
             "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
             "learningPreflightCatalog": ["GET /learning/preflight/catalog", "GET /fabrication/learning/preflight/catalog"],
@@ -110638,12 +110905,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/postprocess/result",
             post(postprocess_result_http),
         )
+        .route("/evidence/catalog", get(evidence_catalog_http))
+        .route("/fabrication/evidence/catalog", get(evidence_catalog_http))
         .route("/artifacts/catalog", get(artifact_catalog_http))
         .route("/fabrication/artifacts/catalog", get(artifact_catalog_http))
         .route("/packages/catalog", get(fabrication_package_catalog_http))
         .route(
             "/fabrication/packages/catalog",
             get(fabrication_package_catalog_http),
+        )
+        .route("/packages/plan", post(fabrication_package_plan_http))
+        .route(
+            "/fabrication/packages/plan",
+            post(fabrication_package_plan_http),
         )
         .route("/learning/capabilities", get(learning_capabilities))
         .route(
@@ -131927,6 +132201,59 @@ mod tests {
     }
 
     #[test]
+    fn evidence_catalog_endpoint_exposes_release_gate_evidence_taxonomy() {
+        let payload = evidence_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.evidence-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/evidence/catalog"))));
+
+        let families = payload
+            .get("evidenceFamilies")
+            .and_then(Value::as_array)
+            .expect("evidence families should be present");
+        for family in [
+            "design-source-evidence",
+            "machine-process-evidence",
+            "instruction-controller-evidence",
+            "setup-execution-evidence",
+            "quality-release-evidence",
+            "learning-outcome-evidence",
+        ] {
+            assert!(
+                families
+                    .iter()
+                    .any(|item| item.get("family").and_then(Value::as_str) == Some(family)),
+                "missing evidence family {family}"
+            );
+        }
+        assert!(families.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|blocker| blocker.as_str() == Some("machineRelease.blockers")))));
+        assert!(families.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| signal.as_str() == Some("split-combine:*")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady remains false")))));
+    }
+
+    #[test]
     fn package_catalog_endpoint_exposes_request_to_release_evidence_contract() {
         let payload = fabrication_package_catalog_response();
         assert_eq!(
@@ -131982,6 +132309,109 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("cannot bypass package release gates")))));
+    }
+
+    #[test]
+    fn package_planning_endpoint_projects_request_artifacts_and_release_gates() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-package-plan".to_string()),
+            objective: "hybrid printed enclosure with milled datum faces, validated machine code, and release package"
+                .to_string(),
+            material: Some(material("PETG", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.15),
+            quantity: Some(1),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: Some(vec![program(
+                "existing-mill-datum-program",
+                "vertical-mill",
+                &["G21", "G90", "G0 X0 Y0 Z5", "M30"],
+            )]),
+            learning: None,
+        })
+        .expect("package plan base fabrication plan should succeed");
+        let policy = LearningPolicySnapshot {
+            outcome_count: 1,
+            successes: 1,
+            failures: 0,
+            average_reward: 1.4,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "job=package-plan-success success=true reward=1.400".to_string()
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let payload = fabrication_package_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.package-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/packages/plan"))));
+        assert_eq!(
+            payload
+                .get("packagePlan")
+                .and_then(|plan| plan.get("schemaVersion"))
+                .and_then(Value::as_str),
+            Some("dd.fabrication.package-plan.v1")
+        );
+        let phases = payload
+            .pointer("/packagePlan/phases")
+            .and_then(Value::as_array)
+            .expect("package plan phases should be present");
+        assert!(phases.iter().any(|phase| {
+            phase.get("phase").and_then(Value::as_str) == Some("instruction-and-controller-package")
+                && phase
+                    .get("requiredArtifacts")
+                    .and_then(Value::as_array)
+                    .is_some_and(|artifacts| {
+                        artifacts
+                            .iter()
+                            .any(|artifact| artifact.as_str() == Some("machine-code-result"))
+                    })
+        }));
+        assert!(phases.iter().any(|phase| {
+            phase.get("phase").and_then(Value::as_str)
+                == Some("hybrid-boundary-and-release-package")
+                && phase
+                    .get("blockers")
+                    .and_then(Value::as_array)
+                    .is_some_and(|blockers| {
+                        blockers.iter().any(|blocker| {
+                            blocker.as_str() == Some("interventionMap.splitCombineDecisions")
+                        })
+                    })
+        }));
+        assert_eq!(
+            payload
+                .pointer("/learningFeedback/neuralExampleCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("learning-outcome-memory"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("cannot bypass release gates")))));
     }
 
     #[test]
