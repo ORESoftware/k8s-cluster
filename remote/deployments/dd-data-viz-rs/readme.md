@@ -64,6 +64,8 @@ concept in `main.rs`:
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
 - `src/dashboard.rs` owns saved dashboard request validation and in-memory dashboard metadata.
+- `src/self_service.rs` owns Metabase/Superset-style saved question validation, chart bindings, and
+  compiled SQL request metadata.
 - `src/sql_frontend.rs` owns parser-backed SQL-to-`LogicalPlan` compilation.
 - `src/util.rs` owns shared identifier, escaping, timestamp, header, and scalar-label helpers.
 
@@ -77,8 +79,8 @@ Current first-class parity surfaces:
 - Sigma: workbook blueprints for live-grid and executive-card workflows.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
-- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, and
-  saved dashboard catalog.
+- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, saved
+  dashboard catalog, saved questions, and saved chart bindings.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, and
   alert rule evaluation.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
@@ -122,6 +124,11 @@ Current first-class parity surfaces:
 - `POST /dashboards` - authenticated saved dashboard create/replace.
 - `GET /dashboards` - authenticated saved dashboard catalog.
 - `GET /dashboards/:dashboard_id` - authenticated saved dashboard definition.
+- `POST /questions` - authenticated Metabase-style saved question create/replace with optional chart
+  binding.
+- `GET /questions` - authenticated saved question catalog.
+- `GET /questions/:question_id` - authenticated saved question definition.
+- `GET /charts` - authenticated saved chart catalog derived from saved questions.
 - `POST /alerts/rules` - authenticated Grafana-style alert rule create/replace.
 - `GET /alerts/rules` - authenticated alert rule catalog.
 - `GET /alerts/rules/:rule_id` - authenticated alert rule definition.

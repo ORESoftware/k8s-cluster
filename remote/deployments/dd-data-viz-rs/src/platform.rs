@@ -229,11 +229,12 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "parser-backed SQL dialect endpoint",
                 "self-service chart builder contract",
                 "enforced RBAC policy surface",
+                "saved question and chart registry",
             ],
             next_engine_work: vec![
-                "role-backed chart ownership",
                 "database connection registry",
                 "SQL Lab history",
+                "dataset-level chart publishing approvals",
             ],
         },
         ProductParity {
@@ -242,13 +243,14 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             parity_goal: "simple query builder and natural-language-friendly questions",
             implemented_surfaces: vec![
                 "question builder contract",
+                "saved questions and chart bindings",
                 "saved dashboard catalog",
                 "raw SQL fallback",
                 "dataset profile summaries",
             ],
             next_engine_work: vec![
-                "visual query builder execution",
-                "saved questions",
+                "visual query builder execution against live warehouses",
+                "parameterized question sharing",
                 "natural language intent parser",
             ],
         },
@@ -562,6 +564,8 @@ pub fn self_service_surfaces() -> Vec<SelfServiceSurface> {
                 "choose dataset",
                 "pick dimensions",
                 "pick measures",
+                "save question",
+                "bind chart",
                 "chart suggestion",
             ],
         },
@@ -569,7 +573,12 @@ pub fn self_service_surfaces() -> Vec<SelfServiceSurface> {
             id: "sql-lab",
             analog: "Apache Superset",
             audience: "analysts and data engineers",
-            capabilities: vec!["raw SQL", "saved query plan", "chart from result"],
+            capabilities: vec![
+                "raw SQL",
+                "saved query plan",
+                "saved chart catalog",
+                "chart from result",
+            ],
         },
         SelfServiceSurface {
             id: "semantic-explorer",

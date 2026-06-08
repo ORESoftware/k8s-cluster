@@ -12,9 +12,10 @@ This audit tracks the current hardening and visualization-platform parity postur
   lives in `src/associative.rs`, semantic model parsing and compilation lives in
   `src/semantic.rs`, ETL flow planning lives in `src/etl.rs`, infrastructure diagram extraction
   lives in `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy
-  lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
-  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
-  server wires those modules through route handlers.
+  lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, self-service
+  question/chart validation lives in `src/self_service.rs`, parser-backed SQL compilation lives in
+  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
+  modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -23,6 +24,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Query responses are bounded by `MAX_QUERY_ROWS`.
 - Saved dashboard definitions are validated, bounded, and exposed through `POST /dashboards`,
   `GET /dashboards`, and `GET /dashboards/:dashboard_id`.
+- Superset/Metabase-style saved questions are validated against ingested dataset fields and exposed
+  through `POST /questions`, `GET /questions`, `GET /questions/:question_id`, and `GET /charts`
+  with role-gated read/write permissions.
 - SQL requests are parsed through `sqlparser` and fail closed on joins, CTEs, set operations,
   unsupported predicates, and unsupported aggregate shapes.
 - Categorical columns are dictionary encoded and exposed through profiles.
@@ -63,8 +67,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   result sets.
 - Domo parity still needs a connector SDK, streaming checkpoints, durable ETL job execution, and a
   drag-and-drop visual flow builder.
-- Superset and Metabase parity still need saved charts/questions, RBAC-backed ownership, and
-  database connection registries beyond the current in-memory dashboard catalog and role policy.
+- Superset and Metabase parity still need database connection registries, SQL Lab history, natural
+  language question generation, and durable ownership beyond the current in-memory role-gated
+  question/chart catalog.
 - Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel
   streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
