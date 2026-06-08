@@ -259,6 +259,7 @@ spec:
                 '"path": "/fabrication/consumables/result"' \
                 '"path": "/fabrication/workholding/catalog"' \
                 '"path": "/fabrication/workholding/preflight/catalog"' \
+                '"path": "/fabrication/workholding/plan"' \
                 '"path": "/fabrication/workholding/result"' \
                 '"path": "/fabrication/nesting/catalog"' \
                 '"path": "/fabrication/nesting/result"' \
@@ -269,6 +270,7 @@ spec:
                 '"path": "/fabrication/kinematics/catalog"' \
                 '"path": "/fabrication/kinematics/result"' \
                 '"path": "/fabrication/tolerances/catalog"' \
+                '"path": "/fabrication/tolerances/plan"' \
                 '"path": "/fabrication/tolerances/result"' \
                 '"path": "/fabrication/process-capabilities/catalog"' \
                 '"path": "/fabrication/process-capabilities/plan"' \
