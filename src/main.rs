@@ -7195,6 +7195,129 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
         .filter(|entry| entry.get("present").and_then(Value::as_bool) == Some(true))
         .count();
     let manifest_missing_count = bundle_manifest.len().saturating_sub(manifest_present_count);
+    let release_gate_entry = |gate_id: &str,
+                              categories: Vec<&str>,
+                              blocks: Vec<&str>,
+                              evidence_routes: Vec<&str>| {
+        let manifest_categories = bundle_manifest
+            .iter()
+            .filter(|entry| {
+                entry
+                    .get("category")
+                    .and_then(Value::as_str)
+                    .is_some_and(|category| categories.iter().any(|expected| category == *expected))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let present_category_count = manifest_categories
+            .iter()
+            .filter(|entry| entry.get("present").and_then(Value::as_bool) == Some(true))
+            .count();
+        let missing_category_count = manifest_categories
+            .len()
+            .saturating_sub(present_category_count);
+        json!({
+            "gateId": gate_id,
+            "manifestCategories": categories,
+            "presentCategoryCount": present_category_count,
+            "missingCategoryCount": missing_category_count,
+            "machineReady": !machine_release_blocked && missing_category_count == 0,
+            "blocks": blocks,
+            "evidenceRoutes": evidence_routes
+        })
+    };
+    let release_gate_matrix = vec![
+        release_gate_entry(
+            "source-provenance",
+            vec![
+                "design-and-source-definition",
+                "machine-code-and-instruction-programs",
+            ],
+            vec![
+                "translator release",
+                "controller review",
+                "machine-ready release",
+            ],
+            vec![
+                "GET /fabrication/evidence/catalog",
+                "GET /fabrication/jobs/:job_id/artifacts/:artifact_id",
+            ],
+        ),
+        release_gate_entry(
+            "machine-envelope",
+            vec![
+                "machine-code-and-instruction-programs",
+                "setup-process-and-execution-evidence",
+            ],
+            vec![
+                "toolpath release",
+                "machine-code release",
+                "unattended run release",
+            ],
+            vec![
+                "GET /fabrication/jobs/:job_id/release-bundle",
+                "GET /fabrication/machines/catalog",
+            ],
+        ),
+        release_gate_entry(
+            "process-readiness",
+            vec![
+                "setup-process-and-execution-evidence",
+                "simulation-quality-and-release-review",
+            ],
+            vec![
+                "printer instruction release",
+                "subtractive cutting release",
+                "sheet-cutting release",
+            ],
+            vec![
+                "GET /fabrication/evidence/catalog",
+                "GET /fabrication/jobs/:job_id/artifacts/:artifact_id",
+            ],
+        ),
+        release_gate_entry(
+            "simulation-evidence",
+            vec!["simulation-quality-and-release-review"],
+            vec![
+                "release preview",
+                "machine-ready release",
+                "learning promotion",
+            ],
+            vec![
+                "GET /fabrication/jobs/:job_id/release-bundle",
+                "POST /fabrication/simulation/run",
+            ],
+        ),
+        release_gate_entry(
+            "human-or-automation-handoff",
+            vec![
+                "setup-process-and-execution-evidence",
+                "simulation-quality-and-release-review",
+            ],
+            vec![
+                "restart release",
+                "split/combine release",
+                "machine-ready release",
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "GET /fabrication/jobs/:job_id/release-bundle",
+            ],
+        ),
+        release_gate_entry(
+            "learning-disposition",
+            vec!["learning-and-policy-feedback"],
+            vec![
+                "policy promotion",
+                "learned-route preference release",
+                "unattended repeat-run release",
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+            ],
+        ),
+    ];
 
     json!({
         "ok": true,
@@ -7247,6 +7370,7 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
         ],
         "artifactSummaries": artifact_summaries,
         "bundleManifest": bundle_manifest,
+        "releaseGateMatrix": release_gate_matrix,
         "artifacts": artifacts,
         "plan": job.plan,
         "analysis": job.analysis,
@@ -89724,6 +89848,174 @@ fn environment_result_artifact_missing_release_evidence(artifact: &Value) -> boo
             .is_none_or(Vec::is_empty)
 }
 
+fn environment_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "environment-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn environment_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    condition_blocker_count: usize,
+    utility_blocker_count: usize,
+    metrology_blocker_count: usize,
+    conditioning_required: bool,
+    recovery_required: bool,
+    recheck_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        environment_priority_disposition(
+            "machine-failure-boundary-first",
+            if condition_blocker_count > 0
+                || utility_blocker_count > 0
+                || metrology_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("conditionBlockerCount:{condition_blocker_count}"),
+                format!("utilityBlockerCount:{utility_blocker_count}"),
+                format!("metrologyBlockerCount:{metrology_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/environment/result",
+                "POST /fabrication/failure-modes/result",
+                "POST /fabrication/release/result",
+            ],
+            if condition_blocker_count > 0
+                || utility_blocker_count > 0
+                || metrology_blocker_count > 0
+            {
+                "machineReady remains blocked until environment conditions, utilities, and metrology state clear the machine-failure boundary"
+            } else {
+                "environment result did not report an open machine-failure priority blocker"
+            },
+        ),
+        environment_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required
+                || conditioning_required
+                || recovery_required
+                || recheck_required
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("conditioningRequired:{conditioning_required}"),
+                format!("utilityRecoveryRequired:{recovery_required}"),
+                format!("metrologyRecheckRequired:{recheck_required}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/setup/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required
+                || conditioning_required
+                || recovery_required
+                || recheck_required
+            {
+                "machineReady remains blocked until conditioning, utility recovery, metrology recheck, or operator environmental handoff evidence is retained"
+            } else {
+                "environment result did not report an open human-intervention priority blocker"
+            },
+        ),
+        environment_priority_disposition(
+            "split-combine-or-interface-review",
+            if conditioning_required || recovery_required || recheck_required {
+                "needs-review"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("conditioningRequired:{conditioning_required}"),
+                format!("utilityRecoveryRequired:{recovery_required}"),
+                format!("metrologyRecheckRequired:{recheck_required}"),
+            ],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if conditioning_required || recovery_required || recheck_required {
+                "hybrid route, interface, or split/combine release should review environmental conditioning, utility recovery, and metrology stability before recomposition"
+            } else {
+                "environment result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        environment_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/environment/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until environment reports, utility records, metrology state, or operator job sheets retain URI, checksum, format, and evidence"
+            } else {
+                "environment artifacts include retained release evidence for downstream review"
+            },
+        ),
+        environment_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked environment priority lanes before advisory promotion"
+            } else {
+                "environment result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn environment_result_review_response(
     request: EnvironmentResultReviewRequest,
 ) -> Result<Value, String> {
@@ -89849,6 +90141,24 @@ fn environment_result_review_response(
     if human_intervention_required {
         learning_observations.push("environment:human-intervention-required".to_string());
     }
+    let priority_dispositions = environment_priority_dispositions(
+        request.success,
+        release_blocked,
+        condition_blocker_count,
+        utility_blocker_count,
+        metrology_blocker_count,
+        conditioning_required,
+        recovery_required,
+        recheck_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(condition_checks.iter().filter_map(|check| {
         check
             .get("environmentFamily")
@@ -89904,6 +90214,7 @@ fn environment_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "environmentResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -89977,6 +90288,7 @@ fn environment_result_review_response(
                     "humanInterventionRequired": human_intervention_required,
                     "artifactEvidenceMissing": artifact_evidence_missing
                 },
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -89986,6 +90298,7 @@ fn environment_result_review_response(
             "environment-utility-checks",
             "environment-metrology-checks",
             "environment-artifacts",
+            "environment-priority-dispositions",
             "environment-learning-observations",
             "mdp-request.artifacts.environmentResult"
         ]
@@ -90044,6 +90357,10 @@ fn stored_environment_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -90078,6 +90395,12 @@ fn stored_environment_result_job(response: &Value) -> StoredFabricationJob {
             "environment-artifacts".to_string(),
             "environment-artifacts",
             environment_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "environment-priority-dispositions".to_string(),
+            "environment-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -135024,6 +135347,9 @@ mod tests {
             "environment-scope:filament-humidity",
             "environment-utility:fume-extraction",
             "environment-metrology:part-temperature-stabilization",
+            "environment-priority:machine-failure-boundary-first:blocked",
+            "environment-priority:human-intervention-required:blocked",
+            "environment-priority:split-combine-or-interface-review:needs-review",
         ] {
             assert!(
                 observations
@@ -135032,6 +135358,36 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+                    && priority.get("disposition").and_then(Value::as_str) == Some("blocked")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("environment-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("environment-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some(
+                            "environment-priority:split-combine-or-interface-review:needs-review",
+                        )
+            })));
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
             .expect("environment learning outcome draft should be retained");
@@ -135083,6 +135439,13 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(1)
         );
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let job = stored_environment_result_job(&response);
         assert_eq!(job.record.kind, "environment-result");
@@ -135096,6 +135459,7 @@ mod tests {
             "environment-condition-checks",
             "environment-utility-checks",
             "environment-metrology-checks",
+            "environment-priority-dispositions",
             "environment-learning-observations",
         ] {
             assert!(
@@ -163003,6 +163367,34 @@ mod tests {
             .is_some_and(|blocks| blocks
                 .iter()
                 .any(|block| block.as_str() == Some("policyImpactPreview")))));
+        let release_gate_matrix = bundle
+            .get("releaseGateMatrix")
+            .and_then(Value::as_array)
+            .expect("release bundle should include release gate matrix");
+        for gate_id in [
+            "source-provenance",
+            "machine-envelope",
+            "process-readiness",
+            "simulation-evidence",
+            "human-or-automation-handoff",
+            "learning-disposition",
+        ] {
+            assert!(
+                release_gate_matrix
+                    .iter()
+                    .any(|gate| gate.get("gateId").and_then(Value::as_str) == Some(gate_id)),
+                "missing release bundle gate {gate_id}"
+            );
+        }
+        assert!(release_gate_matrix.iter().any(|gate| {
+            gate.get("blocks")
+                .and_then(Value::as_array)
+                .is_some_and(|blocks| {
+                    blocks
+                        .iter()
+                        .any(|block| block.as_str() == Some("split/combine release"))
+                })
+        }));
         assert!(bundle
             .get("releaseSurfaces")
             .and_then(Value::as_array)
