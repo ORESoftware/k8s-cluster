@@ -235,9 +235,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "saved question and chart registry",
                 "database connection registry",
                 "bounded SQL Lab history",
+                "query result cache",
             ],
             next_engine_work: vec![
-                "query result cache",
+                "cache invalidation policies",
                 "dataset-level chart publishing approvals",
             ],
         },
@@ -253,6 +254,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "dataset profile summaries",
                 "database connection registry metadata",
                 "SQL Lab history summaries",
+                "query result cache summaries",
             ],
             next_engine_work: vec![
                 "visual query builder execution against live warehouses",
@@ -504,7 +506,7 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             product_analog: "Tableau / Superset / Metabase",
             data_shape: "dimension, measure, optional facet",
             visualization_families: vec!["bar", "scatter", "histogram", "heatmap"],
-            refresh: "query result cache planned",
+            refresh: "cached query snapshot",
         },
         DashboardPanel {
             id: "hyper-dimensional-scene",

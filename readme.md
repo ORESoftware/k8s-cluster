@@ -72,6 +72,8 @@ concept in `main.rs`:
   compiled SQL request metadata.
 - `src/sql_lab.rs` owns Superset-style bounded SQL Lab history validation, summaries, and dry-run
   external connection records.
+- `src/query_cache.rs` owns bounded in-memory query result snapshots, TTL pruning, and cache
+  summaries that omit raw query text.
 - `src/sql_frontend.rs` owns parser-backed SQL-to-`LogicalPlan` compilation.
 - `src/util.rs` owns shared identifier, escaping, timestamp, header, and scalar-label helpers.
 
@@ -88,8 +90,8 @@ Current first-class parity surfaces:
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
 - Superset / Metabase: bounded SQL Lab history, visual query-builder/self-service contracts, RBAC
-  policy, secretRef-backed database connection registry, saved dashboard catalog, saved questions,
-  and saved chart bindings.
+  policy, secretRef-backed database connection registry, query result cache, saved dashboard
+  catalog, saved questions, and saved chart bindings.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
   rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
@@ -154,7 +156,9 @@ Current first-class parity surfaces:
 - `GET /alerts/notification-policies` - authenticated alert notification policy catalog.
 - `POST /alerts/rules/:rule_id/notification-preview` - authenticated dry-run notification delivery
   preview.
-- `POST /query` - authenticated query translation and execution.
+- `POST /query` - authenticated query translation and execution with an in-memory cache snapshot.
+- `GET /query-cache` - authenticated query result cache summaries without raw query text.
+- `GET /query-cache/:cache_id` - authenticated cached query result snapshot.
 - `POST /sql-lab/history` - authenticated bounded SQL Lab history create with local execution or
   external dry-run planning.
 - `GET /sql-lab/history` - authenticated SQL Lab history summaries without raw query text.

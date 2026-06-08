@@ -27,6 +27,7 @@ mod hardening;
 mod infra_diagrams;
 mod notifications;
 mod platform;
+mod query_cache;
 mod rbac;
 mod self_service;
 mod semantic;
@@ -58,6 +59,7 @@ struct AppState {
     datasets: Arc<RwLock<BTreeMap<String, Dataset>>>,
     connections: Arc<RwLock<BTreeMap<String, connections::DataConnection>>>,
     sql_lab_history: Arc<RwLock<BTreeMap<String, sql_lab::SqlLabHistoryEntry>>>,
+    query_cache: Arc<RwLock<BTreeMap<String, query_cache::QueryCacheEntry>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
@@ -89,6 +91,9 @@ struct Metrics {
     connections_saved_total: AtomicU64,
     sql_lab_requests_total: AtomicU64,
     sql_lab_history_saved_total: AtomicU64,
+    query_cache_requests_total: AtomicU64,
+    query_cache_entries_saved_total: AtomicU64,
+    query_cache_hits_total: AtomicU64,
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
@@ -271,6 +276,8 @@ struct LogicalPlan {
 #[serde(rename_all = "camelCase")]
 struct QueryResponse {
     ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_id: Option<String>,
     logical_plan: LogicalPlan,
     rows: Vec<BTreeMap<String, Value>>,
     row_count: usize,
@@ -493,6 +500,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         datasets: Arc::new(RwLock::new(BTreeMap::new())),
         connections: Arc::new(RwLock::new(BTreeMap::new())),
         sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
+        query_cache: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -584,6 +592,8 @@ fn app_router(state: AppState) -> Router {
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
+        .route("/query-cache", get(list_query_cache))
+        .route("/query-cache/:cache_id", get(get_query_cache_entry))
         .route("/visualizations/suggest", post(suggest_visualizations))
         .route("/evolution/run", post(run_evolution))
         .route("/evolution/runs", get(list_evolution_runs))
@@ -767,6 +777,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limits": sql_lab::limits_payload(),
             "posture": "stored history rejects mutating SQL, comments, multiple statements, and secret-looking tokens; external connections are not executed in-process"
         },
+        "queryResultCache": {
+            "surfaces": ["in-memory result snapshots", "summary catalog", "detail retrieval by cacheId"],
+            "limits": query_cache::limits_payload(),
+            "posture": "bounded TTL cache keyed by request hash; cache summaries do not include raw query text"
+        },
         "etlPlan": {
             "steps": ["select-columns", "rename-columns", "filter-rows", "derive-column", "join", "union", "group-aggregate", "sort-rows", "limit-rows"],
             "maxSteps": etl::max_etl_steps(),
@@ -915,6 +930,15 @@ dd_data_viz_sql_lab_requests_total {}
 # HELP dd_data_viz_sql_lab_history_saved_total SQL Lab history entries saved.
 # TYPE dd_data_viz_sql_lab_history_saved_total counter
 dd_data_viz_sql_lab_history_saved_total {}
+# HELP dd_data_viz_query_cache_requests_total Query cache requests handled.
+# TYPE dd_data_viz_query_cache_requests_total counter
+dd_data_viz_query_cache_requests_total {}
+# HELP dd_data_viz_query_cache_entries_saved_total Query cache entries saved.
+# TYPE dd_data_viz_query_cache_entries_saved_total counter
+dd_data_viz_query_cache_entries_saved_total {}
+# HELP dd_data_viz_query_cache_hits_total Query cache detail hits.
+# TYPE dd_data_viz_query_cache_hits_total counter
+dd_data_viz_query_cache_hits_total {}
 # HELP dd_data_viz_association_requests_total Associative graph requests handled.
 # TYPE dd_data_viz_association_requests_total counter
 dd_data_viz_association_requests_total {}
@@ -982,6 +1006,11 @@ dd_data_viz_errors_total {}
         metrics.connections_saved_total.load(Ordering::Relaxed),
         metrics.sql_lab_requests_total.load(Ordering::Relaxed),
         metrics.sql_lab_history_saved_total.load(Ordering::Relaxed),
+        metrics.query_cache_requests_total.load(Ordering::Relaxed),
+        metrics
+            .query_cache_entries_saved_total
+            .load(Ordering::Relaxed),
+        metrics.query_cache_hits_total.load(Ordering::Relaxed),
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
@@ -2295,12 +2324,99 @@ async fn query(
         .fetch_add(1, Ordering::Relaxed);
     authorize(&state, &headers, rbac::Permission::QueryExecute)?;
 
+    let request_value = serde_json::to_value(&request).map_err(|error| {
+        ApiError::bad_request(format!("failed to serialize query request: {error}"))
+    })?;
+    let start_ms = now_ms();
     let plan = logical_plan_from_query(&request)?;
     let dataset = get_dataset_snapshot(&state, &plan.source)?;
     let mut response = execute_plan(&dataset, plan)?;
     response.ok = true;
+    let logical_plan_value = serde_json::to_value(&response.logical_plan).map_err(|error| {
+        ApiError::bad_request(format!("failed to serialize query logical plan: {error}"))
+    })?;
+    let entry = query_cache::entry_from_result(
+        &request_value,
+        logical_plan_value,
+        response.rows.clone(),
+        response.row_count,
+        response.warnings.clone(),
+        now_ms().saturating_sub(start_ms),
+        now_ms(),
+    );
+    let stored_entry = {
+        let mut cache = state
+            .query_cache
+            .write()
+            .map_err(|_| ApiError::bad_request("query cache lock poisoned"))?;
+        query_cache::store_entry(&mut cache, entry, now_ms())
+    };
+    response.cache_id = Some(stored_entry.cache_id);
+    state
+        .metrics
+        .query_cache_entries_saved_total
+        .fetch_add(1, Ordering::Relaxed);
     state.metrics.queries_total.fetch_add(1, Ordering::Relaxed);
     Ok(Json(response))
+}
+
+async fn list_query_cache(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .query_cache_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryCacheRead)?;
+    let mut cache = state
+        .query_cache
+        .write()
+        .map_err(|_| ApiError::bad_request("query cache lock poisoned"))?;
+    query_cache::prune_expired(&mut cache, now_ms());
+    let summaries = cache
+        .values()
+        .map(query_cache::QueryCacheEntry::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(query_cache::catalog_payload(summaries)))
+}
+
+async fn get_query_cache_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(cache_id): Path<String>,
+) -> Result<Json<query_cache::QueryCacheEntry>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .query_cache_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryCacheRead)?;
+    let mut cache = state
+        .query_cache
+        .write()
+        .map_err(|_| ApiError::bad_request("query cache lock poisoned"))?;
+    let now_ms = now_ms();
+    query_cache::prune_expired(&mut cache, now_ms);
+    let entry = cache
+        .get_mut(&cache_id)
+        .map(|entry| {
+            entry.touch(now_ms);
+            entry.clone()
+        })
+        .ok_or_else(|| ApiError::not_found(format!("query cache `{cache_id}` not found")))?;
+    state
+        .metrics
+        .query_cache_hits_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(entry))
 }
 
 async fn suggest_visualizations(
@@ -3341,6 +3457,7 @@ fn execute_plan(dataset: &Dataset, plan: LogicalPlan) -> Result<QueryResponse, A
         }
         return Ok(QueryResponse {
             ok: true,
+            cache_id: None,
             row_count: rows.len(),
             rows,
             logical_plan: plan,
@@ -3406,6 +3523,7 @@ fn execute_plan(dataset: &Dataset, plan: LogicalPlan) -> Result<QueryResponse, A
 
     Ok(QueryResponse {
         ok: true,
+        cache_id: None,
         row_count: rows.len(),
         rows,
         logical_plan: plan,
@@ -3969,6 +4087,18 @@ fn route_docs() -> Vec<RouteDoc> {
             path: "/query",
             auth: "query-execute",
             description: "Translate a supported dialect into a LogicalPlan and execute it.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/query-cache",
+            auth: "query-cache-read",
+            description: "List bounded query result cache summaries without raw query text.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/query-cache/:cache_id",
+            auth: "query-cache-read",
+            description: "Read a cached query result snapshot by cacheId.",
         },
         RouteDoc {
             method: "POST",
@@ -4892,6 +5022,7 @@ mod tests {
             datasets: Arc::new(RwLock::new(BTreeMap::new())),
             connections: Arc::new(RwLock::new(BTreeMap::new())),
             sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
+            query_cache: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -5066,6 +5197,8 @@ mod tests {
         assert!(paths.contains(&"/connections"));
         assert!(paths.contains(&"/connections/:connection_id"));
         assert!(paths.contains(&"/connections/:connection_id/test-plan"));
+        assert!(paths.contains(&"/query-cache"));
+        assert!(paths.contains(&"/query-cache/:cache_id"));
         assert!(paths.contains(&"/sql-lab/history"));
         assert!(paths.contains(&"/sql-lab/history/:history_id"));
         assert!(paths.contains(&"/semantic/registry"));
