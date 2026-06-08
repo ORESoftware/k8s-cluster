@@ -13479,6 +13479,147 @@ fn validate_design_synthesis_candidates(
         .collect()
 }
 
+fn design_synthesis_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "design-synthesis-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn design_synthesis_priority_dispositions(
+    synthesis_ok: bool,
+    release_blocked: bool,
+    candidate_count: usize,
+    accepted_candidate_selected: bool,
+    blocker_count: usize,
+    missing_release_evidence: bool,
+    manufacturability_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        design_synthesis_priority_disposition(
+            "candidate-selection-readiness",
+            if candidate_count == 0 || !accepted_candidate_selected {
+                "blocked"
+            } else if synthesis_ok && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("candidateCount:{candidate_count}"),
+                format!("acceptedCandidateSelected:{accepted_candidate_selected}"),
+            ],
+            vec![
+                "POST /fabrication/design/synthesis/result",
+                "POST /fabrication/design/generate",
+                "POST /fabrication/handoff/result",
+            ],
+            if candidate_count == 0 || !accepted_candidate_selected {
+                "machineReady remains blocked until a generated design candidate is selected for downstream CAD/CAM or slicer handoff"
+            } else {
+                "design synthesis selected a candidate for downstream review"
+            },
+        ),
+        design_synthesis_priority_disposition(
+            "blocker-review-closure",
+            if blocker_count > 0 {
+                "blocked"
+            } else if synthesis_ok && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("blockerCount:{blocker_count}")],
+            vec![
+                "POST /fabrication/design/synthesis/result",
+                "POST /fabrication/manufacturability/result",
+                "POST /fabrication/release/preview",
+            ],
+            if blocker_count > 0 {
+                "machineReady remains blocked until design-synthesis blockers are reviewed into design, manufacturability, or release gates"
+            } else {
+                "design synthesis did not retain open blockers"
+            },
+        ),
+        design_synthesis_priority_disposition(
+            "release-evidence-retention",
+            if missing_release_evidence {
+                "blocked"
+            } else if synthesis_ok && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("missingReleaseEvidence:{missing_release_evidence}")],
+            vec![
+                "POST /fabrication/design/synthesis/result",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/instructions/generate",
+            ],
+            if missing_release_evidence {
+                "machineReady remains blocked until design candidates retain source artifacts, export formats, and manufacturing method hints"
+            } else {
+                "design synthesis retained source, export, and manufacturing-method evidence"
+            },
+        ),
+        design_synthesis_priority_disposition(
+            "manufacturability-evidence",
+            if manufacturability_evidence_missing {
+                "needs-review"
+            } else if synthesis_ok && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "manufacturabilityEvidenceMissing:{manufacturability_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/manufacturability/result",
+                "POST /fabrication/process-capability/result",
+                "POST /fabrication/decomposition/plan",
+            ],
+            if manufacturability_evidence_missing {
+                "machineReady remains blocked upstream until selected machines, split/combine options, and process constraints are reviewed"
+            } else {
+                "design synthesis retained manufacturability evidence for hybrid route learning"
+            },
+        ),
+        design_synthesis_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("synthesisOk:{synthesis_ok}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked design-synthesis priorities before advisory promotion"
+            } else {
+                "design synthesis result can be submitted as positive design-generation learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn design_synthesis_result_review_response(
     request: DesignSynthesisResultReviewRequest,
 ) -> Result<Value, String> {
@@ -13545,6 +13686,22 @@ fn design_synthesis_result_review_response(
     if release_blocked {
         learning_observations.push("design-synthesis:release-blocked".to_string());
     }
+    let manufacturability_evidence_missing = manufacturability_evidence.is_empty();
+    let priority_dispositions = design_synthesis_priority_dispositions(
+        synthesis_ok,
+        release_blocked,
+        candidates.len(),
+        accepted_candidate_id.is_some(),
+        blockers.len(),
+        missing_release_evidence,
+        manufacturability_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(
         blockers
             .iter()
@@ -13577,6 +13734,8 @@ fn design_synthesis_result_review_response(
         "candidateCount": candidates.len(),
         "blockerCount": blockers.len(),
         "missingReleaseEvidence": missing_release_evidence,
+        "manufacturabilityEvidenceMissing": manufacturability_evidence_missing,
+        "priorityDispositions": priority_dispositions.clone(),
         "designSynthesisResult": {
             "sourceJobId": source_job_id,
             "workerLane": worker_lane,
@@ -13667,8 +13826,10 @@ fn design_synthesis_result_review_response(
                     "candidateCount": candidates.len(),
                     "blockerCount": blockers.len(),
                     "missingReleaseEvidence": missing_release_evidence,
-                    "acceptedCandidateSelected": accepted_candidate_id.is_some()
+                    "acceptedCandidateSelected": accepted_candidate_id.is_some(),
+                    "manufacturabilityEvidenceMissing": manufacturability_evidence_missing
                 },
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -13678,6 +13839,7 @@ fn design_synthesis_result_review_response(
             "design-export-bundle",
             "manufacturing-handoff",
             "machine-release",
+            "design-synthesis-priority-dispositions",
             "mdp-request.artifacts.designPackage"
         ],
         "releasePolicy": [
@@ -121894,6 +122056,70 @@ mod tests {
                 observation.as_str()
                     == Some("design-synthesis-worker:parametric-design-synthesizer")
             })));
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("design synthesis learning observations should be retained");
+        for expected in [
+            "design-synthesis-priority:candidate-selection-readiness:closed",
+            "design-synthesis-priority:blocker-review-closure:closed",
+            "design-synthesis-priority:release-evidence-retention:closed",
+            "design-synthesis-priority:manufacturability-evidence:closed",
+            "design-synthesis-priority:learning-feedback-after-disposition:ready-for-learning",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing design synthesis learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("design synthesis priority dispositions should be retained");
+        for expected in [
+            (
+                "candidate-selection-readiness",
+                "closed",
+                "design-synthesis-priority:candidate-selection-readiness:closed",
+            ),
+            (
+                "blocker-review-closure",
+                "closed",
+                "design-synthesis-priority:blocker-review-closure:closed",
+            ),
+            (
+                "release-evidence-retention",
+                "closed",
+                "design-synthesis-priority:release-evidence-retention:closed",
+            ),
+            (
+                "manufacturability-evidence",
+                "closed",
+                "design-synthesis-priority:manufacturability-evidence:closed",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "ready-for-learning",
+                "design-synthesis-priority:learning-feedback-after-disposition:ready-for-learning",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing design synthesis priority disposition {}",
+                expected.0
+            );
+        }
         let outcome_draft = payload
             .get("learning")
             .and_then(|learning| learning.get("outcomeDraft"))
@@ -121935,6 +122161,13 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(true)
         );
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("candidate-selection-readiness")
+            })));
     }
 
     #[test]
