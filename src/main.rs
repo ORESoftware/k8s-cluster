@@ -19621,6 +19621,154 @@ fn assembly_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn assembly_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "assembly-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn assembly_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    route_blocker_count: usize,
+    join_blocker_count: usize,
+    split_combine_blocker_count: usize,
+    interface_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    let recomposition_blocked =
+        join_blocker_count > 0 || split_combine_blocker_count > 0 || interface_blocker_count > 0;
+
+    vec![
+        assembly_priority_disposition(
+            "recomposition-boundary-first",
+            if recomposition_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("joinBlockerCount:{join_blocker_count}"),
+                format!("splitCombineBlockerCount:{split_combine_blocker_count}"),
+                format!("interfaceBlockerCount:{interface_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/assembly/result",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/release/result",
+            ],
+            if recomposition_blocked {
+                "machineReady remains blocked until join, split/combine, and interface recomposition evidence is dispositioned"
+            } else {
+                "assembly result did not report an open recomposition machine-failure boundary"
+            },
+        ),
+        assembly_priority_disposition(
+            "route-package-readiness",
+            if route_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("routeBlockerCount:{route_blocker_count}")],
+            vec![
+                "POST /fabrication/decomposition/result",
+                "POST /fabrication/packages/plan",
+                "POST /fabrication/assembly/result",
+            ],
+            if route_blocker_count > 0 {
+                "machineReady remains blocked until every child route package is accepted for recomposition"
+            } else {
+                "assembly result child-route packages did not report an open priority blocker"
+            },
+        ),
+        assembly_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/assembly/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator or automation signoff clears join, interface, or recomposition gates"
+            } else {
+                "assembly result did not report an open human-intervention priority blocker"
+            },
+        ),
+        assembly_priority_disposition(
+            "result-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/assembly/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until assembly result artifacts retain URI, checksum, and recomposition evidence"
+            } else {
+                "assembly result artifacts include retained release evidence for downstream review"
+            },
+        ),
+        assembly_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked assembly priorities before advisory promotion"
+            } else {
+                "assembly result can be submitted as positive recomposition learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn assembly_planning_result_review_response(
     request: AssemblyPlanningResultReviewRequest,
 ) -> Result<Value, String> {
@@ -19733,6 +19881,22 @@ fn assembly_planning_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("assembly-planning:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = assembly_priority_dispositions(
+        request.success,
+        release_blocked,
+        route_blocker_count,
+        join_blocker_count,
+        split_combine_blocker_count,
+        interface_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(part_routes.iter().filter_map(|route| {
         route
             .get("processKind")
@@ -19833,6 +19997,7 @@ fn assembly_planning_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "assemblyPlanningResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -19908,6 +20073,7 @@ fn assembly_planning_result_review_response(
                     format!("interface-blockers:{interface_blocker_count}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -19918,6 +20084,7 @@ fn assembly_planning_result_review_response(
             "assembly-split-combine-decisions",
             "assembly-interface-checks",
             "assembly-artifacts",
+            "assembly-priority-dispositions",
             "assembly-learning-observations",
             "assembly-graph",
             "interface-control-plan",
@@ -19995,6 +20162,10 @@ fn stored_assembly_planning_result_job(response: &Value) -> StoredFabricationJob
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "assembly-planning-result".to_string(),
@@ -20030,6 +20201,12 @@ fn stored_assembly_planning_result_job(response: &Value) -> StoredFabricationJob
             "assembly-artifacts".to_string(),
             "assembly-artifacts",
             assembly_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "assembly-priority-dispositions".to_string(),
+            "assembly-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -127824,12 +128001,55 @@ mod tests {
             "assembly-split-combine:split-insert-and-recombine",
             "assembly-interface-check:bearing-datum-fit",
             "assembly-artifact:assembly-planning-bundle",
+            "assembly-priority:recomposition-boundary-first:blocked",
+            "assembly-priority:human-intervention-required:blocked",
+            "assembly-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
                     .iter()
                     .any(|observation| observation.as_str() == Some(expected)),
                 "missing assembly learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("assembly priority dispositions should be present");
+        for expected in [
+            (
+                "recomposition-boundary-first",
+                "blocked",
+                "assembly-priority:recomposition-boundary-first:blocked",
+            ),
+            (
+                "route-package-readiness",
+                "needs-review",
+                "assembly-priority:route-package-readiness:needs-review",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "assembly-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "assembly-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing assembly priority disposition {}",
+                expected.0
             );
         }
         let outcome_draft = payload
@@ -127872,6 +128092,13 @@ mod tests {
                 .iter()
                 .any(|hint| hint.as_str() == Some("bearing-datum-fit"))));
         assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("recomposition-boundary-first")
+            })));
+        assert!(outcome_draft
             .get("featureHints")
             .and_then(Value::as_array)
             .is_some_and(|hints| hints
@@ -127898,6 +128125,7 @@ mod tests {
             "assembly-split-combine-decisions",
             "assembly-interface-checks",
             "assembly-artifacts",
+            "assembly-priority-dispositions",
             "assembly-learning-observations",
         ] {
             assert!(

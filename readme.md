@@ -2499,12 +2499,17 @@ The response exposes `assemblyPlanningResult`, `assemblyResultJobId`,
 subjects. It also includes a
 `dd.fabrication.assembly-planning-learning-outcome-draft.v1` payload with route,
 join, split/combine, interface-check, artifact, human-intervention, reward, and
-submit-route hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded job ledger under
+submit-route hints for `POST /fabrication/learning/outcomes`, plus a
+`priorityDispositions` array for recomposition-boundary review, child-route
+package readiness, human-intervention gates, retained result artifact evidence,
+and learning-feedback lanes. `assembly-priority:<priority>:<disposition>`
+observations are mirrored into the learning draft. Successful reviews are retained in the bounded job ledger under
 `assemblyResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `assembly-planning-result`, `assembly-part-routes`, `assembly-join-operations`,
 `assembly-split-combine-decisions`, `assembly-interface-checks`,
-`assembly-artifacts`, and `assembly-learning-observations`. Machine-ready
+`assembly-artifacts`, `assembly-priority-dispositions`, and
+`assembly-learning-observations`. Machine-ready
 release remains blocked until routes are accepted, joins and recomposition
 decisions clear or become explicit human-intervention gates, interface checks
 pass datum/fit/tolerance review, and artifacts carry URI/checksum/evidence
