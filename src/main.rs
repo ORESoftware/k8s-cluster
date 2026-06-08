@@ -61884,6 +61884,7 @@ async fn root() -> impl IntoResponse {
     let routes = vec![
         "GET /",
         "GET /landing",
+        "GET /fabrication",
         "GET /fabrication/landing",
         "GET /how-it-works",
         "GET /fabrication/how-it-works",
@@ -62138,6 +62139,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/workholding/catalog",
         "GET /workholding/preflight/catalog",
         "GET /fabrication/workholding/preflight/catalog",
+        "POST /workholding/plan",
+        "POST /fabrication/workholding/plan",
         "POST /workholding/result",
         "POST /fabrication/workholding/result",
         "GET /nesting/catalog",
@@ -62158,6 +62161,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/kinematics/result",
         "GET /tolerances/catalog",
         "GET /fabrication/tolerances/catalog",
+        "POST /tolerances/plan",
+        "POST /fabrication/tolerances/plan",
         "POST /tolerances/result",
         "POST /fabrication/tolerances/result",
         "GET /process-capabilities/catalog",
@@ -62304,7 +62309,7 @@ async fn root() -> impl IntoResponse {
         "schemaVersion": SCHEMA_VERSION,
         "landingPage": {
             "label": "Human fabrication overview",
-            "routes": ["/landing", "/fabrication/landing"],
+            "routes": ["/landing", "/fabrication", "/fabrication/landing"],
             "describes": [
                 "request intake for CAD, mesh, slicer, CAM, CNC, and text instructions",
                 "design, instruction, machine-code, toolpath, simulation, and release evidence flow",
@@ -62312,7 +62317,7 @@ async fn root() -> impl IntoResponse {
             ]
         },
         "startHere": {
-            "humanOverview": "/fabrication/landing",
+            "humanOverview": "/fabrication",
             "workflowOverview": "/fabrication/how-it-works",
             "capabilities": "/fabrication/capabilities",
             "requestSchema": "/fabrication/schema",
@@ -82988,7 +82993,7 @@ fn workholding_catalog_response() -> Value {
         "workholdingFamilyCount": entries.len(),
         "workholdingFamilies": workholding_families,
         "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan", "POST /workholding/plan", "POST /fabrication/workholding/plan"],
         "reviewRoutes": [
             "POST /instructions/analyze",
             "POST /fabrication/instructions/analyze",
@@ -83135,6 +83140,237 @@ fn workholding_preflight_catalog_response() -> Value {
         ],
         "workholdingFamiliesDetailed": entries
     })
+}
+
+fn workholding_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let fixture_blocker_count: usize = response
+        .fixture_plan
+        .setups
+        .iter()
+        .map(|setup| setup.release_blockers.len())
+        .sum();
+    let datum_transfer_blocker_count = response
+        .fixture_plan
+        .datum_transfers
+        .iter()
+        .filter(|transfer| transfer.release_blocker.is_some())
+        .count();
+    let human_fixture_setup_count = response
+        .fixture_plan
+        .setups
+        .iter()
+        .filter(|setup| setup.requires_human_intervention)
+        .count();
+    let tooling_workholding_requirement_count = response
+        .tooling_plan
+        .requirements
+        .iter()
+        .filter(|requirement| !requirement.workholding.is_empty())
+        .count();
+    let fixture_risk_count = response
+        .simulation
+        .risk_profile
+        .program_risks
+        .iter()
+        .filter(|risk| {
+            risk.primary_risks.iter().any(|risk| {
+                let risk = risk.to_ascii_lowercase();
+                risk.contains("fixture")
+                    || risk.contains("workholding")
+                    || risk.contains("clamp")
+                    || risk.contains("chuck")
+                    || risk.contains("datum")
+                    || risk.contains("support")
+            })
+        })
+        .count();
+    let workholding_blocked = response.fixture_plan.status != "fixture-plan-ready"
+        || response.fixture_plan.human_review_required
+        || response.tooling_plan.human_review_required
+        || fixture_blocker_count > 0
+        || datum_transfer_blocker_count > 0
+        || human_fixture_setup_count > 0
+        || fixture_risk_count > 0
+        || response.interface_control_plan.machine_release_blocked
+        || response.decomposition_plan.release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked;
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.workholding-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /workholding/plan",
+            "POST /fabrication/workholding/plan"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /workholding/result",
+            "POST /fabrication/workholding/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /release/result",
+            "POST /fabrication/release/result",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!workholding_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(workholding_blocked),
+    );
+    object.insert(
+        "fixtureSetupCount".to_string(),
+        json!(response.fixture_plan.setups.len()),
+    );
+    object.insert(
+        "fixtureBlockerCount".to_string(),
+        json!(fixture_blocker_count),
+    );
+    object.insert(
+        "datumTransferBlockerCount".to_string(),
+        json!(datum_transfer_blocker_count),
+    );
+    object.insert(
+        "humanFixtureSetupCount".to_string(),
+        json!(human_fixture_setup_count),
+    );
+    object.insert(
+        "toolingWorkholdingRequirementCount".to_string(),
+        json!(tooling_workholding_requirement_count),
+    );
+    object.insert("fixtureRiskCount".to_string(), json!(fixture_risk_count));
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "workholdingPlan.workholdingContracts",
+            "toolingPlan.requirements.workholding",
+            "fixturePlan.setups",
+            "fixturePlan.setups.workholding",
+            "fixturePlan.setups.requiredEvidence",
+            "fixturePlan.setups.clearanceChecks",
+            "fixturePlan.datumTransfers",
+            "simulation.riskProfile.programRisks",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "interfaceControlPlan.interfaces",
+            "decompositionPlan.parts",
+            "assemblyPlan.requiredEvidence",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "workholding-plan",
+            "workholding-catalog",
+            "fixture-plan",
+            "tooling-plan",
+            "simulation-report",
+            "interface-control-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.fixturePlan"
+        ]),
+    );
+    object.insert(
+        "workholdingPolicy".to_string(),
+        json!([
+            "workholding planning returns draft fixture, support, datum-transfer, clearance, split/combine fixture, and human-intervention evidence, not certified fixture designs or safety approval",
+            "machineReady=false while build-surface, vise, clamp, vacuum, chuck, tailstock, catcher, tab, nest, datum-transfer, or fixture-clearance evidence remains unresolved",
+            "fixture failures, datum-transfer misses, clamp/chuck slips, and split/combine holds are retained for MDP/POMDP/neural workers to split jobs, change fixtures, add probes, or require human intervention"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "workholdingPlan".to_string(),
+        json!({
+            "workholdingContracts": workholding_catalog_entries(),
+            "toolingPlan": &response.tooling_plan,
+            "fixturePlan": &response.fixture_plan,
+            "simulation": &response.simulation,
+            "operatorInterventionPlan": &response.operator_intervention_plan,
+            "interfaceControlPlan": &response.interface_control_plan,
+            "decompositionPlan": &response.decomposition_plan,
+            "assemblyPlan": &response.assembly,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert("toolingPlan".to_string(), json!(&response.tooling_plan));
+    object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert("assemblyPlan".to_string(), json!(&response.assembly));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 async fn workholding_catalog_http() -> impl IntoResponse {
@@ -88435,6 +88671,201 @@ fn tolerance_catalog_response() -> Value {
 
 async fn tolerance_catalog_http() -> impl IntoResponse {
     Json(tolerance_catalog_response())
+}
+
+fn tolerance_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let tolerance_blocked = response.quality_plan.status != "quality-plan-ready"
+        || response.interface_control_plan.machine_release_blocked
+        || response.decomposition_plan.release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || response.boundary_summary.human_intervention_required > 0
+        || response
+            .validation
+            .failure_boundaries
+            .iter()
+            .any(|boundary| {
+                boundary.kind.contains("tolerance")
+                    || boundary.kind.contains("datum")
+                    || boundary.kind.contains("interface")
+                    || boundary.kind.contains("fit")
+                    || boundary.kind.contains("kerf")
+                    || boundary.kind.contains("split")
+            });
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.tolerance-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /tolerances/plan", "POST /fabrication/tolerances/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /tolerances/catalog",
+            "GET /fabrication/tolerances/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /interfaces/preflight/catalog",
+            "GET /fabrication/interfaces/preflight/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /tolerances/result",
+            "POST /fabrication/tolerances/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /as-built/result",
+            "POST /fabrication/as-built/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!tolerance_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(tolerance_blocked),
+    );
+    object.insert(
+        "inspectionPointCount".to_string(),
+        json!(response.quality_plan.inspection_points.len()),
+    );
+    object.insert(
+        "measurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "interfaceControlCount".to_string(),
+        json!(response.interface_control_plan.controls.len()),
+    );
+    object.insert(
+        "interfaceDecisionCount".to_string(),
+        json!(response.interface_control_plan.decision_count),
+    );
+    object.insert(
+        "assemblyInterfaceCount".to_string(),
+        json!(response.assembly.assembly_graph.interfaces.len()),
+    );
+    object.insert(
+        "decompositionTargetCount".to_string(),
+        json!(response.decomposition_plan.decomposition_target_count),
+    );
+    object.insert(
+        "releasePackageRequiredArtifactCount".to_string(),
+        json!(response.release_package_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "tolerancePlan.toleranceContracts",
+            "designInputReview.inputs",
+            "qualityPlan.inspectionPoints",
+            "qualityPlan.measurementTargets",
+            "fixturePlan.setups",
+            "interfaceControlPlan.controls",
+            "decompositionPlan.targets",
+            "assembly.assemblyGraph.interfaces",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "tolerance-plan",
+            "tolerance-catalog",
+            "quality-plan",
+            "interface-control-plan",
+            "assembly-plan",
+            "fixture-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.toleranceEvidence"
+        ]),
+    );
+    object.insert(
+        "tolerancePolicy".to_string(),
+        json!([
+            "tolerance planning returns draft dimensional, GD&T/PMI, fit, kerf, datum-transfer, and split/combine stackup evidence, not certified inspection plans",
+            "machineReady=false while tolerance-critical features lack material/process allowance, datum, metrology, inspection, interface-control, release package, or operator/automation signoff evidence",
+            "coupon measurements, first-article results, gauge outcomes, kerf offsets, fit-up interventions, and split/combine stackups are retained for MDP/POMDP/neural workers so future plans can pick safer routes and interfaces"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "tolerancePlan".to_string(),
+        json!({
+            "toleranceContracts": tolerance_catalog_entries(),
+            "designInputReview": &response.design_input_review,
+            "qualityPlan": &response.quality_plan,
+            "fixturePlan": &response.fixture_plan,
+            "interfaceControlPlan": &response.interface_control_plan,
+            "decompositionPlan": &response.decomposition_plan,
+            "assembly": &response.assembly,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "designInputReview".to_string(),
+        json!(&response.design_input_review),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert("assembly".to_string(), json!(&response.assembly));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn process_capability_catalog_entries() -> Vec<Value> {
@@ -97555,6 +97986,50 @@ async fn tooling_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn workholding_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.workholding.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(workholding_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -117397,6 +117872,7 @@ async fn request_schema() -> impl IntoResponse {
             "toolingCatalog": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
             "workholdingCatalog": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
             "workholdingPreflightCatalog": ["GET /workholding/preflight/catalog", "GET /fabrication/workholding/preflight/catalog"],
+            "workholdingPlan": ["POST /workholding/plan", "POST /fabrication/workholding/plan"],
             "nestingCatalog": ["GET /nesting/catalog", "GET /fabrication/nesting/catalog"],
             "nestingResult": ["POST /nesting/result", "POST /fabrication/nesting/result"],
             "supportStrategyCatalog": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
@@ -117406,6 +117882,7 @@ async fn request_schema() -> impl IntoResponse {
         "kinematicsCatalog": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
         "kinematicsResult": ["POST /kinematics/result", "POST /fabrication/kinematics/result"],
         "toleranceCatalog": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
+        "tolerancePlan": ["POST /tolerances/plan", "POST /fabrication/tolerances/plan"],
         "processCapabilityCatalog": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
         "processCapabilityPlan": ["POST /process-capabilities/plan", "POST /fabrication/process-capabilities/plan"],
         "manufacturabilityCatalog": ["GET /manufacturability/catalog", "GET /fabrication/manufacturability/catalog"],
@@ -118538,6 +119015,50 @@ async fn kinematics_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn tolerance_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.tolerance.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(tolerance_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -120277,6 +120798,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = Router::new()
         .route("/", get(root))
         .route("/landing", get(landing_page))
+        .route("/fabrication", get(landing_page))
         .route("/fabrication/landing", get(landing_page))
         .route("/how-it-works", get(how_it_works_http))
         .route("/fabrication/how-it-works", get(how_it_works_http))
@@ -120864,6 +121386,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/workholding/preflight/catalog",
             get(workholding_preflight_catalog_http),
         )
+        .route("/workholding/plan", post(workholding_plan_http))
+        .route("/fabrication/workholding/plan", post(workholding_plan_http))
         .route("/workholding/result", post(workholding_result_http))
         .route(
             "/fabrication/workholding/result",
@@ -120914,6 +121438,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/tolerances/catalog",
             get(tolerance_catalog_http),
         )
+        .route("/tolerances/plan", post(tolerance_plan_http))
+        .route("/fabrication/tolerances/plan", post(tolerance_plan_http))
         .route("/tolerances/result", post(tolerance_result_http))
         .route(
             "/fabrication/tolerances/result",
@@ -121305,6 +121831,7 @@ mod tests {
             "DES",
             "neural-policy evidence",
             "machine-ready release stays gated",
+            "/fabrication",
             "/fabrication/capabilities",
             "/fabrication/intake/catalog",
             "/fabrication/templates/catalog",
@@ -139695,6 +140222,126 @@ mod tests {
     }
 
     #[test]
+    fn workholding_planning_endpoint_returns_fixture_datum_and_split_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 3,
+            successes: 1,
+            failures: 2,
+            average_reward: -0.18,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "neural-example job=fixture-datum-transfer bracket split-combine blocked"
+                    .to_string(),
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-workholding-plan".to_string()),
+                objective:
+                    "make a split printed and milled bracket with vise fixture, clamp clearance, datum transfer, chuck support, and recomposition fixture evidence"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![240.0, 160.0, 25.0]),
+                }),
+                tolerance_mm: Some(0.04),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(3),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "additive-print".to_string(),
+                        "milling".to_string(),
+                        "assembly".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: Some(vec![
+                    RequestedPart {
+                        id: "printed-body".to_string(),
+                        description:
+                            "printed body with support fixture and recomposition datum boss"
+                                .to_string(),
+                        material: Some(material("polycarbonate", "polymer")),
+                        preferred_method: Some("additive-print".to_string()),
+                        tolerance_mm: Some(0.08),
+                    },
+                    RequestedPart {
+                        id: "milled-insert".to_string(),
+                        description: "milled insert needing vise clamp clearance and datum transfer"
+                            .to_string(),
+                        material: Some(material("6061 aluminum", "metal")),
+                        preferred_method: Some("milling".to_string()),
+                        tolerance_mm: Some(0.04),
+                    },
+                ]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("workholding planning should return fixture evidence");
+
+        let payload = workholding_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.workholding-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/workholding/plan"))));
+        assert!(payload
+            .get("workholdingPlan")
+            .and_then(|plan| plan.get("workholdingContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("workholdingFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-assembly-fixture-datum-and-recomposition"))));
+        assert!(payload
+            .get("fixtureSetupCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("toolingWorkholdingRequirementCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("fixturePlan.setups.workholding") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("mdp-request.artifacts.fixturePlan") })));
+        assert!(payload
+            .get("workholdingPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+    }
+
+    #[test]
     fn workholding_result_endpoint_reviews_fixture_datum_split_and_learning() {
         let response = workholding_result_review_response(WorkholdingResultReviewRequest {
             request_id: Some("workholding-result-001".to_string()),
@@ -140773,6 +141420,122 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified inspection plans")))));
+    }
+
+    #[test]
+    fn tolerance_planning_endpoint_returns_fit_stackup_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 2,
+            successes: 1,
+            failures: 1,
+            average_reward: 0.05,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "neural-example job=tolerance-stackup-bracket interface-fit-blocked".to_string(),
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-tolerance-plan".to_string()),
+                objective:
+                    "make a split additive and milled printer bracket with tight dowel fit, datum transfer, GD&T stackup, inspection, and release evidence"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![210.0, 140.0, 20.0]),
+                }),
+                tolerance_mm: Some(0.025),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(3),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "additive-print".to_string(),
+                        "milling".to_string(),
+                        "assembly".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: Some(vec![
+                    RequestedPart {
+                        id: "printed-body".to_string(),
+                        description: "printed bracket body with datum boss and dowel interface"
+                            .to_string(),
+                        material: Some(material("polycarbonate", "polymer")),
+                        preferred_method: Some("additive-print".to_string()),
+                        tolerance_mm: Some(0.08),
+                    },
+                    RequestedPart {
+                        id: "milled-insert".to_string(),
+                        description: "milled datum insert with tight pin fit to printed body"
+                            .to_string(),
+                        material: Some(material("6061 aluminum", "metal")),
+                        preferred_method: Some("milling".to_string()),
+                        tolerance_mm: Some(0.025),
+                    },
+                ]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("tolerance planning should return stackup evidence");
+
+        let payload = tolerance_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.tolerance-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/tolerances/plan"))));
+        assert!(payload
+            .get("tolerancePlan")
+            .and_then(|plan| plan.get("toleranceContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("toleranceFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-assembly-interface-stackups"))));
+        assert!(payload
+            .get("measurementTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("interfaceControlCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("assemblyInterfaceCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("assembly.assemblyGraph.interfaces") })));
+        assert!(payload
+            .get("tolerancePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
     }
 
     #[test]

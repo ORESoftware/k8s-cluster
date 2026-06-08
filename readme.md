@@ -8,7 +8,7 @@ It exposes:
 
 `GET /` returns the machine-readable service inventory with a `landingPage`
 block for the human fabrication overview, a compact `startHere` map to
-`/fabrication/landing`, `/fabrication/how-it-works`, capabilities, schema,
+`/fabrication`, `/fabrication/landing`, `/fabrication/how-it-works`, capabilities, schema,
 examples, and generated API docs. The landing page and JSON how-it-works
 overview explain how the service turns fabrication goals into
 design/import decisions, machine/material route choices, split/combine plans,
@@ -17,6 +17,7 @@ outcomes.
 
 - `GET /`
 - `GET /landing`
+- `GET /fabrication`
 - `GET /fabrication/landing`
 - `GET /how-it-works`
 - `GET /fabrication/how-it-works`
@@ -273,6 +274,8 @@ outcomes.
 - `GET /fabrication/workholding/catalog`
 - `GET /workholding/preflight/catalog`
 - `GET /fabrication/workholding/preflight/catalog`
+- `POST /workholding/plan`
+- `POST /fabrication/workholding/plan`
 - `POST /workholding/result`
 - `POST /fabrication/workholding/result`
 - `GET /nesting/catalog`
@@ -293,6 +296,8 @@ outcomes.
 - `POST /fabrication/kinematics/result`
 - `GET /tolerances/catalog`
 - `GET /fabrication/tolerances/catalog`
+- `POST /tolerances/plan`
+- `POST /fabrication/tolerances/plan`
 - `POST /tolerances/result`
 - `POST /fabrication/tolerances/result`
 - `GET /process-capabilities/catalog`
@@ -3790,6 +3795,27 @@ support, datum transfer, clearance, or split/combine fixture evidence is absent.
 Failed checks feed DES, MDP/POMDP, and neural workers so future plans can split
 jobs, add fixtures, insert re-probes, or require human intervention earlier.
 
+## `POST /fabrication/workholding/plan`
+
+`POST /workholding/plan` and the gateway-prefixed
+`POST /fabrication/workholding/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.workholding-planning.v1` projection for fixture, build-surface,
+clamp, vacuum, chuck, datum-transfer, clearance, support, and split/combine
+workholding evidence. The response includes a `workholdingPlan` with
+`workholdingContracts`, `toolingPlan`, `fixturePlan`, `simulation`,
+`operatorInterventionPlan`, `interfaceControlPlan`, `decompositionPlan`,
+`assemblyPlan`, `releasePackagePlan`, and `machineRelease` surfaces.
+
+The endpoint keeps `machineReady=false` while build-surface, vise, clamp,
+vacuum, chuck, tailstock, catcher, tab, nest, datum-transfer, or
+fixture-clearance evidence remains unresolved. It reports fixture setup counts,
+fixture blockers, datum-transfer blockers, human fixture setup counts, tooling
+workholding requirements, fixture-related simulation risks, and machine-release
+blockers. Fixture failures, datum-transfer misses, clamp/chuck slips, and
+split/combine holds are retained for MDP/POMDP/neural workers so future plans
+can split jobs, change fixtures, add probes, or require human intervention.
+
 ## `POST /fabrication/workholding/result`
 
 `POST /workholding/result` and the gateway-prefixed
@@ -4058,6 +4084,27 @@ automation signoff evidence. Coupon measurements, first-article results, gauge
 outcomes, kerf offsets, fit-up interventions, and split/combine stackups are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
+
+## `POST /fabrication/tolerances/plan`
+
+`POST /tolerances/plan` and the gateway-prefixed
+`POST /fabrication/tolerances/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.tolerance-planning.v1` projection for dimensional, GD&T/PMI,
+fit, kerf, datum-transfer, and split/combine stackup evidence. The response
+includes a `tolerancePlan` with `toleranceContracts`, `designInputReview`,
+`qualityPlan`, `fixturePlan`, `interfaceControlPlan`, `decompositionPlan`,
+`assembly`, `releasePackagePlan`, and `machineRelease` surfaces.
+
+The endpoint keeps `machineReady=false` while tolerance-critical features lack
+material/process allowance, datum, metrology, inspection, interface-control,
+release package, or operator/automation signoff evidence. It reports
+inspection-point counts, measurement-target counts, interface-control records,
+interface decisions, assembly interfaces, decomposition targets, required
+release artifacts, and machine-release blockers. Coupon measurements,
+first-article results, gauge outcomes, kerf offsets, fit-up interventions, and
+split/combine stackups are retained for MDP/POMDP/neural workers so future
+plans can pick safer routes and interfaces.
 
 ## `POST /fabrication/tolerances/result`
 
@@ -5233,7 +5280,8 @@ scores remain advisory and keep `machineReady=false`.
 
 ## `GET /fabrication/landing`
 
-`GET /landing` and the gateway-prefixed `GET /fabrication/landing` serve a human
+`GET /landing`, `GET /fabrication`, and the explicit
+`GET /fabrication/landing` alias serve a human
 landing page for operators and integration authors. The page explains the
 fabrication server's intake-to-release flow: CAD/model/slicer and CAM
 intermediate intake, design and machine-code generation, instruction validation
