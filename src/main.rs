@@ -12688,6 +12688,153 @@ fn design_import_result_artifact_missing_release_evidence(artifact: &Value) -> b
             .is_none_or(Vec::is_empty)
 }
 
+fn design_import_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "design-import-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn design_import_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    check_count: usize,
+    check_blocker_count: usize,
+    boundary_blocker_count: usize,
+    human_intervention_boundary_count: usize,
+    split_boundary_count: usize,
+    combine_boundary_count: usize,
+    artifact_evidence_missing: bool,
+    source_context_retained: bool,
+) -> Vec<Value> {
+    vec![
+        design_import_priority_disposition(
+            "source-context-retention",
+            if source_context_retained {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("sourceContextRetained:{source_context_retained}")],
+            vec![
+                "POST /fabrication/design/import/review",
+                "POST /fabrication/design/import/result",
+                "POST /fabrication/design/convert/plan",
+            ],
+            if source_context_retained {
+                "design import retained input, source format, and source-system context for translator and slicer learning"
+            } else {
+                "machineReady remains blocked upstream until import evidence retains source identity, format, and source-system context"
+            },
+        ),
+        design_import_priority_disposition(
+            "import-check-closure",
+            if check_count == 0 || check_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("checkCount:{check_count}"),
+                format!("checkBlockerCount:{check_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/design/import/result",
+                "POST /fabrication/design/convert/result",
+                "POST /fabrication/release/preview",
+            ],
+            if check_count == 0 || check_blocker_count > 0 {
+                "machineReady remains blocked until import checks close topology, scale, units, PMI/profile, and source-integrity blockers"
+            } else {
+                "design import checks retained no open release blockers"
+            },
+        ),
+        design_import_priority_disposition(
+            "failure-boundary-closure",
+            if boundary_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("boundaryBlockerCount:{boundary_blocker_count}"),
+                format!("humanInterventionBoundaryCount:{human_intervention_boundary_count}"),
+                format!("splitBoundaryCount:{split_boundary_count}"),
+                format!("combineBoundaryCount:{combine_boundary_count}"),
+            ],
+            vec![
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interventions/result",
+            ],
+            if boundary_blocker_count > 0 {
+                "machineReady remains blocked until import failure boundaries are split, combined, repaired, rerouted, or assigned to human/automation intervention"
+            } else {
+                "design import did not retain open failure boundaries"
+            },
+        ),
+        design_import_priority_disposition(
+            "artifact-evidence-retention",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/design/import/result",
+                "POST /fabrication/design/convert/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until import artifacts retain URI, checksum, format, and evidence labels"
+            } else {
+                "design import artifacts retained release evidence for conversion and learning"
+            },
+        ),
+        design_import_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked import priorities before CAD or slicer intake policy promotion"
+            } else {
+                "design import result can be submitted as positive source-intake learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn design_import_result_review_response(
     request: DesignImportResultReviewRequest,
 ) -> Result<Value, String> {
@@ -12802,6 +12949,26 @@ fn design_import_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("design-import:artifact-evidence-missing".to_string());
     }
+    let source_context_retained =
+        input_id.is_some() && source_format.is_some() && source_system.is_some();
+    let priority_dispositions = design_import_priority_dispositions(
+        request.success,
+        release_blocked,
+        checks.len(),
+        check_blocker_count,
+        boundary_blocker_count,
+        human_intervention_boundary_count,
+        split_boundary_count,
+        combine_boundary_count,
+        artifact_evidence_missing,
+        source_context_retained,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(checks.iter().filter_map(|check| {
         check
             .get("checkKind")
@@ -12866,6 +13033,8 @@ fn design_import_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "sourceContextRetained": source_context_retained,
+        "priorityDispositions": priority_dispositions.clone(),
         "designImportResult": {
             "sourceJobId": source_job_id,
             "inputId": input_id,
@@ -12942,6 +13111,7 @@ fn design_import_result_review_response(
                     format!("combine-boundaries:{combine_boundary_count}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -12950,6 +13120,7 @@ fn design_import_result_review_response(
             "design-import-checks",
             "design-import-failure-boundaries",
             "design-import-artifacts",
+            "design-import-priority-dispositions",
             "design-import-learning-observations",
             "mdp-request.artifacts.designImportResult"
         ],
@@ -13011,6 +13182,10 @@ fn stored_design_import_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "design-import-result".to_string(),
@@ -13034,6 +13209,12 @@ fn stored_design_import_result_job(response: &Value) -> StoredFabricationJob {
             "design-import-artifacts".to_string(),
             "design-import-artifacts",
             import_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "design-import-priority-dispositions".to_string(),
+            "design-import-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -61311,6 +61492,8 @@ async fn root() -> impl IntoResponse {
         "GET /metrics",
         "GET /capabilities",
         "GET /fabrication/capabilities",
+        "GET /objective/coverage",
+        "GET /fabrication/objective/coverage",
         "GET /machines/catalog",
         "GET /fabrication/machines/catalog",
         "GET /printers/catalog",
@@ -109476,6 +109659,117 @@ async fn learning_optimizer_result_http(
     }
 }
 
+fn objective_coverage_matrix() -> Vec<Value> {
+    vec![
+        json!({
+            "requirement": "3d-printing-and-hybrid-intake",
+            "covers": "accept fabrication requests for additive printers, slicers, native CAD exports, submitted machine profiles, and hybrid printed/milled/turned assemblies",
+            "primaryRoutes": [
+                "POST /fabrication/plan",
+                "POST /fabrication/design/import/review",
+                "POST /fabrication/design/generate",
+                "GET /fabrication/design/formats",
+                "GET /fabrication/slicers/catalog",
+                "GET /fabrication/printers/catalog"
+            ],
+            "evidenceSurfaces": ["designInputReview", "materialPlan", "slicerProfiles", "defaultMachines", "profileEvidence"],
+            "releaseRule": "intake remains advisory until source provenance, units, material, profile, and machine evidence are retained"
+        }),
+        json!({
+            "requirement": "machine-code-and-instruction-generation",
+            "covers": "generate draft design packages, toolpaths, slicer plans, G-code, controller programs, and non-G-code job-sheet instructions for printers, mills, routers, lathes, and sheet cutters",
+            "primaryRoutes": [
+                "POST /fabrication/design/generate",
+                "POST /fabrication/instructions/generate",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/toolpaths/plan",
+                "GET /fabrication/machine-code/catalog",
+                "GET /fabrication/instructions/generation/catalog"
+            ],
+            "evidenceSurfaces": ["designPackage", "generatedPrograms", "toolpathPlan", "machineRelease", "releasePackagePlan"],
+            "releaseRule": "generated programs stay machineReady=false until controller, simulation, setup, quality, and operator or automation gates clear"
+        }),
+        json!({
+            "requirement": "existing-instruction-validation-and-improvement",
+            "covers": "accept existing CNC, additive, slicer, CAM, controller, and text fabrication instructions, validate them, improve them, and retain patches or review findings",
+            "primaryRoutes": [
+                "POST /fabrication/instructions/analyze",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/instructions/validation/result",
+                "POST /fabrication/instructions/review/result",
+                "GET /fabrication/instructions/languages"
+            ],
+            "evidenceSurfaces": ["validationFindings", "failureBoundaries", "patchManifest", "learningObservations", "releaseBlockers"],
+            "releaseRule": "improved instructions remain advisory until retained validation, simulation, and release evidence closes every blocker"
+        }),
+        json!({
+            "requirement": "machine-failure-and-human-intervention-boundaries",
+            "covers": "surface machine-failure, process-stop, setup, workholding, support-media, material, macro, modal-state, and human-intervention boundaries before unattended release",
+            "primaryRoutes": [
+                "GET /fabrication/boundaries/catalog",
+                "GET /fabrication/boundaries/preflight/catalog",
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/release/preview"
+            ],
+            "evidenceSurfaces": ["boundaryAnalysis", "interventionMap", "operatorInterventionPlan", "machineRelease", "priorityDispositions"],
+            "releaseRule": "unresolved boundaries force machineReady=false or require split, combine, reroute, remediation, or human/automation handoff"
+        }),
+        json!({
+            "requirement": "split-combine-and-multi-process-learning",
+            "covers": "plan one-piece, split-route, recomposed, alternate-machine, and hybrid assemblies that combine printed, milled, turned, routed, cut, or postprocessed parts",
+            "primaryRoutes": [
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/interfaces/result",
+                "GET /fabrication/hybrid/catalog",
+                "POST /fabrication/strategy/recommend",
+                "POST /fabrication/learning/outcomes"
+            ],
+            "evidenceSurfaces": ["decompositionPlan", "assemblyPlan", "interfaceControlPlan", "strategyCandidates", "learningOutcomeDraft"],
+            "releaseRule": "split/combine choices require child-route packages, datum-transfer evidence, interface checks, and release-package closure"
+        }),
+        json!({
+            "requirement": "mdp-pomdp-des-neural-learning",
+            "covers": "retain rewards, MDP/POMDP/DES model evidence, neural training examples, optimizer outputs, replay gates, and outcome memory so future plans can learn safer routes",
+            "primaryRoutes": [
+                "GET /fabrication/learning/capabilities",
+                "GET /fabrication/learning/models/catalog",
+                "GET /fabrication/learning/optimizers/catalog",
+                "POST /fabrication/learning/models/result",
+                "POST /fabrication/learning/optimizers/result",
+                "GET /fabrication/learning/corpus"
+            ],
+            "evidenceSurfaces": ["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"],
+            "releaseRule": "learned preferences and neural scores remain advisory until replay, simulation, retained artifacts, and release blockers clear"
+        }),
+    ]
+}
+
+fn objective_coverage_response() -> Value {
+    let matrix = objective_coverage_matrix();
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.objective-coverage.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /objective/coverage", "GET /fabrication/objective/coverage"],
+        "sourceRoutes": ["GET /capabilities", "GET /fabrication/capabilities"],
+        "coverageCount": matrix.len(),
+        "objectiveCoverageMatrix": matrix,
+        "releasePolicy": [
+            "coverage rows prove discovery and review surfaces, not machine-ready release",
+            "every generated or improved artifact remains advisory until retained evidence clears validation, simulation, setup, quality, and human or automation release gates",
+            "learning outputs can reprioritize future plans only after replay, retained artifacts, and release blockers are reviewed"
+        ]
+    })
+}
+
+async fn objective_coverage_http() -> impl IntoResponse {
+    Json(objective_coverage_response())
+}
+
 async fn capabilities() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -109486,6 +109780,8 @@ async fn capabilities() -> impl IntoResponse {
             "discovery": [
                 "GET /capabilities",
                 "GET /fabrication/capabilities",
+                "GET /objective/coverage",
+                "GET /fabrication/objective/coverage",
                 "GET /machines/catalog",
                 "GET /fabrication/machines/catalog",
                 "POST /machines/select",
@@ -109959,91 +110255,7 @@ async fn capabilities() -> impl IntoResponse {
             "learningOutcomeQuality.riskReviewRequired",
             "learningOutcomeQuality.releasePolicy"
         ],
-        "objectiveCoverageMatrix": [
-            {
-                "requirement": "3d-printing-and-hybrid-intake",
-                "covers": "accept fabrication requests for additive printers, slicers, native CAD exports, submitted machine profiles, and hybrid printed/milled/turned assemblies",
-                "primaryRoutes": [
-                    "POST /fabrication/plan",
-                    "POST /fabrication/design/import/review",
-                    "POST /fabrication/design/generate",
-                    "GET /fabrication/design/formats",
-                    "GET /fabrication/slicers/catalog",
-                    "GET /fabrication/printers/catalog"
-                ],
-                "evidenceSurfaces": ["designInputReview", "materialPlan", "slicerProfiles", "defaultMachines", "profileEvidence"],
-                "releaseRule": "intake remains advisory until source provenance, units, material, profile, and machine evidence are retained"
-            },
-            {
-                "requirement": "machine-code-and-instruction-generation",
-                "covers": "generate draft design packages, toolpaths, slicer plans, G-code, controller programs, and non-G-code job-sheet instructions for printers, mills, routers, lathes, and sheet cutters",
-                "primaryRoutes": [
-                    "POST /fabrication/design/generate",
-                    "POST /fabrication/instructions/generate",
-                    "POST /fabrication/machine-code/generate",
-                    "POST /fabrication/toolpaths/plan",
-                    "GET /fabrication/machine-code/catalog",
-                    "GET /fabrication/instructions/generation/catalog"
-                ],
-                "evidenceSurfaces": ["designPackage", "generatedPrograms", "toolpathPlan", "machineRelease", "releasePackagePlan"],
-                "releaseRule": "generated programs stay machineReady=false until controller, simulation, setup, quality, and operator or automation gates clear"
-            },
-            {
-                "requirement": "existing-instruction-validation-and-improvement",
-                "covers": "accept existing CNC, additive, slicer, CAM, controller, and text fabrication instructions, validate them, improve them, and retain patches or review findings",
-                "primaryRoutes": [
-                    "POST /fabrication/instructions/analyze",
-                    "POST /fabrication/instructions/validate",
-                    "POST /fabrication/instructions/improve",
-                    "POST /fabrication/instructions/validation/result",
-                    "POST /fabrication/instructions/review/result",
-                    "GET /fabrication/instructions/languages"
-                ],
-                "evidenceSurfaces": ["validationFindings", "failureBoundaries", "patchManifest", "learningObservations", "releaseBlockers"],
-                "releaseRule": "improved instructions remain advisory until retained validation, simulation, and release evidence closes every blocker"
-            },
-            {
-                "requirement": "machine-failure-and-human-intervention-boundaries",
-                "covers": "surface machine-failure, process-stop, setup, workholding, support-media, material, macro, modal-state, and human-intervention boundaries before unattended release",
-                "primaryRoutes": [
-                    "GET /fabrication/boundaries/catalog",
-                    "GET /fabrication/boundaries/preflight/catalog",
-                    "POST /fabrication/boundaries/result",
-                    "POST /fabrication/interventions/result",
-                    "POST /fabrication/release/preview"
-                ],
-                "evidenceSurfaces": ["boundaryAnalysis", "interventionMap", "operatorInterventionPlan", "machineRelease", "priorityDispositions"],
-                "releaseRule": "unresolved boundaries force machineReady=false or require split, combine, reroute, remediation, or human/automation handoff"
-            },
-            {
-                "requirement": "split-combine-and-multi-process-learning",
-                "covers": "plan one-piece, split-route, recomposed, alternate-machine, and hybrid assemblies that combine printed, milled, turned, routed, cut, or postprocessed parts",
-                "primaryRoutes": [
-                    "POST /fabrication/decomposition/plan",
-                    "POST /fabrication/assembly/plan",
-                    "POST /fabrication/interfaces/result",
-                    "GET /fabrication/hybrid/catalog",
-                    "POST /fabrication/strategy/recommend",
-                    "POST /fabrication/learning/outcomes"
-                ],
-                "evidenceSurfaces": ["decompositionPlan", "assemblyPlan", "interfaceControlPlan", "strategyCandidates", "learningOutcomeDraft"],
-                "releaseRule": "split/combine choices require child-route packages, datum-transfer evidence, interface checks, and release-package closure"
-            },
-            {
-                "requirement": "mdp-pomdp-des-neural-learning",
-                "covers": "retain rewards, MDP/POMDP/DES model evidence, neural training examples, optimizer outputs, replay gates, and outcome memory so future plans can learn safer routes",
-                "primaryRoutes": [
-                    "GET /fabrication/learning/capabilities",
-                    "GET /fabrication/learning/models/catalog",
-                    "GET /fabrication/learning/optimizers/catalog",
-                    "POST /fabrication/learning/models/result",
-                    "POST /fabrication/learning/optimizers/result",
-                    "GET /fabrication/learning/corpus"
-                ],
-                "evidenceSurfaces": ["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"],
-                "releaseRule": "learned preferences and neural scores remain advisory until replay, simulation, retained artifacts, and release blockers clear"
-            }
-        ],
+        "objectiveCoverageMatrix": objective_coverage_matrix(),
         "safetyBoundaryClasses": safety_boundary_classes(),
         "notes": [
             "Capabilities describe draft planning and validation support, not controller-certified machine release.",
@@ -117879,6 +118091,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/readyz", get(healthz))
         .route("/capabilities", get(capabilities))
         .route("/fabrication/capabilities", get(capabilities))
+        .route("/objective/coverage", get(objective_coverage_http))
+        .route(
+            "/fabrication/objective/coverage",
+            get(objective_coverage_http),
+        )
         .route("/machines/catalog", get(machine_catalog))
         .route("/fabrication/machines/catalog", get(machine_catalog))
         .route("/cells/catalog", get(cell_catalog_http))
@@ -118875,6 +119092,50 @@ mod tests {
                 "landing page should include {expected}"
             );
         }
+    }
+
+    #[test]
+    fn objective_coverage_endpoint_exposes_goal_matrix() {
+        let payload = objective_coverage_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.objective-coverage.v1")
+        );
+        assert_eq!(
+            payload.get("coverageCount").and_then(Value::as_u64),
+            Some(6)
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/objective/coverage"))));
+        let matrix = payload
+            .get("objectiveCoverageMatrix")
+            .and_then(Value::as_array)
+            .expect("objective coverage matrix should be retained");
+        for expected in [
+            "3d-printing-and-hybrid-intake",
+            "machine-code-and-instruction-generation",
+            "existing-instruction-validation-and-improvement",
+            "machine-failure-and-human-intervention-boundaries",
+            "split-combine-and-multi-process-learning",
+            "mdp-pomdp-des-neural-learning",
+        ] {
+            assert!(
+                matrix.iter().any(|row| {
+                    row.get("requirement").and_then(Value::as_str) == Some(expected)
+                }),
+                "missing objective coverage row {expected}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("remains advisory")))));
     }
 
     #[test]
@@ -121908,6 +122169,29 @@ mod tests {
             payload.get("machineReady").and_then(Value::as_bool),
             Some(false)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("design import priority dispositions");
+        for expected in [
+            ("import-check-closure", "blocked"),
+            ("failure-boundary-closure", "blocked"),
+            ("artifact-evidence-retention", "needs-review"),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                }),
+                "missing design import priority disposition {}",
+                expected.0
+            );
+        }
         assert_eq!(
             payload.get("checkBlockerCount").and_then(Value::as_u64),
             Some(1)
@@ -121987,6 +122271,15 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-boundaries:1"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some("design-import-priority:failure-boundary-closure:blocked")
+            })));
 
         let job = stored_design_import_result_job(&payload);
         assert_eq!(job.record.kind, "design-import-result");
@@ -122001,6 +122294,7 @@ mod tests {
             "design-import-checks",
             "design-import-failure-boundaries",
             "design-import-artifacts",
+            "design-import-priority-dispositions",
             "design-import-learning-observations",
         ] {
             assert!(
