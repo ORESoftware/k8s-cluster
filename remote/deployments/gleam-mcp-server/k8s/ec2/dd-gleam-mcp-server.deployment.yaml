@@ -276,11 +276,11 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 512Mi
+              memory: 1Gi
               ephemeral-storage: 256Mi
             limits:
               cpu: "2"
-              memory: 2Gi
+              memory: 4Gi
               ephemeral-storage: 2Gi
           volumeMounts:
             - name: work
