@@ -62783,6 +62783,8 @@ fn root_response() -> Value {
         "GET /fabrication/printers/catalog",
         "GET /fdm-printer/catalog",
         "GET /fabrication/fdm-printer/catalog",
+        "GET /pellet-fgf/catalog",
+        "GET /fabrication/pellet-fgf/catalog",
         "GET /resin-printer/catalog",
         "GET /fabrication/resin-printer/catalog",
         "GET /material-jetting/catalog",
@@ -110170,6 +110172,119 @@ async fn fdm_printer_catalog_http() -> impl IntoResponse {
     Json(fdm_printer_catalog_response())
 }
 
+fn pellet_fgf_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let pellet_fgf_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_pellet_fgf_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(pellet_fgf_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(pellet_fgf_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(pellet_fgf_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.pellet-fgf-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /pellet-fgf/catalog", "GET /fabrication/pellet-fgf/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /fdm-printer/catalog",
+            "GET /fabrication/fdm-printer/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "pelletFgfPrinterCount": pellet_fgf_printers.len(),
+        "pelletFgfPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "pellet or regrind lot, drying dew point, moisture reading, hopper feed, screen pack or nozzle, purge strand, and feed stability evidence",
+            "nozzle diameter, melt temperature, screw RPM, extrusion multiplier, bead width, layer height, trim allowance, and large-format slicer or generated job evidence",
+            "gantry clearance, thermal soak, cooling airflow, interlayer temperature, bead slump, melt pressure, warpage, fixture cooling, and first-article evidence",
+            "generated pellet-FGF job package, DRY_PELLETS, PURGE_EXTRUDER, PRINT_BEAD_PATH, MONITOR, trim allowance, telemetry, quality, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "pellet-fgf-material-boundary",
+            "pellet-fgf-bead-thermal-boundary",
+            "pellet-fgf-trim-boundary",
+            "additive-material-conditioning-missing",
+            "additive-extrusion-calibration-missing",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/slicers/plan",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/decomposition/plan"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "pellet-FGF catalog entries are large-format fused-granulate planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until pellet lot, drying, moisture, hopper feed, purge, bead geometry, thermal, cooling, warpage, trim, telemetry, quality, and signoff evidence are retained",
+            "pellet-FGF outcomes should feed material, slicer, simulation, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, reroute, change bead strategy, cool fixtures, or require human intervention"
+        ],
+        "pelletFgfPrinters": pellet_fgf_printers
+    })
+}
+
+async fn pellet_fgf_catalog_http() -> impl IntoResponse {
+    Json(pellet_fgf_catalog_response())
+}
+
 fn resin_printer_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let resin_printers = printer_payload
@@ -121658,6 +121773,7 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
+            "pelletFgfCatalog": ["GET /pellet-fgf/catalog", "GET /fabrication/pellet-fgf/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
             "directedEnergyDepositionCatalog": ["GET /directed-energy-deposition/catalog", "GET /fabrication/directed-energy-deposition/catalog"],
@@ -124847,6 +124963,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/fdm-printer/catalog",
             get(fdm_printer_catalog_http),
+        )
+        .route("/pellet-fgf/catalog", get(pellet_fgf_catalog_http))
+        .route(
+            "/fabrication/pellet-fgf/catalog",
+            get(pellet_fgf_catalog_http),
         )
         .route("/resin-printer/catalog", get(resin_printer_catalog_http))
         .route(
@@ -152097,6 +152218,88 @@ mod tests {
             .is_some_and(|routes| routes
                 .iter()
                 .any(|route| route.as_str() == Some("GET /fabrication/fdm-printer/catalog"))));
+    }
+
+    #[test]
+    fn pellet_fgf_catalog_endpoint_exposes_material_bead_and_trim_release_contract() {
+        let payload = pellet_fgf_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.pellet-fgf-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/pellet-fgf/catalog") })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/fdm-printer/catalog"))));
+        assert_eq!(
+            payload.get("pelletFgfPrinterCount").and_then(Value::as_u64),
+            Some(1)
+        );
+
+        let printer_kinds = payload
+            .get("pelletFgfPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("pellet FGF printer kinds should be present");
+        assert!(printer_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("pellet-fgf-printer")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("pellet FGF setup evidence should be present");
+        for expected in [
+            "pellet or regrind lot",
+            "bead width, layer height",
+            "gantry clearance, thermal soak",
+            "DRY_PELLETS, PURGE_EXTRUDER, PRINT_BEAD_PATH",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing pellet FGF setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("pellet FGF boundary families should be present");
+        for boundary in [
+            "pellet-fgf-material-boundary",
+            "pellet-fgf-bead-thermal-boundary",
+            "pellet-fgf-trim-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing pellet FGF boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/pellet-fgf/catalog") })));
     }
 
     #[test]

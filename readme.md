@@ -35,6 +35,8 @@ outcomes.
 - `GET /fabrication/printers/catalog`
 - `GET /fdm-printer/catalog`
 - `GET /fabrication/fdm-printer/catalog`
+- `GET /pellet-fgf/catalog`
+- `GET /fabrication/pellet-fgf/catalog`
 - `GET /resin-printer/catalog`
 - `GET /fabrication/resin-printer/catalog`
 - `GET /material-jetting/catalog`
@@ -971,6 +973,27 @@ multi-material map or purge/resume gaps, and bound-metal FFF debind/sinter gaps.
 FDM outcomes should feed slicer, material, telemetry, quality, costing, and
 learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
 combine, reorient, reroute, or require human intervention.
+
+## `GET /fabrication/pellet-fgf/catalog`
+
+`GET /pellet-fgf/catalog` and the gateway-prefixed
+`GET /fabrication/pellet-fgf/catalog` return the
+`dd.fabrication.pellet-fgf-catalog.v1` discovery view for large-format
+pellet/FGF fused-granulate printer profiles. It narrows the additive printer
+catalog to pellet-FGF machines and lists the release evidence needed before
+generated bead-path jobs or machine-ready handoff: pellet or regrind lot,
+drying dew point, moisture reading, hopper feed, screen pack or nozzle, purge
+strand, nozzle diameter, melt temperature, screw RPM, extrusion multiplier, bead
+width, layer height, trim allowance, gantry clearance, thermal soak, cooling
+airflow, interlayer temperature, bead slump, melt pressure, warpage, fixture
+cooling, first-article, telemetry, and signoff evidence. The payload names
+pellet-FGF material, bead/thermal, trim, material-conditioning,
+extrusion-calibration, and dimensional-inspection boundary families and links
+generated `DRY_PELLETS`, `PURGE_EXTRUDER`, `PRINT_BEAD_PATH`, and `MONITOR`
+records back to release gates. Pellet-FGF outcomes should feed material,
+slicer, simulation, quality, telemetry, costing, and learning routes so DES,
+MDP/POMDP, and neural workers can learn when to split, reroute, change bead
+strategy, cool fixtures, or require human intervention.
 
 ## `GET /fabrication/resin-printer/catalog`
 
