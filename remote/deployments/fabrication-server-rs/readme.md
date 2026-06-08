@@ -5507,7 +5507,7 @@ reviews clear the machine-ready gates.
 
 `GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
 `dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
-templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, toolpath result feedback, imported CNC program review, direct imported CNC improvement/patch review, instruction-improvement result feedback, non-G-code additive job-sheet improvement result feedback, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, joining result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, boundary-failure learning feedback, learning model result feedback, and learning optimizer result feedback. Each template
+templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, toolpath result feedback, imported CNC program review, direct imported CNC improvement/patch review, instruction-improvement result feedback, non-G-code additive job-sheet improvement result feedback, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, assembly result feedback, hybrid route costing result feedback, operator intervention result feedback, joining result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, boundary-failure learning feedback, learning model result feedback, and learning optimizer result feedback. Each template
 names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/design/import/review`,
 `POST /fabrication/design/generate`, `POST /fabrication/machine-code/generate`,
@@ -5516,7 +5516,8 @@ names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/instructions/improvement/result`,
 `POST /fabrication/simulation/run`,
 `POST /fabrication/toolpaths/result`,
-`POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`, and
+`POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`,
+`POST /fabrication/assembly/result`, and
 `POST /fabrication/costing/result`, `POST /fabrication/interventions/result`,
 `POST /fabrication/joining/result`, `POST /fabrication/monitoring/result`, and
 `POST /fabrication/quality/result`, `POST /fabrication/release/result`, and
@@ -5547,6 +5548,12 @@ Direct decomposition and assembly starter bodies reuse those concrete child
 routes for `decompositionPlan.routeContracts`,
 `decompositionPlan.recompositionInterfaces`, `assemblyPlan.joinOperations`, and
 `assemblyPlan.splitCombineDecisions` review.
+The assembly result starter deserializes as an
+`AssemblyPlanningResultReviewRequest` example and keeps child route release
+state, pending join proof, split/combine recomposition blockers, interface
+metrology, retained assembly artifact checksums, and
+`assemblyLearningOutcomeDraft` feedback visible before recomposed parts can move
+to final release.
 The hybrid route costing result starter deserializes as a
 `CostingResultReviewRequest` example and keeps machine-time/setup estimates,
 material yield and scrap allowances, route comparisons, split/combine route
