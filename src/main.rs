@@ -50081,6 +50081,8 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("seal-installation".to_string())
     } else if wants_bearing_installation(&token) {
         Some("bearing-installation".to_string())
+    } else if wants_dynamic_balancing(&token) {
+        Some("dynamic-balancing".to_string())
     } else if wants_part_marking(&token) {
         Some("part-marking".to_string())
     } else if wants_packaging_labeling(&token) {
@@ -50120,13 +50122,16 @@ fn method_rank(method: &str) -> u8 {
         "plastic-joining" => 13,
         "fastener-installation" => 14,
         "rivet-installation" => 15,
-        "part-marking" => 16,
-        "packaging-labeling" => 17,
-        "composite-layup" => 18,
-        "hot-wire-foam-cutting" => 19,
-        "sheet-forming" => 20,
-        "sheet-cutting" => 21,
-        "turning" => 22,
+        "seal-installation" => 16,
+        "bearing-installation" => 17,
+        "dynamic-balancing" => 18,
+        "part-marking" => 19,
+        "packaging-labeling" => 20,
+        "composite-layup" => 21,
+        "hot-wire-foam-cutting" => 22,
+        "sheet-forming" => 23,
+        "sheet-cutting" => 24,
+        "turning" => 25,
         _ => 100,
     }
 }
@@ -50433,6 +50438,9 @@ fn learned_part_description(method: &str) -> &'static str {
         }
         "bearing-installation" => {
             "learned bearing press, interference fit, preload, runout, or rotation-torque release inferred from successful hybrid outcomes"
+        }
+        "dynamic-balancing" => {
+            "learned rotor, impeller, fan, wheel, spin-balance, or vibration release inferred from successful hybrid outcomes"
         }
         _ => "learned special-process component inferred from successful hybrid outcomes",
     }
@@ -167491,6 +167499,147 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-bearing-installation"
+        }));
+    }
+
+    #[test]
+    fn learned_dynamic_balancing_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("dynamic-balancing-methods-1".to_string()),
+            job_id: Some("plan-dynamic-balancing-1".to_string()),
+            objective: Some("printed ABS fan rotor with retained spin balance".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "rotor-balancing".to_string(),
+            ]),
+            machine_kind: Some("dynamic-balancing-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed rotor plus retained dynamic balance and vibration lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.5),
+            observations: Some(vec![
+                "balance grade retained".to_string(),
+                "residual unbalance passed".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus dynamic-balancing process".to_string()
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned dynamic balancing outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("dynamic-balancing-methods-2".to_string()),
+            job_id: Some("plan-dynamic-balancing-2".to_string()),
+            objective: Some("printed ABS impeller with correction retention proof".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "dynamic-balancing".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: Some("dynamic-balancing-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed rotor plus retained dynamic balance and vibration lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.2),
+            observations: Some(vec![
+                "vibration spectrum recorded".to_string(),
+                "correction retention passed".to_string(),
+            ]),
+            notes: Some(vec!["same balancing lane worked again".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned dynamic balancing outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+dynamic-balancing"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-dynamic-balancing-combination".to_string()),
+                objective:
+                    "ABS assembly that can use learned printed and dynamically balanced process"
+                        .to_string(),
+                material: Some(material("abs", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "abs-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![250.0, 210.0, 210.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "balance-cell".to_string(),
+                        kind: "dynamic-balancing-cell".to_string(),
+                        controller: Some("dynamic-balancing-job".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![500.0, 300.0, 160.0]),
+                        axes: Some(3),
+                        operations: Some(vec![
+                            "dynamic-balancing".to_string(),
+                            "rotor-balancing".to_string(),
+                            "vibration-analysis".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned dynamic balancing plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-dynamic-balancing-part"
+                && part.machine_kind == "dynamic-balancing-cell"
+                && part.manufacturing_method == "dynamic-balancing"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-dynamic-balancing-part"
+                && program.machine_id == "balance-cell"
+                && program.language == "dynamic-balancing-job"
+                && program.instructions.iter().any(|instruction| {
+                    instruction.contains("VERIFY_BALANCE_SETUP")
+                        || instruction.contains("VERIFY_BALANCE_RELEASE")
+                })
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed rotor plus retained dynamic balance and vibration lane"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-dynamic-balancing"
         }));
     }
 
