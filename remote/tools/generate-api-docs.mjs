@@ -72,6 +72,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['billing-server-rs', 'src/api/mod.rs'],
+  ['dd-compliance-rs', 'src/routes.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
 ]);
 

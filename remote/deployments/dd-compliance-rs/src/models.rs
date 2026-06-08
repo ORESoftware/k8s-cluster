@@ -65,12 +65,12 @@ pub struct AuditOptions {
     pub max_findings: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditReport {
     pub ok: bool,
     pub request_id: String,
-    pub schema_version: &'static str,
+    pub schema_version: String,
     pub target: AuditTarget,
     pub standards: Vec<String>,
     pub score: f64,
@@ -83,7 +83,7 @@ pub struct AuditReport {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ComplianceStatus {
     EvidenceCompliant,
@@ -92,7 +92,7 @@ pub enum ComplianceStatus {
     NeedsReview,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StandardResult {
     pub standard_id: String,
@@ -109,7 +109,7 @@ pub struct StandardResult {
     pub regulatory_notice: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ControlResult {
     pub control_id: String,
@@ -121,7 +121,7 @@ pub struct ControlResult {
     pub rationale: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ControlStatus {
     Satisfied,
@@ -130,7 +130,7 @@ pub enum ControlStatus {
     NotApplicable,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub severity: FindingSeverity,
@@ -141,7 +141,7 @@ pub struct Finding {
     pub evidence_required: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub enum FindingSeverity {
@@ -150,7 +150,7 @@ pub enum FindingSeverity {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectedArtifact {
     pub kind: String,
@@ -160,7 +160,7 @@ pub struct CollectedArtifact {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobRecord {
     pub id: String,
@@ -173,7 +173,7 @@ pub struct JobRecord {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub enum JobStatus {
     Queued,

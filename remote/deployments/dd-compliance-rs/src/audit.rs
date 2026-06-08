@@ -141,7 +141,7 @@ pub async fn run_audit(
     Ok(crate::models::AuditReport {
         ok: !matches!(status, ComplianceStatus::NonCompliant),
         request_id,
-        schema_version: SCHEMA_VERSION,
+        schema_version: SCHEMA_VERSION.to_string(),
         target: request.target,
         standards: standard_results
             .iter()
@@ -815,6 +815,7 @@ mod tests {
             git_bin: "git".to_string(),
             job_timeout: std::time::Duration::from_secs(5),
             max_jobs: 20,
+            max_concurrent_jobs: 2,
             max_http_body_bytes: 1024 * 1024,
             max_artifact_bytes: 1024 * 1024,
             max_files: 100,

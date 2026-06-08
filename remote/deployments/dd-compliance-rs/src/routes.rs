@@ -66,6 +66,7 @@ async fn descriptor() -> Json<serde_json::Value> {
 }
 
 async fn healthz(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let counts = state.jobs.counts().await;
     Json(json!({
         "ok": true,
         "service": SERVICE_NAME,
@@ -74,22 +75,44 @@ async fn healthz(State(state): State<AppState>) -> Json<serde_json::Value> {
         "allowUnauthenticated": state.config.allow_unauthenticated,
         "standards": STANDARDS.len(),
         "controls": CONTROL_CATALOG.len(),
+        "jobs": {
+            "queued": counts.queued,
+            "running": counts.running,
+            "succeeded": counts.succeeded,
+            "failed": counts.failed,
+            "total": counts.total()
+        },
         "externalFetchEnabled": state.config.allow_external_fetch,
         "repoCloneEnabled": state.config.allow_repo_clone
     }))
 }
 
-async fn readyz() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true, "service": SERVICE_NAME }))
+async fn readyz(State(state): State<AppState>) -> Response {
+    match state.jobs.storage_ready().await {
+        Ok(()) => Json(json!({ "ok": true, "service": SERVICE_NAME, "jobStoreWritable": true }))
+            .into_response(),
+        Err(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "service": SERVICE_NAME,
+                "jobStoreWritable": false,
+                "error": error.to_string()
+            })),
+        )
+            .into_response(),
+    }
 }
 
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let mut body = state.metrics.render_prometheus();
+    body.push_str(&state.jobs.render_prometheus().await);
     (
         [(
             header::CONTENT_TYPE,
             "text/plain; version=0.0.4; charset=utf-8",
         )],
-        state.metrics.render_prometheus(),
+        body,
     )
 }
 
@@ -144,7 +167,7 @@ async fn submit_audit(
         )
             .into_response();
     }
-    let record = state
+    match state
         .jobs
         .clone()
         .enqueue(
@@ -153,8 +176,18 @@ async fn submit_audit(
             state.metrics.clone(),
             request,
         )
-        .await;
-    (StatusCode::ACCEPTED, Json(record)).into_response()
+        .await
+    {
+        Ok(record) => (StatusCode::ACCEPTED, Json(record)).into_response(),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn audit_sync(

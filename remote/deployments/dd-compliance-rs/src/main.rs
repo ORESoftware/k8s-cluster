@@ -26,10 +26,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "{SERVICE_NAME}/0.1 (+https://github.com/ORESoftware/k8s-cluster)"
         ))
         .build()?;
+    let jobs = Arc::new(
+        JobStore::load(
+            config.work_root.clone(),
+            config.max_jobs,
+            config.max_concurrent_jobs,
+        )
+        .await?,
+    );
     let state = AppState {
         config: config.clone(),
         metrics: Arc::new(Metrics::default()),
-        jobs: Arc::new(JobStore::new(config.max_jobs)),
+        jobs,
         http,
     };
     let app = router(state);

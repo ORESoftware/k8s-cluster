@@ -1,5 +1,7 @@
 use std::{
+    collections::hash_map::DefaultHasher,
     env,
+    hash::{Hash, Hasher},
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -42,6 +44,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
+use tokio::sync::Mutex;
 use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -52,6 +55,9 @@ const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const DEFAULT_PORT: u16 = 8134;
 const DEFAULT_LIMIT: u64 = 50;
 const MAX_LIMIT: u64 = 200;
+const DEFAULT_CACHE_TTL_SECONDS: u64 = 120;
+const DEFAULT_RATE_LIMIT_PER_MINUTE: u64 = 600;
+const DEFAULT_JOB_STREAM: &str = "benefactor:marketing:jobs";
 
 type AppResult<T> = Result<T, AppError>;
 
@@ -59,6 +65,8 @@ type AppResult<T> = Result<T, AppError>;
 struct AppState {
     cfg: Arc<Config>,
     db: DatabaseConnection,
+    redis: Option<redis::Client>,
+    redis_connection: Arc<Mutex<Option<redis::aio::MultiplexedConnection>>>,
     metrics: Arc<Metrics>,
     started_at: Instant,
 }
@@ -71,6 +79,11 @@ struct Config {
     api_auth_bearer: Option<String>,
     allow_unauthenticated: bool,
     scraper_base_url: Option<String>,
+    redis_url: Option<String>,
+    redis_required_for_ready: bool,
+    cache_ttl_seconds: u64,
+    rate_limit_per_minute: u64,
+    job_stream: String,
     log_json: bool,
 }
 
@@ -81,6 +94,12 @@ struct Metrics {
     lead_imports_total: AtomicU64,
     auth_failures_total: AtomicU64,
     db_errors_total: AtomicU64,
+    redis_errors_total: AtomicU64,
+    cache_hits_total: AtomicU64,
+    cache_misses_total: AtomicU64,
+    cache_invalidations_total: AtomicU64,
+    rate_limit_rejections_total: AtomicU64,
+    redis_jobs_published_total: AtomicU64,
 }
 
 #[derive(Debug, Error)]
@@ -91,6 +110,8 @@ enum AppError {
     BadRequest(String),
     #[error("{0} not found")]
     NotFound(&'static str),
+    #[error("rate limit exceeded")]
+    RateLimited,
     #[error("database operation failed")]
     Database(#[from] DbErr),
 }
@@ -101,6 +122,7 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
+            AppError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         if matches!(self, AppError::Database(_)) {
@@ -447,9 +469,19 @@ async fn main() -> anyhow::Result<()> {
     init_tracing(cfg.log_json);
     let addr: SocketAddr = format!("{}:{}", cfg.host, cfg.port).parse()?;
     let db = Database::connect(&cfg.database_url).await?;
+    let redis = cfg
+        .redis_url
+        .as_deref()
+        .map(redis::Client::open)
+        .transpose()?;
+    if redis.is_some() {
+        info!("redis integration enabled for benefactor marketing runtime");
+    }
     let state = AppState {
         cfg: Arc::new(cfg),
         db,
+        redis,
+        redis_connection: Arc::new(Mutex::new(None)),
         metrics: Arc::new(Metrics::default()),
         started_at: Instant::now(),
     };
@@ -472,6 +504,7 @@ fn build_router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
+        .route("/runtime/redis", get(redis_status))
         .route(
             "/service-packages",
             get(list_service_packages).post(create_service_package),
@@ -545,6 +578,24 @@ impl Config {
         let scraper_base_url = env::var("BENEFACTOR_MARKETING_SCRAPER_BASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty());
+        let redis_url = env::var("BENEFACTOR_MARKETING_REDIS_URL")
+            .or_else(|_| env::var("REDIS_URL"))
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let redis_required_for_ready =
+            env_bool("BENEFACTOR_MARKETING_REDIS_REQUIRED_FOR_READY", false);
+        let cache_ttl_seconds = env_u64(
+            "BENEFACTOR_MARKETING_CACHE_TTL_SECONDS",
+            DEFAULT_CACHE_TTL_SECONDS,
+        );
+        let rate_limit_per_minute = env_u64(
+            "BENEFACTOR_MARKETING_RATE_LIMIT_PER_MINUTE",
+            DEFAULT_RATE_LIMIT_PER_MINUTE,
+        );
+        let job_stream = env::var("BENEFACTOR_MARKETING_JOB_STREAM")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_JOB_STREAM.to_string());
         let log_json = env::var("BENEFACTOR_MARKETING_LOG_FORMAT")
             .map(|value| value.eq_ignore_ascii_case("json"))
             .unwrap_or(false);
@@ -556,6 +607,11 @@ impl Config {
             api_auth_bearer,
             allow_unauthenticated,
             scraper_base_url,
+            redis_url,
+            redis_required_for_ready,
+            cache_ttl_seconds,
+            rate_limit_per_minute,
+            job_stream,
             log_json,
         })
     }
@@ -622,7 +678,10 @@ async fn capabilities() -> Json<Value> {
         "storage": {
             "database": "postgres",
             "orm": "sea-orm via remote/libs/pg-defs/generated/rust/sea-orm",
-            "tablePrefix": "benefactor_marketing_"
+            "tablePrefix": "benefactor_marketing_",
+            "cache": "redis dashboard cache",
+            "rateLimits": "redis per-actor counters",
+            "jobStream": DEFAULT_JOB_STREAM
         }
     }))
 }
@@ -636,7 +695,7 @@ async fn healthz() -> Json<Value> {
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
-    let ready = state
+    let database_ready = state
         .db
         .execute(Statement::from_string(
             DatabaseBackend::Postgres,
@@ -644,13 +703,23 @@ async fn readyz(State(state): State<AppState>) -> Response {
         ))
         .await
         .is_ok();
+    let redis_configured = state.redis.is_some();
+    let redis_ready = if redis_configured {
+        redis_ping(&state).await
+    } else {
+        false
+    };
+    let ready = database_ready
+        && (!state.cfg.redis_required_for_ready || (redis_configured && redis_ready));
     let status = if ready {
         StatusCode::OK
     } else {
-        state
-            .metrics
-            .db_errors_total
-            .fetch_add(1, Ordering::Relaxed);
+        if !database_ready {
+            state
+                .metrics
+                .db_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
         StatusCode::SERVICE_UNAVAILABLE
     };
     (
@@ -658,7 +727,16 @@ async fn readyz(State(state): State<AppState>) -> Response {
         Json(json!({
             "ok": ready,
             "service": SERVICE_NAME,
-            "database": if ready { "ready" } else { "unavailable" }
+            "database": if database_ready { "ready" } else { "unavailable" },
+            "redis": {
+                "configured": redis_configured,
+                "requiredForReady": state.cfg.redis_required_for_ready,
+                "status": if redis_configured {
+                    if redis_ready { "ready" } else { "unavailable" }
+                } else {
+                    "disabled"
+                }
+            }
         })),
     )
         .into_response()
@@ -682,17 +760,69 @@ benefactor_marketing_lead_imports_total {}\n\
 # HELP benefactor_marketing_auth_failures_total Authentication failures.\n\
 # TYPE benefactor_marketing_auth_failures_total counter\n\
 benefactor_marketing_auth_failures_total {}\n\
-# HELP benefactor_marketing_db_errors_total Database readiness or query failures.\n\
-# TYPE benefactor_marketing_db_errors_total counter\n\
-benefactor_marketing_db_errors_total {}\n",
+	# HELP benefactor_marketing_db_errors_total Database readiness or query failures.\n\
+	# TYPE benefactor_marketing_db_errors_total counter\n\
+	benefactor_marketing_db_errors_total {}\n\
+	# HELP benefactor_marketing_redis_errors_total Redis readiness, cache, rate-limit, or stream failures.\n\
+	# TYPE benefactor_marketing_redis_errors_total counter\n\
+	benefactor_marketing_redis_errors_total {}\n\
+	# HELP benefactor_marketing_cache_hits_total Redis dashboard cache hits.\n\
+	# TYPE benefactor_marketing_cache_hits_total counter\n\
+	benefactor_marketing_cache_hits_total {}\n\
+	# HELP benefactor_marketing_cache_misses_total Redis dashboard cache misses.\n\
+	# TYPE benefactor_marketing_cache_misses_total counter\n\
+	benefactor_marketing_cache_misses_total {}\n\
+	# HELP benefactor_marketing_cache_invalidations_total Redis cache keys invalidated after mutations.\n\
+	# TYPE benefactor_marketing_cache_invalidations_total counter\n\
+	benefactor_marketing_cache_invalidations_total {}\n\
+	# HELP benefactor_marketing_rate_limit_rejections_total Write requests rejected by Redis-backed rate limits.\n\
+	# TYPE benefactor_marketing_rate_limit_rejections_total counter\n\
+	benefactor_marketing_rate_limit_rejections_total {}\n\
+	# HELP benefactor_marketing_redis_jobs_published_total Marketing job handoff events published to Redis streams.\n\
+	# TYPE benefactor_marketing_redis_jobs_published_total counter\n\
+	benefactor_marketing_redis_jobs_published_total {}\n",
         uptime,
         state.metrics.mutations_total.load(Ordering::Relaxed),
         state.metrics.enrichment_jobs_total.load(Ordering::Relaxed),
         state.metrics.lead_imports_total.load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
-        state.metrics.db_errors_total.load(Ordering::Relaxed)
+        state.metrics.db_errors_total.load(Ordering::Relaxed),
+        state.metrics.redis_errors_total.load(Ordering::Relaxed),
+        state.metrics.cache_hits_total.load(Ordering::Relaxed),
+        state.metrics.cache_misses_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .cache_invalidations_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .rate_limit_rejections_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .redis_jobs_published_total
+            .load(Ordering::Relaxed)
     );
     ([("content-type", "text/plain; version=0.0.4")], body)
+}
+
+async fn redis_status(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    let configured = state.redis.is_some();
+    let ready = if configured {
+        redis_ping(&state).await
+    } else {
+        false
+    };
+    Ok(Json(json!({
+        "configured": configured,
+        "ready": ready,
+        "requiredForReady": state.cfg.redis_required_for_ready,
+        "cacheTtlSeconds": state.cfg.cache_ttl_seconds,
+        "rateLimitPerMinute": state.cfg.rate_limit_per_minute,
+        "jobStream": state.cfg.job_stream,
+        "keyPrefix": "benefactor:marketing"
+    })))
 }
 
 async fn list_service_packages(
@@ -714,7 +844,7 @@ async fn create_service_package(
     headers: HeaderMap,
     Json(req): Json<CreateServicePackageRequest>,
 ) -> AppResult<(StatusCode, Json<service_packages::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "service-packages.create").await?;
     let model = service_packages::ActiveModel {
         status: Set(req.status.unwrap_or_else(|| "active".to_string())),
         code: Set(req.code),
@@ -751,7 +881,7 @@ async fn create_client(
     headers: HeaderMap,
     Json(req): Json<CreateClientRequest>,
 ) -> AppResult<(StatusCode, Json<clients::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "clients.create").await?;
     let slug = req.slug.unwrap_or_else(|| slugify(&req.name));
     let model = clients::ActiveModel {
         status: Set(req.status.unwrap_or_else(|| "onboarding".to_string())),
@@ -843,7 +973,7 @@ async fn create_contact(
     Path(client_id): Path<Uuid>,
     Json(req): Json<CreateContactRequest>,
 ) -> AppResult<(StatusCode, Json<contacts::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "contacts.create").await?;
     ensure_client(&state.db, client_id).await?;
     let model = contacts::ActiveModel {
         client_id: Set(client_id),
@@ -870,7 +1000,7 @@ async fn create_contract(
     Path(client_id): Path<Uuid>,
     Json(req): Json<CreateContractRequest>,
 ) -> AppResult<(StatusCode, Json<contracts::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "contracts.create").await?;
     ensure_client(&state.db, client_id).await?;
     let model = contracts::ActiveModel {
         client_id: Set(client_id),
@@ -896,7 +1026,7 @@ async fn create_invoice(
     Path(client_id): Path<Uuid>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> AppResult<(StatusCode, Json<invoices::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "invoices.create").await?;
     ensure_client(&state.db, client_id).await?;
     let model = invoices::ActiveModel {
         client_id: Set(client_id),
@@ -921,7 +1051,7 @@ async fn create_integration(
     Path(client_id): Path<Uuid>,
     Json(req): Json<CreateIntegrationRequest>,
 ) -> AppResult<(StatusCode, Json<integrations::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "integrations.create").await?;
     ensure_client(&state.db, client_id).await?;
     let model = integrations::ActiveModel {
         client_id: Set(Some(client_id)),
@@ -944,7 +1074,7 @@ async fn import_leads(
     headers: HeaderMap,
     Json(req): Json<LeadImportRequest>,
 ) -> AppResult<(StatusCode, Json<LeadImportResponse>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "leads.import").await?;
     ensure_client(&state.db, req.client_id).await?;
     if req.leads.is_empty() {
         return Err(AppError::BadRequest(
@@ -1021,7 +1151,7 @@ async fn queue_enrichment_job(
     Path(lead_id): Path<Uuid>,
     Json(req): Json<EnrichmentJobRequest>,
 ) -> AppResult<(StatusCode, Json<enrichment_jobs::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "leads.enrichment.queue").await?;
     let lead = leads::Entity::find_by_id(lead_id)
         .one(&state.db)
         .await?
@@ -1066,7 +1196,7 @@ async fn score_lead(
     Path(lead_id): Path<Uuid>,
     Json(req): Json<ScoreLeadRequest>,
 ) -> AppResult<Json<leads::Model>> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "leads.score").await?;
     let lead = leads::Entity::find_by_id(lead_id)
         .one(&state.db)
         .await?
@@ -1104,7 +1234,7 @@ async fn create_campaign(
     headers: HeaderMap,
     Json(req): Json<CreateCampaignRequest>,
 ) -> AppResult<(StatusCode, Json<campaigns::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "campaigns.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = campaigns::ActiveModel {
         client_id: Set(req.client_id),
@@ -1151,8 +1281,8 @@ async fn create_campaign_channel(
     Path(campaign_id): Path<Uuid>,
     Json(req): Json<CreateCampaignChannelRequest>,
 ) -> AppResult<(StatusCode, Json<campaign_channels::Model>)> {
-    require_auth(&state, &headers)?;
-    ensure_campaign(&state.db, campaign_id).await?;
+    require_write_access(&state, &headers, "campaigns.channels.create").await?;
+    let campaign = ensure_campaign(&state.db, campaign_id).await?;
     let model = campaign_channels::ActiveModel {
         campaign_id: Set(campaign_id),
         channel: Set(req.channel),
@@ -1175,8 +1305,8 @@ async fn create_campaign_experiment(
     Path(campaign_id): Path<Uuid>,
     Json(req): Json<CreateCampaignExperimentRequest>,
 ) -> AppResult<(StatusCode, Json<campaign_experiments::Model>)> {
-    require_auth(&state, &headers)?;
-    ensure_campaign(&state.db, campaign_id).await?;
+    require_write_access(&state, &headers, "campaigns.experiments.create").await?;
+    let campaign = ensure_campaign(&state.db, campaign_id).await?;
     let model = campaign_experiments::ActiveModel {
         campaign_id: Set(campaign_id),
         status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
@@ -1200,7 +1330,7 @@ async fn create_automation_workflow(
     headers: HeaderMap,
     Json(req): Json<CreateAutomationWorkflowRequest>,
 ) -> AppResult<(StatusCode, Json<automation_workflows::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "automation.workflows.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = automation_workflows::ActiveModel {
         client_id: Set(req.client_id),
@@ -1222,7 +1352,7 @@ async fn record_automation_event(
     headers: HeaderMap,
     Json(req): Json<AutomationEventRequest>,
 ) -> AppResult<(StatusCode, Json<automation_events::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "automation.events.record").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = automation_events::ActiveModel {
         client_id: Set(req.client_id),
@@ -1244,7 +1374,7 @@ async fn create_report_snapshot(
     headers: HeaderMap,
     Json(req): Json<ReportSnapshotRequest>,
 ) -> AppResult<(StatusCode, Json<reports::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "reports.snapshots.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = reports::ActiveModel {
         client_id: Set(req.client_id),
@@ -1270,7 +1400,7 @@ async fn record_attribution_event(
     headers: HeaderMap,
     Json(req): Json<AttributionEventRequest>,
 ) -> AppResult<(StatusCode, Json<attribution_events::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "attribution.events.record").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = attribution_events::ActiveModel {
         client_id: Set(req.client_id),
@@ -1295,7 +1425,7 @@ async fn create_opportunity(
     headers: HeaderMap,
     Json(req): Json<CreateOpportunityRequest>,
 ) -> AppResult<(StatusCode, Json<opportunities::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "opportunities.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = opportunities::ActiveModel {
         client_id: Set(req.client_id),
@@ -1321,7 +1451,7 @@ async fn create_content_asset(
     headers: HeaderMap,
     Json(req): Json<CreateContentAssetRequest>,
 ) -> AppResult<(StatusCode, Json<content_assets::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "content.assets.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = content_assets::ActiveModel {
         client_id: Set(req.client_id),
@@ -1349,7 +1479,7 @@ async fn create_project_task(
     headers: HeaderMap,
     Json(req): Json<CreateProjectTaskRequest>,
 ) -> AppResult<(StatusCode, Json<project_tasks::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "projects.tasks.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = project_tasks::ActiveModel {
         client_id: Set(req.client_id),
@@ -1377,7 +1507,7 @@ async fn create_approval(
     headers: HeaderMap,
     Json(req): Json<CreateApprovalRequest>,
 ) -> AppResult<(StatusCode, Json<client_approvals::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "approvals.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = client_approvals::ActiveModel {
         client_id: Set(req.client_id),
@@ -1403,7 +1533,7 @@ async fn decide_approval(
     Path(approval_id): Path<Uuid>,
     Json(req): Json<DecideApprovalRequest>,
 ) -> AppResult<Json<client_approvals::Model>> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "approvals.decide").await?;
     if !["approved", "rejected", "canceled", "expired"].contains(&req.status.as_str()) {
         return Err(AppError::BadRequest(
             "approval decision status must be approved, rejected, canceled, or expired".to_string(),
@@ -1428,7 +1558,7 @@ async fn create_ticket(
     headers: HeaderMap,
     Json(req): Json<CreateTicketRequest>,
 ) -> AppResult<(StatusCode, Json<tickets::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "tickets.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = tickets::ActiveModel {
         client_id: Set(req.client_id),
@@ -1453,7 +1583,7 @@ async fn create_meeting(
     headers: HeaderMap,
     Json(req): Json<CreateMeetingRequest>,
 ) -> AppResult<(StatusCode, Json<meetings::Model>)> {
-    require_auth(&state, &headers)?;
+    require_write_access(&state, &headers, "meetings.create").await?;
     ensure_client(&state.db, req.client_id).await?;
     let model = meetings::ActiveModel {
         client_id: Set(req.client_id),

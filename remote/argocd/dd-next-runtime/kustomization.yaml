@@ -58,6 +58,7 @@ resources:
   - dd-public-data-server.deployment.yaml
   - dd-public-data-server.service.yaml
   - dd-compliance-rs.deployment.yaml
+  - dd-compliance-rs.networkpolicy.yaml
   - dd-compliance-rs.service.yaml
   - dd-patent-filing-rs.deployment.yaml
   - dd-patent-filing-rs.service.yaml

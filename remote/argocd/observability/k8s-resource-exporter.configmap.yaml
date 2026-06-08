@@ -29,7 +29,7 @@ data:
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
-        "dd-cluster-mcp-rs,dd-container-pool,dd-contract-service,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
+        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
         "dd-dev-server-api,dd-economics-server,dd-escrow-rs,dd-fabrication-server,dd-formal-methods-server,dd-formal-methods-service,"
         "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"
         "dd-gleamlang-server,dd-gleamlang-ws-loadtest,"

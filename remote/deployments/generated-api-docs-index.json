@@ -178,14 +178,28 @@
     {
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
-      "routeCount": 36,
+      "routeCount": 37,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 29
+        "user-generated": 30
       },
       "generated": [
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-compliance-rs",
+      "language": "rust",
+      "routeCount": 18,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 8,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-compliance-rs/generated/api-docs.json",
+        "remote/deployments/dd-compliance-rs/generated/api-docs.html"
       ]
     },
     {

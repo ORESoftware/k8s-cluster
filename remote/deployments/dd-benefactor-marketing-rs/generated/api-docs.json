@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-benefactor-marketing-rs",
   "language": "rust",
-  "routeCount": 36,
+  "routeCount": 37,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 29
+    "user-generated": 30
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -588,6 +588,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "create_report_snapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/runtime/redis",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "redis_status"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"

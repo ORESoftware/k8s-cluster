@@ -726,8 +726,15 @@ The service scores evidence against reusable control families instead of claimin
 certification. External artifact fetch and repository clone support exist in the code path, but the
 cluster deployment keeps both disabled by default with `COMPLIANCE_ALLOW_EXTERNAL_FETCH=false` and
 `COMPLIANCE_ALLOW_REPO_CLONE=false`; operators can still submit inline evidence or explicitly
-enable bounded collection for trusted use. `/compliance/metrics` is scraped by Prometheus and the
-OpenTelemetry Collector, and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
+enable bounded collection for trusted use.
+
+For production parity, the deployment runs one `Recreate` replica with durable hostPath-backed job
+records under `/var/lib/dd-compliance-rs/jobs`, a startup init step that prepares permissions for
+the non-root server container, `COMPLIANCE_MAX_CONCURRENT_JOBS=2` backpressure, and a dedicated
+NetworkPolicy that limits ingress to the gateway, runtime-config, and observability while keeping
+egress to DNS, runtime-config, and bounded public HTTP(S). `/compliance/readyz` verifies the job
+store is writable. `/compliance/metrics` is scraped by Prometheus and the OpenTelemetry Collector,
+and stdout/stderr emits `dd.log.v1` records for job lifecycle events.
 
 ## AI/ML feature pipeline
 

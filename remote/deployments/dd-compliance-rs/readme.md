@@ -18,6 +18,16 @@ frameworks. The result is readiness evidence, not legal advice, certification, o
 Non-probe audit routes require `X-Server-Auth`, `X-Compliance-Auth`, or the legacy `Auth` header
 unless `COMPLIANCE_ALLOW_UNAUTHENTICATED=true`.
 
+## Production Behavior
+
+Async audit state is stored as durable JSON job records under `COMPLIANCE_WORK_ROOT`, not only in
+memory. On restart, previously queued or running jobs are marked failed with an interruption reason
+instead of remaining ambiguous or disappearing. `GET /readyz` verifies that the job store is writable,
+and `/metrics` exports retained job counts by status.
+
+The deployment runs one replica with `strategy: Recreate` because the hostPath-backed job store is a
+single-writer ledger. `COMPLIANCE_MAX_CONCURRENT_JOBS` bounds worker fan-out inside that replica.
+
 ## Standards
 
 The registry covers HIPAA, SOC 2, FedRAMP, NIST CSF, NIST SP 800-53, GDPR, ISO/IEC 27001,
@@ -35,6 +45,7 @@ but fail closed unless enabled at the service level:
 - `COMPLIANCE_ALLOW_EXTERNAL_FETCH=false`
 - `COMPLIANCE_ALLOW_REPO_CLONE=false`
 - `COMPLIANCE_ALLOW_PRIVATE_TARGETS=false`
+- `COMPLIANCE_MAX_CONCURRENT_JOBS=2`
 
 When repo cloning is enabled, use `COMPLIANCE_ALLOWED_REPO_PREFIXES` to restrict trusted sources.
 The scanner uses shallow clones, a blob-size filter, allowlisted file extensions, and byte/file

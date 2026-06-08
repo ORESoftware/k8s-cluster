@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-compliance-rs
 spec:
-  replicas: 0
+  replicas: 1
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -35,6 +35,38 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        - name: prepare-job-data
+          image: docker.io/library/busybox:1.36
+          imagePullPolicy: IfNotPresent
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -eu
+              mkdir -p /var/lib/dd-compliance-rs/jobs
+              chown -R 1000:1000 /var/lib/dd-compliance-rs
+              chmod 0750 /var/lib/dd-compliance-rs /var/lib/dd-compliance-rs/jobs
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: job-data
+              mountPath: /var/lib/dd-compliance-rs
         - name: release-build
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
@@ -175,6 +207,8 @@ spec:
               value: 'false'
             - name: COMPLIANCE_MAX_JOBS
               value: '200'
+            - name: COMPLIANCE_MAX_CONCURRENT_JOBS
+              value: '2'
             - name: COMPLIANCE_MAX_ARTIFACT_BYTES
               value: '524288'
             - name: COMPLIANCE_MAX_FILES
@@ -252,8 +286,9 @@ spec:
           emptyDir:
             sizeLimit: 6Gi
         - name: job-data
-          emptyDir:
-            sizeLimit: 1Gi
+          hostPath:
+            path: /var/lib/dd-compliance-rs
+            type: DirectoryOrCreate
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi
