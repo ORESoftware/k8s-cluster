@@ -199,6 +199,7 @@ spec:
                 '"path": "/fabrication/instructions/generation/result"' \
                 '"path": "/fabrication/instructions/review/result"' \
                 '"path": "/fabrication/instructions/validation/result"' \
+                '"path": "/fabrication/instructions/improvement/result"' \
                 '"path": "/fabrication/machine-code/catalog"' \
                 '"path": "/fabrication/machine-code/preflight/catalog"' \
                 '"path": "/fabrication/machine-code/generate"' \

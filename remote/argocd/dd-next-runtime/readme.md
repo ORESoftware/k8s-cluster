@@ -135,6 +135,7 @@ Gateway path map:
   `POST /fabrication/instructions/generation/result`,
   `POST /fabrication/instructions/review/result`,
   `POST /fabrication/instructions/validation/result`,
+  `POST /fabrication/instructions/improvement/result`,
   `/fabrication/machine-code/catalog`,
   `/fabrication/machine-code/preflight/catalog`,
   `POST /fabrication/machine-code/generate`,

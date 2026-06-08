@@ -228,6 +228,7 @@ Currently opted-in:
   `/fabrication/instructions/generation/result`,
   `/fabrication/instructions/review/result`,
   `/fabrication/instructions/validation/result`,
+  `/fabrication/instructions/improvement/result`,
   `/fabrication/machine-code/catalog`, `/fabrication/machine-code/generate`,
   `/fabrication/machine-code/preflight/catalog`,
   `/fabrication/machine-code/result`,
@@ -311,6 +312,7 @@ Currently opted-in:
   `/fabrication/learning/observe`, `/fabrication/learning/outcomes`,
   `/fabrication/instructions/analyze`, `/fabrication/instructions/validate`,
   `/fabrication/instructions/improve`,
+  `/fabrication/instructions/improvement/result`,
   `/fabrication/instructions/boundaries/review`, and
   `/fabrication/remediation/plan`, `/fabrication/remediation/result`
   traffic, gateway access/guardrail logs, and
