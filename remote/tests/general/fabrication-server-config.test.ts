@@ -183,6 +183,21 @@ function assertGrafanaCoversFabricationRootRoutes(source: string, grafanaDashboa
 test('rust fabrication server exposes planning, analysis, nats, and learning hooks', async () => {
   const cargo = await readRepoFile('remote/deployments/fabrication-server-rs/Cargo.toml');
   const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  const slicerCatalogSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/slicer_catalog.rs',
+  );
+  const instructionImprovementCatalogSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/instruction_improvement_catalog.rs',
+  );
+  const learningModelCatalogSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/learning_model_catalog.rs',
+  );
+  const landingPageContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/landing_page_content.rs',
+  );
+  const landingPageHtml = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/landing_page.html',
+  );
   const readme = await readRepoFile('remote/deployments/fabrication-server-rs/readme.md');
   const subjectSchema = await readRepoFile(
     'remote/libs/nats/subject-defs/schema/fabrication.schema.json',
@@ -639,6 +654,14 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /dd\.fabrication\.slicer-profile-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/slicers\/catalog"/);
   assert.match(source, /"slicerProfileCatalog"/);
+  assert.match(source, /mod slicer_catalog;/);
+  assert.match(source, /"machineCodeHandoffCompatibility": slicer_catalog::machine_code_handoff_compatibility\(\)/);
+  assert.match(slicerCatalogSource, /pub\(super\) fn machine_code_handoff_compatibility\(\) -> Value/);
+  assert.match(slicerCatalogSource, /dd\.fabrication\.slicer-machine-code-handoff\.v1/);
+  assert.match(slicerCatalogSource, /"fdm-printer-gcode"/);
+  assert.match(slicerCatalogSource, /"resin-printer-package"/);
+  assert.match(slicerCatalogSource, /"slicer-project-or-profile"/);
+  assert.match(slicerCatalogSource, /"slicer-high-speed-kinematics-boundary"/);
   assert.match(source, /slicer_profile_catalog_endpoint_exposes_profile_evidence_and_release_policy/);
   assert.match(source, /async fn slicer_profile_plan_http/);
   assert.match(source, /fn slicer_profile_planning_response/);
@@ -2874,6 +2897,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn root\(\) -> impl IntoResponse[\s\S]*Json\(root_response\(\)\)/);
   assert.match(source, /root_inventory_exposes_start_here_dashboard_and_objective_routes/);
   assert.match(source, /async fn landing_page\(\) -> axum::response::Html<&'static str>/);
+  assert.match(source, /mod landing_page_content;/);
+  assert.match(source, /axum::response::Html\(landing_page_content::html\(\)\)/);
+  assert.match(landingPageContentSource, /pub\(super\) fn html\(\) -> &'static str/);
+  assert.match(landingPageContentSource, /include_str!\("landing_page\.html"\)/);
   assert.match(source, /"landingPage": \{/);
   assert.match(source, /"Human fabrication overview"/);
   assert.match(source, /"startHere": \{/);
@@ -2905,44 +2932,44 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /how_it_works_endpoint_exposes_intake_generation_validation_release_and_learning_flow/,
   );
-  assert.match(source, /DD Fabrication Server/);
-  assert.match(source, /How It Works/);
-  assert.match(source, /submitted fabrication goal into evidence-backed choices/);
-  assert.match(source, /decomposes or combines parts when a single process is risky/);
-  assert.match(source, /records outcomes so later jobs can learn from the route/);
-  assert.match(source, /Design And Toolchain Intake/);
-  assert.match(source, /PTC Creo \/ Pro\/ENGINEER/);
-  assert.match(source, /SOLIDWORKS/);
-  assert.match(source, /Autodesk Fusion/);
-  assert.match(source, /Siemens NX/);
-  assert.match(source, /CATIA/);
-  assert.match(source, /Onshape/);
-  assert.match(source, /FreeCAD/);
-  assert.match(source, /OpenSCAD/);
-  assert.match(source, /Blender/);
-  assert.match(source, /ZBrush/);
-  assert.match(source, /PrusaSlicer/);
-  assert.match(source, /OrcaSlicer/);
-  assert.match(source, /Cura/);
-  assert.match(source, /Bambu Studio/);
-  assert.match(source, /Release Gates/);
-  assert.match(source, /Priority Dispositions/);
-  assert.match(source, /pending-blocker-resolution/);
+  assert.match(landingPageHtml, /DD Fabrication Server/);
+  assert.match(landingPageHtml, /How It Works/);
+  assert.match(landingPageHtml, /submitted fabrication goal into evidence-backed choices/);
+  assert.match(landingPageHtml, /decomposes or combines parts when a single process is risky/);
+  assert.match(landingPageHtml, /records outcomes so later jobs can learn from the route/);
+  assert.match(landingPageHtml, /Design And Toolchain Intake/);
+  assert.match(landingPageHtml, /PTC Creo \/ Pro\/ENGINEER/);
+  assert.match(landingPageHtml, /SOLIDWORKS/);
+  assert.match(landingPageHtml, /Autodesk Fusion/);
+  assert.match(landingPageHtml, /Siemens NX/);
+  assert.match(landingPageHtml, /CATIA/);
+  assert.match(landingPageHtml, /Onshape/);
+  assert.match(landingPageHtml, /FreeCAD/);
+  assert.match(landingPageHtml, /OpenSCAD/);
+  assert.match(landingPageHtml, /Blender/);
+  assert.match(landingPageHtml, /ZBrush/);
+  assert.match(landingPageHtml, /PrusaSlicer/);
+  assert.match(landingPageHtml, /OrcaSlicer/);
+  assert.match(landingPageHtml, /Cura/);
+  assert.match(landingPageHtml, /Bambu Studio/);
+  assert.match(landingPageHtml, /Release Gates/);
+  assert.match(landingPageHtml, /Priority Dispositions/);
+  assert.match(landingPageHtml, /pending-blocker-resolution/);
   assert.match(
-    source,
+    landingPageHtml,
     /Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory/,
   );
-  assert.match(source, /Source provenance/);
-  assert.match(source, /Machine envelope/);
-  assert.match(source, /Process readiness/);
-  assert.match(source, /Simulation evidence/);
-  assert.match(source, /Human or automation handoff/);
-  assert.match(source, /Learning disposition/);
-  assert.match(source, /\/fabrication\/intake\/catalog/);
-  assert.match(source, /\/fabrication\/templates\/catalog/);
-  assert.match(source, /intake guide/);
-  assert.match(source, /request templates/);
-  assert.match(source, /This service produces planning and evidence packets/);
+  assert.match(landingPageHtml, /Source provenance/);
+  assert.match(landingPageHtml, /Machine envelope/);
+  assert.match(landingPageHtml, /Process readiness/);
+  assert.match(landingPageHtml, /Simulation evidence/);
+  assert.match(landingPageHtml, /Human or automation handoff/);
+  assert.match(landingPageHtml, /Learning disposition/);
+  assert.match(landingPageHtml, /\/fabrication\/intake\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/templates\/catalog/);
+  assert.match(landingPageHtml, /intake guide/);
+  assert.match(landingPageHtml, /request templates/);
+  assert.match(landingPageHtml, /This service produces planning and evidence packets/);
   assert.match(source, /async fn capabilities/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
   assert.match(source, /"GET \/cells\/catalog"/);
@@ -3941,11 +3968,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn instruction_improvement_catalog_patch_operations/);
   assert.match(source, /dd\.fabrication\.instruction-improvement-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/improvements\/catalog"/);
+  assert.match(source, /mod instruction_improvement_catalog;/);
+  assert.match(source, /"patchReleaseChecklist": instruction_improvement_catalog::patch_release_checklist\(\)/);
+  assert.match(
+    instructionImprovementCatalogSource,
+    /pub\(super\) fn patch_release_checklist\(\) -> Value/,
+  );
   assert.match(source, /async fn instruction_improvement_preflight_catalog_http/);
   assert.match(source, /fn instruction_improvement_preflight_catalog_response/);
   assert.match(source, /fn instruction_improvement_patch_review_matrix/);
   assert.match(source, /dd\.fabrication\.instruction-improvement-preflight-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/improvements\/preflight\/catalog"/);
+  assert.match(instructionImprovementCatalogSource, /"immutable-source-retention"/);
+  assert.match(instructionImprovementCatalogSource, /"post-patch-validation"/);
+  assert.match(instructionImprovementCatalogSource, /"human-or-automation-signoff"/);
+  assert.match(instructionImprovementCatalogSource, /validation rerun against patched instructions/);
   assert.match(source, /"patchReviewMatrix"/);
   assert.match(source, /modal-controller-state-repair/);
   assert.match(source, /additive-printer-state-repair/);
@@ -5710,19 +5747,39 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(source, /async fn learning_model_catalog_http/);
   assert.match(source, /fn learning_model_catalog_response/);
+  assert.match(source, /mod learning_model_catalog;/);
   assert.match(source, /dd\.fabrication\.learning-model-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/learning\/models\/catalog"/);
-  assert.match(source, /"mdp-policy-snapshot"/);
-  assert.match(source, /"pomdp-belief-policy"/);
-  assert.match(source, /"bounded-neural-policy-sketch"/);
-  assert.match(source, /"neuralFeatureContract": \{/);
-  assert.match(source, /dd\.fabrication\.neural-feature-contract\.v1/);
-  assert.match(source, /"inputDimension": 9/);
-  assert.match(source, /"outputDimension": 4/);
-  assert.match(source, /"outputLabels": \[/);
-  assert.match(source, /"split-combine"/);
-  assert.match(source, /"machine-failure"/);
-  assert.match(source, /"learningModelResult\.modelCardCompatibility"/);
+  assert.match(source, /"modelFamilies": learning_model_catalog::model_families\(\)/);
+  assert.match(learningModelCatalogSource, /pub\(super\) fn model_families\(\) -> Value/);
+  assert.match(learningModelCatalogSource, /"mdp-policy-snapshot"/);
+  assert.match(learningModelCatalogSource, /"pomdp-belief-policy"/);
+  assert.match(learningModelCatalogSource, /"bounded-neural-policy-sketch"/);
+  assert.match(
+    source,
+    /"neuralFeatureContract": learning_model_catalog::neural_feature_contract\(neural_network\.num_parameters\(\)\)/,
+  );
+  assert.match(
+    learningModelCatalogSource,
+    /pub\(super\) fn neural_feature_contract\(parameter_count: usize\) -> Value/,
+  );
+  assert.match(learningModelCatalogSource, /dd\.fabrication\.neural-feature-contract\.v1/);
+  assert.match(learningModelCatalogSource, /"inputDimension": 9/);
+  assert.match(learningModelCatalogSource, /"outputDimension": 4/);
+  assert.match(learningModelCatalogSource, /"outputLabels": \[/);
+  assert.match(learningModelCatalogSource, /"split-combine"/);
+  assert.match(learningModelCatalogSource, /"machine-failure"/);
+  assert.match(learningModelCatalogSource, /"learningModelResult\.modelCardCompatibility"/);
+  assert.match(learningModelCatalogSource, /"compatibilityChecks": \[/);
+  assert.match(
+    learningModelCatalogSource,
+    /featureNames must match neuralTrainingCorpus\.featureNames in order/,
+  );
+  assert.match(
+    learningModelCatalogSource,
+    /model-card inputDimension and outputDimension must match this contract/,
+  );
+  assert.match(learningModelCatalogSource, /model artifact URI and checksum must be retained/);
   assert.match(
     source,
     /learning_model_catalog_endpoint_exposes_retained_policy_artifact_contracts/,
@@ -7396,6 +7453,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /PrusaSlicer, OrcaSlicer, Cura, Bambu Studio, Lychee Slicer, and Chitubox/);
   assert.match(readme, /exposure, lift\/retract, support/);
   assert.match(readme, /wash\/cure, resin lot, and PPE evidence/);
+  assert.match(readme, /`machineCodeHandoffCompatibility`/);
+  assert.match(readme, /FDM printer\s+G-code, resin printer package, and slicer project\/profile handoff families/);
+  assert.match(readme, /slicer mesh topology and high-speed kinematics/);
+  assert.match(readme, /non-G-code resin or slicer package jobs need retained package manifest/);
   assert.match(readme, /not certified\s+printer-ready G-code/);
   assert.match(readme, /dd\.fabrication\.mesh-repair-catalog\.v1/);
   assert.match(readme, /watertight topology repair/);
@@ -7795,18 +7856,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /DES\/MDP\/POMDP learning surfaces/);
   assert.match(readme, /`dd-fabrication-planner` Grafana\s+dashboard/);
   assert.match(readme, /request intake, release blockers, NATS\s+fanout, learning feedback, artifact ledgers, and runtime capacity/);
-  assert.match(source, /<h2>Start Here<\/h2>/);
-  assert.match(source, /Most integrations follow the same evidence path/);
-  assert.match(source, /<strong>6\. Operate<\/strong>/);
-  assert.match(source, /\/grafana\/fabrication/);
-  assert.match(source, /Fabrication Planner Grafana dashboard/);
-  assert.match(source, /request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity/);
-  assert.match(source, /\/fabrication\/design\/import\/catalog/);
-  assert.match(source, /\/fabrication\/machine-code\/catalog/);
-  assert.match(source, /\/fabrication\/interfaces\/catalog/);
-  assert.match(source, /\/fabrication\/joining\/catalog/);
-  assert.match(source, /\/fabrication\/recomposition\/catalog/);
-  assert.match(source, /\/fabrication\/learning\/outcomes/);
+  assert.match(landingPageHtml, /<h2>Start Here<\/h2>/);
+  assert.match(landingPageHtml, /Most integrations follow the same evidence path/);
+  assert.match(landingPageHtml, /<strong>6\. Operate<\/strong>/);
+  assert.match(landingPageHtml, /\/grafana\/fabrication/);
+  assert.match(landingPageHtml, /Fabrication Planner Grafana dashboard/);
+  assert.match(landingPageHtml, /request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity/);
+  assert.match(landingPageHtml, /\/fabrication\/design\/import\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/machine-code\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/interfaces\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/joining\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/recomposition\/catalog/);
+  assert.match(landingPageHtml, /\/fabrication\/learning\/outcomes/);
   assert.match(readme, /`dd\.fabrication\.how-it-works\.v1` payload/);
   assert.match(readme, /`startHereWorkflow`/);
   assert.match(readme, /first integration path plus a six-step\s+intake-to-release flow/);
@@ -8206,6 +8267,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`improvedPrograms\.patchManifest\.operations`/);
   assert.match(readme, /`insert-before-first-risk-motion`/);
   assert.match(readme, /`machineReady=false`/);
+  assert.match(readme, /`patchReleaseChecklist`/);
+  assert.match(readme, /immutable source retention, post-patch validation/);
+  assert.match(readme, /original and patched artifact URI\/checksum/);
+  assert.match(readme, /simulation\/dry-run\/backplot or slicer\/package\s+review/);
   assert.match(readme, /source-program and finding state/);
   assert.match(readme, /patch-review and\s+simulation state/);
   assert.match(readme, /learning plus release feedback state/);
@@ -8831,6 +8896,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`FeedForwardNetwork` input dimension/);
   assert.match(readme, /`neuralTrainingCorpus\.featureNames` alignment/);
   assert.match(readme, /bounded `0\.\.1` feature-vector rule/);
+  assert.match(readme, /compatibility checks for feature-name order/);
+  assert.match(readme, /retained model artifact URI\/checksum evidence/);
   assert.match(readme, /first-class\s+`splitCombinePreferences`/);
   assert.match(readme, /split-combine-preference/);
   assert.match(readme, /`splitCombineHints` to seed learned assembly strategies and first-class\s+`splitCombinePreferences`/);
