@@ -1260,3 +1260,168 @@ update benefactor_marketing_call_insights set client_id = $2, meeting_id = $3, l
 
 -- name: DeleteBenefactorMarketingCallInsights :exec
 delete from benefactor_marketing_call_insights where id = $1;
+
+-- name: ListUsaccUsers :many
+select id, external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data, created_at, updated_at from usacc_users;
+
+-- name: GetUsaccUsers :one
+select id, external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data, created_at, updated_at from usacc_users where id = $1 limit 1;
+
+-- name: CreateUsaccUsers :one
+insert into usacc_users (id, external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccUsers :one
+update usacc_users set external_subject = $2, email_hash = $3, display_name = $4, user_kind = $5, status = $6, kyc_level = $7, roles = $8, is_legal_entity = $9, legal_region = $10, meta_data = $11, updated_at = $12 where id = $1 returning id, external_subject, email_hash, display_name, user_kind, status, kyc_level, roles, is_legal_entity, legal_region, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccUsers :exec
+delete from usacc_users where id = $1;
+
+-- name: ListUsaccCases :many
+select id, case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data, opened_at, closed_at, created_at, updated_at from usacc_cases;
+
+-- name: GetUsaccCases :one
+select id, case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data, opened_at, closed_at, created_at, updated_at from usacc_cases where id = $1 limit 1;
+
+-- name: CreateUsaccCases :one
+insert into usacc_cases (id, case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data, opened_at, closed_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) returning id, case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data, opened_at, closed_at, created_at, updated_at;
+
+-- name: UpdateUsaccCases :one
+update usacc_cases set case_number = $2, title = $3, status = $4, filing_tier = $5, plaintiff_user_id = $6, defendant_summary = $7, conduct_summary = $8, conduct_fingerprint = $9, conduct_window_start = $10, conduct_window_end = $11, priority_score_micros = $12, meta_data = $13, opened_at = $14, closed_at = $15, updated_at = $16 where id = $1 returning id, case_number, title, status, filing_tier, plaintiff_user_id, defendant_summary, conduct_summary, conduct_fingerprint, conduct_window_start, conduct_window_end, priority_score_micros, meta_data, opened_at, closed_at, created_at, updated_at;
+
+-- name: DeleteUsaccCases :exec
+delete from usacc_cases where id = $1;
+
+-- name: ListUsaccCaseParticipants :many
+select id, case_id, user_id, role, status, granted_by, granted_by_policy_version, ended_at, ended_reason, meta_data, created_at, updated_at from usacc_case_participants;
+
+-- name: GetUsaccCaseParticipants :one
+select id, case_id, user_id, role, status, granted_by, granted_by_policy_version, ended_at, ended_reason, meta_data, created_at, updated_at from usacc_case_participants where id = $1 limit 1;
+
+-- name: CreateUsaccCaseParticipants :one
+insert into usacc_case_participants (id, case_id, user_id, role, status, granted_by, granted_by_policy_version, ended_at, ended_reason, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, case_id, user_id, role, status, granted_by, granted_by_policy_version, ended_at, ended_reason, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccCaseParticipants :one
+update usacc_case_participants set case_id = $2, user_id = $3, role = $4, status = $5, granted_by = $6, granted_by_policy_version = $7, ended_at = $8, ended_reason = $9, meta_data = $10, updated_at = $11 where id = $1 returning id, case_id, user_id, role, status, granted_by, granted_by_policy_version, ended_at, ended_reason, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccCaseParticipants :exec
+delete from usacc_case_participants where id = $1;
+
+-- name: ListUsaccCaseStages :many
+select id, case_id, stage_key, stage_order, title, status, assigned_user_id, opened_at, due_at, closed_at, decision_summary, meta_data, created_at, updated_at from usacc_case_stages;
+
+-- name: GetUsaccCaseStages :one
+select id, case_id, stage_key, stage_order, title, status, assigned_user_id, opened_at, due_at, closed_at, decision_summary, meta_data, created_at, updated_at from usacc_case_stages where id = $1 limit 1;
+
+-- name: CreateUsaccCaseStages :one
+insert into usacc_case_stages (id, case_id, stage_key, stage_order, title, status, assigned_user_id, opened_at, due_at, closed_at, decision_summary, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, case_id, stage_key, stage_order, title, status, assigned_user_id, opened_at, due_at, closed_at, decision_summary, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccCaseStages :one
+update usacc_case_stages set case_id = $2, stage_key = $3, stage_order = $4, title = $5, status = $6, assigned_user_id = $7, opened_at = $8, due_at = $9, closed_at = $10, decision_summary = $11, meta_data = $12, updated_at = $13 where id = $1 returning id, case_id, stage_key, stage_order, title, status, assigned_user_id, opened_at, due_at, closed_at, decision_summary, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccCaseStages :exec
+delete from usacc_case_stages where id = $1;
+
+-- name: ListUsaccElections :many
+select id, case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, opens_at, closes_at, sealed_until, tally, meta_data, created_at, updated_at from usacc_elections;
+
+-- name: GetUsaccElections :one
+select id, case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, opens_at, closes_at, sealed_until, tally, meta_data, created_at, updated_at from usacc_elections where id = $1 limit 1;
+
+-- name: CreateUsaccElections :one
+insert into usacc_elections (id, case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, opens_at, closes_at, sealed_until, tally, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, opens_at, closes_at, sealed_until, tally, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccElections :one
+update usacc_elections set case_id = $2, stage_id = $3, election_kind = $4, title = $5, status = $6, quorum_count = $7, threshold_micros = $8, opens_at = $9, closes_at = $10, sealed_until = $11, tally = $12, meta_data = $13, updated_at = $14 where id = $1 returning id, case_id, stage_id, election_kind, title, status, quorum_count, threshold_micros, opens_at, closes_at, sealed_until, tally, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccElections :exec
+delete from usacc_elections where id = $1;
+
+-- name: ListUsaccVotes :many
+select id, election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, revealed_at, contract_digest, meta_data, created_at, updated_at from usacc_votes;
+
+-- name: GetUsaccVotes :one
+select id, election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, revealed_at, contract_digest, meta_data, created_at, updated_at from usacc_votes where id = $1 limit 1;
+
+-- name: CreateUsaccVotes :one
+insert into usacc_votes (id, election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, revealed_at, contract_digest, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, revealed_at, contract_digest, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccVotes :one
+update usacc_votes set election_id = $2, case_id = $3, voter_user_id = $4, vote_kind = $5, vote_value = $6, weight_micros = $7, commitment_hash = $8, sealed_payload = $9, revealed_at = $10, contract_digest = $11, meta_data = $12, updated_at = $13 where id = $1 returning id, election_id, case_id, voter_user_id, vote_kind, vote_value, weight_micros, commitment_hash, sealed_payload, revealed_at, contract_digest, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccVotes :exec
+delete from usacc_votes where id = $1;
+
+-- name: ListUsaccEscrowAccounts :many
+select id, case_id, status, provider, provider_account_ref, currency, target_amount_cents, committed_amount_cents, captured_amount_cents, disbursed_amount_cents, meta_data, created_at, updated_at from usacc_escrow_accounts;
+
+-- name: GetUsaccEscrowAccounts :one
+select id, case_id, status, provider, provider_account_ref, currency, target_amount_cents, committed_amount_cents, captured_amount_cents, disbursed_amount_cents, meta_data, created_at, updated_at from usacc_escrow_accounts where id = $1 limit 1;
+
+-- name: CreateUsaccEscrowAccounts :one
+insert into usacc_escrow_accounts (id, case_id, status, provider, provider_account_ref, currency, target_amount_cents, committed_amount_cents, captured_amount_cents, disbursed_amount_cents, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, case_id, status, provider, provider_account_ref, currency, target_amount_cents, committed_amount_cents, captured_amount_cents, disbursed_amount_cents, meta_data, created_at, updated_at;
+
+-- name: UpdateUsaccEscrowAccounts :one
+update usacc_escrow_accounts set case_id = $2, status = $3, provider = $4, provider_account_ref = $5, currency = $6, target_amount_cents = $7, committed_amount_cents = $8, captured_amount_cents = $9, disbursed_amount_cents = $10, meta_data = $11, updated_at = $12 where id = $1 returning id, case_id, status, provider, provider_account_ref, currency, target_amount_cents, committed_amount_cents, captured_amount_cents, disbursed_amount_cents, meta_data, created_at, updated_at;
+
+-- name: DeleteUsaccEscrowAccounts :exec
+delete from usacc_escrow_accounts where id = $1;
+
+-- name: ListUsaccLedgerEntries :many
+select id, case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data, created_at from usacc_ledger_entries;
+
+-- name: GetUsaccLedgerEntries :one
+select id, case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data, created_at from usacc_ledger_entries where id = $1 limit 1;
+
+-- name: CreateUsaccLedgerEntries :one
+insert into usacc_ledger_entries (id, case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data, created_at;
+
+-- name: UpdateUsaccLedgerEntries :one
+update usacc_ledger_entries set case_id = $2, escrow_account_id = $3, user_id = $4, entry_kind = $5, direction = $6, amount_cents = $7, currency = $8, provider_ref = $9, contract_digest = $10, meta_data = $11 where id = $1 returning id, case_id, escrow_account_id, user_id, entry_kind, direction, amount_cents, currency, provider_ref, contract_digest, meta_data, created_at;
+
+-- name: DeleteUsaccLedgerEntries :exec
+delete from usacc_ledger_entries where id = $1;
+
+-- name: ListUsaccContractOperations :many
+select id, case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response, created_at, updated_at from usacc_contract_operations;
+
+-- name: GetUsaccContractOperations :one
+select id, case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response, created_at, updated_at from usacc_contract_operations where id = $1 limit 1;
+
+-- name: CreateUsaccContractOperations :one
+insert into usacc_contract_operations (id, case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response, created_at, updated_at;
+
+-- name: UpdateUsaccContractOperations :one
+update usacc_contract_operations set case_id = $2, election_id = $3, vote_id = $4, request_id = $5, operation_kind = $6, status = $7, program_id = $8, digest = $9, envelope = $10, response = $11, updated_at = $12 where id = $1 returning id, case_id, election_id, vote_id, request_id, operation_kind, status, program_id, digest, envelope, response, created_at, updated_at;
+
+-- name: DeleteUsaccContractOperations :exec
+delete from usacc_contract_operations where id = $1;
+
+-- name: ListUsaccSimulationRuns :many
+select id, case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at, created_at, updated_at from usacc_simulation_runs;
+
+-- name: GetUsaccSimulationRuns :one
+select id, case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at, created_at, updated_at from usacc_simulation_runs where id = $1 limit 1;
+
+-- name: CreateUsaccSimulationRuns :one
+insert into usacc_simulation_runs (id, case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at, created_at, updated_at;
+
+-- name: UpdateUsaccSimulationRuns :one
+update usacc_simulation_runs set case_id = $2, status = $3, mode = $4, seed = $5, horizon_days = $6, actor_count = $7, event_count = $8, metrics = $9, trace = $10, input = $11, started_at = $12, finished_at = $13, updated_at = $14 where id = $1 returning id, case_id, status, mode, seed, horizon_days, actor_count, event_count, metrics, trace, input, started_at, finished_at, created_at, updated_at;
+
+-- name: DeleteUsaccSimulationRuns :exec
+delete from usacc_simulation_runs where id = $1;
+
+-- name: ListUsaccAuditEvents :many
+select id, case_id, actor_user_id, event_type, event_hash, source, payload, created_at from usacc_audit_events;
+
+-- name: GetUsaccAuditEvents :one
+select id, case_id, actor_user_id, event_type, event_hash, source, payload, created_at from usacc_audit_events where id = $1 limit 1;
+
+-- name: CreateUsaccAuditEvents :one
+insert into usacc_audit_events (id, case_id, actor_user_id, event_type, event_hash, source, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id, case_id, actor_user_id, event_type, event_hash, source, payload, created_at;
+
+-- name: UpdateUsaccAuditEvents :one
+update usacc_audit_events set case_id = $2, actor_user_id = $3, event_type = $4, event_hash = $5, source = $6, payload = $7 where id = $1 returning id, case_id, actor_user_id, event_type, event_hash, source, payload, created_at;
+
+-- name: DeleteUsaccAuditEvents :exec
+delete from usacc_audit_events where id = $1;

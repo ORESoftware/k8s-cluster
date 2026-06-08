@@ -3585,3 +3585,465 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use benefactor_marketing_call_insights::Entity as BenefactorMarketingCallInsightsEntity;
 pub use benefactor_marketing_call_insights::Model as BenefactorMarketingCallInsightsModel;
+
+pub mod usacc_users {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_users")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "external_subject")]
+    pub external_subject: Option<String>,
+    #[sea_orm(column_name = "email_hash")]
+    pub email_hash: Option<String>,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    #[sea_orm(column_name = "user_kind")]
+    pub user_kind: String,
+    pub status: String,
+    #[sea_orm(column_name = "kyc_level")]
+    pub kyc_level: String,
+    pub roles: Json,
+    #[sea_orm(column_name = "is_legal_entity")]
+    pub is_legal_entity: bool,
+    #[sea_orm(column_name = "legal_region")]
+    pub legal_region: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_users::Entity as UsaccUsersEntity;
+pub use usacc_users::Model as UsaccUsersModel;
+
+pub mod usacc_cases {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_cases")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_number")]
+    pub case_number: String,
+    pub title: String,
+    pub status: String,
+    #[sea_orm(column_name = "filing_tier")]
+    pub filing_tier: String,
+    #[sea_orm(column_name = "plaintiff_user_id")]
+    pub plaintiff_user_id: Option<Uuid>,
+    #[sea_orm(column_name = "defendant_summary")]
+    pub defendant_summary: String,
+    #[sea_orm(column_name = "conduct_summary")]
+    pub conduct_summary: String,
+    #[sea_orm(column_name = "conduct_fingerprint")]
+    pub conduct_fingerprint: Option<String>,
+    #[sea_orm(column_name = "conduct_window_start")]
+    pub conduct_window_start: Option<String>,
+    #[sea_orm(column_name = "conduct_window_end")]
+    pub conduct_window_end: Option<String>,
+    #[sea_orm(column_name = "priority_score_micros")]
+    pub priority_score_micros: i32,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "opened_at")]
+    pub opened_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "closed_at")]
+    pub closed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_cases::Entity as UsaccCasesEntity;
+pub use usacc_cases::Model as UsaccCasesModel;
+
+pub mod usacc_case_participants {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_case_participants")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Uuid,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+    #[sea_orm(column_name = "granted_by")]
+    pub granted_by: Option<Uuid>,
+    #[sea_orm(column_name = "granted_by_policy_version")]
+    pub granted_by_policy_version: Option<String>,
+    #[sea_orm(column_name = "ended_at")]
+    pub ended_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "ended_reason")]
+    pub ended_reason: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_case_participants::Entity as UsaccCaseParticipantsEntity;
+pub use usacc_case_participants::Model as UsaccCaseParticipantsModel;
+
+pub mod usacc_case_stages {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_case_stages")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Uuid,
+    #[sea_orm(column_name = "stage_key")]
+    pub stage_key: String,
+    #[sea_orm(column_name = "stage_order")]
+    pub stage_order: i32,
+    pub title: String,
+    pub status: String,
+    #[sea_orm(column_name = "assigned_user_id")]
+    pub assigned_user_id: Option<Uuid>,
+    #[sea_orm(column_name = "opened_at")]
+    pub opened_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "due_at")]
+    pub due_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "closed_at")]
+    pub closed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "decision_summary")]
+    pub decision_summary: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_case_stages::Entity as UsaccCaseStagesEntity;
+pub use usacc_case_stages::Model as UsaccCaseStagesModel;
+
+pub mod usacc_elections {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_elections")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    #[sea_orm(column_name = "stage_id")]
+    pub stage_id: Option<Uuid>,
+    #[sea_orm(column_name = "election_kind")]
+    pub election_kind: String,
+    pub title: String,
+    pub status: String,
+    #[sea_orm(column_name = "quorum_count")]
+    pub quorum_count: i32,
+    #[sea_orm(column_name = "threshold_micros")]
+    pub threshold_micros: i32,
+    #[sea_orm(column_name = "opens_at")]
+    pub opens_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "closes_at")]
+    pub closes_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "sealed_until")]
+    pub sealed_until: Option<DateTimeWithTimeZone>,
+    pub tally: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_elections::Entity as UsaccElectionsEntity;
+pub use usacc_elections::Model as UsaccElectionsModel;
+
+pub mod usacc_votes {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_votes")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "election_id")]
+    pub election_id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    #[sea_orm(column_name = "voter_user_id")]
+    pub voter_user_id: Uuid,
+    #[sea_orm(column_name = "vote_kind")]
+    pub vote_kind: String,
+    #[sea_orm(column_name = "vote_value")]
+    pub vote_value: String,
+    #[sea_orm(column_name = "weight_micros")]
+    pub weight_micros: i32,
+    #[sea_orm(column_name = "commitment_hash")]
+    pub commitment_hash: Option<String>,
+    #[sea_orm(column_name = "sealed_payload")]
+    pub sealed_payload: Option<Json>,
+    #[sea_orm(column_name = "revealed_at")]
+    pub revealed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "contract_digest")]
+    pub contract_digest: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_votes::Entity as UsaccVotesEntity;
+pub use usacc_votes::Model as UsaccVotesModel;
+
+pub mod usacc_escrow_accounts {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_escrow_accounts")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Uuid,
+    pub status: String,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_account_ref")]
+    pub provider_account_ref: Option<String>,
+    pub currency: String,
+    #[sea_orm(column_name = "target_amount_cents")]
+    pub target_amount_cents: i64,
+    #[sea_orm(column_name = "committed_amount_cents")]
+    pub committed_amount_cents: i64,
+    #[sea_orm(column_name = "captured_amount_cents")]
+    pub captured_amount_cents: i64,
+    #[sea_orm(column_name = "disbursed_amount_cents")]
+    pub disbursed_amount_cents: i64,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_escrow_accounts::Entity as UsaccEscrowAccountsEntity;
+pub use usacc_escrow_accounts::Model as UsaccEscrowAccountsModel;
+
+pub mod usacc_ledger_entries {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_ledger_entries")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    #[sea_orm(column_name = "escrow_account_id")]
+    pub escrow_account_id: Option<Uuid>,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Option<Uuid>,
+    #[sea_orm(column_name = "entry_kind")]
+    pub entry_kind: String,
+    pub direction: String,
+    #[sea_orm(column_name = "amount_cents")]
+    pub amount_cents: i64,
+    pub currency: String,
+    #[sea_orm(column_name = "provider_ref")]
+    pub provider_ref: Option<String>,
+    #[sea_orm(column_name = "contract_digest")]
+    pub contract_digest: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_ledger_entries::Entity as UsaccLedgerEntriesEntity;
+pub use usacc_ledger_entries::Model as UsaccLedgerEntriesModel;
+
+pub mod usacc_contract_operations {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_contract_operations")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    #[sea_orm(column_name = "election_id")]
+    pub election_id: Option<Uuid>,
+    #[sea_orm(column_name = "vote_id")]
+    pub vote_id: Option<Uuid>,
+    #[sea_orm(column_name = "request_id")]
+    pub request_id: String,
+    #[sea_orm(column_name = "operation_kind")]
+    pub operation_kind: String,
+    pub status: String,
+    #[sea_orm(column_name = "program_id")]
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Json,
+    pub response: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_contract_operations::Entity as UsaccContractOperationsEntity;
+pub use usacc_contract_operations::Model as UsaccContractOperationsModel;
+
+pub mod usacc_simulation_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_simulation_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    pub status: String,
+    pub mode: String,
+    pub seed: i64,
+    #[sea_orm(column_name = "horizon_days")]
+    pub horizon_days: i32,
+    #[sea_orm(column_name = "actor_count")]
+    pub actor_count: i32,
+    #[sea_orm(column_name = "event_count")]
+    pub event_count: i32,
+    pub metrics: Json,
+    pub trace: Json,
+    pub input: Json,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_simulation_runs::Entity as UsaccSimulationRunsEntity;
+pub use usacc_simulation_runs::Model as UsaccSimulationRunsModel;
+
+pub mod usacc_audit_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "usacc_audit_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "case_id")]
+    pub case_id: Option<Uuid>,
+    #[sea_orm(column_name = "actor_user_id")]
+    pub actor_user_id: Option<Uuid>,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "event_hash")]
+    pub event_hash: String,
+    pub source: String,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use usacc_audit_events::Entity as UsaccAuditEventsEntity;
+pub use usacc_audit_events::Model as UsaccAuditEventsModel;

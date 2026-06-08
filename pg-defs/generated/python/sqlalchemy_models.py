@@ -7878,3 +7878,950 @@ class BenefactorMarketingCallInsightsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 20000:
             raise ValueError("benefactor_marketing_call_insights.summary exceeds 20000 bytes")
         return value
+
+UsaccUsersUserKind = Literal["natural_person", "legal_entity", "service_account", "sim_agent"]
+UsaccUsersStatus = Literal["active", "pending", "suspended", "banned", "alumni", "archived"]
+UsaccUsersKycLevel = Literal["none", "light", "medium", "high"]
+
+class UsaccUsers(Base):
+    __tablename__ = "usacc_users"
+    __table_args__ = (
+        CheckConstraint("external_subject is null or octet_length(external_subject) between 1 and 240", name="usacc_users_external_subject_size_chk"),
+        CheckConstraint("email_hash is null or email_hash ~ '^[a-f0-9]{64}$'", name="usacc_users_email_hash_chk"),
+        CheckConstraint("octet_length(display_name) between 1 and 200", name="usacc_users_display_name_size_chk"),
+        CheckConstraint("user_kind in ('natural_person', 'legal_entity', 'service_account', 'sim_agent')", name="usacc_users_kind_chk"),
+        CheckConstraint("status in ('active', 'pending', 'suspended', 'banned', 'alumni', 'archived')", name="usacc_users_status_chk"),
+        CheckConstraint("kyc_level in ('none', 'light', 'medium', 'high')", name="usacc_users_kyc_level_chk"),
+        CheckConstraint("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'", name="usacc_users_legal_region_format_chk"),
+        CheckConstraint("jsonb_typeof(roles) = 'object'", name="usacc_users_roles_object_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_users_meta_object_chk"),
+        Index("usacc_users_external_subject_uq", "external_subject", unique=True, postgresql_where=text("external_subject is not null")),
+        Index("usacc_users_email_hash_uq", "email_hash", unique=True, postgresql_where=text("email_hash is not null")),
+        Index("usacc_users_status_updated_at_idx", "status", text("updated_at desc")),
+        Index("usacc_users_roles_gin_idx", "roles", postgresql_using="gin"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    external_subject: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    user_kind: Mapped[str] = mapped_column(String(48), nullable=False, server_default=text("'natural_person'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    kyc_level: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'none'"))
+    roles: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_legal_entity: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    legal_region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccUsersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    externalSubject: str | None = Field(None, max_length=240)
+    emailHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    displayName: str = Field(..., max_length=200)
+    userKind: UsaccUsersUserKind
+    status: UsaccUsersStatus
+    kycLevel: UsaccUsersKycLevel
+    roles: dict[str, Any]
+    isLegalEntity: bool
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("externalSubject")
+    @classmethod
+    def validate_external_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_users.external_subject exceeds 240 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("usacc_users.display_name exceeds 200 bytes")
+        return value
+
+class UsaccUsersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    externalSubject: str | None = Field(None, max_length=240)
+    emailHash: str | None = Field(None, max_length=64, pattern="^[a-f0-9]{64}$")
+    displayName: str = Field(..., max_length=200)
+    userKind: UsaccUsersUserKind | None = "natural_person"
+    status: UsaccUsersStatus | None = "active"
+    kycLevel: UsaccUsersKycLevel | None = "none"
+    roles: dict[str, Any] | None = Field(default_factory=dict)
+    isLegalEntity: bool | None = False
+    legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("externalSubject")
+    @classmethod
+    def validate_external_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_users.external_subject exceeds 240 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("usacc_users.display_name exceeds 200 bytes")
+        return value
+
+UsaccCasesStatus = Literal["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"]
+UsaccCasesFilingTier = Literal["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"]
+
+class UsaccCases(Base):
+    __tablename__ = "usacc_cases"
+    __table_args__ = (
+        CheckConstraint("case_number ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="usacc_cases_case_number_format_chk"),
+        CheckConstraint("octet_length(title) between 1 and 240", name="usacc_cases_title_size_chk"),
+        CheckConstraint("status in ('draft', 'signature_collection', 'screening', 'inquiry', 'admission_review', 'trial', 'appeal', 'resolved', 'canceled', 'archived')", name="usacc_cases_status_chk"),
+        CheckConstraint("filing_tier in ('screen', 'inquiry', 'trial_1', 'trial_2', 'trial_3', 'trial_5', 'trial_10')", name="usacc_cases_filing_tier_chk"),
+        CheckConstraint("octet_length(defendant_summary) between 1 and 4000", name="usacc_cases_defendant_summary_size_chk"),
+        CheckConstraint("octet_length(conduct_summary) between 1 and 12000", name="usacc_cases_conduct_summary_size_chk"),
+        CheckConstraint("conduct_fingerprint is null or conduct_fingerprint ~ '^[A-Za-z0-9._:/-]{1,128}$'", name="usacc_cases_conduct_fingerprint_chk"),
+        CheckConstraint("conduct_window_start is null or conduct_window_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="usacc_cases_conduct_window_start_chk"),
+        CheckConstraint("conduct_window_end is null or conduct_window_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="usacc_cases_conduct_window_end_chk"),
+        CheckConstraint("priority_score_micros between 0 and 1000000", name="usacc_cases_priority_score_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_cases_meta_object_chk"),
+        Index("usacc_cases_case_number_uq", "case_number", unique=True),
+        Index("usacc_cases_status_updated_at_idx", "status", text("updated_at desc")),
+        Index("usacc_cases_plaintiff_idx", "plaintiff_user_id", text("created_at desc"), postgresql_where=text("plaintiff_user_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_number: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'draft'"))
+    filing_tier: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'screen'"))
+    plaintiff_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    defendant_summary: Mapped[str] = mapped_column(Text(), nullable=False)
+    conduct_summary: Mapped[str] = mapped_column(Text(), nullable=False)
+    conduct_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    conduct_window_start: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    conduct_window_end: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    priority_score_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccCasesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseNumber: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    title: str = Field(..., max_length=240)
+    status: UsaccCasesStatus
+    filingTier: UsaccCasesFilingTier
+    plaintiffUserId: UUID | None = None
+    defendantSummary: str
+    conductSummary: str
+    conductFingerprint: str | None = Field(None, max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    conductWindowStart: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    conductWindowEnd: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    priorityScoreMicros: int = Field(..., ge=0, le=1000000)
+    metaData: dict[str, Any]
+    openedAt: datetime | None = None
+    closedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_cases.title exceeds 240 bytes")
+        return value
+
+    @field_validator("defendantSummary")
+    @classmethod
+    def validate_defendant_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("usacc_cases.defendant_summary exceeds 4000 bytes")
+        return value
+
+    @field_validator("conductSummary")
+    @classmethod
+    def validate_conduct_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 12000:
+            raise ValueError("usacc_cases.conduct_summary exceeds 12000 bytes")
+        return value
+
+class UsaccCasesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseNumber: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    title: str = Field(..., max_length=240)
+    status: UsaccCasesStatus | None = "draft"
+    filingTier: UsaccCasesFilingTier | None = "screen"
+    plaintiffUserId: UUID | None = None
+    defendantSummary: str
+    conductSummary: str
+    conductFingerprint: str | None = Field(None, max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    conductWindowStart: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    conductWindowEnd: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    priorityScoreMicros: int | None = Field(0, ge=0, le=1000000)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    openedAt: datetime | None = None
+    closedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_cases.title exceeds 240 bytes")
+        return value
+
+    @field_validator("defendantSummary")
+    @classmethod
+    def validate_defendant_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("usacc_cases.defendant_summary exceeds 4000 bytes")
+        return value
+
+    @field_validator("conductSummary")
+    @classmethod
+    def validate_conduct_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 12000:
+            raise ValueError("usacc_cases.conduct_summary exceeds 12000 bytes")
+        return value
+
+UsaccCaseParticipantsRole = Literal["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"]
+UsaccCaseParticipantsStatus = Literal["active", "pending", "declined", "suspended", "ended", "banned"]
+
+class UsaccCaseParticipants(Base):
+    __tablename__ = "usacc_case_participants"
+    __table_args__ = (
+        CheckConstraint("role in ('plaintiff', 'defendant', 'sponsor', 'witness', 'judge', 'panel_juror', 'appeal_judge', 'presiding_juror', 'paralegal', 'investigator', 'intake_reviewer', 'clerk_of_court', 'compliance_monitor', 'counsel', 'oversight_board', 'auditor', 'ombuds')", name="usacc_case_participants_role_chk"),
+        CheckConstraint("status in ('active', 'pending', 'declined', 'suspended', 'ended', 'banned')", name="usacc_case_participants_status_chk"),
+        CheckConstraint("granted_by_policy_version is null or granted_by_policy_version ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="usacc_case_participants_policy_version_chk"),
+        CheckConstraint("ended_reason is null or octet_length(ended_reason) <= 240", name="usacc_case_participants_ended_reason_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_case_participants_meta_object_chk"),
+        Index("usacc_case_participants_case_user_role_uq", "case_id", "user_id", "role", unique=True),
+        Index("usacc_case_participants_user_idx", "user_id", "status", text("updated_at desc")),
+        Index("usacc_case_participants_case_role_idx", "case_id", "role", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    role: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    granted_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    granted_by_policy_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccCaseParticipantsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID
+    userId: UUID
+    role: UsaccCaseParticipantsRole
+    status: UsaccCaseParticipantsStatus
+    grantedBy: UUID | None = None
+    grantedByPolicyVersion: str | None = Field(None, max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    endedAt: datetime | None = None
+    endedReason: str | None = Field(None, max_length=240)
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("endedReason")
+    @classmethod
+    def validate_ended_reason(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_case_participants.ended_reason exceeds 240 bytes")
+        return value
+
+class UsaccCaseParticipantsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID
+    userId: UUID
+    role: UsaccCaseParticipantsRole
+    status: UsaccCaseParticipantsStatus | None = "active"
+    grantedBy: UUID | None = None
+    grantedByPolicyVersion: str | None = Field(None, max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    endedAt: datetime | None = None
+    endedReason: str | None = Field(None, max_length=240)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("endedReason")
+    @classmethod
+    def validate_ended_reason(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_case_participants.ended_reason exceeds 240 bytes")
+        return value
+
+UsaccCaseStagesStatus = Literal["pending", "open", "blocked", "complete", "skipped", "canceled"]
+
+class UsaccCaseStages(Base):
+    __tablename__ = "usacc_case_stages"
+    __table_args__ = (
+        CheckConstraint("stage_key ~ '^[A-Za-z0-9._:/-]{1,64}$'", name="usacc_case_stages_stage_key_format_chk"),
+        CheckConstraint("stage_order between 0 and 1000", name="usacc_case_stages_stage_order_chk"),
+        CheckConstraint("octet_length(title) between 1 and 200", name="usacc_case_stages_title_size_chk"),
+        CheckConstraint("status in ('pending', 'open', 'blocked', 'complete', 'skipped', 'canceled')", name="usacc_case_stages_status_chk"),
+        CheckConstraint("decision_summary is null or octet_length(decision_summary) <= 12000", name="usacc_case_stages_decision_summary_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_case_stages_meta_object_chk"),
+        Index("usacc_case_stages_case_stage_key_uq", "case_id", "stage_key", unique=True),
+        Index("usacc_case_stages_case_order_idx", "case_id", "stage_order"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    stage_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage_order: Mapped[int] = mapped_column(Integer(), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    assigned_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccCaseStagesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID
+    stageKey: str = Field(..., max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    stageOrder: int = Field(..., ge=0, le=1000)
+    title: str = Field(..., max_length=200)
+    status: UsaccCaseStagesStatus
+    assignedUserId: UUID | None = None
+    openedAt: datetime | None = None
+    dueAt: datetime | None = None
+    closedAt: datetime | None = None
+    decisionSummary: str | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("usacc_case_stages.title exceeds 200 bytes")
+        return value
+
+    @field_validator("decisionSummary")
+    @classmethod
+    def validate_decision_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 12000:
+            raise ValueError("usacc_case_stages.decision_summary exceeds 12000 bytes")
+        return value
+
+class UsaccCaseStagesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID
+    stageKey: str = Field(..., max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    stageOrder: int = Field(..., ge=0, le=1000)
+    title: str = Field(..., max_length=200)
+    status: UsaccCaseStagesStatus | None = "pending"
+    assignedUserId: UUID | None = None
+    openedAt: datetime | None = None
+    dueAt: datetime | None = None
+    closedAt: datetime | None = None
+    decisionSummary: str | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("usacc_case_stages.title exceeds 200 bytes")
+        return value
+
+    @field_validator("decisionSummary")
+    @classmethod
+    def validate_decision_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 12000:
+            raise ValueError("usacc_case_stages.decision_summary exceeds 12000 bytes")
+        return value
+
+UsaccElectionsElectionKind = Literal["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"]
+UsaccElectionsStatus = Literal["draft", "open", "sealed", "tallying", "certified", "void", "archived"]
+
+class UsaccElections(Base):
+    __tablename__ = "usacc_elections"
+    __table_args__ = (
+        CheckConstraint("election_kind in ('priority', 'admission', 'panel_verdict', 'appeal', 'oversight', 'policy', 'assignment_acceptance')", name="usacc_elections_kind_chk"),
+        CheckConstraint("octet_length(title) between 1 and 220", name="usacc_elections_title_size_chk"),
+        CheckConstraint("status in ('draft', 'open', 'sealed', 'tallying', 'certified', 'void', 'archived')", name="usacc_elections_status_chk"),
+        CheckConstraint("quorum_count between 1 and 1000000", name="usacc_elections_quorum_chk"),
+        CheckConstraint("threshold_micros between 1 and 1000000", name="usacc_elections_threshold_chk"),
+        CheckConstraint("jsonb_typeof(tally) = 'object'", name="usacc_elections_tally_object_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_elections_meta_object_chk"),
+        Index("usacc_elections_case_status_idx", "case_id", "status", text("updated_at desc"), postgresql_where=text("case_id is not null")),
+        Index("usacc_elections_stage_idx", "stage_id", text("created_at desc"), postgresql_where=text("stage_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    stage_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    election_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    title: Mapped[str] = mapped_column(String(220), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'draft'"))
+    quorum_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    threshold_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("500000"))
+    opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sealed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    tally: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccElectionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID | None = None
+    stageId: UUID | None = None
+    electionKind: UsaccElectionsElectionKind
+    title: str = Field(..., max_length=220)
+    status: UsaccElectionsStatus
+    quorumCount: int = Field(..., ge=1, le=1000000)
+    thresholdMicros: int = Field(..., ge=1, le=1000000)
+    opensAt: datetime | None = None
+    closesAt: datetime | None = None
+    sealedUntil: datetime | None = None
+    tally: dict[str, Any]
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 220:
+            raise ValueError("usacc_elections.title exceeds 220 bytes")
+        return value
+
+class UsaccElectionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID | None = None
+    stageId: UUID | None = None
+    electionKind: UsaccElectionsElectionKind
+    title: str = Field(..., max_length=220)
+    status: UsaccElectionsStatus | None = "draft"
+    quorumCount: int | None = Field(1, ge=1, le=1000000)
+    thresholdMicros: int | None = Field(500000, ge=1, le=1000000)
+    opensAt: datetime | None = None
+    closesAt: datetime | None = None
+    sealedUntil: datetime | None = None
+    tally: dict[str, Any] | None = Field(default_factory=dict)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 220:
+            raise ValueError("usacc_elections.title exceeds 220 bytes")
+        return value
+
+UsaccVotesVoteKind = Literal["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"]
+
+class UsaccVotes(Base):
+    __tablename__ = "usacc_votes"
+    __table_args__ = (
+        CheckConstraint("vote_kind in ('choice', 'priority_dollar_weighted', 'verdict', 'approval', 'assignment_response')", name="usacc_votes_kind_chk"),
+        CheckConstraint("vote_value ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="usacc_votes_vote_value_format_chk"),
+        CheckConstraint("weight_micros between 0 and 1000000000", name="usacc_votes_weight_chk"),
+        CheckConstraint("commitment_hash is null or commitment_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'", name="usacc_votes_commitment_hash_chk"),
+        CheckConstraint("sealed_payload is null or jsonb_typeof(sealed_payload) = 'object'", name="usacc_votes_sealed_payload_object_chk"),
+        CheckConstraint("contract_digest is null or octet_length(contract_digest) <= 160", name="usacc_votes_contract_digest_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_votes_meta_object_chk"),
+        Index("usacc_votes_election_voter_uq", "election_id", "voter_user_id", unique=True),
+        Index("usacc_votes_case_idx", "case_id", text("created_at desc"), postgresql_where=text("case_id is not null")),
+        Index("usacc_votes_voter_idx", "voter_user_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    election_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    voter_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    vote_kind: Mapped[str] = mapped_column(String(48), nullable=False, server_default=text("'choice'"))
+    vote_value: Mapped[str] = mapped_column(String(80), nullable=False)
+    weight_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1000000"))
+    commitment_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    sealed_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    revealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    contract_digest: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccVotesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    electionId: UUID
+    caseId: UUID | None = None
+    voterUserId: UUID
+    voteKind: UsaccVotesVoteKind
+    voteValue: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    weightMicros: int = Field(..., ge=0, le=1000000000)
+    commitmentHash: str | None = Field(None, max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    sealedPayload: dict[str, Any] | None = None
+    revealedAt: datetime | None = None
+    contractDigest: str | None = Field(None, max_length=160)
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("contractDigest")
+    @classmethod
+    def validate_contract_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_votes.contract_digest exceeds 160 bytes")
+        return value
+
+class UsaccVotesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    electionId: UUID
+    caseId: UUID | None = None
+    voterUserId: UUID
+    voteKind: UsaccVotesVoteKind | None = "choice"
+    voteValue: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    weightMicros: int | None = Field(1000000, ge=0, le=1000000000)
+    commitmentHash: str | None = Field(None, max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    sealedPayload: dict[str, Any] | None = None
+    revealedAt: datetime | None = None
+    contractDigest: str | None = Field(None, max_length=160)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("contractDigest")
+    @classmethod
+    def validate_contract_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_votes.contract_digest exceeds 160 bytes")
+        return value
+
+UsaccEscrowAccountsStatus = Literal["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"]
+UsaccEscrowAccountsProvider = Literal["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"]
+
+class UsaccEscrowAccounts(Base):
+    __tablename__ = "usacc_escrow_accounts"
+    __table_args__ = (
+        CheckConstraint("status in ('pending', 'open', 'funding', 'locked', 'disbursing', 'closed', 'canceled')", name="usacc_escrow_accounts_status_chk"),
+        CheckConstraint("provider in ('stripe_treasury', 'stripe_connect', 'column', 'evolve', 'mercury', 'trust_company', 'manual')", name="usacc_escrow_accounts_provider_chk"),
+        CheckConstraint("provider_account_ref is null or octet_length(provider_account_ref) <= 240", name="usacc_escrow_accounts_provider_ref_size_chk"),
+        CheckConstraint("currency ~ '^[A-Z]{3,12}$'", name="usacc_escrow_accounts_currency_chk"),
+        CheckConstraint("target_amount_cents >= 0 and committed_amount_cents >= 0 and captured_amount_cents >= 0 and disbursed_amount_cents >= 0", name="usacc_escrow_accounts_money_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_escrow_accounts_meta_object_chk"),
+        Index("usacc_escrow_accounts_case_provider_uq", "case_id", "provider", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    provider: Mapped[str] = mapped_column(String(48), nullable=False, server_default=text("'stripe_treasury'"))
+    provider_account_ref: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    currency: Mapped[str] = mapped_column(String(12), nullable=False, server_default=text("'USD'"))
+    target_amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    committed_amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    captured_amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    disbursed_amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccEscrowAccountsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID
+    status: UsaccEscrowAccountsStatus
+    provider: UsaccEscrowAccountsProvider
+    providerAccountRef: str | None = Field(None, max_length=240)
+    currency: str = Field(..., max_length=12, pattern="^[A-Z]{3,12}$")
+    targetAmountCents: int
+    committedAmountCents: int
+    capturedAmountCents: int
+    disbursedAmountCents: int
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("providerAccountRef")
+    @classmethod
+    def validate_provider_account_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes")
+        return value
+
+class UsaccEscrowAccountsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID
+    status: UsaccEscrowAccountsStatus | None = "pending"
+    provider: UsaccEscrowAccountsProvider | None = "stripe_treasury"
+    providerAccountRef: str | None = Field(None, max_length=240)
+    currency: str | None = Field("USD", max_length=12, pattern="^[A-Z]{3,12}$")
+    targetAmountCents: int | None = 0
+    committedAmountCents: int | None = 0
+    capturedAmountCents: int | None = 0
+    disbursedAmountCents: int | None = 0
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("providerAccountRef")
+    @classmethod
+    def validate_provider_account_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes")
+        return value
+
+UsaccLedgerEntriesEntryKind = Literal["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"]
+UsaccLedgerEntriesDirection = Literal["debit", "credit"]
+
+class UsaccLedgerEntries(Base):
+    __tablename__ = "usacc_ledger_entries"
+    __table_args__ = (
+        CheckConstraint("entry_kind in ('pledge', 'authorization', 'capture', 'refund', 'disbursement', 'fee', 'adjustment')", name="usacc_ledger_entries_kind_chk"),
+        CheckConstraint("direction in ('debit', 'credit')", name="usacc_ledger_entries_direction_chk"),
+        CheckConstraint("amount_cents >= 0", name="usacc_ledger_entries_amount_chk"),
+        CheckConstraint("currency ~ '^[A-Z]{3,12}$'", name="usacc_ledger_entries_currency_chk"),
+        CheckConstraint("provider_ref is null or octet_length(provider_ref) <= 240", name="usacc_ledger_entries_provider_ref_size_chk"),
+        CheckConstraint("contract_digest is null or octet_length(contract_digest) <= 160", name="usacc_ledger_entries_contract_digest_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="usacc_ledger_entries_meta_object_chk"),
+        Index("usacc_ledger_entries_case_created_idx", "case_id", text("created_at desc"), postgresql_where=text("case_id is not null")),
+        Index("usacc_ledger_entries_user_created_idx", "user_id", text("created_at desc"), postgresql_where=text("user_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    escrow_account_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    entry_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), nullable=False, server_default=text("'USD'"))
+    provider_ref: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    contract_digest: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccLedgerEntriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID | None = None
+    escrowAccountId: UUID | None = None
+    userId: UUID | None = None
+    entryKind: UsaccLedgerEntriesEntryKind
+    direction: UsaccLedgerEntriesDirection
+    amountCents: int
+    currency: str = Field(..., max_length=12, pattern="^[A-Z]{3,12}$")
+    providerRef: str | None = Field(None, max_length=240)
+    contractDigest: str | None = Field(None, max_length=160)
+    metaData: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("providerRef")
+    @classmethod
+    def validate_provider_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_ledger_entries.provider_ref exceeds 240 bytes")
+        return value
+
+    @field_validator("contractDigest")
+    @classmethod
+    def validate_contract_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_ledger_entries.contract_digest exceeds 160 bytes")
+        return value
+
+class UsaccLedgerEntriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID | None = None
+    escrowAccountId: UUID | None = None
+    userId: UUID | None = None
+    entryKind: UsaccLedgerEntriesEntryKind
+    direction: UsaccLedgerEntriesDirection
+    amountCents: int
+    currency: str | None = Field("USD", max_length=12, pattern="^[A-Z]{3,12}$")
+    providerRef: str | None = Field(None, max_length=240)
+    contractDigest: str | None = Field(None, max_length=160)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+    @field_validator("providerRef")
+    @classmethod
+    def validate_provider_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("usacc_ledger_entries.provider_ref exceeds 240 bytes")
+        return value
+
+    @field_validator("contractDigest")
+    @classmethod
+    def validate_contract_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_ledger_entries.contract_digest exceeds 160 bytes")
+        return value
+
+UsaccContractOperationsOperationKind = Literal["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"]
+UsaccContractOperationsStatus = Literal["pending", "validated", "simulated", "sent", "failed", "canceled"]
+
+class UsaccContractOperations(Base):
+    __tablename__ = "usacc_contract_operations"
+    __table_args__ = (
+        CheckConstraint("octet_length(request_id) between 1 and 160", name="usacc_contract_operations_request_id_size_chk"),
+        CheckConstraint("operation_kind in ('validate_envelope', 'simulate_transaction', 'send_transaction', 'vote_commitment', 'escrow_notary')", name="usacc_contract_operations_kind_chk"),
+        CheckConstraint("status in ('pending', 'validated', 'simulated', 'sent', 'failed', 'canceled')", name="usacc_contract_operations_status_chk"),
+        CheckConstraint("program_id is null or octet_length(program_id) <= 128", name="usacc_contract_operations_program_id_size_chk"),
+        CheckConstraint("digest is null or octet_length(digest) <= 160", name="usacc_contract_operations_digest_size_chk"),
+        CheckConstraint("jsonb_typeof(envelope) = 'object'", name="usacc_contract_operations_envelope_object_chk"),
+        CheckConstraint("jsonb_typeof(response) = 'object'", name="usacc_contract_operations_response_object_chk"),
+        Index("usacc_contract_operations_request_id_uq", "request_id", unique=True),
+        Index("usacc_contract_operations_case_idx", "case_id", text("created_at desc"), postgresql_where=text("case_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    election_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    vote_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    request_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    operation_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    program_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    digest: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    envelope: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccContractOperationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID | None = None
+    electionId: UUID | None = None
+    voteId: UUID | None = None
+    requestId: str = Field(..., max_length=160)
+    operationKind: UsaccContractOperationsOperationKind
+    status: UsaccContractOperationsStatus
+    programId: str | None = Field(None, max_length=128)
+    digest: str | None = Field(None, max_length=160)
+    envelope: dict[str, Any]
+    response: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_contract_operations.request_id exceeds 160 bytes")
+        return value
+
+    @field_validator("programId")
+    @classmethod
+    def validate_program_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 128:
+            raise ValueError("usacc_contract_operations.program_id exceeds 128 bytes")
+        return value
+
+    @field_validator("digest")
+    @classmethod
+    def validate_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_contract_operations.digest exceeds 160 bytes")
+        return value
+
+class UsaccContractOperationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID | None = None
+    electionId: UUID | None = None
+    voteId: UUID | None = None
+    requestId: str = Field(..., max_length=160)
+    operationKind: UsaccContractOperationsOperationKind
+    status: UsaccContractOperationsStatus | None = "pending"
+    programId: str | None = Field(None, max_length=128)
+    digest: str | None = Field(None, max_length=160)
+    envelope: dict[str, Any] | None = Field(default_factory=dict)
+    response: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_contract_operations.request_id exceeds 160 bytes")
+        return value
+
+    @field_validator("programId")
+    @classmethod
+    def validate_program_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 128:
+            raise ValueError("usacc_contract_operations.program_id exceeds 128 bytes")
+        return value
+
+    @field_validator("digest")
+    @classmethod
+    def validate_digest(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("usacc_contract_operations.digest exceeds 160 bytes")
+        return value
+
+UsaccSimulationRunsStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
+UsaccSimulationRunsMode = Literal["sim", "live_shadow", "replay"]
+
+class UsaccSimulationRuns(Base):
+    __tablename__ = "usacc_simulation_runs"
+    __table_args__ = (
+        CheckConstraint("status in ('queued', 'running', 'succeeded', 'failed', 'canceled')", name="usacc_simulation_runs_status_chk"),
+        CheckConstraint("mode in ('sim', 'live_shadow', 'replay')", name="usacc_simulation_runs_mode_chk"),
+        CheckConstraint("horizon_days between 1 and 3650", name="usacc_simulation_runs_horizon_chk"),
+        CheckConstraint("actor_count >= 0 and event_count >= 0", name="usacc_simulation_runs_counts_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="usacc_simulation_runs_metrics_object_chk"),
+        CheckConstraint("jsonb_typeof(trace) = 'array'", name="usacc_simulation_runs_trace_array_chk"),
+        CheckConstraint("jsonb_typeof(input) = 'object'", name="usacc_simulation_runs_input_object_chk"),
+        Index("usacc_simulation_runs_case_created_idx", "case_id", text("created_at desc"), postgresql_where=text("case_id is not null")),
+        Index("usacc_simulation_runs_status_created_idx", "status", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'sim'"))
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    horizon_days: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("180"))
+    actor_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    event_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    trace: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    input: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccSimulationRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID | None = None
+    status: UsaccSimulationRunsStatus
+    mode: UsaccSimulationRunsMode
+    seed: int
+    horizonDays: int = Field(..., ge=1, le=3650)
+    actorCount: int = Field(..., ge=0)
+    eventCount: int = Field(..., ge=0)
+    metrics: dict[str, Any]
+    trace: list[Any]
+    input: dict[str, Any]
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+class UsaccSimulationRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID | None = None
+    status: UsaccSimulationRunsStatus | None = "queued"
+    mode: UsaccSimulationRunsMode | None = "sim"
+    seed: int
+    horizonDays: int | None = Field(180, ge=1, le=3650)
+    actorCount: int | None = Field(0, ge=0)
+    eventCount: int | None = Field(0, ge=0)
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    trace: list[Any] | None = Field(default_factory=list)
+    input: dict[str, Any] | None = Field(default_factory=dict)
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+class UsaccAuditEvents(Base):
+    __tablename__ = "usacc_audit_events"
+    __table_args__ = (
+        CheckConstraint("event_type ~ '^[A-Za-z0-9._:/-]{1,96}$'", name="usacc_audit_events_type_format_chk"),
+        CheckConstraint("event_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'", name="usacc_audit_events_hash_format_chk"),
+        CheckConstraint("source ~ '^[A-Za-z0-9._:/-]{1,80}$'", name="usacc_audit_events_source_format_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="usacc_audit_events_payload_object_chk"),
+        Index("usacc_audit_events_hash_uq", "event_hash", unique=True),
+        Index("usacc_audit_events_case_created_idx", "case_id", text("created_at desc"), postgresql_where=text("case_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    case_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    actor_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'usacc-rest-api-backend-rs'"))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class UsaccAuditEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    caseId: UUID | None = None
+    actorUserId: UUID | None = None
+    eventType: str = Field(..., max_length=96, pattern="^[A-Za-z0-9._:/-]{1,96}$")
+    eventHash: str = Field(..., max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    source: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    payload: dict[str, Any]
+    createdAt: datetime
+
+class UsaccAuditEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    caseId: UUID | None = None
+    actorUserId: UUID | None = None
+    eventType: str = Field(..., max_length=96, pattern="^[A-Za-z0-9._:/-]{1,96}$")
+    eventHash: str = Field(..., max_length=128, pattern="^[A-Za-z0-9._:/-]{1,128}$")
+    source: str | None = Field("usacc-rest-api-backend-rs", max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None

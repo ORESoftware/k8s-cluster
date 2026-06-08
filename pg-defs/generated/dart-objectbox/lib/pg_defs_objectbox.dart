@@ -7522,3 +7522,959 @@ class BenefactorMarketingCallInsightsObjectBox {
     );
   }
 }
+
+@Entity()
+class UsaccUsersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? externalSubject;
+
+  String? emailHash;
+
+  String displayName;
+
+  String userKind;
+
+  String status;
+
+  String kycLevel;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String roles;
+
+  bool isLegalEntity;
+
+  String? legalRegion;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccUsersObjectBox({
+    required this.id,
+    this.externalSubject,
+    this.emailHash,
+    required this.displayName,
+    required this.userKind,
+    required this.status,
+    required this.kycLevel,
+    required this.roles,
+    required this.isLegalEntity,
+    this.legalRegion,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "externalSubject": externalSubject,
+    "emailHash": emailHash,
+    "displayName": displayName,
+    "userKind": userKind,
+    "status": status,
+    "kycLevel": kycLevel,
+    "roles": jsonDecode(roles),
+    "isLegalEntity": isLegalEntity,
+    "legalRegion": legalRegion,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccUsersObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccUsersObjectBox(
+      id: json["id"] as String,
+      externalSubject: json["externalSubject"] as String?,
+      emailHash: json["emailHash"] as String?,
+      displayName: json["displayName"] as String,
+      userKind: json["userKind"] as String,
+      status: json["status"] as String,
+      kycLevel: json["kycLevel"] as String,
+      roles: json["roles"] is String ? json["roles"] as String : jsonEncode(json["roles"]),
+      isLegalEntity: json["isLegalEntity"] as bool,
+      legalRegion: json["legalRegion"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccCasesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String caseNumber;
+
+  String title;
+
+  String status;
+
+  String filingTier;
+
+  String? plaintiffUserId;
+
+  String defendantSummary;
+
+  String conductSummary;
+
+  String? conductFingerprint;
+
+  String? conductWindowStart;
+
+  String? conductWindowEnd;
+
+  int priorityScoreMicros;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String? openedAt;
+
+  String? closedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccCasesObjectBox({
+    required this.id,
+    required this.caseNumber,
+    required this.title,
+    required this.status,
+    required this.filingTier,
+    this.plaintiffUserId,
+    required this.defendantSummary,
+    required this.conductSummary,
+    this.conductFingerprint,
+    this.conductWindowStart,
+    this.conductWindowEnd,
+    required this.priorityScoreMicros,
+    required this.metaData,
+    this.openedAt,
+    this.closedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseNumber": caseNumber,
+    "title": title,
+    "status": status,
+    "filingTier": filingTier,
+    "plaintiffUserId": plaintiffUserId,
+    "defendantSummary": defendantSummary,
+    "conductSummary": conductSummary,
+    "conductFingerprint": conductFingerprint,
+    "conductWindowStart": conductWindowStart,
+    "conductWindowEnd": conductWindowEnd,
+    "priorityScoreMicros": priorityScoreMicros,
+    "metaData": jsonDecode(metaData),
+    "openedAt": openedAt,
+    "closedAt": closedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccCasesObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccCasesObjectBox(
+      id: json["id"] as String,
+      caseNumber: json["caseNumber"] as String,
+      title: json["title"] as String,
+      status: json["status"] as String,
+      filingTier: json["filingTier"] as String,
+      plaintiffUserId: json["plaintiffUserId"] as String?,
+      defendantSummary: json["defendantSummary"] as String,
+      conductSummary: json["conductSummary"] as String,
+      conductFingerprint: json["conductFingerprint"] as String?,
+      conductWindowStart: json["conductWindowStart"] as String?,
+      conductWindowEnd: json["conductWindowEnd"] as String?,
+      priorityScoreMicros: (json["priorityScoreMicros"] as num).toInt(),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      openedAt: json["openedAt"] as String?,
+      closedAt: json["closedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccCaseParticipantsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String caseId;
+
+  String userId;
+
+  String role;
+
+  String status;
+
+  String? grantedBy;
+
+  String? grantedByPolicyVersion;
+
+  String? endedAt;
+
+  String? endedReason;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccCaseParticipantsObjectBox({
+    required this.id,
+    required this.caseId,
+    required this.userId,
+    required this.role,
+    required this.status,
+    this.grantedBy,
+    this.grantedByPolicyVersion,
+    this.endedAt,
+    this.endedReason,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "userId": userId,
+    "role": role,
+    "status": status,
+    "grantedBy": grantedBy,
+    "grantedByPolicyVersion": grantedByPolicyVersion,
+    "endedAt": endedAt,
+    "endedReason": endedReason,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccCaseParticipantsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccCaseParticipantsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String,
+      userId: json["userId"] as String,
+      role: json["role"] as String,
+      status: json["status"] as String,
+      grantedBy: json["grantedBy"] as String?,
+      grantedByPolicyVersion: json["grantedByPolicyVersion"] as String?,
+      endedAt: json["endedAt"] as String?,
+      endedReason: json["endedReason"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccCaseStagesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String caseId;
+
+  String stageKey;
+
+  int stageOrder;
+
+  String title;
+
+  String status;
+
+  String? assignedUserId;
+
+  String? openedAt;
+
+  String? dueAt;
+
+  String? closedAt;
+
+  String? decisionSummary;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccCaseStagesObjectBox({
+    required this.id,
+    required this.caseId,
+    required this.stageKey,
+    required this.stageOrder,
+    required this.title,
+    required this.status,
+    this.assignedUserId,
+    this.openedAt,
+    this.dueAt,
+    this.closedAt,
+    this.decisionSummary,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "stageKey": stageKey,
+    "stageOrder": stageOrder,
+    "title": title,
+    "status": status,
+    "assignedUserId": assignedUserId,
+    "openedAt": openedAt,
+    "dueAt": dueAt,
+    "closedAt": closedAt,
+    "decisionSummary": decisionSummary,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccCaseStagesObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccCaseStagesObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String,
+      stageKey: json["stageKey"] as String,
+      stageOrder: (json["stageOrder"] as num).toInt(),
+      title: json["title"] as String,
+      status: json["status"] as String,
+      assignedUserId: json["assignedUserId"] as String?,
+      openedAt: json["openedAt"] as String?,
+      dueAt: json["dueAt"] as String?,
+      closedAt: json["closedAt"] as String?,
+      decisionSummary: json["decisionSummary"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccElectionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? caseId;
+
+  String? stageId;
+
+  String electionKind;
+
+  String title;
+
+  String status;
+
+  int quorumCount;
+
+  int thresholdMicros;
+
+  String? opensAt;
+
+  String? closesAt;
+
+  String? sealedUntil;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String tally;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccElectionsObjectBox({
+    required this.id,
+    this.caseId,
+    this.stageId,
+    required this.electionKind,
+    required this.title,
+    required this.status,
+    required this.quorumCount,
+    required this.thresholdMicros,
+    this.opensAt,
+    this.closesAt,
+    this.sealedUntil,
+    required this.tally,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "stageId": stageId,
+    "electionKind": electionKind,
+    "title": title,
+    "status": status,
+    "quorumCount": quorumCount,
+    "thresholdMicros": thresholdMicros,
+    "opensAt": opensAt,
+    "closesAt": closesAt,
+    "sealedUntil": sealedUntil,
+    "tally": jsonDecode(tally),
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccElectionsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccElectionsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String?,
+      stageId: json["stageId"] as String?,
+      electionKind: json["electionKind"] as String,
+      title: json["title"] as String,
+      status: json["status"] as String,
+      quorumCount: (json["quorumCount"] as num).toInt(),
+      thresholdMicros: (json["thresholdMicros"] as num).toInt(),
+      opensAt: json["opensAt"] as String?,
+      closesAt: json["closesAt"] as String?,
+      sealedUntil: json["sealedUntil"] as String?,
+      tally: json["tally"] is String ? json["tally"] as String : jsonEncode(json["tally"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccVotesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String electionId;
+
+  String? caseId;
+
+  String voterUserId;
+
+  String voteKind;
+
+  String voteValue;
+
+  int weightMicros;
+
+  String? commitmentHash;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? sealedPayload;
+
+  String? revealedAt;
+
+  String? contractDigest;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccVotesObjectBox({
+    required this.id,
+    required this.electionId,
+    this.caseId,
+    required this.voterUserId,
+    required this.voteKind,
+    required this.voteValue,
+    required this.weightMicros,
+    this.commitmentHash,
+    this.sealedPayload,
+    this.revealedAt,
+    this.contractDigest,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "electionId": electionId,
+    "caseId": caseId,
+    "voterUserId": voterUserId,
+    "voteKind": voteKind,
+    "voteValue": voteValue,
+    "weightMicros": weightMicros,
+    "commitmentHash": commitmentHash,
+    "sealedPayload": jsonDecode(sealedPayload),
+    "revealedAt": revealedAt,
+    "contractDigest": contractDigest,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccVotesObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccVotesObjectBox(
+      id: json["id"] as String,
+      electionId: json["electionId"] as String,
+      caseId: json["caseId"] as String?,
+      voterUserId: json["voterUserId"] as String,
+      voteKind: json["voteKind"] as String,
+      voteValue: json["voteValue"] as String,
+      weightMicros: (json["weightMicros"] as num).toInt(),
+      commitmentHash: json["commitmentHash"] as String?,
+      sealedPayload: json["sealedPayload"] is String ? json["sealedPayload"] as String : jsonEncode(json["sealedPayload"]),
+      revealedAt: json["revealedAt"] as String?,
+      contractDigest: json["contractDigest"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccEscrowAccountsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String caseId;
+
+  String status;
+
+  String provider;
+
+  String? providerAccountRef;
+
+  String currency;
+
+  int targetAmountCents;
+
+  int committedAmountCents;
+
+  int capturedAmountCents;
+
+  int disbursedAmountCents;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccEscrowAccountsObjectBox({
+    required this.id,
+    required this.caseId,
+    required this.status,
+    required this.provider,
+    this.providerAccountRef,
+    required this.currency,
+    required this.targetAmountCents,
+    required this.committedAmountCents,
+    required this.capturedAmountCents,
+    required this.disbursedAmountCents,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "status": status,
+    "provider": provider,
+    "providerAccountRef": providerAccountRef,
+    "currency": currency,
+    "targetAmountCents": targetAmountCents,
+    "committedAmountCents": committedAmountCents,
+    "capturedAmountCents": capturedAmountCents,
+    "disbursedAmountCents": disbursedAmountCents,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccEscrowAccountsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccEscrowAccountsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String,
+      status: json["status"] as String,
+      provider: json["provider"] as String,
+      providerAccountRef: json["providerAccountRef"] as String?,
+      currency: json["currency"] as String,
+      targetAmountCents: (json["targetAmountCents"] as num).toInt(),
+      committedAmountCents: (json["committedAmountCents"] as num).toInt(),
+      capturedAmountCents: (json["capturedAmountCents"] as num).toInt(),
+      disbursedAmountCents: (json["disbursedAmountCents"] as num).toInt(),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccLedgerEntriesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? caseId;
+
+  String? escrowAccountId;
+
+  String? userId;
+
+  String entryKind;
+
+  String direction;
+
+  int amountCents;
+
+  String currency;
+
+  String? providerRef;
+
+  String? contractDigest;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+
+  UsaccLedgerEntriesObjectBox({
+    required this.id,
+    this.caseId,
+    this.escrowAccountId,
+    this.userId,
+    required this.entryKind,
+    required this.direction,
+    required this.amountCents,
+    required this.currency,
+    this.providerRef,
+    this.contractDigest,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "escrowAccountId": escrowAccountId,
+    "userId": userId,
+    "entryKind": entryKind,
+    "direction": direction,
+    "amountCents": amountCents,
+    "currency": currency,
+    "providerRef": providerRef,
+    "contractDigest": contractDigest,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+  };
+
+  static UsaccLedgerEntriesObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccLedgerEntriesObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String?,
+      escrowAccountId: json["escrowAccountId"] as String?,
+      userId: json["userId"] as String?,
+      entryKind: json["entryKind"] as String,
+      direction: json["direction"] as String,
+      amountCents: (json["amountCents"] as num).toInt(),
+      currency: json["currency"] as String,
+      providerRef: json["providerRef"] as String?,
+      contractDigest: json["contractDigest"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccContractOperationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? caseId;
+
+  String? electionId;
+
+  String? voteId;
+
+  String requestId;
+
+  String operationKind;
+
+  String status;
+
+  String? programId;
+
+  String? digest;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String envelope;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String response;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccContractOperationsObjectBox({
+    required this.id,
+    this.caseId,
+    this.electionId,
+    this.voteId,
+    required this.requestId,
+    required this.operationKind,
+    required this.status,
+    this.programId,
+    this.digest,
+    required this.envelope,
+    required this.response,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "electionId": electionId,
+    "voteId": voteId,
+    "requestId": requestId,
+    "operationKind": operationKind,
+    "status": status,
+    "programId": programId,
+    "digest": digest,
+    "envelope": jsonDecode(envelope),
+    "response": jsonDecode(response),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccContractOperationsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccContractOperationsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String?,
+      electionId: json["electionId"] as String?,
+      voteId: json["voteId"] as String?,
+      requestId: json["requestId"] as String,
+      operationKind: json["operationKind"] as String,
+      status: json["status"] as String,
+      programId: json["programId"] as String?,
+      digest: json["digest"] as String?,
+      envelope: json["envelope"] is String ? json["envelope"] as String : jsonEncode(json["envelope"]),
+      response: json["response"] is String ? json["response"] as String : jsonEncode(json["response"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccSimulationRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? caseId;
+
+  String status;
+
+  String mode;
+
+  int seed;
+
+  int horizonDays;
+
+  int actorCount;
+
+  int eventCount;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metrics;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String trace;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String input;
+
+  String? startedAt;
+
+  String? finishedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  UsaccSimulationRunsObjectBox({
+    required this.id,
+    this.caseId,
+    required this.status,
+    required this.mode,
+    required this.seed,
+    required this.horizonDays,
+    required this.actorCount,
+    required this.eventCount,
+    required this.metrics,
+    required this.trace,
+    required this.input,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "status": status,
+    "mode": mode,
+    "seed": seed,
+    "horizonDays": horizonDays,
+    "actorCount": actorCount,
+    "eventCount": eventCount,
+    "metrics": jsonDecode(metrics),
+    "trace": jsonDecode(trace),
+    "input": jsonDecode(input),
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static UsaccSimulationRunsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccSimulationRunsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String?,
+      status: json["status"] as String,
+      mode: json["mode"] as String,
+      seed: (json["seed"] as num).toInt(),
+      horizonDays: (json["horizonDays"] as num).toInt(),
+      actorCount: (json["actorCount"] as num).toInt(),
+      eventCount: (json["eventCount"] as num).toInt(),
+      metrics: json["metrics"] is String ? json["metrics"] as String : jsonEncode(json["metrics"]),
+      trace: json["trace"] is String ? json["trace"] as String : jsonEncode(json["trace"]),
+      input: json["input"] is String ? json["input"] as String : jsonEncode(json["input"]),
+      startedAt: json["startedAt"] as String?,
+      finishedAt: json["finishedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class UsaccAuditEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? caseId;
+
+  String? actorUserId;
+
+  String eventType;
+
+  String eventHash;
+
+  String source;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  UsaccAuditEventsObjectBox({
+    required this.id,
+    this.caseId,
+    this.actorUserId,
+    required this.eventType,
+    required this.eventHash,
+    required this.source,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "actorUserId": actorUserId,
+    "eventType": eventType,
+    "eventHash": eventHash,
+    "source": source,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static UsaccAuditEventsObjectBox fromJson(Map<String, Object?> json) {
+    return UsaccAuditEventsObjectBox(
+      id: json["id"] as String,
+      caseId: json["caseId"] as String?,
+      actorUserId: json["actorUserId"] as String?,
+      eventType: json["eventType"] as String,
+      eventHash: json["eventHash"] as String,
+      source: json["source"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}

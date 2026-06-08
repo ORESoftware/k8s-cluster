@@ -79,6 +79,21 @@ var benefactorMarketingVendorCostsIncurredOnPattern = regexp.MustCompile(`^[0-9]
 var benefactorMarketingCommissionEntriesEarnedOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingBudgetForecastsPeriodStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingBudgetForecastsPeriodEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccUsersEmailHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var usaccUsersLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var usaccCasesCaseNumberPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var usaccCasesConductFingerprintPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccCasesConductWindowStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccCasesConductWindowEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccCaseParticipantsGrantedByPolicyVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var usaccCaseStagesStageKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var usaccVotesVoteValuePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var usaccVotesCommitmentHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccEscrowAccountsCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
+var usaccLedgerEntriesCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
+var usaccAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,96}$`)
+var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -4667,6 +4682,598 @@ func (value BenefactorMarketingCallInsightsGorm) Validate() error {
 	if !validateJSONString(value.NextSteps) { return errors.New("benefactor_marketing_call_insights.next_steps must be valid JSON") }
 	if value.ConfidenceMicros < 0 { return errors.New("benefactor_marketing_call_insights.confidence_micros is below the minimum") }
 	if value.ConfidenceMicros > 1000000 { return errors.New("benefactor_marketing_call_insights.confidence_micros is above the maximum") }
+	return nil
+}
+
+const UsaccUsersTable = "usacc_users"
+const UsaccUsersSelectSQL = `select
+      id::text as id,
+      external_subject,
+      email_hash,
+      display_name,
+      user_kind,
+      status,
+      kyc_level,
+      roles,
+      is_legal_entity,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_users`
+
+var UsaccUsersUserKindValues = []string{"natural_person", "legal_entity", "service_account", "sim_agent"}
+var UsaccUsersStatusValues = []string{"active", "pending", "suspended", "banned", "alumni", "archived"}
+var UsaccUsersKycLevelValues = []string{"none", "light", "medium", "high"}
+
+type UsaccUsersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExternalSubject *string `gorm:"column:external_subject;type:varchar(240)" json:"externalSubject,omitempty"`
+	EmailHash *string `gorm:"column:email_hash;type:varchar(64)" json:"emailHash,omitempty"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
+	UserKind string `gorm:"column:user_kind;type:varchar(48);default:'natural_person';not null" json:"userKind"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	KycLevel string `gorm:"column:kyc_level;type:varchar(32);default:'none';not null" json:"kycLevel"`
+	Roles datatypes.JSON `gorm:"column:roles;type:jsonb;default:'{}'::jsonb;not null" json:"roles"`
+	IsLegalEntity bool `gorm:"column:is_legal_entity;type:boolean;default:false;not null" json:"isLegalEntity"`
+	LegalRegion *string `gorm:"column:legal_region;type:varchar(64)" json:"legalRegion,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccUsersGorm) TableName() string { return UsaccUsersTable }
+
+func (value UsaccUsersGorm) Validate() error {
+	if value.ExternalSubject != nil {
+		if len([]byte(*value.ExternalSubject)) > 240 { return errors.New("usacc_users.external_subject exceeds 240 bytes") }
+		if len([]byte(*value.ExternalSubject)) < 1 { return errors.New("usacc_users.external_subject is below 1 bytes") }
+	}
+	if value.EmailHash != nil {
+		if !usaccUsersEmailHashPattern.MatchString(*value.EmailHash) { return errors.New("usacc_users.email_hash does not match the required pattern") }
+	}
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("usacc_users.display_name exceeds 200 bytes") }
+	if len([]byte(value.DisplayName)) < 1 { return errors.New("usacc_users.display_name is below 1 bytes") }
+	if !containsString(UsaccUsersUserKindValues, value.UserKind) { return errors.New("unsupported usacc_users.user_kind") }
+	if !containsString(UsaccUsersStatusValues, value.Status) { return errors.New("unsupported usacc_users.status") }
+	if !containsString(UsaccUsersKycLevelValues, value.KycLevel) { return errors.New("unsupported usacc_users.kyc_level") }
+	if !validateJSONString(value.Roles) { return errors.New("usacc_users.roles must be valid JSON") }
+	if value.LegalRegion != nil {
+		if !usaccUsersLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("usacc_users.legal_region does not match the required pattern") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_users.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCasesTable = "usacc_cases"
+const UsaccCasesSelectSQL = `select
+      id::text as id,
+      case_number,
+      title,
+      status,
+      filing_tier,
+      plaintiff_user_id::text as plaintiff_user_id,
+      defendant_summary,
+      conduct_summary,
+      conduct_fingerprint,
+      conduct_window_start,
+      conduct_window_end,
+      priority_score_micros,
+      meta_data,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_cases`
+
+var UsaccCasesStatusValues = []string{"draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"}
+var UsaccCasesFilingTierValues = []string{"screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"}
+
+type UsaccCasesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseNumber string `gorm:"column:case_number;type:varchar(80);not null" json:"caseNumber"`
+	Title string `gorm:"column:title;type:varchar(240);not null" json:"title"`
+	Status string `gorm:"column:status;type:varchar(40);default:'draft';not null" json:"status"`
+	FilingTier string `gorm:"column:filing_tier;type:varchar(40);default:'screen';not null" json:"filingTier"`
+	PlaintiffUserId *uuid.UUID `gorm:"column:plaintiff_user_id;type:uuid" json:"plaintiffUserId,omitempty"`
+	DefendantSummary string `gorm:"column:defendant_summary;type:text;not null" json:"defendantSummary"`
+	ConductSummary string `gorm:"column:conduct_summary;type:text;not null" json:"conductSummary"`
+	ConductFingerprint *string `gorm:"column:conduct_fingerprint;type:varchar(128)" json:"conductFingerprint,omitempty"`
+	ConductWindowStart *string `gorm:"column:conduct_window_start;type:varchar(10)" json:"conductWindowStart,omitempty"`
+	ConductWindowEnd *string `gorm:"column:conduct_window_end;type:varchar(10)" json:"conductWindowEnd,omitempty"`
+	PriorityScoreMicros int32 `gorm:"column:priority_score_micros;type:integer;default:0;not null" json:"priorityScoreMicros"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	OpenedAt *time.Time `gorm:"column:opened_at;type:timestamptz" json:"openedAt,omitempty"`
+	ClosedAt *time.Time `gorm:"column:closed_at;type:timestamptz" json:"closedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccCasesGorm) TableName() string { return UsaccCasesTable }
+
+func (value UsaccCasesGorm) Validate() error {
+	if !usaccCasesCaseNumberPattern.MatchString(value.CaseNumber) { return errors.New("usacc_cases.case_number does not match the required pattern") }
+	if len([]byte(value.Title)) > 240 { return errors.New("usacc_cases.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_cases.title is below 1 bytes") }
+	if !containsString(UsaccCasesStatusValues, value.Status) { return errors.New("unsupported usacc_cases.status") }
+	if !containsString(UsaccCasesFilingTierValues, value.FilingTier) { return errors.New("unsupported usacc_cases.filing_tier") }
+	if len([]byte(value.DefendantSummary)) > 4000 { return errors.New("usacc_cases.defendant_summary exceeds 4000 bytes") }
+	if len([]byte(value.DefendantSummary)) < 1 { return errors.New("usacc_cases.defendant_summary is below 1 bytes") }
+	if len([]byte(value.ConductSummary)) > 12000 { return errors.New("usacc_cases.conduct_summary exceeds 12000 bytes") }
+	if len([]byte(value.ConductSummary)) < 1 { return errors.New("usacc_cases.conduct_summary is below 1 bytes") }
+	if value.ConductFingerprint != nil {
+		if !usaccCasesConductFingerprintPattern.MatchString(*value.ConductFingerprint) { return errors.New("usacc_cases.conduct_fingerprint does not match the required pattern") }
+	}
+	if value.ConductWindowStart != nil {
+		if !usaccCasesConductWindowStartPattern.MatchString(*value.ConductWindowStart) { return errors.New("usacc_cases.conduct_window_start does not match the required pattern") }
+	}
+	if value.ConductWindowEnd != nil {
+		if !usaccCasesConductWindowEndPattern.MatchString(*value.ConductWindowEnd) { return errors.New("usacc_cases.conduct_window_end does not match the required pattern") }
+	}
+	if value.PriorityScoreMicros < 0 { return errors.New("usacc_cases.priority_score_micros is below the minimum") }
+	if value.PriorityScoreMicros > 1000000 { return errors.New("usacc_cases.priority_score_micros is above the maximum") }
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_cases.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCaseParticipantsTable = "usacc_case_participants"
+const UsaccCaseParticipantsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      user_id::text as user_id,
+      role,
+      status,
+      granted_by::text as granted_by,
+      granted_by_policy_version,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ended_at,
+      ended_reason,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_participants`
+
+var UsaccCaseParticipantsRoleValues = []string{"plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"}
+var UsaccCaseParticipantsStatusValues = []string{"active", "pending", "declined", "suspended", "ended", "banned"}
+
+type UsaccCaseParticipantsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `gorm:"column:case_id;type:uuid;not null" json:"caseId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	Role string `gorm:"column:role;type:varchar(48);not null" json:"role"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	GrantedBy *uuid.UUID `gorm:"column:granted_by;type:uuid" json:"grantedBy,omitempty"`
+	GrantedByPolicyVersion *string `gorm:"column:granted_by_policy_version;type:varchar(120)" json:"grantedByPolicyVersion,omitempty"`
+	EndedAt *time.Time `gorm:"column:ended_at;type:timestamptz" json:"endedAt,omitempty"`
+	EndedReason *string `gorm:"column:ended_reason;type:varchar(240)" json:"endedReason,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccCaseParticipantsGorm) TableName() string { return UsaccCaseParticipantsTable }
+
+func (value UsaccCaseParticipantsGorm) Validate() error {
+	if !containsString(UsaccCaseParticipantsRoleValues, value.Role) { return errors.New("unsupported usacc_case_participants.role") }
+	if !containsString(UsaccCaseParticipantsStatusValues, value.Status) { return errors.New("unsupported usacc_case_participants.status") }
+	if value.GrantedByPolicyVersion != nil {
+		if !usaccCaseParticipantsGrantedByPolicyVersionPattern.MatchString(*value.GrantedByPolicyVersion) { return errors.New("usacc_case_participants.granted_by_policy_version does not match the required pattern") }
+	}
+	if value.EndedReason != nil {
+		if len([]byte(*value.EndedReason)) > 240 { return errors.New("usacc_case_participants.ended_reason exceeds 240 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_case_participants.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCaseStagesTable = "usacc_case_stages"
+const UsaccCaseStagesSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      stage_key,
+      stage_order,
+      title,
+      status,
+      assigned_user_id::text as assigned_user_id,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as due_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      decision_summary,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_stages`
+
+var UsaccCaseStagesStatusValues = []string{"pending", "open", "blocked", "complete", "skipped", "canceled"}
+
+type UsaccCaseStagesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `gorm:"column:case_id;type:uuid;not null" json:"caseId"`
+	StageKey string `gorm:"column:stage_key;type:varchar(64);not null" json:"stageKey"`
+	StageOrder int32 `gorm:"column:stage_order;type:integer;not null" json:"stageOrder"`
+	Title string `gorm:"column:title;type:varchar(200);not null" json:"title"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	AssignedUserId *uuid.UUID `gorm:"column:assigned_user_id;type:uuid" json:"assignedUserId,omitempty"`
+	OpenedAt *time.Time `gorm:"column:opened_at;type:timestamptz" json:"openedAt,omitempty"`
+	DueAt *time.Time `gorm:"column:due_at;type:timestamptz" json:"dueAt,omitempty"`
+	ClosedAt *time.Time `gorm:"column:closed_at;type:timestamptz" json:"closedAt,omitempty"`
+	DecisionSummary *string `gorm:"column:decision_summary;type:text" json:"decisionSummary,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccCaseStagesGorm) TableName() string { return UsaccCaseStagesTable }
+
+func (value UsaccCaseStagesGorm) Validate() error {
+	if !usaccCaseStagesStageKeyPattern.MatchString(value.StageKey) { return errors.New("usacc_case_stages.stage_key does not match the required pattern") }
+	if value.StageOrder < 0 { return errors.New("usacc_case_stages.stage_order is below the minimum") }
+	if value.StageOrder > 1000 { return errors.New("usacc_case_stages.stage_order is above the maximum") }
+	if len([]byte(value.Title)) > 200 { return errors.New("usacc_case_stages.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_case_stages.title is below 1 bytes") }
+	if !containsString(UsaccCaseStagesStatusValues, value.Status) { return errors.New("unsupported usacc_case_stages.status") }
+	if value.DecisionSummary != nil {
+		if len([]byte(*value.DecisionSummary)) > 12000 { return errors.New("usacc_case_stages.decision_summary exceeds 12000 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_case_stages.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccElectionsTable = "usacc_elections"
+const UsaccElectionsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      stage_id::text as stage_id,
+      election_kind,
+      title,
+      status,
+      quorum_count,
+      threshold_micros,
+      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opens_at,
+      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closes_at,
+      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sealed_until,
+      tally,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_elections`
+
+var UsaccElectionsElectionKindValues = []string{"priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"}
+var UsaccElectionsStatusValues = []string{"draft", "open", "sealed", "tallying", "certified", "void", "archived"}
+
+type UsaccElectionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	StageId *uuid.UUID `gorm:"column:stage_id;type:uuid" json:"stageId,omitempty"`
+	ElectionKind string `gorm:"column:election_kind;type:varchar(48);not null" json:"electionKind"`
+	Title string `gorm:"column:title;type:varchar(220);not null" json:"title"`
+	Status string `gorm:"column:status;type:varchar(32);default:'draft';not null" json:"status"`
+	QuorumCount int32 `gorm:"column:quorum_count;type:integer;default:1;not null" json:"quorumCount"`
+	ThresholdMicros int32 `gorm:"column:threshold_micros;type:integer;default:500000;not null" json:"thresholdMicros"`
+	OpensAt *time.Time `gorm:"column:opens_at;type:timestamptz" json:"opensAt,omitempty"`
+	ClosesAt *time.Time `gorm:"column:closes_at;type:timestamptz" json:"closesAt,omitempty"`
+	SealedUntil *time.Time `gorm:"column:sealed_until;type:timestamptz" json:"sealedUntil,omitempty"`
+	Tally datatypes.JSON `gorm:"column:tally;type:jsonb;default:'{}'::jsonb;not null" json:"tally"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccElectionsGorm) TableName() string { return UsaccElectionsTable }
+
+func (value UsaccElectionsGorm) Validate() error {
+	if !containsString(UsaccElectionsElectionKindValues, value.ElectionKind) { return errors.New("unsupported usacc_elections.election_kind") }
+	if len([]byte(value.Title)) > 220 { return errors.New("usacc_elections.title exceeds 220 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_elections.title is below 1 bytes") }
+	if !containsString(UsaccElectionsStatusValues, value.Status) { return errors.New("unsupported usacc_elections.status") }
+	if value.QuorumCount < 1 { return errors.New("usacc_elections.quorum_count is below the minimum") }
+	if value.QuorumCount > 1000000 { return errors.New("usacc_elections.quorum_count is above the maximum") }
+	if value.ThresholdMicros < 1 { return errors.New("usacc_elections.threshold_micros is below the minimum") }
+	if value.ThresholdMicros > 1000000 { return errors.New("usacc_elections.threshold_micros is above the maximum") }
+	if !validateJSONString(value.Tally) { return errors.New("usacc_elections.tally must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_elections.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccVotesTable = "usacc_votes"
+const UsaccVotesSelectSQL = `select
+      id::text as id,
+      election_id::text as election_id,
+      case_id::text as case_id,
+      voter_user_id::text as voter_user_id,
+      vote_kind,
+      vote_value,
+      weight_micros,
+      commitment_hash,
+      sealed_payload,
+      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revealed_at,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_votes`
+
+var UsaccVotesVoteKindValues = []string{"choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"}
+
+type UsaccVotesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ElectionId uuid.UUID `gorm:"column:election_id;type:uuid;not null" json:"electionId"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	VoterUserId uuid.UUID `gorm:"column:voter_user_id;type:uuid;not null" json:"voterUserId"`
+	VoteKind string `gorm:"column:vote_kind;type:varchar(48);default:'choice';not null" json:"voteKind"`
+	VoteValue string `gorm:"column:vote_value;type:varchar(80);not null" json:"voteValue"`
+	WeightMicros int32 `gorm:"column:weight_micros;type:integer;default:1000000;not null" json:"weightMicros"`
+	CommitmentHash *string `gorm:"column:commitment_hash;type:varchar(128)" json:"commitmentHash,omitempty"`
+	SealedPayload *datatypes.JSON `gorm:"column:sealed_payload;type:jsonb" json:"sealedPayload,omitempty"`
+	RevealedAt *time.Time `gorm:"column:revealed_at;type:timestamptz" json:"revealedAt,omitempty"`
+	ContractDigest *string `gorm:"column:contract_digest;type:varchar(160)" json:"contractDigest,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccVotesGorm) TableName() string { return UsaccVotesTable }
+
+func (value UsaccVotesGorm) Validate() error {
+	if !containsString(UsaccVotesVoteKindValues, value.VoteKind) { return errors.New("unsupported usacc_votes.vote_kind") }
+	if !usaccVotesVoteValuePattern.MatchString(value.VoteValue) { return errors.New("usacc_votes.vote_value does not match the required pattern") }
+	if value.WeightMicros < 0 { return errors.New("usacc_votes.weight_micros is below the minimum") }
+	if value.WeightMicros > 1000000000 { return errors.New("usacc_votes.weight_micros is above the maximum") }
+	if value.CommitmentHash != nil {
+		if !usaccVotesCommitmentHashPattern.MatchString(*value.CommitmentHash) { return errors.New("usacc_votes.commitment_hash does not match the required pattern") }
+	}
+	if value.SealedPayload != nil {
+		if !validateJSONString(*value.SealedPayload) { return errors.New("usacc_votes.sealed_payload must be valid JSON") }
+	}
+	if value.ContractDigest != nil {
+		if len([]byte(*value.ContractDigest)) > 160 { return errors.New("usacc_votes.contract_digest exceeds 160 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_votes.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccEscrowAccountsTable = "usacc_escrow_accounts"
+const UsaccEscrowAccountsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      provider,
+      provider_account_ref,
+      currency,
+      target_amount_cents,
+      committed_amount_cents,
+      captured_amount_cents,
+      disbursed_amount_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_escrow_accounts`
+
+var UsaccEscrowAccountsStatusValues = []string{"pending", "open", "funding", "locked", "disbursing", "closed", "canceled"}
+var UsaccEscrowAccountsProviderValues = []string{"stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"}
+
+type UsaccEscrowAccountsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `gorm:"column:case_id;type:uuid;not null" json:"caseId"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	Provider string `gorm:"column:provider;type:varchar(48);default:'stripe_treasury';not null" json:"provider"`
+	ProviderAccountRef *string `gorm:"column:provider_account_ref;type:varchar(240)" json:"providerAccountRef,omitempty"`
+	Currency string `gorm:"column:currency;type:varchar(12);default:'USD';not null" json:"currency"`
+	TargetAmountCents int64 `gorm:"column:target_amount_cents;type:bigint;default:0;not null" json:"targetAmountCents"`
+	CommittedAmountCents int64 `gorm:"column:committed_amount_cents;type:bigint;default:0;not null" json:"committedAmountCents"`
+	CapturedAmountCents int64 `gorm:"column:captured_amount_cents;type:bigint;default:0;not null" json:"capturedAmountCents"`
+	DisbursedAmountCents int64 `gorm:"column:disbursed_amount_cents;type:bigint;default:0;not null" json:"disbursedAmountCents"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccEscrowAccountsGorm) TableName() string { return UsaccEscrowAccountsTable }
+
+func (value UsaccEscrowAccountsGorm) Validate() error {
+	if !containsString(UsaccEscrowAccountsStatusValues, value.Status) { return errors.New("unsupported usacc_escrow_accounts.status") }
+	if !containsString(UsaccEscrowAccountsProviderValues, value.Provider) { return errors.New("unsupported usacc_escrow_accounts.provider") }
+	if value.ProviderAccountRef != nil {
+		if len([]byte(*value.ProviderAccountRef)) > 240 { return errors.New("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes") }
+	}
+	if !usaccEscrowAccountsCurrencyPattern.MatchString(value.Currency) { return errors.New("usacc_escrow_accounts.currency does not match the required pattern") }
+	if value.TargetAmountCents < 0 { return errors.New("usacc_escrow_accounts.target_amount_cents is below the minimum") }
+	if value.CommittedAmountCents < 0 { return errors.New("usacc_escrow_accounts.committed_amount_cents is below the minimum") }
+	if value.CapturedAmountCents < 0 { return errors.New("usacc_escrow_accounts.captured_amount_cents is below the minimum") }
+	if value.DisbursedAmountCents < 0 { return errors.New("usacc_escrow_accounts.disbursed_amount_cents is below the minimum") }
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_escrow_accounts.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccLedgerEntriesTable = "usacc_ledger_entries"
+const UsaccLedgerEntriesSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      escrow_account_id::text as escrow_account_id,
+      user_id::text as user_id,
+      entry_kind,
+      direction,
+      amount_cents,
+      currency,
+      provider_ref,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_ledger_entries`
+
+var UsaccLedgerEntriesEntryKindValues = []string{"pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"}
+var UsaccLedgerEntriesDirectionValues = []string{"debit", "credit"}
+
+type UsaccLedgerEntriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	EscrowAccountId *uuid.UUID `gorm:"column:escrow_account_id;type:uuid" json:"escrowAccountId,omitempty"`
+	UserId *uuid.UUID `gorm:"column:user_id;type:uuid" json:"userId,omitempty"`
+	EntryKind string `gorm:"column:entry_kind;type:varchar(48);not null" json:"entryKind"`
+	Direction string `gorm:"column:direction;type:varchar(16);not null" json:"direction"`
+	AmountCents int64 `gorm:"column:amount_cents;type:bigint;not null" json:"amountCents"`
+	Currency string `gorm:"column:currency;type:varchar(12);default:'USD';not null" json:"currency"`
+	ProviderRef *string `gorm:"column:provider_ref;type:varchar(240)" json:"providerRef,omitempty"`
+	ContractDigest *string `gorm:"column:contract_digest;type:varchar(160)" json:"contractDigest,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (UsaccLedgerEntriesGorm) TableName() string { return UsaccLedgerEntriesTable }
+
+func (value UsaccLedgerEntriesGorm) Validate() error {
+	if !containsString(UsaccLedgerEntriesEntryKindValues, value.EntryKind) { return errors.New("unsupported usacc_ledger_entries.entry_kind") }
+	if !containsString(UsaccLedgerEntriesDirectionValues, value.Direction) { return errors.New("unsupported usacc_ledger_entries.direction") }
+	if value.AmountCents < 0 { return errors.New("usacc_ledger_entries.amount_cents is below the minimum") }
+	if !usaccLedgerEntriesCurrencyPattern.MatchString(value.Currency) { return errors.New("usacc_ledger_entries.currency does not match the required pattern") }
+	if value.ProviderRef != nil {
+		if len([]byte(*value.ProviderRef)) > 240 { return errors.New("usacc_ledger_entries.provider_ref exceeds 240 bytes") }
+	}
+	if value.ContractDigest != nil {
+		if len([]byte(*value.ContractDigest)) > 160 { return errors.New("usacc_ledger_entries.contract_digest exceeds 160 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("usacc_ledger_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccContractOperationsTable = "usacc_contract_operations"
+const UsaccContractOperationsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      election_id::text as election_id,
+      vote_id::text as vote_id,
+      request_id,
+      operation_kind,
+      status,
+      program_id,
+      digest,
+      envelope,
+      response,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_contract_operations`
+
+var UsaccContractOperationsOperationKindValues = []string{"validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"}
+var UsaccContractOperationsStatusValues = []string{"pending", "validated", "simulated", "sent", "failed", "canceled"}
+
+type UsaccContractOperationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	ElectionId *uuid.UUID `gorm:"column:election_id;type:uuid" json:"electionId,omitempty"`
+	VoteId *uuid.UUID `gorm:"column:vote_id;type:uuid" json:"voteId,omitempty"`
+	RequestId string `gorm:"column:request_id;type:varchar(160);not null" json:"requestId"`
+	OperationKind string `gorm:"column:operation_kind;type:varchar(48);not null" json:"operationKind"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	ProgramId *string `gorm:"column:program_id;type:varchar(128)" json:"programId,omitempty"`
+	Digest *string `gorm:"column:digest;type:varchar(160)" json:"digest,omitempty"`
+	Envelope datatypes.JSON `gorm:"column:envelope;type:jsonb;default:'{}'::jsonb;not null" json:"envelope"`
+	Response datatypes.JSON `gorm:"column:response;type:jsonb;default:'{}'::jsonb;not null" json:"response"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccContractOperationsGorm) TableName() string { return UsaccContractOperationsTable }
+
+func (value UsaccContractOperationsGorm) Validate() error {
+	if len([]byte(value.RequestId)) > 160 { return errors.New("usacc_contract_operations.request_id exceeds 160 bytes") }
+	if len([]byte(value.RequestId)) < 1 { return errors.New("usacc_contract_operations.request_id is below 1 bytes") }
+	if !containsString(UsaccContractOperationsOperationKindValues, value.OperationKind) { return errors.New("unsupported usacc_contract_operations.operation_kind") }
+	if !containsString(UsaccContractOperationsStatusValues, value.Status) { return errors.New("unsupported usacc_contract_operations.status") }
+	if value.ProgramId != nil {
+		if len([]byte(*value.ProgramId)) > 128 { return errors.New("usacc_contract_operations.program_id exceeds 128 bytes") }
+	}
+	if value.Digest != nil {
+		if len([]byte(*value.Digest)) > 160 { return errors.New("usacc_contract_operations.digest exceeds 160 bytes") }
+	}
+	if !validateJSONString(value.Envelope) { return errors.New("usacc_contract_operations.envelope must be valid JSON") }
+	if !validateJSONString(value.Response) { return errors.New("usacc_contract_operations.response must be valid JSON") }
+	return nil
+}
+
+const UsaccSimulationRunsTable = "usacc_simulation_runs"
+const UsaccSimulationRunsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      mode,
+      seed,
+      horizon_days,
+      actor_count,
+      event_count,
+      metrics,
+      trace,
+      input,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_simulation_runs`
+
+var UsaccSimulationRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "canceled"}
+var UsaccSimulationRunsModeValues = []string{"sim", "live_shadow", "replay"}
+
+type UsaccSimulationRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
+	Mode string `gorm:"column:mode;type:varchar(32);default:'sim';not null" json:"mode"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	HorizonDays int32 `gorm:"column:horizon_days;type:integer;default:180;not null" json:"horizonDays"`
+	ActorCount int32 `gorm:"column:actor_count;type:integer;default:0;not null" json:"actorCount"`
+	EventCount int32 `gorm:"column:event_count;type:integer;default:0;not null" json:"eventCount"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	Trace datatypes.JSON `gorm:"column:trace;type:jsonb;default:'[]'::jsonb;not null" json:"trace"`
+	Input datatypes.JSON `gorm:"column:input;type:jsonb;default:'{}'::jsonb;not null" json:"input"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (UsaccSimulationRunsGorm) TableName() string { return UsaccSimulationRunsTable }
+
+func (value UsaccSimulationRunsGorm) Validate() error {
+	if !containsString(UsaccSimulationRunsStatusValues, value.Status) { return errors.New("unsupported usacc_simulation_runs.status") }
+	if !containsString(UsaccSimulationRunsModeValues, value.Mode) { return errors.New("unsupported usacc_simulation_runs.mode") }
+	if value.HorizonDays < 1 { return errors.New("usacc_simulation_runs.horizon_days is below the minimum") }
+	if value.HorizonDays > 3650 { return errors.New("usacc_simulation_runs.horizon_days is above the maximum") }
+	if value.ActorCount < 0 { return errors.New("usacc_simulation_runs.actor_count is below the minimum") }
+	if value.EventCount < 0 { return errors.New("usacc_simulation_runs.event_count is below the minimum") }
+	if !validateJSONString(value.Metrics) { return errors.New("usacc_simulation_runs.metrics must be valid JSON") }
+	if !validateJSONString(value.Trace) { return errors.New("usacc_simulation_runs.trace must be valid JSON") }
+	if !validateJSONString(value.Input) { return errors.New("usacc_simulation_runs.input must be valid JSON") }
+	return nil
+}
+
+const UsaccAuditEventsTable = "usacc_audit_events"
+const UsaccAuditEventsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      actor_user_id::text as actor_user_id,
+      event_type,
+      event_hash,
+      source,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_audit_events`
+
+type UsaccAuditEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `gorm:"column:case_id;type:uuid" json:"caseId,omitempty"`
+	ActorUserId *uuid.UUID `gorm:"column:actor_user_id;type:uuid" json:"actorUserId,omitempty"`
+	EventType string `gorm:"column:event_type;type:varchar(96);not null" json:"eventType"`
+	EventHash string `gorm:"column:event_hash;type:varchar(128);not null" json:"eventHash"`
+	Source string `gorm:"column:source;type:varchar(80);default:'usacc-rest-api-backend-rs';not null" json:"source"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (UsaccAuditEventsGorm) TableName() string { return UsaccAuditEventsTable }
+
+func (value UsaccAuditEventsGorm) Validate() error {
+	if !usaccAuditEventsEventTypePattern.MatchString(value.EventType) { return errors.New("usacc_audit_events.event_type does not match the required pattern") }
+	if !usaccAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("usacc_audit_events.event_hash does not match the required pattern") }
+	if !usaccAuditEventsSourcePattern.MatchString(value.Source) { return errors.New("usacc_audit_events.source does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("usacc_audit_events.payload must be valid JSON") }
 	return nil
 }
 

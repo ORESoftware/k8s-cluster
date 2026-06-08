@@ -3996,3 +3996,511 @@ export class BenefactorMarketingCallInsightsEntity {
   updatedAt!: Date;
 
 }
+
+@Index("usacc_users_external_subject_uq", ["externalSubject"], { unique: true, where: "external_subject is not null" })
+@Index("usacc_users_email_hash_uq", ["emailHash"], { unique: true, where: "email_hash is not null" })
+// usacc_users_status_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_users_roles_gin_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_users" })
+export class UsaccUsersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "external_subject", type: "varchar", length: 240, nullable: true })
+  externalSubject!: string | null;
+
+  @Column({ name: "email_hash", type: "varchar", length: 64, nullable: true })
+  emailHash!: string | null;
+
+  @Column({ name: "display_name", type: "varchar", length: 200 })
+  displayName!: string;
+
+  @Column({ name: "user_kind", type: "varchar", length: 48, default: () => "'natural_person'" })
+  userKind!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "kyc_level", type: "varchar", length: 32, default: () => "'none'" })
+  kycLevel!: string;
+
+  @Column({ name: "roles", type: "jsonb", default: () => "'{}'::jsonb" })
+  roles!: Record<string, unknown>;
+
+  @Column({ name: "is_legal_entity", type: "boolean", default: () => "false" })
+  isLegalEntity!: boolean;
+
+  @Column({ name: "legal_region", type: "varchar", length: 64, nullable: true })
+  legalRegion!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_cases_case_number_uq", ["caseNumber"], { unique: true })
+// usacc_cases_status_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_cases_plaintiff_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_cases" })
+export class UsaccCasesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_number", type: "varchar", length: 80 })
+  caseNumber!: string;
+
+  @Column({ name: "title", type: "varchar", length: 240 })
+  title!: string;
+
+  @Column({ name: "status", type: "varchar", length: 40, default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "filing_tier", type: "varchar", length: 40, default: () => "'screen'" })
+  filingTier!: string;
+
+  @Column({ name: "plaintiff_user_id", type: "uuid", nullable: true })
+  plaintiffUserId!: string | null;
+
+  @Column({ name: "defendant_summary", type: "text" })
+  defendantSummary!: string;
+
+  @Column({ name: "conduct_summary", type: "text" })
+  conductSummary!: string;
+
+  @Column({ name: "conduct_fingerprint", type: "varchar", length: 128, nullable: true })
+  conductFingerprint!: string | null;
+
+  @Column({ name: "conduct_window_start", type: "varchar", length: 10, nullable: true })
+  conductWindowStart!: string | null;
+
+  @Column({ name: "conduct_window_end", type: "varchar", length: 10, nullable: true })
+  conductWindowEnd!: string | null;
+
+  @Column({ name: "priority_score_micros", type: "integer", default: () => "0" })
+  priorityScoreMicros!: number;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "opened_at", type: "timestamptz", nullable: true })
+  openedAt!: Date | null;
+
+  @Column({ name: "closed_at", type: "timestamptz", nullable: true })
+  closedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_case_participants_case_user_role_uq", ["caseId", "userId", "role"], { unique: true })
+// usacc_case_participants_user_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("usacc_case_participants_case_role_idx", ["caseId", "role", "status"])
+@Entity({ name: "usacc_case_participants" })
+export class UsaccCaseParticipantsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid" })
+  caseId!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "role", type: "varchar", length: 48 })
+  role!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "granted_by", type: "uuid", nullable: true })
+  grantedBy!: string | null;
+
+  @Column({ name: "granted_by_policy_version", type: "varchar", length: 120, nullable: true })
+  grantedByPolicyVersion!: string | null;
+
+  @Column({ name: "ended_at", type: "timestamptz", nullable: true })
+  endedAt!: Date | null;
+
+  @Column({ name: "ended_reason", type: "varchar", length: 240, nullable: true })
+  endedReason!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_case_stages_case_stage_key_uq", ["caseId", "stageKey"], { unique: true })
+@Index("usacc_case_stages_case_order_idx", ["caseId", "stageOrder"])
+@Entity({ name: "usacc_case_stages" })
+export class UsaccCaseStagesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid" })
+  caseId!: string;
+
+  @Column({ name: "stage_key", type: "varchar", length: 64 })
+  stageKey!: string;
+
+  @Column({ name: "stage_order", type: "integer" })
+  stageOrder!: number;
+
+  @Column({ name: "title", type: "varchar", length: 200 })
+  title!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "assigned_user_id", type: "uuid", nullable: true })
+  assignedUserId!: string | null;
+
+  @Column({ name: "opened_at", type: "timestamptz", nullable: true })
+  openedAt!: Date | null;
+
+  @Column({ name: "due_at", type: "timestamptz", nullable: true })
+  dueAt!: Date | null;
+
+  @Column({ name: "closed_at", type: "timestamptz", nullable: true })
+  closedAt!: Date | null;
+
+  @Column({ name: "decision_summary", type: "text", nullable: true })
+  decisionSummary!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// usacc_elections_case_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_elections_stage_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_elections" })
+export class UsaccElectionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "stage_id", type: "uuid", nullable: true })
+  stageId!: string | null;
+
+  @Column({ name: "election_kind", type: "varchar", length: 48 })
+  electionKind!: string;
+
+  @Column({ name: "title", type: "varchar", length: 220 })
+  title!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "quorum_count", type: "integer", default: () => "1" })
+  quorumCount!: number;
+
+  @Column({ name: "threshold_micros", type: "integer", default: () => "500000" })
+  thresholdMicros!: number;
+
+  @Column({ name: "opens_at", type: "timestamptz", nullable: true })
+  opensAt!: Date | null;
+
+  @Column({ name: "closes_at", type: "timestamptz", nullable: true })
+  closesAt!: Date | null;
+
+  @Column({ name: "sealed_until", type: "timestamptz", nullable: true })
+  sealedUntil!: Date | null;
+
+  @Column({ name: "tally", type: "jsonb", default: () => "'{}'::jsonb" })
+  tally!: Record<string, unknown>;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_votes_election_voter_uq", ["electionId", "voterUserId"], { unique: true })
+// usacc_votes_case_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_votes_voter_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_votes" })
+export class UsaccVotesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "election_id", type: "uuid" })
+  electionId!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "voter_user_id", type: "uuid" })
+  voterUserId!: string;
+
+  @Column({ name: "vote_kind", type: "varchar", length: 48, default: () => "'choice'" })
+  voteKind!: string;
+
+  @Column({ name: "vote_value", type: "varchar", length: 80 })
+  voteValue!: string;
+
+  @Column({ name: "weight_micros", type: "integer", default: () => "1000000" })
+  weightMicros!: number;
+
+  @Column({ name: "commitment_hash", type: "varchar", length: 128, nullable: true })
+  commitmentHash!: string | null;
+
+  @Column({ name: "sealed_payload", type: "jsonb", nullable: true })
+  sealedPayload!: Record<string, unknown> | null;
+
+  @Column({ name: "revealed_at", type: "timestamptz", nullable: true })
+  revealedAt!: Date | null;
+
+  @Column({ name: "contract_digest", type: "varchar", length: 160, nullable: true })
+  contractDigest!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_escrow_accounts_case_provider_uq", ["caseId", "provider"], { unique: true })
+@Entity({ name: "usacc_escrow_accounts" })
+export class UsaccEscrowAccountsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid" })
+  caseId!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "provider", type: "varchar", length: 48, default: () => "'stripe_treasury'" })
+  provider!: string;
+
+  @Column({ name: "provider_account_ref", type: "varchar", length: 240, nullable: true })
+  providerAccountRef!: string | null;
+
+  @Column({ name: "currency", type: "varchar", length: 12, default: () => "'USD'" })
+  currency!: string;
+
+  @Column({ name: "target_amount_cents", type: "bigint", default: () => "0" })
+  targetAmountCents!: number;
+
+  @Column({ name: "committed_amount_cents", type: "bigint", default: () => "0" })
+  committedAmountCents!: number;
+
+  @Column({ name: "captured_amount_cents", type: "bigint", default: () => "0" })
+  capturedAmountCents!: number;
+
+  @Column({ name: "disbursed_amount_cents", type: "bigint", default: () => "0" })
+  disbursedAmountCents!: number;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// usacc_ledger_entries_case_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_ledger_entries_user_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_ledger_entries" })
+export class UsaccLedgerEntriesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "escrow_account_id", type: "uuid", nullable: true })
+  escrowAccountId!: string | null;
+
+  @Column({ name: "user_id", type: "uuid", nullable: true })
+  userId!: string | null;
+
+  @Column({ name: "entry_kind", type: "varchar", length: 48 })
+  entryKind!: string;
+
+  @Column({ name: "direction", type: "varchar", length: 16 })
+  direction!: string;
+
+  @Column({ name: "amount_cents", type: "bigint" })
+  amountCents!: number;
+
+  @Column({ name: "currency", type: "varchar", length: 12, default: () => "'USD'" })
+  currency!: string;
+
+  @Column({ name: "provider_ref", type: "varchar", length: 240, nullable: true })
+  providerRef!: string | null;
+
+  @Column({ name: "contract_digest", type: "varchar", length: 160, nullable: true })
+  contractDigest!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+@Index("usacc_contract_operations_request_id_uq", ["requestId"], { unique: true })
+// usacc_contract_operations_case_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_contract_operations" })
+export class UsaccContractOperationsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "election_id", type: "uuid", nullable: true })
+  electionId!: string | null;
+
+  @Column({ name: "vote_id", type: "uuid", nullable: true })
+  voteId!: string | null;
+
+  @Column({ name: "request_id", type: "varchar", length: 160 })
+  requestId!: string;
+
+  @Column({ name: "operation_kind", type: "varchar", length: 48 })
+  operationKind!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "program_id", type: "varchar", length: 128, nullable: true })
+  programId!: string | null;
+
+  @Column({ name: "digest", type: "varchar", length: 160, nullable: true })
+  digest!: string | null;
+
+  @Column({ name: "envelope", type: "jsonb", default: () => "'{}'::jsonb" })
+  envelope!: Record<string, unknown>;
+
+  @Column({ name: "response", type: "jsonb", default: () => "'{}'::jsonb" })
+  response!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// usacc_simulation_runs_case_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// usacc_simulation_runs_status_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_simulation_runs" })
+export class UsaccSimulationRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'queued'" })
+  status!: string;
+
+  @Column({ name: "mode", type: "varchar", length: 32, default: () => "'sim'" })
+  mode!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "horizon_days", type: "integer", default: () => "180" })
+  horizonDays!: number;
+
+  @Column({ name: "actor_count", type: "integer", default: () => "0" })
+  actorCount!: number;
+
+  @Column({ name: "event_count", type: "integer", default: () => "0" })
+  eventCount!: number;
+
+  @Column({ name: "metrics", type: "jsonb", default: () => "'{}'::jsonb" })
+  metrics!: Record<string, unknown>;
+
+  @Column({ name: "trace", type: "jsonb", default: () => "'[]'::jsonb" })
+  trace!: unknown[];
+
+  @Column({ name: "input", type: "jsonb", default: () => "'{}'::jsonb" })
+  input!: Record<string, unknown>;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("usacc_audit_events_hash_uq", ["eventHash"], { unique: true })
+// usacc_audit_events_case_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "usacc_audit_events" })
+export class UsaccAuditEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "case_id", type: "uuid", nullable: true })
+  caseId!: string | null;
+
+  @Column({ name: "actor_user_id", type: "uuid", nullable: true })
+  actorUserId!: string | null;
+
+  @Column({ name: "event_type", type: "varchar", length: 96 })
+  eventType!: string;
+
+  @Column({ name: "event_hash", type: "varchar", length: 128 })
+  eventHash!: string;
+
+  @Column({ name: "source", type: "varchar", length: 80, default: () => "'usacc-rest-api-backend-rs'" })
+  source!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}

@@ -4146,3 +4146,507 @@ alter table if exists benefactor_marketing_call_insights
 alter table if exists benefactor_marketing_call_insights
   add constraint benefactor_marketing_call_insights_opportunity_fk
   foreign key (opportunity_id) references benefactor_marketing_opportunities(id);
+
+create table if not exists usacc_users (
+  id uuid primary key default gen_random_uuid(),
+  external_subject varchar(240),
+  email_hash varchar(64),
+  display_name varchar(200) not null,
+  user_kind varchar(48) default 'natural_person' not null,
+  status varchar(32) default 'active' not null,
+  kyc_level varchar(32) default 'none' not null,
+  roles jsonb default '{}'::jsonb not null,
+  is_legal_entity boolean default false not null,
+  legal_region varchar(64),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_users_external_subject_size_chk
+    check (external_subject is null or octet_length(external_subject) between 1 and 240),
+  constraint usacc_users_email_hash_chk
+    check (email_hash is null or email_hash ~ '^[a-f0-9]{64}$'),
+  constraint usacc_users_display_name_size_chk
+    check (octet_length(display_name) between 1 and 200),
+  constraint usacc_users_kind_chk
+    check (user_kind in ('natural_person', 'legal_entity', 'service_account', 'sim_agent')),
+  constraint usacc_users_status_chk
+    check (status in ('active', 'pending', 'suspended', 'banned', 'alumni', 'archived')),
+  constraint usacc_users_kyc_level_chk
+    check (kyc_level in ('none', 'light', 'medium', 'high')),
+  constraint usacc_users_legal_region_format_chk
+    check (legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'),
+  constraint usacc_users_roles_object_chk
+    check (jsonb_typeof(roles) = 'object'),
+  constraint usacc_users_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_users_external_subject_uq
+  on usacc_users (external_subject)
+  where external_subject is not null;
+
+create unique index if not exists usacc_users_email_hash_uq
+  on usacc_users (email_hash)
+  where email_hash is not null;
+
+create index if not exists usacc_users_status_updated_at_idx
+  on usacc_users (status, updated_at desc);
+
+create index if not exists usacc_users_roles_gin_idx
+  on usacc_users using gin (roles);
+
+create table if not exists usacc_cases (
+  id uuid primary key default gen_random_uuid(),
+  case_number varchar(80) not null,
+  title varchar(240) not null,
+  status varchar(40) default 'draft' not null,
+  filing_tier varchar(40) default 'screen' not null,
+  plaintiff_user_id uuid,
+  defendant_summary text not null,
+  conduct_summary text not null,
+  conduct_fingerprint varchar(128),
+  conduct_window_start varchar(10),
+  conduct_window_end varchar(10),
+  priority_score_micros integer default 0 not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  opened_at timestamptz,
+  closed_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_cases_case_number_format_chk
+    check (case_number ~ '^[A-Za-z0-9._:/-]{1,80}$'),
+  constraint usacc_cases_title_size_chk
+    check (octet_length(title) between 1 and 240),
+  constraint usacc_cases_status_chk
+    check (status in ('draft', 'signature_collection', 'screening', 'inquiry', 'admission_review', 'trial', 'appeal', 'resolved', 'canceled', 'archived')),
+  constraint usacc_cases_filing_tier_chk
+    check (filing_tier in ('screen', 'inquiry', 'trial_1', 'trial_2', 'trial_3', 'trial_5', 'trial_10')),
+  constraint usacc_cases_defendant_summary_size_chk
+    check (octet_length(defendant_summary) between 1 and 4000),
+  constraint usacc_cases_conduct_summary_size_chk
+    check (octet_length(conduct_summary) between 1 and 12000),
+  constraint usacc_cases_conduct_fingerprint_chk
+    check (conduct_fingerprint is null or conduct_fingerprint ~ '^[A-Za-z0-9._:/-]{1,128}$'),
+  constraint usacc_cases_conduct_window_start_chk
+    check (conduct_window_start is null or conduct_window_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint usacc_cases_conduct_window_end_chk
+    check (conduct_window_end is null or conduct_window_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint usacc_cases_priority_score_chk
+    check (priority_score_micros between 0 and 1000000),
+  constraint usacc_cases_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_cases_case_number_uq
+  on usacc_cases (case_number);
+
+create index if not exists usacc_cases_status_updated_at_idx
+  on usacc_cases (status, updated_at desc);
+
+create index if not exists usacc_cases_plaintiff_idx
+  on usacc_cases (plaintiff_user_id, created_at desc)
+  where plaintiff_user_id is not null;
+
+alter table if exists usacc_cases
+  add constraint usacc_cases_plaintiff_fk
+  foreign key (plaintiff_user_id) references usacc_users(id);
+
+create table if not exists usacc_case_participants (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null,
+  user_id uuid not null,
+  role varchar(48) not null,
+  status varchar(32) default 'active' not null,
+  granted_by uuid,
+  granted_by_policy_version varchar(120),
+  ended_at timestamptz,
+  ended_reason varchar(240),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_case_participants_role_chk
+    check (role in ('plaintiff', 'defendant', 'sponsor', 'witness', 'judge', 'panel_juror', 'appeal_judge', 'presiding_juror', 'paralegal', 'investigator', 'intake_reviewer', 'clerk_of_court', 'compliance_monitor', 'counsel', 'oversight_board', 'auditor', 'ombuds')),
+  constraint usacc_case_participants_status_chk
+    check (status in ('active', 'pending', 'declined', 'suspended', 'ended', 'banned')),
+  constraint usacc_case_participants_policy_version_chk
+    check (granted_by_policy_version is null or granted_by_policy_version ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint usacc_case_participants_ended_reason_size_chk
+    check (ended_reason is null or octet_length(ended_reason) <= 240),
+  constraint usacc_case_participants_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_case_participants_case_user_role_uq
+  on usacc_case_participants (case_id, user_id, role);
+
+create index if not exists usacc_case_participants_user_idx
+  on usacc_case_participants (user_id, status, updated_at desc);
+
+create index if not exists usacc_case_participants_case_role_idx
+  on usacc_case_participants (case_id, role, status);
+
+alter table if exists usacc_case_participants
+  add constraint usacc_case_participants_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_case_participants
+  add constraint usacc_case_participants_user_fk
+  foreign key (user_id) references usacc_users(id);
+
+alter table if exists usacc_case_participants
+  add constraint usacc_case_participants_granted_by_fk
+  foreign key (granted_by) references usacc_users(id);
+
+create table if not exists usacc_case_stages (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null,
+  stage_key varchar(64) not null,
+  stage_order integer not null,
+  title varchar(200) not null,
+  status varchar(32) default 'pending' not null,
+  assigned_user_id uuid,
+  opened_at timestamptz,
+  due_at timestamptz,
+  closed_at timestamptz,
+  decision_summary text,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_case_stages_stage_key_format_chk
+    check (stage_key ~ '^[A-Za-z0-9._:/-]{1,64}$'),
+  constraint usacc_case_stages_stage_order_chk
+    check (stage_order between 0 and 1000),
+  constraint usacc_case_stages_title_size_chk
+    check (octet_length(title) between 1 and 200),
+  constraint usacc_case_stages_status_chk
+    check (status in ('pending', 'open', 'blocked', 'complete', 'skipped', 'canceled')),
+  constraint usacc_case_stages_decision_summary_size_chk
+    check (decision_summary is null or octet_length(decision_summary) <= 12000),
+  constraint usacc_case_stages_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_case_stages_case_stage_key_uq
+  on usacc_case_stages (case_id, stage_key);
+
+create index if not exists usacc_case_stages_case_order_idx
+  on usacc_case_stages (case_id, stage_order);
+
+alter table if exists usacc_case_stages
+  add constraint usacc_case_stages_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_case_stages
+  add constraint usacc_case_stages_assigned_user_fk
+  foreign key (assigned_user_id) references usacc_users(id);
+
+create table if not exists usacc_elections (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid,
+  stage_id uuid,
+  election_kind varchar(48) not null,
+  title varchar(220) not null,
+  status varchar(32) default 'draft' not null,
+  quorum_count integer default 1 not null,
+  threshold_micros integer default 500000 not null,
+  opens_at timestamptz,
+  closes_at timestamptz,
+  sealed_until timestamptz,
+  tally jsonb default '{}'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_elections_kind_chk
+    check (election_kind in ('priority', 'admission', 'panel_verdict', 'appeal', 'oversight', 'policy', 'assignment_acceptance')),
+  constraint usacc_elections_title_size_chk
+    check (octet_length(title) between 1 and 220),
+  constraint usacc_elections_status_chk
+    check (status in ('draft', 'open', 'sealed', 'tallying', 'certified', 'void', 'archived')),
+  constraint usacc_elections_quorum_chk
+    check (quorum_count between 1 and 1000000),
+  constraint usacc_elections_threshold_chk
+    check (threshold_micros between 1 and 1000000),
+  constraint usacc_elections_tally_object_chk
+    check (jsonb_typeof(tally) = 'object'),
+  constraint usacc_elections_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists usacc_elections_case_status_idx
+  on usacc_elections (case_id, status, updated_at desc)
+  where case_id is not null;
+
+create index if not exists usacc_elections_stage_idx
+  on usacc_elections (stage_id, created_at desc)
+  where stage_id is not null;
+
+alter table if exists usacc_elections
+  add constraint usacc_elections_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_elections
+  add constraint usacc_elections_stage_fk
+  foreign key (stage_id) references usacc_case_stages(id);
+
+create table if not exists usacc_votes (
+  id uuid primary key default gen_random_uuid(),
+  election_id uuid not null,
+  case_id uuid,
+  voter_user_id uuid not null,
+  vote_kind varchar(48) default 'choice' not null,
+  vote_value varchar(80) not null,
+  weight_micros integer default 1000000 not null,
+  commitment_hash varchar(128),
+  sealed_payload jsonb,
+  revealed_at timestamptz,
+  contract_digest varchar(160),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_votes_kind_chk
+    check (vote_kind in ('choice', 'priority_dollar_weighted', 'verdict', 'approval', 'assignment_response')),
+  constraint usacc_votes_vote_value_format_chk
+    check (vote_value ~ '^[A-Za-z0-9._:/-]{1,80}$'),
+  constraint usacc_votes_weight_chk
+    check (weight_micros between 0 and 1000000000),
+  constraint usacc_votes_commitment_hash_chk
+    check (commitment_hash is null or commitment_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'),
+  constraint usacc_votes_sealed_payload_object_chk
+    check (sealed_payload is null or jsonb_typeof(sealed_payload) = 'object'),
+  constraint usacc_votes_contract_digest_size_chk
+    check (contract_digest is null or octet_length(contract_digest) <= 160),
+  constraint usacc_votes_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_votes_election_voter_uq
+  on usacc_votes (election_id, voter_user_id);
+
+create index if not exists usacc_votes_case_idx
+  on usacc_votes (case_id, created_at desc)
+  where case_id is not null;
+
+create index if not exists usacc_votes_voter_idx
+  on usacc_votes (voter_user_id, created_at desc);
+
+alter table if exists usacc_votes
+  add constraint usacc_votes_election_fk
+  foreign key (election_id) references usacc_elections(id);
+
+alter table if exists usacc_votes
+  add constraint usacc_votes_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_votes
+  add constraint usacc_votes_voter_fk
+  foreign key (voter_user_id) references usacc_users(id);
+
+create table if not exists usacc_escrow_accounts (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null,
+  status varchar(32) default 'pending' not null,
+  provider varchar(48) default 'stripe_treasury' not null,
+  provider_account_ref varchar(240),
+  currency varchar(12) default 'USD' not null,
+  target_amount_cents bigint default 0 not null,
+  committed_amount_cents bigint default 0 not null,
+  captured_amount_cents bigint default 0 not null,
+  disbursed_amount_cents bigint default 0 not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_escrow_accounts_status_chk
+    check (status in ('pending', 'open', 'funding', 'locked', 'disbursing', 'closed', 'canceled')),
+  constraint usacc_escrow_accounts_provider_chk
+    check (provider in ('stripe_treasury', 'stripe_connect', 'column', 'evolve', 'mercury', 'trust_company', 'manual')),
+  constraint usacc_escrow_accounts_provider_ref_size_chk
+    check (provider_account_ref is null or octet_length(provider_account_ref) <= 240),
+  constraint usacc_escrow_accounts_currency_chk
+    check (currency ~ '^[A-Z]{3,12}$'),
+  constraint usacc_escrow_accounts_money_chk
+    check (target_amount_cents >= 0 and committed_amount_cents >= 0 and captured_amount_cents >= 0 and disbursed_amount_cents >= 0),
+  constraint usacc_escrow_accounts_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists usacc_escrow_accounts_case_provider_uq
+  on usacc_escrow_accounts (case_id, provider);
+
+alter table if exists usacc_escrow_accounts
+  add constraint usacc_escrow_accounts_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+create table if not exists usacc_ledger_entries (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid,
+  escrow_account_id uuid,
+  user_id uuid,
+  entry_kind varchar(48) not null,
+  direction varchar(16) not null,
+  amount_cents bigint not null,
+  currency varchar(12) default 'USD' not null,
+  provider_ref varchar(240),
+  contract_digest varchar(160),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint usacc_ledger_entries_kind_chk
+    check (entry_kind in ('pledge', 'authorization', 'capture', 'refund', 'disbursement', 'fee', 'adjustment')),
+  constraint usacc_ledger_entries_direction_chk
+    check (direction in ('debit', 'credit')),
+  constraint usacc_ledger_entries_amount_chk
+    check (amount_cents >= 0),
+  constraint usacc_ledger_entries_currency_chk
+    check (currency ~ '^[A-Z]{3,12}$'),
+  constraint usacc_ledger_entries_provider_ref_size_chk
+    check (provider_ref is null or octet_length(provider_ref) <= 240),
+  constraint usacc_ledger_entries_contract_digest_size_chk
+    check (contract_digest is null or octet_length(contract_digest) <= 160),
+  constraint usacc_ledger_entries_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists usacc_ledger_entries_case_created_idx
+  on usacc_ledger_entries (case_id, created_at desc)
+  where case_id is not null;
+
+create index if not exists usacc_ledger_entries_user_created_idx
+  on usacc_ledger_entries (user_id, created_at desc)
+  where user_id is not null;
+
+alter table if exists usacc_ledger_entries
+  add constraint usacc_ledger_entries_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_ledger_entries
+  add constraint usacc_ledger_entries_escrow_fk
+  foreign key (escrow_account_id) references usacc_escrow_accounts(id);
+
+alter table if exists usacc_ledger_entries
+  add constraint usacc_ledger_entries_user_fk
+  foreign key (user_id) references usacc_users(id);
+
+create table if not exists usacc_contract_operations (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid,
+  election_id uuid,
+  vote_id uuid,
+  request_id varchar(160) not null,
+  operation_kind varchar(48) not null,
+  status varchar(32) default 'pending' not null,
+  program_id varchar(128),
+  digest varchar(160),
+  envelope jsonb default '{}'::jsonb not null,
+  response jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_contract_operations_request_id_size_chk
+    check (octet_length(request_id) between 1 and 160),
+  constraint usacc_contract_operations_kind_chk
+    check (operation_kind in ('validate_envelope', 'simulate_transaction', 'send_transaction', 'vote_commitment', 'escrow_notary')),
+  constraint usacc_contract_operations_status_chk
+    check (status in ('pending', 'validated', 'simulated', 'sent', 'failed', 'canceled')),
+  constraint usacc_contract_operations_program_id_size_chk
+    check (program_id is null or octet_length(program_id) <= 128),
+  constraint usacc_contract_operations_digest_size_chk
+    check (digest is null or octet_length(digest) <= 160),
+  constraint usacc_contract_operations_envelope_object_chk
+    check (jsonb_typeof(envelope) = 'object'),
+  constraint usacc_contract_operations_response_object_chk
+    check (jsonb_typeof(response) = 'object')
+);
+
+create unique index if not exists usacc_contract_operations_request_id_uq
+  on usacc_contract_operations (request_id);
+
+create index if not exists usacc_contract_operations_case_idx
+  on usacc_contract_operations (case_id, created_at desc)
+  where case_id is not null;
+
+alter table if exists usacc_contract_operations
+  add constraint usacc_contract_operations_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_contract_operations
+  add constraint usacc_contract_operations_election_fk
+  foreign key (election_id) references usacc_elections(id);
+
+alter table if exists usacc_contract_operations
+  add constraint usacc_contract_operations_vote_fk
+  foreign key (vote_id) references usacc_votes(id);
+
+create table if not exists usacc_simulation_runs (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid,
+  status varchar(32) default 'queued' not null,
+  mode varchar(32) default 'sim' not null,
+  seed bigint not null,
+  horizon_days integer default 180 not null,
+  actor_count integer default 0 not null,
+  event_count integer default 0 not null,
+  metrics jsonb default '{}'::jsonb not null,
+  trace jsonb default '[]'::jsonb not null,
+  input jsonb default '{}'::jsonb not null,
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint usacc_simulation_runs_status_chk
+    check (status in ('queued', 'running', 'succeeded', 'failed', 'canceled')),
+  constraint usacc_simulation_runs_mode_chk
+    check (mode in ('sim', 'live_shadow', 'replay')),
+  constraint usacc_simulation_runs_horizon_chk
+    check (horizon_days between 1 and 3650),
+  constraint usacc_simulation_runs_counts_chk
+    check (actor_count >= 0 and event_count >= 0),
+  constraint usacc_simulation_runs_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object'),
+  constraint usacc_simulation_runs_trace_array_chk
+    check (jsonb_typeof(trace) = 'array'),
+  constraint usacc_simulation_runs_input_object_chk
+    check (jsonb_typeof(input) = 'object')
+);
+
+create index if not exists usacc_simulation_runs_case_created_idx
+  on usacc_simulation_runs (case_id, created_at desc)
+  where case_id is not null;
+
+create index if not exists usacc_simulation_runs_status_created_idx
+  on usacc_simulation_runs (status, created_at desc);
+
+alter table if exists usacc_simulation_runs
+  add constraint usacc_simulation_runs_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+create table if not exists usacc_audit_events (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid,
+  actor_user_id uuid,
+  event_type varchar(96) not null,
+  event_hash varchar(128) not null,
+  source varchar(80) default 'usacc-rest-api-backend-rs' not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint usacc_audit_events_type_format_chk
+    check (event_type ~ '^[A-Za-z0-9._:/-]{1,96}$'),
+  constraint usacc_audit_events_hash_format_chk
+    check (event_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'),
+  constraint usacc_audit_events_source_format_chk
+    check (source ~ '^[A-Za-z0-9._:/-]{1,80}$'),
+  constraint usacc_audit_events_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create unique index if not exists usacc_audit_events_hash_uq
+  on usacc_audit_events (event_hash);
+
+create index if not exists usacc_audit_events_case_created_idx
+  on usacc_audit_events (case_id, created_at desc)
+  where case_id is not null;
+
+alter table if exists usacc_audit_events
+  add constraint usacc_audit_events_case_fk
+  foreign key (case_id) references usacc_cases(id);
+
+alter table if exists usacc_audit_events
+  add constraint usacc_audit_events_actor_fk
+  foreign key (actor_user_id) references usacc_users(id);
