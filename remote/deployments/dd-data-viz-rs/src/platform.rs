@@ -277,11 +277,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "alert rule catalog and evaluator",
                 "secretRef-backed contact points and notification policy preview",
                 "bounded Loki log frame adapter",
+                "bounded live panel WebSocket stream",
             ],
-            next_engine_work: vec![
-                "WebSocket live panel stream",
-                "real notification dispatcher worker",
-            ],
+            next_engine_work: vec!["real notification dispatcher worker"],
         },
         ProductParity {
             product: "D3.js",
@@ -496,7 +494,7 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             product_analog: "Grafana",
             data_shape: "timestamp, metric, labels",
             visualization_families: vec!["line", "area", "stat", "alert threshold"],
-            refresh: "poll now; WebSocket/live diff planned",
+            refresh: "bounded WebSocket snapshots now; row-level live diff planned",
         },
         DashboardPanel {
             id: "business-kpi",

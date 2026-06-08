@@ -152,6 +152,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/loki_frames.rs validates Loki-native and structured stream inputs; /observability/loki/frame requires QueryExecute and does not call external Loki APIs.",
         },
         ControlDescriptor {
+            id: "bounded-live-panel-streams",
+            status: "implemented",
+            description: "Grafana-style WebSocket panel streams are capped by tick count, refresh interval, row count, and field count, and require query execution permission before upgrade.",
+            evidence: "src/live_panels.rs validates stream subscriptions; /live/panels/:dataset_id authorizes QueryExecute before emitting bounded snapshot frames.",
+        },
+        ControlDescriptor {
             id: "bounded-semantic-models",
             status: "implemented",
             description: "LookML-like semantic models are capped, parsed as a strict subset, and validated against ingested dataset fields before compilation.",
