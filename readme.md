@@ -50,6 +50,8 @@ outcomes.
 - `GET /fabrication/controllers/preflight/catalog`
 - `POST /controllers/result`
 - `POST /fabrication/controllers/result`
+- `GET /process/catalog`
+- `GET /fabrication/process/catalog`
 - `GET /materials/catalog`
 - `GET /fabrication/materials/catalog`
 - `POST /materials/plan`
@@ -1035,6 +1037,27 @@ program, controller, postprocessor, target-status, check, artifact,
 human-intervention, blocker, reward, and submit-route hints so retained
 controller outputs can be submitted directly to
 `POST /fabrication/learning/outcomes`.
+
+## `GET /fabrication/process/catalog`
+
+`GET /process/catalog` and the gateway-prefixed
+`GET /fabrication/process/catalog` return the live
+`dd.fabrication.process-catalog.v1` operation-sequencing discovery contract for
+turning a fabrication request into a retained `processPlan` and `processGraph`.
+The catalog covers additive print processes, subtractive machining, sheet cutting
+and forming, postprocess/quality/release work, and hybrid split/combine
+fabrication.
+
+Each process family names required evidence, process graph nodes, release
+blockers, and learning signals. The catalog links `process-plan`,
+`process-graph`, `hybrid-make-plan`, `manufacturing-handoff`,
+`release-package-plan`, and `mdp-request` artifacts to response surfaces such as
+`machineSelection`, `materialPlan`, `toolingPlan`, `fixturePlan`, `qualityPlan`,
+`postprocessPlan`, and `interventionMap`. Process catalog entries are draft
+operation sequencing contracts, not certified CAM, slicer, controller, fixture,
+or quality instructions; machine-ready release remains blocked until every
+process graph node has retained design, material, tooling, simulation, quality,
+intervention, and release-package evidence.
 
 ## `GET /fabrication/materials/catalog`
 
@@ -2064,6 +2087,14 @@ for patching imported or generated fabrication instructions. The catalog groups
 preflight requirements into source-program and finding state, patch-review and
 simulation state, and learning plus release feedback state before a repaired
 program can move toward release review.
+
+The payload also includes a `patchReviewMatrix` for modal controller-state
+repairs, additive printer-state repairs, non-G-code evidence checkpoints, and
+split/combine route repairs. Matrix entries name allowed patch operations,
+required validation or simulation review, blocked surfaces such as
+`controllerPlan.releaseGates`, `interventionMap.splitCombineDecisions`,
+`interfaceControlPlan.releaseGates`, and `machineRelease.blockers`, and learning
+signals such as `patch-review:additive-state` and `patch-review:split-combine`.
 
 Improvement preflight entries are review requirements, not controller-certified
 patches. Improved programs stay `machineReady=false` until source provenance,

@@ -58413,6 +58413,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/controllers/preflight/catalog",
         "POST /controllers/result",
         "POST /fabrication/controllers/result",
+        "GET /process/catalog",
+        "GET /fabrication/process/catalog",
         "GET /materials/catalog",
         "GET /fabrication/materials/catalog",
         "POST /materials/plan",
@@ -92709,6 +92711,88 @@ fn material_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> 
     counts
 }
 
+fn process_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.process-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /process/catalog", "GET /fabrication/process/catalog"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "processFamilies": [
+            {
+                "family": "additive-print-process",
+                "appliesTo": ["FDM", "multi-material FDM", "pellet FGF", "resin", "powder-bed", "material jetting", "DED/WAAM"],
+                "requiredEvidence": ["design or slicer source", "material and profile state", "support/orientation plan", "thermal or exposure state", "printer setup and release gates"],
+                "processGraphNodes": ["prepare-build", "print-or-deposit", "cool-wash-cure-or-depowder", "inspect-additive-result"],
+                "releaseBlockers": ["missing slicer/profile evidence", "material conditioning unresolved", "support/removal or postprocess gate missing"],
+                "learningSignals": ["process:additive", "slicer-profile:*", "support-strategy:*"]
+            },
+            {
+                "family": "subtractive-machining-process",
+                "appliesTo": ["vertical mill", "horizontal mill", "router", "mill-turn", "Swiss", "lathe", "grinder"],
+                "requiredEvidence": ["stock and workholding", "tooling and offsets", "controller/postprocessor", "feeds/speeds", "simulation or dry-run proof"],
+                "processGraphNodes": ["setup-stock", "rough-machine", "finish-machine", "deburr-clean-inspect"],
+                "releaseBlockers": ["fixture or datum evidence missing", "toolpath/controller review blocked", "machine envelope or collision risk unresolved"],
+                "learningSignals": ["process:subtractive", "toolpath:*", "workholding:*"]
+            },
+            {
+                "family": "sheet-cutting-and-forming-process",
+                "appliesTo": ["laser", "waterjet", "plasma", "wire EDM", "press brake", "sheet forming"],
+                "requiredEvidence": ["flat pattern or nesting", "kerf/pierce/tabs", "material grain or thickness", "forming tooling when applicable", "part separation and traceability"],
+                "processGraphNodes": ["nest-or-layout", "cut-or-burn", "separate-and-deburr", "form-or-secondary-op"],
+                "releaseBlockers": ["nesting/kerf evidence missing", "retention or part traceability unresolved", "forming springback or angle evidence missing"],
+                "learningSignals": ["process:sheet", "nesting:*", "forming:*"]
+            },
+            {
+                "family": "postprocess-quality-and-release-process",
+                "appliesTo": ["thermal postprocess", "surface finishing", "cleaning", "CMM/vision inspection", "balancing", "marking"],
+                "requiredEvidence": ["postprocess recipe", "fixture or handling plan", "inspection targets", "quality disposition", "release package artifacts"],
+                "processGraphNodes": ["postprocess", "measure-or-test", "disposition", "package-release-evidence"],
+                "releaseBlockers": ["recipe or safety evidence missing", "inspection result absent", "release package incomplete"],
+                "learningSignals": ["process:postprocess", "quality-result:*", "release-evidence:*"]
+            },
+            {
+                "family": "hybrid-split-combine-process",
+                "appliesTo": ["printed plus milled assemblies", "turned inserts", "sheet-cut kits", "bonded/fastened/plastic-welded/metal-joined assemblies"],
+                "requiredEvidence": ["decomposition targets", "child route contracts", "interface-control plan", "join/recomposition recipe", "final fit and traceability"],
+                "processGraphNodes": ["split-or-decompose", "fabricate-child-routes", "verify-interfaces", "combine-or-recompose", "final-release"],
+                "releaseBlockers": ["child route release missing", "interface datum or fit evidence missing", "join/recomposition signoff unresolved"],
+                "learningSignals": ["process:hybrid", "split-combine:*", "recomposition:*"]
+            }
+        ],
+        "artifactSurfaces": [
+            "process-plan",
+            "process-graph",
+            "hybrid-make-plan",
+            "manufacturing-handoff",
+            "release-package-plan",
+            "mdp-request.artifacts.processPlan"
+        ],
+        "responseSurfaces": [
+            "processPlan",
+            "processGraph",
+            "machineSelection",
+            "materialPlan",
+            "toolingPlan",
+            "fixturePlan",
+            "qualityPlan",
+            "postprocessPlan",
+            "interventionMap",
+            "learning.observations"
+        ],
+        "releasePolicy": [
+            "process catalog entries describe draft operation sequencing contracts, not certified CAM, slicer, controller, fixture, or quality instructions",
+            "machine-ready release remains blocked until every process graph node has retained design, material, tooling, simulation, quality, intervention, and release-package evidence",
+            "process outcomes should feed MDP/POMDP/neural learning so future plans can choose safer machines, split or combine parts earlier, and insert human intervention gates before failure"
+        ]
+    })
+}
+
+async fn process_catalog_http() -> impl IntoResponse {
+    Json(process_catalog_response())
+}
+
 fn material_readiness_checklist() -> Vec<Value> {
     vec![
         json!({
@@ -97969,6 +98053,59 @@ fn instruction_improvement_catalog_response() -> Value {
     })
 }
 
+fn instruction_improvement_patch_review_matrix() -> Vec<Value> {
+    vec![
+        json!({
+            "patchClass": "modal-controller-state-repair",
+            "appliesTo": ["CNC mill/router/lathe G-code", "sheet-cutting controller programs", "EDM controller programs"],
+            "requiredReview": [
+                "units, plane, coordinate, feed, compensation, canned-cycle, macro, and program-end state before and after the patch",
+                "controller/postprocessor dialect compatibility and exact posted output diff",
+                "simulation, dry-run, or backplot rerun for the changed motion block"
+            ],
+            "allowedOperations": ["insert-before-line", "insert-after-line", "replace-line", "review-line"],
+            "blocks": ["controllerPlan.releaseGates", "validation.failureBoundaries", "machineRelease.blockers"],
+            "learningSignals": ["patch-review:modal-controller-state", "instruction-patch-action:modal-reset", "controller-modal-state:*"]
+        }),
+        json!({
+            "patchClass": "additive-printer-state-repair",
+            "appliesTo": ["FDM G-code", "multi-material FDM job sheets", "pellet/FGF job sheets", "resin or powder-bed handoffs"],
+            "requiredReview": [
+                "homing, extrusion mode, nozzle/bed wait, material slot, purge/prime, runout, resume, and build-surface state",
+                "slicer profile, material lot, thermal/exposure/build profile, and first-layer or postprocess evidence",
+                "validation rerun for positive extrusion, thermal, support, and material-state boundaries"
+            ],
+            "allowedOperations": ["insert-before-line", "insert-after-line", "replace-line", "insert-review-checkpoint"],
+            "blocks": ["validation.findings", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+            "learningSignals": ["patch-review:additive-state", "instruction-patch-action:purge-prime", "printer-state:*"]
+        }),
+        json!({
+            "patchClass": "non-gcode-evidence-checkpoint",
+            "appliesTo": ["operator job sheets", "resin wash/cure travelers", "powder handling travelers", "thermal postprocess sheets", "assembly instructions"],
+            "requiredReview": [
+                "setup, material/process recipe, safety/PPE, completion, traceability, quality, and signoff gate insertion",
+                "human-intervention and automation capability disposition",
+                "retained artifact URI/checksum for the revised job sheet or traveler"
+            ],
+            "allowedOperations": ["insert-review-checkpoint", "insert-before-program", "insert-after-program", "review-line"],
+            "blocks": ["interventionMap", "executionPlan.stopPoints", "qualityPlan.releaseGates"],
+            "learningSignals": ["patch-review:text-evidence", "manual-process:*", "human-intervention:*"]
+        }),
+        json!({
+            "patchClass": "split-combine-route-repair",
+            "appliesTo": ["hybrid printed/milled/turned assemblies", "child route packages", "recomposition travelers"],
+            "requiredReview": [
+                "split/combine boundary source, child route package, interface-control plan, datum transfer, and recomposition sequence",
+                "per-route validation, simulation, machine-release, quality, and release-package evidence",
+                "operator or automation signoff for any added handoff, assembly, or inspection checkpoint"
+            ],
+            "allowedOperations": ["insert-before-program", "insert-after-program", "insert-review-checkpoint", "review-line"],
+            "blocks": ["interventionMap.splitCombineDecisions", "interfaceControlPlan.releaseGates", "releasePackagePlan.packages"],
+            "learningSignals": ["patch-review:split-combine", "split-combine:*", "interface-control:*"]
+        }),
+    ]
+}
+
 fn instruction_improvement_preflight_catalog_response() -> Value {
     let action_contracts = instruction_improvement_catalog_action_contracts();
     let patch_operations = instruction_improvement_catalog_patch_operations();
@@ -98048,6 +98185,7 @@ fn instruction_improvement_preflight_catalog_response() -> Value {
                 ]
             }
         ],
+        "patchReviewMatrix": instruction_improvement_patch_review_matrix(),
         "responseSurfaces": [
             "improvements",
             "improvedPrograms",
@@ -107107,6 +107245,7 @@ async fn request_schema() -> impl IntoResponse {
             "machineCatalog": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
             "controllerCatalog": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
             "controllerPostprocessorResult": ["POST /controllers/result", "POST /fabrication/controllers/result"],
+            "processCatalog": ["GET /process/catalog", "GET /fabrication/process/catalog"],
             "materialCatalog": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
             "materialPlan": ["POST /materials/plan", "POST /fabrication/materials/plan"],
             "materialResult": ["POST /materials/result", "POST /fabrication/materials/result"],
@@ -109808,6 +109947,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/controllers/result",
             post(controller_postprocessor_result_http),
         )
+        .route("/process/catalog", get(process_catalog_http))
+        .route("/fabrication/process/catalog", get(process_catalog_http))
         .route("/materials/catalog", get(material_catalog_http))
         .route("/fabrication/materials/catalog", get(material_catalog_http))
         .route("/materials/plan", post(material_plan_http))
@@ -117284,6 +117425,35 @@ mod tests {
             .is_some_and(|blockers| blockers.iter().any(|entry| entry
                 .as_str()
                 .is_some_and(|entry| entry.contains("validation, simulation or dry-run"))))));
+        let matrix = payload
+            .get("patchReviewMatrix")
+            .and_then(Value::as_array)
+            .expect("patch review matrix should be present");
+        for patch_class in [
+            "modal-controller-state-repair",
+            "additive-printer-state-repair",
+            "non-gcode-evidence-checkpoint",
+            "split-combine-route-repair",
+        ] {
+            assert!(
+                matrix
+                    .iter()
+                    .any(|item| item.get("patchClass").and_then(Value::as_str) == Some(patch_class)),
+                "missing patch review class {patch_class}"
+            );
+        }
+        assert!(matrix.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks.iter().any(|entry| {
+                entry.as_str() == Some("interventionMap.splitCombineDecisions")
+            }))));
+        assert!(matrix.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("patch-review:additive-state"))))));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
@@ -117939,6 +118109,57 @@ mod tests {
                 "missing controller postprocessor artifact {artifact_id}"
             );
         }
+    }
+
+    #[test]
+    fn process_catalog_endpoint_exposes_operation_graph_and_learning_contract() {
+        let payload = process_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/process/catalog"))));
+        let families = payload
+            .get("processFamilies")
+            .and_then(Value::as_array)
+            .expect("process families should be present");
+        for family in [
+            "additive-print-process",
+            "subtractive-machining-process",
+            "sheet-cutting-and-forming-process",
+            "postprocess-quality-and-release-process",
+            "hybrid-split-combine-process",
+        ] {
+            assert!(
+                families
+                    .iter()
+                    .any(|entry| entry.get("family").and_then(Value::as_str) == Some(family)),
+                "missing process family {family}"
+            );
+        }
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("process-graph"))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("interventionMap"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("insert human intervention gates")))));
     }
 
     #[test]
