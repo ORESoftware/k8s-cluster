@@ -74,7 +74,7 @@ function assertLearningOutcomeDraftSubmitCoverage(source: string, readme: string
 }
 
 function fabricationRootRoutes(source: string): Set<string> {
-  const rootMatch = source.match(/async fn root\(\)[\s\S]*?let routes = vec!\[([\s\S]*?)\];/);
+  const rootMatch = source.match(/fn root_response\(\) -> Value[\s\S]*?let routes = vec!\[([\s\S]*?)\];/);
   assert.ok(rootMatch, 'expected root route inventory in dd-fabrication-server');
 
   return new Set(
@@ -107,6 +107,42 @@ function assertRootRouteInventoryCoversRegisteredRoutes(source: string): void {
     .sort();
 
   assert.deepEqual(missingRoutes, []);
+}
+
+function deploymentFabricationSentinelPaths(deployment: string): Set<string> {
+  return new Set(
+    Array.from(
+      deployment.matchAll(/'\"path\": \"(\/fabrication[^"]*)\"'/g),
+      (match) => match[1],
+    ),
+  );
+}
+
+function assertDeploymentSentinelCoversFabricationRootRoutes(
+  source: string,
+  deployment: string,
+): void {
+  const rootPaths = new Set(
+    Array.from(fabricationRootRoutes(source), (route) => route.replace(/^(GET|POST) /, '')).filter(
+      (path) => path.startsWith('/fabrication'),
+    ),
+  );
+  const sentinelPaths = deploymentFabricationSentinelPaths(deployment);
+  assert.ok(rootPaths.size >= 200, `expected broad fabrication root inventory, found ${rootPaths.size}`);
+  assert.ok(
+    sentinelPaths.size >= 200,
+    `expected broad deployment route sentinel inventory, found ${sentinelPaths.size}`,
+  );
+
+  const missingPaths = Array.from(rootPaths)
+    .filter((path) => !sentinelPaths.has(path))
+    .sort();
+  const extraPaths = Array.from(sentinelPaths)
+    .filter((path) => !rootPaths.has(path))
+    .sort();
+
+  assert.deepEqual(missingPaths, []);
+  assert.deepEqual(extraPaths, []);
 }
 
 function dashboardFabricationPathLiterals(grafanaDashboards: string): Set<string> {
@@ -1181,6 +1217,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn has_text_resin_context/);
   assert.match(source, /fn has_text_resin_print_context/);
   assert.match(source, /fn has_text_resin_profile_evidence/);
+  assert.match(source, /fn has_text_resin_drain_cupping_context/);
+  assert.match(source, /fn has_text_resin_drain_cupping_evidence/);
   assert.match(source, /fn has_text_resin_postprocess_evidence/);
   assert.match(source, /fn has_text_powder_bed_context/);
   assert.match(source, /fn has_text_powder_bed_print_context/);
@@ -1213,6 +1251,10 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /resin-print-profile-evidence-missing/);
   assert.match(source, /resin-print-profile-boundary/);
   assert.match(source, /add-resin-print-profile-evidence/);
+  assert.match(source, /resin-drain-cupping-evidence-missing/);
+  assert.match(source, /resin-drain-cupping-boundary/);
+  assert.match(source, /add-resin-drain-cupping-evidence/);
+  assert.match(source, /text_resin_jobs_require_drain_cupping_and_island_evidence/);
   assert.match(source, /fn has_text_resin_layer_manifest_context/);
   assert.match(source, /fn has_text_resin_layer_manifest_image_evidence/);
   assert.match(source, /fn has_text_resin_layer_manifest_motion_evidence/);
@@ -2820,10 +2862,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /machine_selection_prefers_profile_clear_machine/);
   assert.match(source, /machine_profile_evidence_blockers_hold_instruction_analysis_release/);
   assert.match(source, /"GET \/readyz"/);
+  assert.match(source, /fn root_response\(\) -> Value/);
   assert.match(
     source,
-    /async fn root\(\)[\s\S]*let routes = vec!\[[\s\S]*"GET \/"[\s\S]*"POST \/fabrication\/design\/generate"[\s\S]*"GET \/fabrication\/handoff\/catalog"[\s\S]*"POST \/fabrication\/remediation\/result"[\s\S]*"POST \/fabrication\/execution\/plan"[\s\S]*"POST \/fabrication\/assembly\/result"[\s\S]*\];[\s\S]*Json\(json!\(/,
+    /fn root_response\(\) -> Value[\s\S]*let routes = vec!\[[\s\S]*"GET \/"[\s\S]*"POST \/fabrication\/design\/generate"[\s\S]*"GET \/fabrication\/handoff\/catalog"[\s\S]*"POST \/fabrication\/remediation\/result"[\s\S]*"POST \/fabrication\/execution\/plan"[\s\S]*"POST \/fabrication\/assembly\/result"[\s\S]*\];[\s\S]*json!\(\{/,
   );
+  assert.match(source, /async fn root\(\) -> impl IntoResponse[\s\S]*Json\(root_response\(\)\)/);
+  assert.match(source, /root_inventory_exposes_start_here_dashboard_and_objective_routes/);
   assert.match(source, /async fn landing_page\(\) -> axum::response::Html<&'static str>/);
   assert.match(source, /"landingPage": \{/);
   assert.match(source, /"Human fabrication overview"/);
@@ -2923,6 +2968,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"requirement": "machine-code-and-instruction-generation"/);
   assert.match(source, /"requirement": "existing-instruction-validation-and-improvement"/);
   assert.match(source, /"requirement": "machine-failure-and-human-intervention-boundaries"/);
+  assert.match(source, /"requirement": "operator-observability-and-release-trust"/);
+  assert.match(source, /"evidenceSurfaces": \["operatorObservability", "operatorDashboardSignals", "dd-fabrication-planner", "releasePackagePlan", "machineRelease"\]/);
   assert.match(source, /"requirement": "split-combine-and-multi-process-learning"/);
   assert.match(source, /"requirement": "mdp-pomdp-des-neural-learning"/);
   assert.match(source, /"evidenceSurfaces": \["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"\]/);
@@ -3111,6 +3158,20 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"millRouterCatalog": \["GET \/mill-router\/catalog", "GET \/fabrication\/mill-router\/catalog"\]/);
   assert.match(source, /mill_router_catalog_endpoint_exposes_vertical_horizontal_five_axis_and_router_profiles/);
   assert.match(source, /vertical, horizontal, five-axis, indexed, and CNC-router planning profiles/);
+  assert.match(source, /async fn vertical_mill_catalog_http/);
+  assert.match(source, /fn vertical_mill_catalog_response/);
+  assert.match(source, /dd\.fabrication\.vertical-mill-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/vertical-mill\/catalog"/);
+  assert.match(source, /"verticalMillCatalog": \["GET \/vertical-mill\/catalog", "GET \/fabrication\/vertical-mill\/catalog"\]/);
+  assert.match(source, /vertical_mill_catalog_endpoint_exposes_fixture_probe_and_prismatic_release_gates/);
+  assert.match(source, /vise, fixture plate, toe-clamp, soft-jaw/);
+  assert.match(source, /async fn horizontal_mill_catalog_http/);
+  assert.match(source, /fn horizontal_mill_catalog_response/);
+  assert.match(source, /dd\.fabrication\.horizontal-mill-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/horizontal-mill\/catalog"/);
+  assert.match(source, /"horizontalMillCatalog": \["GET \/horizontal-mill\/catalog", "GET \/fabrication\/horizontal-mill\/catalog"\]/);
+  assert.match(source, /horizontal_mill_catalog_endpoint_exposes_tombstone_index_and_side_cutting_release_gates/);
+  assert.match(source, /tombstone, pallet, angle-plate, or fixture-column setup model/);
   assert.match(source, /async fn sheet_cutting_catalog_http/);
   assert.match(source, /fn sheet_cutting_catalog_response/);
   assert.match(source, /dd\.fabrication\.sheet-cutting-catalog\.v1/);
@@ -3130,6 +3191,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /dd\.fabrication\.turning-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/turning\/catalog"/);
   assert.match(source, /turning_catalog_endpoint_exposes_lathe_mill_turn_and_swiss_profiles/);
+  assert.match(source, /async fn lathe_catalog_http/);
+  assert.match(source, /fn lathe_catalog_response/);
+  assert.match(source, /dd\.fabrication\.lathe-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/lathe\/catalog"/);
+  assert.match(source, /"latheCatalog": \["GET \/lathe\/catalog", "GET \/fabrication\/lathe\/catalog"\]/);
+  assert.match(source, /lathe_catalog_endpoint_exposes_chuck_offsets_threading_and_partoff_release_gates/);
+  assert.match(source, /tool-nose radius, geometry\/wear offset, turret station/);
   assert.match(source, /async fn turning_preflight_catalog_http/);
   assert.match(source, /fn turning_preflight_catalog_response/);
   assert.match(source, /dd\.fabrication\.turning-preflight-catalog\.v1/);
@@ -6751,6 +6819,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /machine-code and instruction\s+generation/);
   assert.match(readme, /existing-instruction validation and improvement/);
   assert.match(readme, /machine-failure and\s+human-intervention boundaries/);
+  assert.match(readme, /operator observability and release trust/);
+  assert.match(readme, /`\/metrics`, and `\/grafana\/fabrication` as the release-trust inspection path/);
   assert.match(readme, /split\/combine multi-process learning/);
   assert.match(readme, /MDP\/POMDP\/DES\/neural learning/);
   assert.match(readme, /`learning-policy-snapshot`/);
@@ -6805,6 +6875,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /vertical mills,\s+horizontal mills, five-axis mills/);
   assert.match(readme, /tool-length\/probe, cutter compensation, tool-change/);
   assert.match(readme, /safer fixture, index, split, combine, reroute, or human-intervention strategies/);
+  assert.match(readme, /`GET \/vertical-mill\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/vertical-mill\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.vertical-mill-catalog\.v1/);
+  assert.match(readme, /fixture-plate, vise, pocket, drill, face, contour/);
+  assert.match(readme, /work-offset\/probe\s+or setup-sheet datum evidence/);
+  assert.match(readme, /when prismatic features should be split,\s+combined, re-fixtured, rerouted/);
+  assert.match(readme, /`GET \/horizontal-mill\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/horizontal-mill\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.horizontal-mill-catalog\.v1/);
+  assert.match(readme, /side-face, tombstone, pallet-index, angle-plate/);
+  assert.match(readme, /fixture-column or pallet setup, index\/datum\s+transfer/);
+  assert.match(readme, /when side features should be split, combined, indexed, rerouted/);
   assert.match(readme, /`GET \/sheet-cutting\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/sheet-cutting\/catalog`/);
   assert.match(readme, /dd\.fabrication\.sheet-cutting-catalog\.v1/);
@@ -6821,6 +6903,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`GET \/fabrication\/turning\/catalog`/);
   assert.match(readme, /dd\.fabrication\.turning-catalog\.v1/);
   assert.match(readme, /lathe, mill-turn, Swiss, and\s+bar-fed turning profiles/);
+  assert.match(readme, /`GET \/lathe\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/lathe\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.lathe-catalog\.v1/);
+  assert.match(readme, /two-axis\s+lathe turning, facing, boring, threading, and part-off/);
+  assert.match(readme, /tool-nose radius and wear offsets/);
+  assert.match(readme, /when turned inserts should be split, combined, supported, rerouted/);
   assert.match(readme, /`GET \/turning\/preflight\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/turning\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.turning-preflight-catalog\.v1/);
@@ -7258,10 +7346,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`landingPage`\s+block for the human fabrication overview/);
   assert.match(readme, /`startHere` map to\s+`\/fabrication`/);
   assert.match(readme, /`\/fabrication\/how-it-works`, capabilities, schema/);
+  assert.match(readme, /generated API docs, and the `\/grafana\/fabrication` operator dashboard/);
   assert.match(
     readme,
     /The landing page and JSON how-it-works\s+overview explain how the service turns fabrication goals/,
   );
+  assert.match(source, /"operatorDashboard": "\/grafana\/fabrication"/);
+  assert.match(source, /"operatorDashboardSignals": \[/);
   assert.match(readme, /split\/combine plans/);
   assert.match(readme, /release gates, and learned\s+outcomes/);
   assert.match(readme, /serve a human\s+landing page for operators and integration authors/);
@@ -7320,6 +7411,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /MDP, POMDP, DES, neural-policy evidence/);
   assert.match(readme, /`priorityDispositionContract` section names the shared/);
   assert.match(readme, /`<family>:<priority>:<disposition>` learning-observation shape/);
+  assert.match(readme, /`operatorObservability` section points machine clients/);
+  assert.match(readme, /`\/grafana\/fabrication` and the `dd-fabrication-planner` dashboard/);
+  assert.match(readme, /request\s+intake, release-blocker, NATS fanout, learning-feedback, artifact-ledger, and\s+runtime-capacity signals/);
+  assert.match(source, /"operatorObservability": \{/);
+  assert.match(source, /"grafanaUid": "dd-fabrication-planner"/);
+  assert.match(source, /"runtime capacity"/);
   assert.match(readme, /`GET \/intake\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/intake\/catalog`/);
   assert.match(readme, /`dd\.fabrication\.intake-catalog\.v1` discovery contract/);
@@ -9205,7 +9302,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
     /missing\s+chamber\/enclosure\/thermal-soak evidence before first extrusion for ABS\/ASA\/PC\/nylon/,
   );
   assert.match(readme, /overhang, bridge, cantilever, thin-wall, snap-fit/);
-  assert.match(readme, /resin\s+drain\/cupping geometry/);
+  assert.match(readme, /resin\s+island\/support\/hollowing\/drain\/suction\/peel-force geometry/);
   assert.match(readme, /missing bed-temperature waits or\s+re-waits/);
   assert.match(
     readme,
@@ -9257,6 +9354,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(readme, /resin IPA\/wash\/cure\/drain\/PPE\/\s+waste controls/);
   assert.match(readme, /missing resin exposure\/profile\/layer\/support\/build-plate evidence/);
+  assert.match(readme, /resin island\/support\/hollowing\/drain\/suction\/peel-force evidence/);
+  assert.match(readme, /missing resin island\/support\/hollowing\/drain\/suction\/peel-force evidence/);
   assert.match(readme, /resin layer\/exposure manifest image-hash\/checksum and peel\/lift\/recoat evidence/);
   assert.match(readme, /including generated `EXPOSE`\/`PEEL` image-stack records/);
   assert.match(readme, /missing resin layer\/exposure manifest image hash\/checksum or peel\/lift\/recoat evidence/);
@@ -10235,6 +10334,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
 });
 
 test('fabrication server is deployed through runtime manifests, gateway, and observability', async () => {
+  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml',
   );
@@ -10259,6 +10359,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
 
+  assertDeploymentSentinelCoversFabricationRootRoutes(source, deployment);
   assert.match(deployment, /name:\s*dd-fabrication-server/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8113'/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
@@ -10294,7 +10395,12 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(deployment, /"path": "\/fabrication"/);
+  assert.match(deployment, /"path": "\/fabrication\/landing"/);
+  assert.match(deployment, /"path": "\/fabrication\/how-it-works"/);
+  assert.match(deployment, /"path": "\/fabrication\/objective\/coverage"/);
   assert.match(deployment, /"path": "\/fabrication\/capabilities"/);
+  assert.match(deployment, /"path": "\/fabrication\/intake\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/templates\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/schema"/);
   assert.match(deployment, /"path": "\/fabrication\/examples"/);
   assert.match(deployment, /"path": "\/fabrication\/workflow\/catalog"/);
@@ -10379,6 +10485,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/interfaces\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/import\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/import\/review"/);
+  assert.match(deployment, /"path": "\/fabrication\/release\/gates\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/preview"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/result"/);
@@ -10574,12 +10681,18 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /subtractive preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/mill-router\/catalog/);
   assert.match(grafanaDashboards, /mill\/router catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/vertical-mill\/catalog/);
+  assert.match(grafanaDashboards, /vertical-mill catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/horizontal-mill\/catalog/);
+  assert.match(grafanaDashboards, /horizontal-mill catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(grafanaDashboards, /sheet-cutting catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/edm\/catalog/);
   assert.match(grafanaDashboards, /EDM catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/catalog/);
   assert.match(grafanaDashboards, /turning catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/lathe\/catalog/);
+  assert.match(grafanaDashboards, /lathe catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(grafanaDashboards, /turning preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/cleanliness\/preflight\/catalog/);
@@ -10886,7 +10999,6 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /strategy catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/improve/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/boundaries\/review/);
-  const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
   assertGrafanaCoversFabricationRootRoutes(source, grafanaDashboards);
   assert.match(home, /dd-fabrication-server/);
   assert.match(home, /\/fabrication\/jobs/);
@@ -10904,9 +11016,12 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /strategy and calibration catalog discovery/);
   assert.match(runtimeReadme, /\/fabrication\/printers\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/mill-router\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/vertical-mill\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/horizontal-mill\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/edm\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/lathe\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cells\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machines\/select/);
   assert.match(runtimeReadme, /POST \/fabrication\/controllers\/plan/);
@@ -11127,10 +11242,13 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/mill-router\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/vertical-mill\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/horizontal-mill\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/edm\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/preflight\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/lathe\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cnc\/catalog/);

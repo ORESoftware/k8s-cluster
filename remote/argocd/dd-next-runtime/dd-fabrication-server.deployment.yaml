@@ -132,7 +132,12 @@ spec:
               done
               for route in \
                 '"path": "/fabrication"' \
+                '"path": "/fabrication/landing"' \
+                '"path": "/fabrication/how-it-works"' \
+                '"path": "/fabrication/objective/coverage"' \
                 '"path": "/fabrication/capabilities"' \
+                '"path": "/fabrication/intake/catalog"' \
+                '"path": "/fabrication/templates/catalog"' \
                 '"path": "/fabrication/schema"' \
                 '"path": "/fabrication/examples"' \
                 '"path": "/fabrication/plan"' \
@@ -144,13 +149,17 @@ spec:
                 '"path": "/fabrication/instructions/boundaries/review"' \
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/printers/catalog"' \
+                '"path": "/fabrication/fdm-printer/catalog"' \
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
                 '"path": "/fabrication/mill-router/catalog"' \
+                '"path": "/fabrication/vertical-mill/catalog"' \
+                '"path": "/fabrication/horizontal-mill/catalog"' \
                 '"path": "/fabrication/sheet-cutting/catalog"' \
                 '"path": "/fabrication/edm/catalog"' \
                 '"path": "/fabrication/turning/catalog"' \
+                '"path": "/fabrication/lathe/catalog"' \
                 '"path": "/fabrication/turning/preflight/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/preflight/catalog"' \
@@ -219,6 +228,7 @@ spec:
                 '"path": "/fabrication/assembly/result"' \
                 '"path": "/fabrication/joining/result"' \
                 '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/release/gates/catalog"' \
                 '"path": "/fabrication/release/preflight/catalog"' \
                 '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/release/result"' \
