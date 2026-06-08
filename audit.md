@@ -10,11 +10,11 @@ This audit tracks the current hardening and visualization-platform parity postur
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
   `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, Qlik-style selection state
   lives in `src/associative.rs`, semantic model parsing and compilation lives in
-  `src/semantic.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
-  hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved
-  dashboard validation lives in `src/dashboard.rs`, parser-backed SQL compilation lives in
-  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
-  modules through route handlers.
+  `src/semantic.rs`, ETL flow planning lives in `src/etl.rs`, infrastructure diagram extraction
+  lives in `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy
+  lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
+  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
+  server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -38,6 +38,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
+- Domo Magic ETL/Power Query-style flows are validated through `POST /etl/plans` against ingested
+  dataset schemas, producing lineage, materialization, and connector pushdown hints without
+  executing user formulas.
 - Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP
   Cloud Asset inputs can generate neutral infrastructure graphs and Mermaid, Graphviz, PlantUML,
   D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
@@ -58,7 +61,8 @@ This audit tracks the current hardening and visualization-platform parity postur
   workflows, and warehouse-specific SQL dialect targets.
 - Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
   result sets.
-- Domo parity still needs a connector SDK, streaming checkpoints, and a visual ETL job runner.
+- Domo parity still needs a connector SDK, streaming checkpoints, durable ETL job execution, and a
+  drag-and-drop visual flow builder.
 - Superset and Metabase parity still need saved charts/questions, RBAC-backed ownership, and
   database connection registries beyond the current in-memory dashboard catalog and role policy.
 - Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel

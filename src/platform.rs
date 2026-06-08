@@ -146,6 +146,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "measure definitions",
                 "validated semantic model registry",
                 "ETL planner primitives",
+                "bounded ETL flow validation endpoint",
             ],
             next_engine_work: vec![
                 "DAX-compatible expression parser",
@@ -210,11 +211,13 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             implemented_surfaces: vec![
                 "connector descriptor catalog",
                 "Magic ETL-style primitives",
+                "validated Magic ETL-style flow planner",
                 "near-real-time ingest posture",
             ],
             next_engine_work: vec![
                 "connector SDK",
                 "streaming ingestion checkpoints",
+                "durable ETL job runner",
                 "mobile executive cards",
             ],
         },
@@ -459,7 +462,7 @@ pub fn etl_primitives() -> Vec<EtlPrimitive> {
         EtlPrimitive {
             id: "formula-field",
             tool_analog: "DAX / Sigma formula column",
-            description: "computed columns and measures over existing fields",
+            description: "bounded computed columns and measures over existing fields",
             planner_node: "CalculatedField",
         },
         EtlPrimitive {

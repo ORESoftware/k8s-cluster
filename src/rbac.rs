@@ -164,9 +164,7 @@ impl Permission {
             Self::SemanticCompile => {
                 "Compile governed semantic model selections into query targets."
             }
-            Self::EtlPlan => {
-                "Compile Domo/Power Query-style ETL flow plans from dataset metadata."
-            }
+            Self::EtlPlan => "Compile Domo/Power Query-style ETL flow plans from dataset metadata.",
             Self::InfraDiagramGenerate => {
                 "Generate Terraform, AWS, and GCP infrastructure diagram render targets."
             }

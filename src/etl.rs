@@ -36,7 +36,11 @@ pub(crate) struct EtlPlanRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum EtlStep {
     SelectColumns {
         fields: Vec<String>,
@@ -233,13 +237,7 @@ pub(crate) fn plan(
     let mut engine_steps = 0usize;
 
     for (index, step) in request.steps.iter().enumerate() {
-        let planned = apply_step(
-            index + 1,
-            step,
-            &dataset_index,
-            &mut fields,
-            &mut warnings,
-        )?;
+        let planned = apply_step(index + 1, step, &dataset_index, &mut fields, &mut warnings)?;
         if planned.pushdown == "source-pushdown" {
             source_pushdown_steps += 1;
         } else {
@@ -313,7 +311,12 @@ fn apply_step(
             }
             let next = selected
                 .iter()
-                .filter_map(|field| fields.get(field).cloned().map(|state| (field.clone(), state)))
+                .filter_map(|field| {
+                    fields
+                        .get(field)
+                        .cloned()
+                        .map(|state| (field.clone(), state))
+                })
                 .collect::<BTreeMap<_, _>>();
             *fields = next;
             Ok(planned_step(
@@ -368,7 +371,7 @@ fn apply_step(
                 "Rename fields while preserving lineage.",
             ))
         }
-        EtlStep::FilterRows { field, op, value: _ } => {
+        EtlStep::FilterRows { field, op, value } => {
             let field =
                 clean_identifier(field).ok_or_else(|| format!("invalid filter field `{field}`"))?;
             ensure_field(fields, &field)?;
@@ -388,12 +391,15 @@ fn apply_step(
                 } else {
                     "source-pushdown"
                 },
-                "Apply a bounded predicate without changing output columns.",
+                format!(
+                    "Apply a bounded predicate with a {} value without changing output columns.",
+                    value_kind(value)
+                ),
             ))
         }
         EtlStep::DeriveColumn { field, expression } => {
-            let field =
-                clean_identifier(field).ok_or_else(|| format!("invalid derived field `{field}`"))?;
+            let field = clean_identifier(field)
+                .ok_or_else(|| format!("invalid derived field `{field}`"))?;
             if expression.trim().is_empty() {
                 return Err("derive-column expression cannot be empty".to_string());
             }
@@ -403,7 +409,9 @@ fn apply_step(
                 ));
             }
             if expression.contains(';') {
-                return Err("derive-column expression cannot contain statement separators".to_string());
+                return Err(
+                    "derive-column expression cannot contain statement separators".to_string(),
+                );
             }
             let reads = expression_references(expression, fields);
             if reads.is_empty() {
@@ -421,7 +429,9 @@ fn apply_step(
                 sources.insert(format!("formula:{field}"));
             }
             if fields.contains_key(&field) {
-                warnings.push(format!("derived field `{field}` replaces an existing field"));
+                warnings.push(format!(
+                    "derived field `{field}` replaces an existing field"
+                ));
             }
             fields.insert(
                 field.clone(),
@@ -542,9 +552,7 @@ fn apply_step(
                 return Err("group-aggregate requires at least one aggregation".to_string());
             }
             if aggregations.len() > MAX_ETL_AGGREGATIONS {
-                return Err(format!(
-                    "aggregations exceeds max {MAX_ETL_AGGREGATIONS}"
-                ));
+                return Err(format!("aggregations exceeds max {MAX_ETL_AGGREGATIONS}"));
             }
             for field in &group_by {
                 ensure_field(fields, field)?;
@@ -560,10 +568,14 @@ fn apply_step(
                 let alias = clean_identifier(&aggregation.alias)
                     .ok_or_else(|| format!("invalid aggregation alias `{}`", aggregation.alias))?;
                 if next.contains_key(&alias) {
-                    return Err(format!("aggregation alias `{alias}` duplicates an output field"));
+                    return Err(format!(
+                        "aggregation alias `{alias}` duplicates an output field"
+                    ));
                 }
                 let source_field = match aggregation.op {
-                    EtlAggregationOp::Count => aggregation.field.as_deref().and_then(clean_identifier),
+                    EtlAggregationOp::Count => {
+                        aggregation.field.as_deref().and_then(clean_identifier)
+                    }
                     _ => {
                         let field = aggregation
                             .field
@@ -579,10 +591,7 @@ fn apply_step(
                 if let Some(field) = &source_field {
                     reads.push(field.clone());
                     if !matches!(aggregation.op, EtlAggregationOp::Count)
-                        && fields
-                            .get(field)
-                            .map(|state| state.data_type.as_str())
-                            != Some("number")
+                        && fields.get(field).map(|state| state.data_type.as_str()) != Some("number")
                     {
                         warnings.push(format!(
                             "aggregation `{alias}` reads non-numeric field `{field}`"
@@ -732,7 +741,10 @@ fn ensure_shape_field(shape: &DatasetShape, field: &str) -> Result<(), String> {
     if shape.fields.iter().any(|candidate| candidate.name == field) {
         Ok(())
     } else {
-        Err(format!("dataset `{}` has no field `{field}`", shape.dataset_id))
+        Err(format!(
+            "dataset `{}` has no field `{field}`",
+            shape.dataset_id
+        ))
     }
 }
 
@@ -770,10 +782,7 @@ fn planned_step(
     }
 }
 
-fn expression_references(
-    expression: &str,
-    fields: &BTreeMap<String, FieldState>,
-) -> Vec<String> {
+fn expression_references(expression: &str, fields: &BTreeMap<String, FieldState>) -> Vec<String> {
     let mut references = BTreeSet::new();
     let bytes = expression.as_bytes();
     let mut index = 0usize;
@@ -814,6 +823,17 @@ fn inferred_expression_type(expression: &str) -> String {
         "number".to_string()
     } else {
         "calculated".to_string()
+    }
+}
+
+fn value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
     }
 }
 
