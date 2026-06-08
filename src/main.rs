@@ -119348,6 +119348,78 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "joining-result-feedback",
+            "label": "Review adhesive, plastic, or metal joining proof before recomposition release",
+            "route": "POST /fabrication/joining/result",
+            "machineKind": "joining-cell",
+            "preferredMethods": ["joining-result", "interface-control", "plastic-joining", "adhesive-bonding", "metal-joining", "split-combine-review", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["datum transfer and fit proof", "join recipe reference", "operator signoff or automation verification", "retained joining artifact checksum", "split/combine recomposition decision"],
+            "releaseGateHints": ["interfaceResult.joinEvidence", "interfaceResult.splitCombineDecisions", "interfaceLearningOutcomeDraft", "machineRelease.blockers", "releasePackagePlan.releaseGates"],
+            "request": {
+                "templateId": "joining-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "joining-result-001",
+                "planRequestId": "hybrid-assembly-plan-001",
+                "jobId": "job-joining-result-001",
+                "workerId": "joining-proof-worker-01",
+                "interfacePlanId": "interface-control-plan-printed-milled-body",
+                "success": true,
+                "machineReady": false,
+                "interfaces": [
+                    {
+                        "interfaceId": "printed-body-to-milled-insert",
+                        "interfaceKind": "plastic-joining-ultrasonic-weld",
+                        "status": "fit-datum-review-required",
+                        "sourcePartIds": ["printed-abs-body"],
+                        "targetPartIds": ["milled-aluminum-insert"],
+                        "datumEvidence": ["datum pins A/B retained"],
+                        "fitEvidence": ["dry-fit gap scan retained"],
+                        "toleranceMm": 0.15,
+                        "gapMm": 0.24,
+                        "requiresHumanIntervention": true,
+                        "releaseBlocker": true,
+                        "message": "gap and datum transfer require operator review before joining release"
+                    }
+                ],
+                "joinEvidence": [
+                    {
+                        "evidenceId": "ultrasonic-weld-proof-001",
+                        "interfaceId": "printed-body-to-milled-insert",
+                        "joinKind": "plastic-joining-ultrasonic-weld",
+                        "status": "proof-test-pending",
+                        "recipeRef": "ultrasonic-weld-abs-energy-director-v3",
+                        "operatorSignoff": false,
+                        "automationVerified": false,
+                        "evidence": ["energy-director scan retained", "weld-collapse target recorded"]
+                    }
+                ],
+                "splitCombineDecisions": [
+                    {
+                        "decisionId": "recompose-after-join",
+                        "decisionKind": "combine-after-printed-milled-join",
+                        "status": "blocked",
+                        "interfaceId": "printed-body-to-milled-insert",
+                        "requiredAction": "complete proof test and operator release",
+                        "humanInterventionRequired": true,
+                        "evidence": ["join proof has not cleared recomposition release"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "joining-proof-record-001",
+                        "artifactKind": "plastic-joining-proof-record",
+                        "interfaceId": "printed-body-to-milled-insert",
+                        "uri": "s3://fabrication-joining/joining-result-001/proof.json",
+                        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                        "format": "json",
+                        "evidence": ["datum scan, fit scan, recipe, and pending proof-test record retained"]
+                    }
+                ],
+                "warnings": ["joining result remains blocked until proof test and operator release clear"],
+                "reviewMetadata": { "joiningProcess": "ultrasonic-weld", "cell": "joining-cell-1" }
+            }
+        },
+        {
             "id": "quality-metrology-result-feedback",
             "label": "Review inspection, metrology, and split/combine quality blockers",
             "route": "POST /fabrication/quality/result",
@@ -119543,6 +119615,157 @@ fn request_templates() -> Value {
                 "rewardHint": -0.82,
                 "observations": ["boundary-kind:machine-failure", "boundary-severity:release-blocker", "human-intervention-required", "split-combine-boundary:split-required", "resolution-action:reroute-with-fixture-and-operator-review"],
                 "notes": ["retain blocked program lines, release-probe actions, remediation risks, and operator intervention evidence before retry"]
+            }
+        },
+        {
+            "id": "learning-model-result-feedback",
+            "label": "Review retained DES/MDP/POMDP/neural model artifacts",
+            "route": "POST /fabrication/learning/models/result",
+            "machineKind": "learning-fleet",
+            "preferredMethods": ["learning-model-result", "mdp-pomdp-feedback", "neural-training-example", "policy-replay-review"],
+            "requiredEvidence": ["worker identity and model family", "retained model artifact URI and checksum", "metric thresholds", "model card or feature-map evidence", "promotion blockers reviewed"],
+            "releaseGateHints": ["learningModelResult.metrics", "learningModelResult.modelCardCompatibility", "learning.outcomeDraft", "learningPolicySnapshot", "machineRelease.blockers"],
+            "request": {
+                "templateId": "learning-model-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "learning-model-result-001",
+                "sourceJobId": "retained-hybrid-outcome-job",
+                "modelId": "fabrication-route-risk-mdp-v1",
+                "modelFamily": "mdp-policy-snapshot",
+                "workerId": "des-policy-trainer",
+                "workerVersion": "2026.06-learning",
+                "status": "accepted",
+                "promoteForPlanning": true,
+                "replayVerified": false,
+                "retainedArtifactUri": "s3://fabrication-learning/models/route-risk-mdp-v1.json",
+                "retainedArtifactSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "retainedArtifactFormat": "json",
+                "metrics": [
+                    {
+                        "metricId": "replay-pass-rate",
+                        "name": "replay-pass-rate",
+                        "value": 0.72,
+                        "threshold": 0.95,
+                        "evidence": ["retained failure-boundary replay set"]
+                    }
+                ],
+                "promotionBlockers": [
+                    {
+                        "blockerId": "replay-gap",
+                        "blockerKind": "replay-verification",
+                        "message": "policy replay does not cover every retained machine-failure and split/combine boundary",
+                        "severity": "warning",
+                        "requiredAction": "attach replay evidence before advisory policy promotion",
+                        "evidence": ["missing boundary replay evidence"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "model-card",
+                        "artifactKind": "model-card",
+                        "uri": "s3://fabrication-learning/models/route-risk-mdp-v1-card.json",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "format": "json",
+                        "evidence": ["feature map and reward terms retained"]
+                    }
+                ],
+                "evidence": ["learning outcome memory and release blocker replay evidence"],
+                "notes": ["model result remains advisory until replay and promotion blockers clear"],
+                "modelCard": {
+                    "features": ["machineKind", "boundaryKind", "humanInterventionRequired"],
+                    "knownLimits": ["not replayed against every retained failure boundary"]
+                }
+            }
+        },
+        {
+            "id": "learning-optimizer-result-feedback",
+            "label": "Review DES/MDP/POMDP/neural optimizer candidates before policy promotion",
+            "route": "POST /fabrication/learning/optimizers/result",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["learning-optimizer-result", "mdp-pomdp-feedback", "split-combine-route-economics", "policy-replay-review"],
+            "requiredEvidence": ["selected candidate matches submitted candidate list", "replay and simulation evidence", "constraint blockers", "optimizer report artifact", "learning outcome draft retained"],
+            "releaseGateHints": ["learningOptimizerResult.candidates", "learningOptimizerResult.constraints", "learningOptimizerResult.promotionBlockers", "learning.outcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "learning-optimizer-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "learning-optimizer-result-001",
+                "sourceJobId": "learning-outcome-job-hybrid-001",
+                "optimizerId": "hybrid-route-qmdp-v1",
+                "optimizerFamily": "pomdp-hybrid-route-optimizer",
+                "workerId": "des-qmdp-worker",
+                "workerVersion": "2026.06-learning",
+                "status": "accepted",
+                "selectedCandidateId": "hybrid-print-mill",
+                "replayVerified": true,
+                "simulationVerified": false,
+                "promoteForPlanning": true,
+                "candidates": [
+                    {
+                        "candidateId": "hybrid-print-mill",
+                        "action": "print shell, mill datum pads, assemble turned insert",
+                        "routeKind": "hybrid",
+                        "method": "additive-subtractive-assembly",
+                        "machineKind": "hybrid-fleet",
+                        "score": 0.82,
+                        "expectedReward": 0.68,
+                        "riskScore": 0.31,
+                        "selected": true,
+                        "requiresHumanIntervention": true,
+                        "requiresSplitCombine": true,
+                        "evidence": ["retained split/combine policy candidate"]
+                    },
+                    {
+                        "candidateId": "single-piece-print",
+                        "action": "print as one piece",
+                        "routeKind": "single-route",
+                        "method": "additive-print",
+                        "machineKind": "fdm-printer",
+                        "score": 0.44,
+                        "expectedReward": -0.20,
+                        "riskScore": 0.79,
+                        "selected": false,
+                        "requiresHumanIntervention": false,
+                        "requiresSplitCombine": false,
+                        "evidence": ["prior warp and tolerance failure"]
+                    }
+                ],
+                "constraints": [
+                    {
+                        "constraintId": "simulation-replay",
+                        "constraintKind": "simulation-verification",
+                        "status": "blocked",
+                        "releaseBlocker": true,
+                        "message": "selected hybrid route has not been replayed through final dry-run simulation",
+                        "evidence": ["missing final simulation result"]
+                    }
+                ],
+                "promotionBlockers": [
+                    {
+                        "blockerId": "simulation-gap",
+                        "blockerKind": "simulation-verification",
+                        "message": "optimizer candidate needs retained simulation proof",
+                        "severity": "warning",
+                        "requiredAction": "attach simulation result before advisory promotion",
+                        "evidence": ["dry-run-required"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "optimizer-report",
+                        "artifactKind": "optimizer-report",
+                        "uri": "s3://fabrication-learning/optimizers/hybrid-route-qmdp-v1.json",
+                        "sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                        "format": "json",
+                        "evidence": ["candidate scores and belief state retained"]
+                    }
+                ],
+                "evidence": ["learning outcome memory"],
+                "notes": ["optimizer remains advisory until simulation is retained"],
+                "optimizerReport": {
+                    "engine": "des_engine",
+                    "primitive": "solve_pomdp_underlying",
+                    "beliefState": { "hiddenOperatorInterventionRisk": 0.34 }
+                }
             }
         }
     ])
@@ -124053,10 +124276,13 @@ mod tests {
             "hybrid-route-costing-result",
             "operator-intervention-result-feedback",
             "runtime-monitoring-result-feedback",
+            "joining-result-feedback",
             "quality-metrology-result-feedback",
             "release-readiness-result-feedback",
             "hybrid-outcome-learning-feedback",
             "boundary-failure-learning-feedback",
+            "learning-model-result-feedback",
+            "learning-optimizer-result-feedback",
             "POST /fabrication/design/generate",
             "POST /fabrication/design/import/review",
             "POST /fabrication/machine-code/generate",
@@ -124071,9 +124297,12 @@ mod tests {
             "POST /fabrication/costing/result",
             "POST /fabrication/interventions/result",
             "POST /fabrication/monitoring/result",
+            "POST /fabrication/joining/result",
             "POST /fabrication/quality/result",
             "POST /fabrication/release/result",
             "POST /fabrication/learning/outcomes",
+            "POST /fabrication/learning/models/result",
+            "POST /fabrication/learning/optimizers/result",
             "machine-code-generation",
             "design-import-review",
             "native-cad-translation",
@@ -124123,6 +124352,9 @@ mod tests {
             "interventionResult.operatorActions",
             "interventionResult.automationHandoffs",
             "interventionLearningOutcomeDraft",
+            "interfaceResult.joinEvidence",
+            "interfaceLearningOutcomeDraft",
+            "joining-result",
             "monitoringResult.channels",
             "monitoringResult.alerts",
             "monitoringLearningOutcomeDraft",
@@ -124135,12 +124367,17 @@ mod tests {
             "improvedPrograms.patchManifest",
             "instructionImprovementResult.patchOperations",
             "instructionImprovementLearningOutcomeDraft",
+            "learningModelResult.modelCardCompatibility",
+            "learningOptimizerResult.promotionBlockers",
             "machine-code-improvement",
             "slicer-gcode-validation",
             "resin-job-validation",
             "powder-bed-build-validation",
             "mdp-pomdp-feedback",
             "neural-training-example",
+            "learning-model-result",
+            "learning-optimizer-result",
+            "policy-replay-review",
             "learning.outcomeMemory",
             "learning.boundaryMemory",
             "remediation-risk-learning",
@@ -124538,6 +124775,78 @@ mod tests {
     }
 
     #[test]
+    fn request_template_joining_result_body_matches_interface_result_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str) == Some("joining-result-feedback")
+            })
+            .expect("joining result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/joining/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("joining result template should include request body");
+        let parsed: InterfaceResultReviewRequest = serde_json::from_value(request)
+            .expect("joining result template should match interface result schema");
+        assert_eq!(parsed.worker_id, "joining-proof-worker-01");
+        assert!(!parsed.machine_ready);
+        assert!(
+            parsed
+                .interfaces
+                .as_ref()
+                .is_some_and(|interfaces| interfaces.iter().any(|interface| interface
+                    .release_blocker
+                    == Some(true)
+                    && interface.requires_human_intervention == Some(true)
+                    && interface.interface_kind.contains("plastic-joining"))),
+            "joining result template should retain a blocked plastic joining interface"
+        );
+        assert!(
+            parsed
+                .join_evidence
+                .as_ref()
+                .is_some_and(|join_evidence| join_evidence.iter().any(|evidence| {
+                    evidence.operator_signoff == Some(false)
+                        && evidence.automation_verified == Some(false)
+                        && evidence.join_kind.contains("ultrasonic")
+                })),
+            "joining result template should retain pending joining proof"
+        );
+        assert!(
+            parsed
+                .split_combine_decisions
+                .as_ref()
+                .is_some_and(|decisions| decisions.iter().any(|decision| {
+                    decision.human_intervention_required == Some(true)
+                        && decision.decision_kind.contains("combine")
+                })),
+            "joining result template should retain recomposition blockers"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact
+                    .sha256
+                    .as_ref()
+                    .is_some_and(|sha| sha.len() == 64)
+                    && artifact
+                        .evidence
+                        .as_ref()
+                        .is_some_and(|evidence| !evidence.is_empty()))),
+            "joining result template should retain artifact checksum and evidence"
+        );
+    }
+
+    #[test]
     fn request_template_import_review_body_matches_retained_boundary_contract() {
         let templates = request_templates();
         let template_entries = templates
@@ -124735,6 +125044,122 @@ mod tests {
                 "learning templates should include {expected}"
             );
         }
+    }
+
+    #[test]
+    fn request_template_learning_model_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str) == Some("learning-model-result-feedback")
+            })
+            .expect("learning model result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/learning/models/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("learning model result template should include request body");
+        let parsed: LearningModelResultReviewRequest = serde_json::from_value(request)
+            .expect("learning model result template should match review schema");
+        assert_eq!(parsed.model_family, "mdp-policy-snapshot");
+        assert_eq!(parsed.promote_for_planning, Some(true));
+        assert_eq!(parsed.replay_verified, Some(false));
+        assert!(
+            parsed
+                .metrics
+                .as_ref()
+                .is_some_and(|metrics| metrics.iter().any(|metric| {
+                    metric.metric_id == "replay-pass-rate" && metric.threshold.is_some()
+                })),
+            "learning model result template should retain replay metric thresholds"
+        );
+        assert!(
+            parsed
+                .promotion_blockers
+                .as_ref()
+                .is_some_and(|blockers| !blockers.is_empty()),
+            "learning model result template should retain promotion blockers"
+        );
+        let payload = learning_model_result_review_response(parsed)
+            .expect("learning model result template should normalize");
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload
+                .pointer("/learningModelResult/modelCardCompatibility/reviewStatus")
+                .and_then(Value::as_str),
+            Some("model-card-retained-non-neural")
+        );
+    }
+
+    #[test]
+    fn request_template_learning_optimizer_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("learning-optimizer-result-feedback")
+            })
+            .expect("learning optimizer result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/learning/optimizers/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("learning optimizer result template should include request body");
+        let parsed: LearningOptimizerResultReviewRequest = serde_json::from_value(request)
+            .expect("learning optimizer result template should match review schema");
+        assert_eq!(parsed.optimizer_family, "pomdp-hybrid-route-optimizer");
+        assert_eq!(
+            parsed.selected_candidate_id.as_deref(),
+            Some("hybrid-print-mill")
+        );
+        assert_eq!(parsed.simulation_verified, Some(false));
+        assert!(
+            parsed
+                .candidates
+                .as_ref()
+                .is_some_and(|candidates| candidates.iter().any(|candidate| {
+                    candidate.selected == Some(true)
+                        && candidate.requires_split_combine == Some(true)
+                        && candidate.expected_reward.is_some()
+                })),
+            "learning optimizer result template should retain selected split/combine candidates"
+        );
+        assert!(
+            parsed
+                .promotion_blockers
+                .as_ref()
+                .is_some_and(|blockers| !blockers.is_empty()),
+            "learning optimizer result template should retain promotion blockers"
+        );
+        let payload = learning_optimizer_result_review_response(parsed)
+            .expect("learning optimizer result template should normalize");
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload
+                .pointer("/learningOptimizerResult/selectedCandidateMatches")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]

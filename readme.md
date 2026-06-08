@@ -5507,7 +5507,7 @@ reviews clear the machine-ready gates.
 
 `GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
 `dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
-templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, instruction-improvement result feedback, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
+templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, instruction-improvement result feedback, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, joining result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, boundary-failure learning feedback, learning model result feedback, and learning optimizer result feedback. Each template
 names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/design/import/review`,
 `POST /fabrication/design/generate`, `POST /fabrication/machine-code/generate`,
@@ -5517,9 +5517,11 @@ names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/simulation/run`,
 `POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`, and
 `POST /fabrication/costing/result`, `POST /fabrication/interventions/result`,
-`POST /fabrication/monitoring/result`, and
+`POST /fabrication/joining/result`, `POST /fabrication/monitoring/result`, and
 `POST /fabrication/quality/result`, `POST /fabrication/release/result`, and
 `POST /fabrication/learning/outcomes`,
+`POST /fabrication/learning/models/result`, and
+`POST /fabrication/learning/optimizers/result`,
 plus preferred manufacturing
 methods, machine class, required evidence labels, and a minimal request skeleton
 while making clear that templates are not machine-ready instructions. Plan,
@@ -5550,6 +5552,11 @@ The operator intervention result starter deserializes as an
 automation fallback, split/combine interface review, unacknowledged evidence
 gates, retained checkpoint artifacts, and `interventionLearningOutcomeDraft`
 feedback visible before a machine-ready or unattended release decision.
+The joining result starter deserializes as an `InterfaceResultReviewRequest`
+example and keeps datum-transfer evidence, fit proof, adhesive/plastic/metal
+join recipe references, pending operator or automation verification, retained
+joining artifact checksums, and `interfaceLearningOutcomeDraft` feedback visible
+before recomposed printed, milled, turned, or special-process parts can release.
 The runtime monitoring result starter deserializes as a
 `MonitoringResultReviewRequest` example and keeps channel heartbeat blockers,
 critical alerts, safe-stop/restart recovery actions, operator check-ins,
@@ -5584,7 +5591,13 @@ human-approval blockers, dry-run/simulation warnings, and
 controller programs can enter a release package. Learning feedback starter bodies deserialize
 as `LearningOutcomeRequest` examples with `rewardHint`, manufacturing methods,
 and split/combine, machine-failure, and human-intervention observations retained
-for MDP/POMDP/neural outcome memory. Template
+for MDP/POMDP/neural outcome memory. Learning model and optimizer result
+starters deserialize as `LearningModelResultReviewRequest` and
+`LearningOptimizerResultReviewRequest` examples, keeping DES/MDP/POMDP/neural
+model artifacts, optimizer candidates, replay and simulation verification,
+metric thresholds, model-card compatibility, promotion blockers, retained
+artifact checksums, and outcome drafts visible before any learned policy can
+influence future advisory plans. Template
 request skeletons include `templateId` and `templateVersion` trace labels for
 job, artifact, release, learning outcome memory, boundary memory, remediation-risk, and neural training evidence. Template entries also include
 `releaseGateHints` that point to slicer or controller review, instruction
