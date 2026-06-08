@@ -123,7 +123,7 @@ spec:
               memory: 1Gi
             limits:
               cpu: '6'
-              memory: 2560Mi
+              memory: 4Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
