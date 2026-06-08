@@ -58691,6 +58691,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/postprocess/result",
         "GET /artifacts/catalog",
         "GET /fabrication/artifacts/catalog",
+        "GET /packages/catalog",
+        "GET /fabrication/packages/catalog",
         "GET /learning/capabilities",
         "GET /fabrication/learning/capabilities",
         "GET /learning/engines/catalog",
@@ -106188,6 +106190,61 @@ async fn intake_catalog_http() -> impl IntoResponse {
     }))
 }
 
+fn fabrication_package_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.package-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /packages/catalog", "GET /fabrication/packages/catalog"],
+        "intakeCatalogRoutes": ["GET /intake/catalog", "GET /fabrication/intake/catalog"],
+        "jobEvidenceRoutes": ["GET /jobs/catalog", "GET /fabrication/jobs/catalog", "GET /fabrication/jobs/:job_id/release-bundle"],
+        "packageChecklist": intake_request_package_checklist(),
+        "packagePhases": [
+            {
+                "phase": "design-and-source-package",
+                "requiredArtifacts": ["design-input-review", "design-package", "design-export-bundle", "generated-design-export"],
+                "sourceRoutes": ["POST /fabrication/design/import/review", "POST /fabrication/design/generate", "POST /fabrication/design/convert/result"],
+                "blocks": ["designInputReview.blockers", "designExports.reviewGates", "machineRelease.blockers"]
+            },
+            {
+                "phase": "machine-and-process-package",
+                "requiredArtifacts": ["machine-selection", "process-plan", "process-graph", "material-plan", "tooling-plan", "fixture-plan"],
+                "sourceRoutes": ["POST /fabrication/plan", "GET /fabrication/process/catalog", "POST /fabrication/materials/plan", "POST /fabrication/toolpaths/plan"],
+                "blocks": ["processGraph.releaseGates", "machineSelection.candidates.status", "materialPlan.routeRequirements", "fixturePlan.setups.clearanceChecks"]
+            },
+            {
+                "phase": "instruction-and-controller-package",
+                "requiredArtifacts": ["instruction-analysis", "instruction-validation-result", "machine-code-result", "improved-program-*", "controller-postprocessor-result"],
+                "sourceRoutes": ["POST /fabrication/instructions/analyze", "POST /fabrication/instructions/validate", "POST /fabrication/machine-code/generate", "POST /fabrication/instructions/improve"],
+                "blocks": ["validation.findings", "controllerPlan.releaseGates", "machineRelease.blockers", "operatorInterventionPlan.requiredOperatorActions"]
+            },
+            {
+                "phase": "hybrid-boundary-and-release-package",
+                "requiredArtifacts": ["decomposition-plan", "interface-control-plan", "assembly-plan", "boundary-remediation-plan", "release-package-plan"],
+                "sourceRoutes": ["POST /fabrication/decomposition/plan", "POST /fabrication/assembly/plan", "POST /fabrication/interfaces/result", "POST /fabrication/release/preview"],
+                "blocks": ["interventionMap.splitCombineDecisions", "interfaceControlPlan.releaseGates", "releasePackagePlan.releaseGates"]
+            },
+            {
+                "phase": "learning-feedback-package",
+                "requiredArtifacts": ["mdp-request", "learning-policy-snapshot", "learning-outcome-memory", "learning-corpus"],
+                "sourceRoutes": ["GET /fabrication/learning/preflight/catalog", "POST /fabrication/learning/observe", "POST /fabrication/learning/outcomes"],
+                "blocks": ["learning.promotionBlockers", "policyImpactPreview", "release-gate-bypass"]
+            }
+        ],
+        "releasePolicy": [
+            "package catalog entries describe retained evidence requirements, not certified manufacturing approval",
+            "machineReady remains false until design, machine, process, instruction, simulation, quality, operator, interface, release, and learning-feedback blockers are retained and cleared",
+            "generated and improved instructions must keep original source, patch, validation, and boundary-review artifacts traceable",
+            "MDP/POMDP/neural feedback can reprioritize future packages but cannot bypass package release gates"
+        ]
+    })
+}
+
+async fn fabrication_package_catalog_http() -> impl IntoResponse {
+    Json(fabrication_package_catalog_response())
+}
+
 fn request_templates() -> Value {
     json!([
         {
@@ -107353,6 +107410,7 @@ async fn request_schema() -> impl IntoResponse {
             "postprocessPlan": ["POST /postprocess/plan", "POST /fabrication/postprocess/plan"],
             "postprocessResult": ["POST /postprocess/result", "POST /fabrication/postprocess/result"],
             "artifactCatalog": ["GET /artifacts/catalog", "GET /fabrication/artifacts/catalog"],
+            "packageCatalog": ["GET /packages/catalog", "GET /fabrication/packages/catalog"],
             "jobEvidenceCatalog": ["GET /jobs/catalog", "GET /fabrication/jobs/catalog"],
             "learningCapabilities": ["GET /learning/capabilities", "GET /fabrication/learning/capabilities"],
             "learningPreflightCatalog": ["GET /learning/preflight/catalog", "GET /fabrication/learning/preflight/catalog"],
@@ -110582,6 +110640,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/artifacts/catalog", get(artifact_catalog_http))
         .route("/fabrication/artifacts/catalog", get(artifact_catalog_http))
+        .route("/packages/catalog", get(fabrication_package_catalog_http))
+        .route(
+            "/fabrication/packages/catalog",
+            get(fabrication_package_catalog_http),
+        )
         .route("/learning/capabilities", get(learning_capabilities))
         .route(
             "/fabrication/learning/capabilities",
@@ -131861,6 +131924,64 @@ mod tests {
                         .any(|artifact| artifact.as_str() == Some("improved-program-*"))
                 })
         }));
+    }
+
+    #[test]
+    fn package_catalog_endpoint_exposes_request_to_release_evidence_contract() {
+        let payload = fabrication_package_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.package-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/packages/catalog"))));
+        assert!(payload
+            .get("jobEvidenceRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/jobs/:job_id/release-bundle")
+            })));
+
+        let phases = payload
+            .get("packagePhases")
+            .and_then(Value::as_array)
+            .expect("package phases should be present");
+        for phase in [
+            "design-and-source-package",
+            "machine-and-process-package",
+            "instruction-and-controller-package",
+            "hybrid-boundary-and-release-package",
+            "learning-feedback-package",
+        ] {
+            assert!(
+                phases
+                    .iter()
+                    .any(|entry| entry.get("phase").and_then(Value::as_str) == Some(phase)),
+                "missing package phase {phase}"
+            );
+        }
+        assert!(phases.iter().any(|entry| entry
+            .get("requiredArtifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| artifacts
+                .iter()
+                .any(|artifact| artifact.as_str() == Some("machine-code-result")))));
+        assert!(phases.iter().any(|entry| entry
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|block| block.as_str() == Some("interventionMap.splitCombineDecisions")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("cannot bypass package release gates")))));
     }
 
     #[test]

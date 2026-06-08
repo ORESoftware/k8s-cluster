@@ -330,6 +330,8 @@ outcomes.
 - `POST /fabrication/postprocess/result`
 - `GET /artifacts/catalog`
 - `GET /fabrication/artifacts/catalog`
+- `GET /packages/catalog`
+- `GET /fabrication/packages/catalog`
 - `GET /learning/capabilities`
 - `GET /fabrication/learning/capabilities`
 - `GET /learning/engines/catalog`
@@ -4450,6 +4452,35 @@ database storage or certified machine release; generated design exports, machine
 release packages, DES/POMDP/neural artifacts, and
 learning outcomes remain draft evidence until validation, simulation,
 controller, setup, quality, and signoff gates clear.
+
+## `GET /fabrication/packages/catalog`
+
+`GET /packages/catalog` and the gateway-prefixed
+`GET /fabrication/packages/catalog` return the live
+`dd.fabrication.package-catalog.v1` retained package contract for moving a
+fabrication request from design/source evidence through machine/process,
+instruction/controller, hybrid boundary, release, and learning-feedback
+evidence. The catalog makes the intake package checklist directly discoverable
+without fetching the broader intake guide.
+
+Package phases name required artifacts such as `design-input-review`,
+`design-package`, `generated-design-export`, `machine-selection`,
+`process-plan`, `process-graph`, `machine-code-result`,
+`instruction-validation-result`, `improved-program-*`,
+`interface-control-plan`, `release-package-plan`, `mdp-request`,
+`learning-policy-snapshot`, and `learning-outcome-memory`. They also link
+source routes including `POST /fabrication/design/generate`,
+`POST /fabrication/machine-code/generate`,
+`POST /fabrication/instructions/validate`,
+`POST /fabrication/instructions/improve`,
+`POST /fabrication/decomposition/plan`, and
+`POST /fabrication/release/preview`.
+
+Package catalog entries are evidence requirements, not certified manufacturing
+approval. `machineReady` remains false until design, machine, process,
+instruction, simulation, quality, operator, interface, release, and learning
+feedback blockers are retained and cleared. MDP/POMDP/neural feedback can
+reprioritize future packages, but it cannot bypass package release gates.
 
 ## `GET /fabrication/jobs/catalog`
 
