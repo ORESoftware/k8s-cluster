@@ -3567,16 +3567,23 @@ tool identity, holder/station state, geometry, controller offsets, tool life,
 wear, support media, consumables, probe/tool-setting evidence, retained
 artifacts, warnings, and review metadata. The response uses
 `dd.fabrication.tooling-result-review.v1` and emits a
-`dd.fabrication.tooling-learning-outcome-draft.v1` `outcomeDraft` with tool, offset, tool-life, support-media, artifact, blocker, human-intervention, and release-state feature hints for MDP/POMDP/neural learners.
+`dd.fabrication.tooling-learning-outcome-draft.v1` `outcomeDraft` with tool,
+offset, tool-life, support-media, artifact, blocker, human-intervention, and
+release-state feature hints for MDP/POMDP/neural learners. It also includes a
+`priorityDispositions` array for machine-failure, human-intervention,
+split/combine or interface tooling review, non-G-code job-sheet evidence, and
+learning-feedback lanes, with `tooling-priority:<priority>:<disposition>`
+observations mirrored into the learning draft.
 
 Machine-ready and unattended release remain blocked while tool checks, offset
 checks, tool-life margins, coolant/gas/abrasive/wire/probe support media,
 artifact checksums, or human-review gates are unresolved. Stored artifacts
 include `tooling-result`, `tooling-tool-checks`, `tooling-offset-checks`,
 `tooling-tool-life-checks`, `tooling-support-media-checks`,
-`tooling-artifacts`, and `tooling-learning-observations` so future planners can
-change tools, split setups, refresh offsets, schedule tool replacement, add
-probes, restart process support, or require human intervention earlier.
+`tooling-artifacts`, `tooling-priority-dispositions`, and
+`tooling-learning-observations` so future planners can change tools, split
+setups, refresh offsets, schedule tool replacement, add probes, restart process
+support, or require human intervention earlier.
 
 ## `GET /fabrication/consumables/catalog`
 
