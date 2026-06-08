@@ -103,6 +103,8 @@ outcomes.
 - `POST /fabrication/handoff/result`
 - `GET /instructions/languages`
 - `GET /fabrication/instructions/languages`
+- `GET /instructions/review-pipeline/catalog`
+- `GET /fabrication/instructions/review-pipeline/catalog`
 - `GET /instructions/import/catalog`
 - `GET /fabrication/instructions/import/catalog`
 - `GET /instructions/import/preflight/catalog`
@@ -1639,6 +1641,29 @@ simulation or dry-run, controller/postprocessor, setup, release, and operator or
 automation evidence clear. CNC validation and result reviews feed DES,
 MDP/POMDP, and neural learning surfaces so future plans can split parts, reroute
 machines, regenerate code, or require human intervention earlier.
+
+## `GET /fabrication/instructions/review-pipeline/catalog`
+
+`GET /instructions/review-pipeline/catalog` and the gateway-prefixed
+`GET /fabrication/instructions/review-pipeline/catalog` return the
+`dd.fabrication.instruction-review-pipeline-catalog.v1` stage order for generated
+or imported instruction streams. The catalog tells clients to discover language
+and machine context, retain the original import or generated artifact, validate
+and find machine-failure/human-intervention/split-combine boundaries, improve or
+route for human review, then simulate, release-preview, and record learning
+outcomes.
+
+Each pipeline stage names route handoffs, required evidence, and blocked
+surfaces such as `instructionImportReview.originalPrograms`,
+`generatedPrograms`, `validation.failureBoundaries`, `boundarySummary`,
+`operatorInterventionPlan.requiredOperatorActions`, `improvements`,
+`improvedPrograms.patchManifest`, `simulation.failureBoundaries`,
+`releasePackagePlan.releaseGates`, and `learning.outcomes`. The decision rules
+make the original stream immutable review evidence: improved programs are patch
+drafts, `machineReady` remains false while validation, simulation, controller,
+setup, quality, split/combine, operator, or release gates are open, and patch
+outcomes feed DES/MDP/POMDP/neural learning through retained feature maps and
+reward terms.
 
 ## `GET /fabrication/instructions/import/catalog`
 

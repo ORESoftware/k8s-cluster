@@ -58475,6 +58475,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/design/convert/result",
         "GET /instructions/languages",
         "GET /fabrication/instructions/languages",
+        "GET /instructions/review-pipeline/catalog",
+        "GET /fabrication/instructions/review-pipeline/catalog",
         "GET /instructions/import/catalog",
         "GET /fabrication/instructions/import/catalog",
         "GET /instructions/import/preflight/catalog",
@@ -95270,6 +95272,120 @@ async fn instruction_languages() -> impl IntoResponse {
     Json(instruction_language_catalog_response())
 }
 
+fn instruction_review_pipeline_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-review-pipeline-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /instructions/review-pipeline/catalog",
+            "GET /fabrication/instructions/review-pipeline/catalog"
+        ],
+        "pipelineStages": [
+            {
+                "stage": "discover-language-and-machine-context",
+                "purpose": "classify imported or generated instructions before analysis",
+                "routeHandoffs": [
+                    "GET /fabrication/instructions/languages",
+                    "GET /fabrication/instructions/import/catalog",
+                    "GET /fabrication/machines/catalog",
+                    "GET /fabrication/controllers/catalog"
+                ],
+                "requiredEvidence": [
+                    "instruction language or source family",
+                    "machine kind and controller/postprocessor target",
+                    "source provenance, checksum, units, and setup context"
+                ],
+                "blockedSurfaces": ["instructionImportReview.packageActions", "machineSelection.releaseBlockers"]
+            },
+            {
+                "stage": "retain-import-or-generated-artifact",
+                "purpose": "retain original instruction streams or generated drafts before patching",
+                "routeHandoffs": [
+                    "POST /fabrication/instructions/import/review",
+                    "POST /fabrication/instructions/generation/result",
+                    "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
+                ],
+                "requiredEvidence": [
+                    "original program or generated artifact retained with checksum",
+                    "worker id, source request id, language, machine, and controller metadata",
+                    "draft-only release policy acknowledged"
+                ],
+                "blockedSurfaces": ["instructionImportReview.originalPrograms", "generatedPrograms", "releasePackagePlan.requiredArtifacts"]
+            },
+            {
+                "stage": "validate-and-find-boundaries",
+                "purpose": "analyze controller, slicer, job-sheet, setup, postprocess, or operator instructions for release blockers",
+                "routeHandoffs": [
+                    "POST /fabrication/instructions/analyze",
+                    "POST /fabrication/instructions/validate",
+                    "POST /fabrication/instructions/boundaries/review",
+                    "GET /fabrication/boundaries/catalog"
+                ],
+                "requiredEvidence": [
+                    "validation findings, failure boundaries, line or span references, and severity",
+                    "machine-failure, human-intervention, automation, split/combine, setup, and postprocess boundary state",
+                    "simulation or dry-run requirement when executable machine code is present"
+                ],
+                "blockedSurfaces": ["validation.failureBoundaries", "boundarySummary", "operatorInterventionPlan.requiredOperatorActions"]
+            },
+            {
+                "stage": "improve-or-route-for-human-review",
+                "purpose": "turn repairable findings into conservative patch drafts or explicit operator review gates",
+                "routeHandoffs": [
+                    "GET /fabrication/improvements/catalog",
+                    "GET /fabrication/improvements/preflight/catalog",
+                    "POST /fabrication/instructions/improve"
+                ],
+                "requiredEvidence": [
+                    "patch manifest operations, preview lines, changed-program summaries, and human approval state",
+                    "simulation or review requirement for every patch that changes controller or process state",
+                    "release blocker retained when improvement is advisory or incomplete"
+                ],
+                "blockedSurfaces": ["improvements", "improvedPrograms.patchManifest", "machineRelease.blockers"]
+            },
+            {
+                "stage": "simulate-release-and-learn",
+                "purpose": "promote only reviewed instruction artifacts into release preview and learning memory",
+                "routeHandoffs": [
+                    "POST /fabrication/simulation/run",
+                    "POST /fabrication/release/preview",
+                    "POST /fabrication/learning/outcomes",
+                    "GET /fabrication/learning/features/catalog"
+                ],
+                "requiredEvidence": [
+                    "simulation, dry-run, controller/postprocessor, setup, quality, and signoff evidence",
+                    "release bundle references original and improved artifacts",
+                    "learning outcome records success, reward, boundary kind, and patch decision"
+                ],
+                "blockedSurfaces": ["simulation.failureBoundaries", "releasePackagePlan.releaseGates", "learning.outcomes"]
+            }
+        ],
+        "decisionRules": [
+            "never patch the only copy of an imported instruction stream; retain the original and emit improvedPrograms as review drafts",
+            "machineReady remains false while validation boundaries, improvement drafts, simulation, controller review, human-intervention, split/combine, setup, quality, or release gates remain open",
+            "patch and validation outcomes feed DES/MDP/POMDP/neural learning through retained feature maps, reward terms, and outcome drafts"
+        ],
+        "responseSurfaces": [
+            "instructionImportReview",
+            "generatedPrograms",
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "improvements",
+            "improvedPrograms.patchManifest",
+            "simulation.failureBoundaries",
+            "releasePackagePlan",
+            "learning.outcomes",
+            "learningFeatureCatalog.featureGroups"
+        ]
+    })
+}
+
+async fn instruction_review_pipeline_catalog_http() -> impl IntoResponse {
+    Json(instruction_review_pipeline_catalog_response())
+}
+
 fn instruction_import_catalog_response() -> Value {
     let languages = instruction_language_catalog();
     let validation_contracts = instruction_validation_catalog_check_contracts();
@@ -111343,6 +111459,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(instruction_languages),
         )
         .route(
+            "/instructions/review-pipeline/catalog",
+            get(instruction_review_pipeline_catalog_http),
+        )
+        .route(
+            "/fabrication/instructions/review-pipeline/catalog",
+            get(instruction_review_pipeline_catalog_http),
+        )
+        .route(
             "/instructions/import/catalog",
             get(instruction_import_catalog_http),
         )
@@ -116360,6 +116484,59 @@ mod tests {
             .is_some_and(|gates| gates.iter().any(|gate| gate
                 .as_str()
                 .is_some_and(|gate| gate.contains("resin-exposure-layer-manifest")))));
+    }
+
+    #[test]
+    fn instruction_review_pipeline_catalog_orders_import_validation_improvement_release_and_learning(
+    ) {
+        let payload = instruction_review_pipeline_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-review-pipeline-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/instructions/review-pipeline/catalog")
+            })));
+        let stages = payload
+            .get("pipelineStages")
+            .and_then(Value::as_array)
+            .expect("instruction review pipeline stages should be present");
+        let stage_ids = stages
+            .iter()
+            .filter_map(|stage| stage.get("stage").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            stage_ids,
+            vec![
+                "discover-language-and-machine-context",
+                "retain-import-or-generated-artifact",
+                "validate-and-find-boundaries",
+                "improve-or-route-for-human-review",
+                "simulate-release-and-learn"
+            ]
+        );
+        let pipeline_text = payload.to_string();
+        for expected in [
+            "POST /fabrication/instructions/import/review",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/learning/outcomes",
+            "GET /fabrication/learning/features/catalog",
+            "improvedPrograms.patchManifest",
+            "validation.failureBoundaries",
+            "machineReady remains false",
+            "never patch the only copy",
+        ] {
+            assert!(
+                pipeline_text.contains(expected),
+                "instruction review pipeline should include {expected}"
+            );
+        }
     }
 
     #[test]
