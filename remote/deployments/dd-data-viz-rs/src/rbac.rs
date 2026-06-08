@@ -34,6 +34,7 @@ pub(crate) enum Permission {
     QuestionSuggest,
     QuestionWrite,
     AssociationRead,
+    AssociationWrite,
     AlertRead,
     AlertWrite,
     AlertEvaluate,
@@ -102,6 +103,7 @@ impl Role {
                 Permission::QuestionSuggest,
                 Permission::QuestionWrite,
                 Permission::AssociationRead,
+                Permission::AssociationWrite,
                 Permission::AlertRead,
                 Permission::AlertWrite,
                 Permission::AlertEvaluate,
@@ -129,6 +131,7 @@ impl Role {
                 Permission::QuestionSuggest,
                 Permission::QuestionWrite,
                 Permission::AssociationRead,
+                Permission::AssociationWrite,
                 Permission::AlertRead,
                 Permission::AlertEvaluate,
                 Permission::SemanticRead,
@@ -213,6 +216,7 @@ impl Permission {
             }
             Self::QuestionWrite => "Create or replace self-service questions and chart bindings.",
             Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
+            Self::AssociationWrite => "Create or replace Qlik-style associative selection sessions.",
             Self::AlertRead => "Read Grafana-style alert rules and notification routing metadata.",
             Self::AlertWrite => {
                 "Create or replace Grafana-style alert rules, contact points, and notification policies."
@@ -289,6 +293,7 @@ fn all_permissions() -> Vec<Permission> {
         Permission::QuestionSuggest,
         Permission::QuestionWrite,
         Permission::AssociationRead,
+        Permission::AssociationWrite,
         Permission::AlertRead,
         Permission::AlertWrite,
         Permission::AlertEvaluate,
@@ -328,6 +333,7 @@ mod tests {
         assert!(Role::Builder.allows(Permission::DaxCompile));
         assert!(Role::Builder.allows(Permission::EvolutionRun));
         assert!(Role::Builder.allows(Permission::EtlPlan));
+        assert!(Role::Builder.allows(Permission::AssociationWrite));
     }
 
     #[test]
@@ -350,6 +356,7 @@ mod tests {
         assert!(Role::Analyst.allows(Permission::QuestionWrite));
         assert!(Role::Analyst.allows(Permission::PublishingRequest));
         assert!(!Role::Analyst.allows(Permission::PublishingReview));
+        assert!(Role::Analyst.allows(Permission::AssociationWrite));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(!Role::Analyst.allows(Permission::EtlPlan));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
@@ -364,6 +371,7 @@ mod tests {
         assert!(!Role::Viewer.allows(Permission::QuestionWrite));
         assert!(!Role::Viewer.allows(Permission::SemanticCompile));
         assert!(!Role::Viewer.allows(Permission::DaxCompile));
+        assert!(!Role::Viewer.allows(Permission::AssociationWrite));
     }
 
     #[test]

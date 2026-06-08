@@ -12,8 +12,11 @@ const MAX_SELECTION_DATASETS: usize = 16;
 const MAX_SELECTIONS: usize = 64;
 const DEFAULT_MAX_VALUES_PER_FIELD: usize = 32;
 const MAX_VALUES_PER_FIELD: usize = 128;
+const MAX_SELECTION_SESSIONS: usize = 256;
+const MAX_SESSION_TAGS: usize = 24;
+const MAX_SESSION_LABEL_BYTES: usize = 160;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AssociativeSelectionRequest {
     pub dataset_ids: Vec<String>,
@@ -30,6 +33,42 @@ pub(crate) struct AssociativeSelection {
     pub value: Value,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveSelectionSessionRequest {
+    pub session_id: Option<String>,
+    pub name: Option<String>,
+    pub owner: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub selection: AssociativeSelectionRequest,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SelectionSessionRecord {
+    pub session_id: String,
+    pub name: String,
+    pub owner: Option<String>,
+    pub tags: Vec<String>,
+    pub dataset_ids: Vec<String>,
+    pub selections: Vec<AssociativeSelection>,
+    pub max_values_per_field: usize,
+    pub created_at_ms: u128,
+    pub updated_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SelectionSessionSummary {
+    session_id: String,
+    name: String,
+    owner: Option<String>,
+    dataset_count: usize,
+    selection_count: usize,
+    tag_count: usize,
+    updated_at_ms: u128,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct NormalizedSelection {
@@ -37,6 +76,66 @@ struct NormalizedSelection {
     field: String,
     value: String,
     source: &'static str,
+}
+
+impl SaveSelectionSessionRequest {
+    pub(crate) fn into_record(self, now_ms: u128) -> Result<SelectionSessionRecord, String> {
+        let session_id = match self.session_id {
+            Some(raw_id) => clean_identifier(&raw_id).ok_or_else(|| {
+                "sessionId must contain letters, numbers, dash, underscore, dot, or colon"
+                    .to_string()
+            })?,
+            None => format!("association-session-{now_ms}"),
+        };
+        let name = bounded_label(self.name.as_deref(), "selection session name")?
+            .unwrap_or_else(|| "Associative selection session".to_string());
+        let owner = bounded_label(self.owner.as_deref(), "selection session owner")?;
+        let tags = normalize_tags(self.tags.unwrap_or_default())?;
+        let dataset_ids = normalize_dataset_ids(&self.selection.dataset_ids)?;
+        let max_values_per_field = self
+            .selection
+            .max_values_per_field
+            .unwrap_or(DEFAULT_MAX_VALUES_PER_FIELD)
+            .clamp(1, MAX_VALUES_PER_FIELD);
+        if self.selection.selections.len() > MAX_SELECTIONS {
+            return Err(format!("selections exceeds max {MAX_SELECTIONS}"));
+        }
+        let selections = normalize_session_selections(self.selection.selections)?;
+
+        Ok(SelectionSessionRecord {
+            session_id,
+            name,
+            owner,
+            tags,
+            dataset_ids,
+            selections,
+            max_values_per_field,
+            created_at_ms: now_ms,
+            updated_at_ms: now_ms,
+        })
+    }
+}
+
+impl SelectionSessionRecord {
+    pub(crate) fn selection_request(&self) -> AssociativeSelectionRequest {
+        AssociativeSelectionRequest {
+            dataset_ids: self.dataset_ids.clone(),
+            selections: self.selections.clone(),
+            max_values_per_field: Some(self.max_values_per_field),
+        }
+    }
+
+    pub(crate) fn summary(&self) -> SelectionSessionSummary {
+        SelectionSessionSummary {
+            session_id: self.session_id.clone(),
+            name: self.name.clone(),
+            owner: self.owner.clone(),
+            dataset_count: self.dataset_ids.len(),
+            selection_count: self.selections.len(),
+            tag_count: self.tags.len(),
+            updated_at_ms: self.updated_at_ms,
+        }
+    }
 }
 
 pub(crate) fn selection_payload(
@@ -127,6 +226,58 @@ pub(crate) fn selection_payload(
     }))
 }
 
+pub(crate) fn save_session_response(
+    session: SelectionSessionRecord,
+    selection_state: Value,
+    warnings: Vec<String>,
+) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": "data-viz.associative-session.v1",
+        "session": session,
+        "selectionState": selection_state,
+        "warnings": warnings
+    })
+}
+
+pub(crate) fn session_detail_payload(
+    session: SelectionSessionRecord,
+    selection_state: Value,
+) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": "data-viz.associative-session.v1",
+        "session": session,
+        "selectionState": selection_state
+    })
+}
+
+pub(crate) fn session_catalog_payload(sessions: Vec<SelectionSessionSummary>) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": "data-viz.associative-session-catalog.v1",
+        "sessions": sessions,
+        "count": sessions.len(),
+        "limits": selection_limits_payload()
+    })
+}
+
+pub(crate) fn max_selection_sessions() -> usize {
+    MAX_SELECTION_SESSIONS
+}
+
+pub(crate) fn selection_limits_payload() -> Value {
+    json!({
+        "maxDatasets": MAX_SELECTION_DATASETS,
+        "maxSelections": MAX_SELECTIONS,
+        "defaultMaxValuesPerField": DEFAULT_MAX_VALUES_PER_FIELD,
+        "maxValuesPerField": MAX_VALUES_PER_FIELD,
+        "maxSessions": MAX_SELECTION_SESSIONS,
+        "maxSessionTags": MAX_SESSION_TAGS,
+        "maxSessionLabelBytes": MAX_SESSION_LABEL_BYTES
+    })
+}
+
 fn normalize_dataset_ids(raw_ids: &[String]) -> Result<Vec<String>, String> {
     if raw_ids.is_empty() {
         return Err("datasetIds must include at least one dataset".to_string());
@@ -193,6 +344,88 @@ fn normalize_selections(
     }
 
     Ok(normalized)
+}
+
+fn normalize_session_selections(
+    selections: Vec<AssociativeSelection>,
+) -> Result<Vec<AssociativeSelection>, String> {
+    selections
+        .into_iter()
+        .map(|selection| {
+            let dataset_id = selection
+                .dataset_id
+                .map(|raw_id| {
+                    clean_identifier(&raw_id)
+                        .ok_or_else(|| "selection datasetId is invalid".to_string())
+                })
+                .transpose()?;
+            let field = clean_identifier(&selection.field)
+                .ok_or_else(|| "selection field is invalid".to_string())?;
+            if !is_scalar_selection_value(&selection.value) {
+                return Err("selection value must be a scalar JSON value".to_string());
+            }
+            if selection.value.is_null() {
+                return Err("selection value cannot be null".to_string());
+            }
+            Ok(AssociativeSelection {
+                dataset_id,
+                field,
+                value: selection.value,
+            })
+        })
+        .collect()
+}
+
+fn bounded_label(value: Option<&str>, label: &str) -> Result<Option<String>, String> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.len() > MAX_SESSION_LABEL_BYTES {
+        return Err(format!(
+            "{label} exceeds max {MAX_SESSION_LABEL_BYTES} bytes"
+        ));
+    }
+    if looks_secret_bearing(value) {
+        return Err(format!("{label} appears to contain secret-bearing text"));
+    }
+    Ok(Some(value.to_string()))
+}
+
+fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, String> {
+    if tags.len() > MAX_SESSION_TAGS {
+        return Err(format!("tags exceeds max {MAX_SESSION_TAGS}"));
+    }
+    let mut normalized = BTreeSet::new();
+    for tag in tags {
+        let tag = clean_identifier(&tag).ok_or_else(|| {
+            "tags must contain letters, numbers, dash, underscore, dot, or colon".to_string()
+        })?;
+        normalized.insert(tag);
+    }
+    Ok(normalized.into_iter().collect())
+}
+
+fn is_scalar_selection_value(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+    )
+}
+
+fn looks_secret_bearing(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    [
+        "secret",
+        "token",
+        "password",
+        "authorization",
+        "bearer",
+        "api_key",
+        "private_key",
+        "access_key",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 fn categorical_fields(dataset: &Dataset) -> Vec<String> {
@@ -475,5 +708,51 @@ mod tests {
         assert!(values
             .iter()
             .any(|value| value["value"] == "software" && value["state"] == "excluded"));
+    }
+
+    #[test]
+    fn selection_session_normalizes_and_summarizes_request() {
+        let record = SaveSelectionSessionRequest {
+            session_id: Some("exec-session".to_string()),
+            name: Some("Executive Region".to_string()),
+            owner: Some("analyst".to_string()),
+            tags: Some(vec!["sales".to_string(), "sales".to_string()]),
+            selection: AssociativeSelectionRequest {
+                dataset_ids: vec!["sales".to_string(), "inventory".to_string()],
+                selections: vec![AssociativeSelection {
+                    dataset_id: Some("sales".to_string()),
+                    field: "region".to_string(),
+                    value: Value::from("north"),
+                }],
+                max_values_per_field: Some(12),
+            },
+        }
+        .into_record(42)
+        .expect("session record");
+
+        assert_eq!(record.session_id, "exec-session");
+        assert_eq!(record.dataset_ids.len(), 2);
+        assert_eq!(record.tags, vec!["sales"]);
+        assert_eq!(record.selection_request().max_values_per_field, Some(12));
+        assert_eq!(record.summary().selection_count, 1);
+    }
+
+    #[test]
+    fn selection_session_rejects_secret_like_owner() {
+        let error = SaveSelectionSessionRequest {
+            session_id: None,
+            name: Some("Daily selection".to_string()),
+            owner: Some("token owner".to_string()),
+            tags: None,
+            selection: AssociativeSelectionRequest {
+                dataset_ids: vec!["sales".to_string()],
+                selections: Vec::new(),
+                max_values_per_field: None,
+            },
+        }
+        .into_record(42)
+        .expect_err("secret-like owner rejected");
+
+        assert!(error.contains("secret-bearing"));
     }
 }

@@ -167,10 +167,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "field cardinality profiles",
                 "multi-dataset associative selection endpoint",
                 "green/white/gray selection-state model",
+                "persisted in-memory selection sessions",
             ],
             next_engine_work: vec![
                 "relationship confidence scoring",
-                "persisted selection sessions",
                 "field alias and semantic relationship inference",
             ],
         },
