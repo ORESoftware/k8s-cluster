@@ -3412,6 +3412,2186 @@ pub fn validate_des_fel_elevator_pomdp_beliefs_observation(value: String) -> Res
   }
 }
 
+pub const benefactor_marketing_clients_table = "benefactor_marketing_clients"
+pub const benefactor_marketing_clients_select_sql = "select\n      id::text as id,\n      status,\n      name,\n      slug,\n      industry,\n      website_url,\n      billing_email,\n      owner_user_id::text as owner_user_id,\n      service_package,\n      onboarding_stage,\n      portal_enabled,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_clients"
+
+pub type BenefactorMarketingClientsStatus {
+  BenefactorMarketingClientsStatusOnboarding
+  BenefactorMarketingClientsStatusActive
+  BenefactorMarketingClientsStatusPaused
+  BenefactorMarketingClientsStatusArchived
+}
+
+pub fn benefactor_marketing_clients_status_to_string(value: BenefactorMarketingClientsStatus) -> String {
+  case value {
+    BenefactorMarketingClientsStatusOnboarding -> "onboarding"
+    BenefactorMarketingClientsStatusActive -> "active"
+    BenefactorMarketingClientsStatusPaused -> "paused"
+    BenefactorMarketingClientsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_benefactor_marketing_clients_status(value: String) -> Result(BenefactorMarketingClientsStatus, String) {
+  case value {
+    "onboarding" -> Ok(BenefactorMarketingClientsStatusOnboarding)
+    "active" -> Ok(BenefactorMarketingClientsStatusActive)
+    "paused" -> Ok(BenefactorMarketingClientsStatusPaused)
+    "archived" -> Ok(BenefactorMarketingClientsStatusArchived)
+    _ -> Error("unsupported benefactor_marketing_clients.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingClientsRow {
+  BenefactorMarketingClientsRow(
+    id: String,
+    status: String,
+    name: String,
+    slug: String,
+    industry: Option(String),
+    website_url: Option(String),
+    billing_email: Option(String),
+    owner_user_id: Option(String),
+    service_package: Option(String),
+    onboarding_stage: String,
+    portal_enabled: Bool,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_clients_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_clients.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_clients_status(value: String) -> Result(String, String) {
+  case list.contains(["onboarding", "active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_clients.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_contacts_table = "benefactor_marketing_contacts"
+pub const benefactor_marketing_contacts_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      first_name,\n      last_name,\n      email,\n      phone,\n      job_title,\n      lifecycle_role,\n      consent_status,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_contacts"
+
+pub type BenefactorMarketingContactsStatus {
+  BenefactorMarketingContactsStatusActive
+  BenefactorMarketingContactsStatusInactive
+  BenefactorMarketingContactsStatusBounced
+  BenefactorMarketingContactsStatusUnsubscribed
+}
+
+pub fn benefactor_marketing_contacts_status_to_string(value: BenefactorMarketingContactsStatus) -> String {
+  case value {
+    BenefactorMarketingContactsStatusActive -> "active"
+    BenefactorMarketingContactsStatusInactive -> "inactive"
+    BenefactorMarketingContactsStatusBounced -> "bounced"
+    BenefactorMarketingContactsStatusUnsubscribed -> "unsubscribed"
+  }
+}
+
+pub fn parse_benefactor_marketing_contacts_status(value: String) -> Result(BenefactorMarketingContactsStatus, String) {
+  case value {
+    "active" -> Ok(BenefactorMarketingContactsStatusActive)
+    "inactive" -> Ok(BenefactorMarketingContactsStatusInactive)
+    "bounced" -> Ok(BenefactorMarketingContactsStatusBounced)
+    "unsubscribed" -> Ok(BenefactorMarketingContactsStatusUnsubscribed)
+    _ -> Error("unsupported benefactor_marketing_contacts.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContactsLifecycleRole {
+  BenefactorMarketingContactsLifecycleRolePrimary
+  BenefactorMarketingContactsLifecycleRoleDecisionMaker
+  BenefactorMarketingContactsLifecycleRoleBilling
+  BenefactorMarketingContactsLifecycleRoleTechnical
+  BenefactorMarketingContactsLifecycleRoleMarketing
+  BenefactorMarketingContactsLifecycleRoleOther
+}
+
+pub fn benefactor_marketing_contacts_lifecycle_role_to_string(value: BenefactorMarketingContactsLifecycleRole) -> String {
+  case value {
+    BenefactorMarketingContactsLifecycleRolePrimary -> "primary"
+    BenefactorMarketingContactsLifecycleRoleDecisionMaker -> "decision_maker"
+    BenefactorMarketingContactsLifecycleRoleBilling -> "billing"
+    BenefactorMarketingContactsLifecycleRoleTechnical -> "technical"
+    BenefactorMarketingContactsLifecycleRoleMarketing -> "marketing"
+    BenefactorMarketingContactsLifecycleRoleOther -> "other"
+  }
+}
+
+pub fn parse_benefactor_marketing_contacts_lifecycle_role(value: String) -> Result(BenefactorMarketingContactsLifecycleRole, String) {
+  case value {
+    "primary" -> Ok(BenefactorMarketingContactsLifecycleRolePrimary)
+    "decision_maker" -> Ok(BenefactorMarketingContactsLifecycleRoleDecisionMaker)
+    "billing" -> Ok(BenefactorMarketingContactsLifecycleRoleBilling)
+    "technical" -> Ok(BenefactorMarketingContactsLifecycleRoleTechnical)
+    "marketing" -> Ok(BenefactorMarketingContactsLifecycleRoleMarketing)
+    "other" -> Ok(BenefactorMarketingContactsLifecycleRoleOther)
+    _ -> Error("unsupported benefactor_marketing_contacts.lifecycle_role: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContactsConsentStatus {
+  BenefactorMarketingContactsConsentStatusUnknown
+  BenefactorMarketingContactsConsentStatusOptedIn
+  BenefactorMarketingContactsConsentStatusOptedOut
+}
+
+pub fn benefactor_marketing_contacts_consent_status_to_string(value: BenefactorMarketingContactsConsentStatus) -> String {
+  case value {
+    BenefactorMarketingContactsConsentStatusUnknown -> "unknown"
+    BenefactorMarketingContactsConsentStatusOptedIn -> "opted_in"
+    BenefactorMarketingContactsConsentStatusOptedOut -> "opted_out"
+  }
+}
+
+pub fn parse_benefactor_marketing_contacts_consent_status(value: String) -> Result(BenefactorMarketingContactsConsentStatus, String) {
+  case value {
+    "unknown" -> Ok(BenefactorMarketingContactsConsentStatusUnknown)
+    "opted_in" -> Ok(BenefactorMarketingContactsConsentStatusOptedIn)
+    "opted_out" -> Ok(BenefactorMarketingContactsConsentStatusOptedOut)
+    _ -> Error("unsupported benefactor_marketing_contacts.consent_status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContactsRow {
+  BenefactorMarketingContactsRow(
+    id: String,
+    client_id: String,
+    status: String,
+    first_name: Option(String),
+    last_name: Option(String),
+    email: Option(String),
+    phone: Option(String),
+    job_title: Option(String),
+    lifecycle_role: String,
+    consent_status: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_contacts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_contacts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_contacts_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "inactive", "bounced", "unsubscribed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_contacts.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_contacts_lifecycle_role(value: String) -> Result(String, String) {
+  case list.contains(["primary", "decision_maker", "billing", "technical", "marketing", "other"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_contacts.lifecycle_role: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_contacts_consent_status(value: String) -> Result(String, String) {
+  case list.contains(["unknown", "opted_in", "opted_out"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_contacts.consent_status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_service_packages_table = "benefactor_marketing_service_packages"
+pub const benefactor_marketing_service_packages_select_sql = "select\n      id::text as id,\n      status,\n      code,\n      name,\n      channel_mix::text as channel_mix_json,\n      deliverables::text as deliverables_json,\n      monthly_budget_cents,\n      retainer_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_service_packages"
+
+pub type BenefactorMarketingServicePackagesStatus {
+  BenefactorMarketingServicePackagesStatusActive
+  BenefactorMarketingServicePackagesStatusRetired
+}
+
+pub fn benefactor_marketing_service_packages_status_to_string(value: BenefactorMarketingServicePackagesStatus) -> String {
+  case value {
+    BenefactorMarketingServicePackagesStatusActive -> "active"
+    BenefactorMarketingServicePackagesStatusRetired -> "retired"
+  }
+}
+
+pub fn parse_benefactor_marketing_service_packages_status(value: String) -> Result(BenefactorMarketingServicePackagesStatus, String) {
+  case value {
+    "active" -> Ok(BenefactorMarketingServicePackagesStatusActive)
+    "retired" -> Ok(BenefactorMarketingServicePackagesStatusRetired)
+    _ -> Error("unsupported benefactor_marketing_service_packages.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingServicePackagesRow {
+  BenefactorMarketingServicePackagesRow(
+    id: String,
+    status: String,
+    code: String,
+    name: String,
+    channel_mix_json: String,
+    deliverables_json: String,
+    monthly_budget_cents: Int,
+    retainer_cents: Int,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_service_packages_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_service_packages.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_service_packages_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "retired"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_service_packages.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_contracts_table = "benefactor_marketing_contracts"
+pub const benefactor_marketing_contracts_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      package_id::text as package_id,\n      status,\n      contract_number,\n      starts_on,\n      ends_on,\n      billing_terms::text as billing_terms_json,\n      total_value_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_contracts"
+
+pub type BenefactorMarketingContractsStatus {
+  BenefactorMarketingContractsStatusDraft
+  BenefactorMarketingContractsStatusActive
+  BenefactorMarketingContractsStatusRenewal
+  BenefactorMarketingContractsStatusExpired
+  BenefactorMarketingContractsStatusTerminated
+}
+
+pub fn benefactor_marketing_contracts_status_to_string(value: BenefactorMarketingContractsStatus) -> String {
+  case value {
+    BenefactorMarketingContractsStatusDraft -> "draft"
+    BenefactorMarketingContractsStatusActive -> "active"
+    BenefactorMarketingContractsStatusRenewal -> "renewal"
+    BenefactorMarketingContractsStatusExpired -> "expired"
+    BenefactorMarketingContractsStatusTerminated -> "terminated"
+  }
+}
+
+pub fn parse_benefactor_marketing_contracts_status(value: String) -> Result(BenefactorMarketingContractsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingContractsStatusDraft)
+    "active" -> Ok(BenefactorMarketingContractsStatusActive)
+    "renewal" -> Ok(BenefactorMarketingContractsStatusRenewal)
+    "expired" -> Ok(BenefactorMarketingContractsStatusExpired)
+    "terminated" -> Ok(BenefactorMarketingContractsStatusTerminated)
+    _ -> Error("unsupported benefactor_marketing_contracts.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContractsRow {
+  BenefactorMarketingContractsRow(
+    id: String,
+    client_id: String,
+    package_id: Option(String),
+    status: String,
+    contract_number: Option(String),
+    starts_on: Option(String),
+    ends_on: Option(String),
+    billing_terms_json: String,
+    total_value_cents: Int,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_contracts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_contracts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_contracts_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "active", "renewal", "expired", "terminated"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_contracts.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_invoices_table = "benefactor_marketing_invoices"
+pub const benefactor_marketing_invoices_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      contract_id::text as contract_id,\n      status,\n      invoice_number,\n      due_on,\n      amount_cents,\n      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as paid_at,\n      line_items::text as line_items_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_invoices"
+
+pub type BenefactorMarketingInvoicesStatus {
+  BenefactorMarketingInvoicesStatusDraft
+  BenefactorMarketingInvoicesStatusSent
+  BenefactorMarketingInvoicesStatusPaid
+  BenefactorMarketingInvoicesStatusOverdue
+  BenefactorMarketingInvoicesStatusVoid
+}
+
+pub fn benefactor_marketing_invoices_status_to_string(value: BenefactorMarketingInvoicesStatus) -> String {
+  case value {
+    BenefactorMarketingInvoicesStatusDraft -> "draft"
+    BenefactorMarketingInvoicesStatusSent -> "sent"
+    BenefactorMarketingInvoicesStatusPaid -> "paid"
+    BenefactorMarketingInvoicesStatusOverdue -> "overdue"
+    BenefactorMarketingInvoicesStatusVoid -> "void"
+  }
+}
+
+pub fn parse_benefactor_marketing_invoices_status(value: String) -> Result(BenefactorMarketingInvoicesStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingInvoicesStatusDraft)
+    "sent" -> Ok(BenefactorMarketingInvoicesStatusSent)
+    "paid" -> Ok(BenefactorMarketingInvoicesStatusPaid)
+    "overdue" -> Ok(BenefactorMarketingInvoicesStatusOverdue)
+    "void" -> Ok(BenefactorMarketingInvoicesStatusVoid)
+    _ -> Error("unsupported benefactor_marketing_invoices.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingInvoicesRow {
+  BenefactorMarketingInvoicesRow(
+    id: String,
+    client_id: String,
+    contract_id: Option(String),
+    status: String,
+    invoice_number: Option(String),
+    due_on: Option(String),
+    amount_cents: Int,
+    paid_at: Option(String),
+    line_items_json: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_invoices_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_invoices.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_invoices_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "sent", "paid", "overdue", "void"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_invoices.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_integrations_table = "benefactor_marketing_integrations"
+pub const benefactor_marketing_integrations_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      platform,\n      status,\n      auth_kind,\n      external_account_id,\n      sync_cursor,\n      config::text as config_json,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_integrations"
+
+pub type BenefactorMarketingIntegrationsPlatform {
+  BenefactorMarketingIntegrationsPlatformSalesforce
+  BenefactorMarketingIntegrationsPlatformHubspot
+  BenefactorMarketingIntegrationsPlatformApollo
+  BenefactorMarketingIntegrationsPlatformZoominfo
+  BenefactorMarketingIntegrationsPlatformGoogleAnalytics
+  BenefactorMarketingIntegrationsPlatformGoogleAds
+  BenefactorMarketingIntegrationsPlatformLinkedinAds
+  BenefactorMarketingIntegrationsPlatformMetaAds
+  BenefactorMarketingIntegrationsPlatformMailchimp
+  BenefactorMarketingIntegrationsPlatformSendgrid
+  BenefactorMarketingIntegrationsPlatformScraper
+  BenefactorMarketingIntegrationsPlatformCustom
+}
+
+pub fn benefactor_marketing_integrations_platform_to_string(value: BenefactorMarketingIntegrationsPlatform) -> String {
+  case value {
+    BenefactorMarketingIntegrationsPlatformSalesforce -> "salesforce"
+    BenefactorMarketingIntegrationsPlatformHubspot -> "hubspot"
+    BenefactorMarketingIntegrationsPlatformApollo -> "apollo"
+    BenefactorMarketingIntegrationsPlatformZoominfo -> "zoominfo"
+    BenefactorMarketingIntegrationsPlatformGoogleAnalytics -> "google_analytics"
+    BenefactorMarketingIntegrationsPlatformGoogleAds -> "google_ads"
+    BenefactorMarketingIntegrationsPlatformLinkedinAds -> "linkedin_ads"
+    BenefactorMarketingIntegrationsPlatformMetaAds -> "meta_ads"
+    BenefactorMarketingIntegrationsPlatformMailchimp -> "mailchimp"
+    BenefactorMarketingIntegrationsPlatformSendgrid -> "sendgrid"
+    BenefactorMarketingIntegrationsPlatformScraper -> "scraper"
+    BenefactorMarketingIntegrationsPlatformCustom -> "custom"
+  }
+}
+
+pub fn parse_benefactor_marketing_integrations_platform(value: String) -> Result(BenefactorMarketingIntegrationsPlatform, String) {
+  case value {
+    "salesforce" -> Ok(BenefactorMarketingIntegrationsPlatformSalesforce)
+    "hubspot" -> Ok(BenefactorMarketingIntegrationsPlatformHubspot)
+    "apollo" -> Ok(BenefactorMarketingIntegrationsPlatformApollo)
+    "zoominfo" -> Ok(BenefactorMarketingIntegrationsPlatformZoominfo)
+    "google_analytics" -> Ok(BenefactorMarketingIntegrationsPlatformGoogleAnalytics)
+    "google_ads" -> Ok(BenefactorMarketingIntegrationsPlatformGoogleAds)
+    "linkedin_ads" -> Ok(BenefactorMarketingIntegrationsPlatformLinkedinAds)
+    "meta_ads" -> Ok(BenefactorMarketingIntegrationsPlatformMetaAds)
+    "mailchimp" -> Ok(BenefactorMarketingIntegrationsPlatformMailchimp)
+    "sendgrid" -> Ok(BenefactorMarketingIntegrationsPlatformSendgrid)
+    "scraper" -> Ok(BenefactorMarketingIntegrationsPlatformScraper)
+    "custom" -> Ok(BenefactorMarketingIntegrationsPlatformCustom)
+    _ -> Error("unsupported benefactor_marketing_integrations.platform: " <> value)
+  }
+}
+
+pub type BenefactorMarketingIntegrationsStatus {
+  BenefactorMarketingIntegrationsStatusConnected
+  BenefactorMarketingIntegrationsStatusDisabled
+  BenefactorMarketingIntegrationsStatusError
+}
+
+pub fn benefactor_marketing_integrations_status_to_string(value: BenefactorMarketingIntegrationsStatus) -> String {
+  case value {
+    BenefactorMarketingIntegrationsStatusConnected -> "connected"
+    BenefactorMarketingIntegrationsStatusDisabled -> "disabled"
+    BenefactorMarketingIntegrationsStatusError -> "error"
+  }
+}
+
+pub fn parse_benefactor_marketing_integrations_status(value: String) -> Result(BenefactorMarketingIntegrationsStatus, String) {
+  case value {
+    "connected" -> Ok(BenefactorMarketingIntegrationsStatusConnected)
+    "disabled" -> Ok(BenefactorMarketingIntegrationsStatusDisabled)
+    "error" -> Ok(BenefactorMarketingIntegrationsStatusError)
+    _ -> Error("unsupported benefactor_marketing_integrations.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingIntegrationsAuthKind {
+  BenefactorMarketingIntegrationsAuthKindOauth2
+  BenefactorMarketingIntegrationsAuthKindApiKey
+  BenefactorMarketingIntegrationsAuthKindWebhook
+  BenefactorMarketingIntegrationsAuthKindManual
+}
+
+pub fn benefactor_marketing_integrations_auth_kind_to_string(value: BenefactorMarketingIntegrationsAuthKind) -> String {
+  case value {
+    BenefactorMarketingIntegrationsAuthKindOauth2 -> "oauth2"
+    BenefactorMarketingIntegrationsAuthKindApiKey -> "api_key"
+    BenefactorMarketingIntegrationsAuthKindWebhook -> "webhook"
+    BenefactorMarketingIntegrationsAuthKindManual -> "manual"
+  }
+}
+
+pub fn parse_benefactor_marketing_integrations_auth_kind(value: String) -> Result(BenefactorMarketingIntegrationsAuthKind, String) {
+  case value {
+    "oauth2" -> Ok(BenefactorMarketingIntegrationsAuthKindOauth2)
+    "api_key" -> Ok(BenefactorMarketingIntegrationsAuthKindApiKey)
+    "webhook" -> Ok(BenefactorMarketingIntegrationsAuthKindWebhook)
+    "manual" -> Ok(BenefactorMarketingIntegrationsAuthKindManual)
+    _ -> Error("unsupported benefactor_marketing_integrations.auth_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingIntegrationsRow {
+  BenefactorMarketingIntegrationsRow(
+    id: String,
+    client_id: Option(String),
+    platform: String,
+    status: String,
+    auth_kind: String,
+    external_account_id: Option(String),
+    sync_cursor: Option(String),
+    config_json: String,
+    last_sync_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_integrations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_integrations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_integrations_platform(value: String) -> Result(String, String) {
+  case list.contains(["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_integrations.platform: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_integrations_status(value: String) -> Result(String, String) {
+  case list.contains(["connected", "disabled", "error"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_integrations.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_integrations_auth_kind(value: String) -> Result(String, String) {
+  case list.contains(["oauth2", "api_key", "webhook", "manual"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_integrations.auth_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_leads_table = "benefactor_marketing_leads"
+pub const benefactor_marketing_leads_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      source_integration_id::text as source_integration_id,\n      status,\n      company_name,\n      domain,\n      contact_name,\n      contact_email,\n      contact_title,\n      country_code,\n      lead_score,\n      icp_fit_score,\n      verification_status,\n      enrichment_status,\n      company_profile::text as company_profile_json,\n      signals::text as signals_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_leads"
+
+pub type BenefactorMarketingLeadsStatus {
+  BenefactorMarketingLeadsStatusNew
+  BenefactorMarketingLeadsStatusResearching
+  BenefactorMarketingLeadsStatusQualified
+  BenefactorMarketingLeadsStatusDisqualified
+  BenefactorMarketingLeadsStatusContacted
+  BenefactorMarketingLeadsStatusConverted
+}
+
+pub fn benefactor_marketing_leads_status_to_string(value: BenefactorMarketingLeadsStatus) -> String {
+  case value {
+    BenefactorMarketingLeadsStatusNew -> "new"
+    BenefactorMarketingLeadsStatusResearching -> "researching"
+    BenefactorMarketingLeadsStatusQualified -> "qualified"
+    BenefactorMarketingLeadsStatusDisqualified -> "disqualified"
+    BenefactorMarketingLeadsStatusContacted -> "contacted"
+    BenefactorMarketingLeadsStatusConverted -> "converted"
+  }
+}
+
+pub fn parse_benefactor_marketing_leads_status(value: String) -> Result(BenefactorMarketingLeadsStatus, String) {
+  case value {
+    "new" -> Ok(BenefactorMarketingLeadsStatusNew)
+    "researching" -> Ok(BenefactorMarketingLeadsStatusResearching)
+    "qualified" -> Ok(BenefactorMarketingLeadsStatusQualified)
+    "disqualified" -> Ok(BenefactorMarketingLeadsStatusDisqualified)
+    "contacted" -> Ok(BenefactorMarketingLeadsStatusContacted)
+    "converted" -> Ok(BenefactorMarketingLeadsStatusConverted)
+    _ -> Error("unsupported benefactor_marketing_leads.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingLeadsVerificationStatus {
+  BenefactorMarketingLeadsVerificationStatusUnknown
+  BenefactorMarketingLeadsVerificationStatusVerified
+  BenefactorMarketingLeadsVerificationStatusInvalid
+  BenefactorMarketingLeadsVerificationStatusRisky
+}
+
+pub fn benefactor_marketing_leads_verification_status_to_string(value: BenefactorMarketingLeadsVerificationStatus) -> String {
+  case value {
+    BenefactorMarketingLeadsVerificationStatusUnknown -> "unknown"
+    BenefactorMarketingLeadsVerificationStatusVerified -> "verified"
+    BenefactorMarketingLeadsVerificationStatusInvalid -> "invalid"
+    BenefactorMarketingLeadsVerificationStatusRisky -> "risky"
+  }
+}
+
+pub fn parse_benefactor_marketing_leads_verification_status(value: String) -> Result(BenefactorMarketingLeadsVerificationStatus, String) {
+  case value {
+    "unknown" -> Ok(BenefactorMarketingLeadsVerificationStatusUnknown)
+    "verified" -> Ok(BenefactorMarketingLeadsVerificationStatusVerified)
+    "invalid" -> Ok(BenefactorMarketingLeadsVerificationStatusInvalid)
+    "risky" -> Ok(BenefactorMarketingLeadsVerificationStatusRisky)
+    _ -> Error("unsupported benefactor_marketing_leads.verification_status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingLeadsEnrichmentStatus {
+  BenefactorMarketingLeadsEnrichmentStatusPending
+  BenefactorMarketingLeadsEnrichmentStatusRunning
+  BenefactorMarketingLeadsEnrichmentStatusCompleted
+  BenefactorMarketingLeadsEnrichmentStatusFailed
+}
+
+pub fn benefactor_marketing_leads_enrichment_status_to_string(value: BenefactorMarketingLeadsEnrichmentStatus) -> String {
+  case value {
+    BenefactorMarketingLeadsEnrichmentStatusPending -> "pending"
+    BenefactorMarketingLeadsEnrichmentStatusRunning -> "running"
+    BenefactorMarketingLeadsEnrichmentStatusCompleted -> "completed"
+    BenefactorMarketingLeadsEnrichmentStatusFailed -> "failed"
+  }
+}
+
+pub fn parse_benefactor_marketing_leads_enrichment_status(value: String) -> Result(BenefactorMarketingLeadsEnrichmentStatus, String) {
+  case value {
+    "pending" -> Ok(BenefactorMarketingLeadsEnrichmentStatusPending)
+    "running" -> Ok(BenefactorMarketingLeadsEnrichmentStatusRunning)
+    "completed" -> Ok(BenefactorMarketingLeadsEnrichmentStatusCompleted)
+    "failed" -> Ok(BenefactorMarketingLeadsEnrichmentStatusFailed)
+    _ -> Error("unsupported benefactor_marketing_leads.enrichment_status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingLeadsRow {
+  BenefactorMarketingLeadsRow(
+    id: String,
+    client_id: String,
+    source_integration_id: Option(String),
+    status: String,
+    company_name: String,
+    domain: Option(String),
+    contact_name: Option(String),
+    contact_email: Option(String),
+    contact_title: Option(String),
+    country_code: Option(String),
+    lead_score: Int,
+    icp_fit_score: Int,
+    verification_status: String,
+    enrichment_status: String,
+    company_profile_json: String,
+    signals_json: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_leads_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_leads.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_leads_status(value: String) -> Result(String, String) {
+  case list.contains(["new", "researching", "qualified", "disqualified", "contacted", "converted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_leads.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_leads_verification_status(value: String) -> Result(String, String) {
+  case list.contains(["unknown", "verified", "invalid", "risky"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_leads.verification_status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_leads_enrichment_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "running", "completed", "failed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_leads.enrichment_status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_enrichment_jobs_table = "benefactor_marketing_enrichment_jobs"
+pub const benefactor_marketing_enrichment_jobs_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      job_kind,\n      status,\n      external_job_id,\n      scraper_handoff_url,\n      input::text as input_json,\n      result::text as result_json,\n      error_summary,\n      to_char(queued_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as queued_at,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_enrichment_jobs"
+
+pub type BenefactorMarketingEnrichmentJobsJobKind {
+  BenefactorMarketingEnrichmentJobsJobKindLeadEnrichment
+  BenefactorMarketingEnrichmentJobsJobKindCompanyResearch
+  BenefactorMarketingEnrichmentJobsJobKindContactVerification
+  BenefactorMarketingEnrichmentJobsJobKindProspectScrape
+  BenefactorMarketingEnrichmentJobsJobKindCompetitiveIntel
+}
+
+pub fn benefactor_marketing_enrichment_jobs_job_kind_to_string(value: BenefactorMarketingEnrichmentJobsJobKind) -> String {
+  case value {
+    BenefactorMarketingEnrichmentJobsJobKindLeadEnrichment -> "lead_enrichment"
+    BenefactorMarketingEnrichmentJobsJobKindCompanyResearch -> "company_research"
+    BenefactorMarketingEnrichmentJobsJobKindContactVerification -> "contact_verification"
+    BenefactorMarketingEnrichmentJobsJobKindProspectScrape -> "prospect_scrape"
+    BenefactorMarketingEnrichmentJobsJobKindCompetitiveIntel -> "competitive_intel"
+  }
+}
+
+pub fn parse_benefactor_marketing_enrichment_jobs_job_kind(value: String) -> Result(BenefactorMarketingEnrichmentJobsJobKind, String) {
+  case value {
+    "lead_enrichment" -> Ok(BenefactorMarketingEnrichmentJobsJobKindLeadEnrichment)
+    "company_research" -> Ok(BenefactorMarketingEnrichmentJobsJobKindCompanyResearch)
+    "contact_verification" -> Ok(BenefactorMarketingEnrichmentJobsJobKindContactVerification)
+    "prospect_scrape" -> Ok(BenefactorMarketingEnrichmentJobsJobKindProspectScrape)
+    "competitive_intel" -> Ok(BenefactorMarketingEnrichmentJobsJobKindCompetitiveIntel)
+    _ -> Error("unsupported benefactor_marketing_enrichment_jobs.job_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingEnrichmentJobsStatus {
+  BenefactorMarketingEnrichmentJobsStatusQueued
+  BenefactorMarketingEnrichmentJobsStatusRunning
+  BenefactorMarketingEnrichmentJobsStatusCompleted
+  BenefactorMarketingEnrichmentJobsStatusFailed
+  BenefactorMarketingEnrichmentJobsStatusCanceled
+}
+
+pub fn benefactor_marketing_enrichment_jobs_status_to_string(value: BenefactorMarketingEnrichmentJobsStatus) -> String {
+  case value {
+    BenefactorMarketingEnrichmentJobsStatusQueued -> "queued"
+    BenefactorMarketingEnrichmentJobsStatusRunning -> "running"
+    BenefactorMarketingEnrichmentJobsStatusCompleted -> "completed"
+    BenefactorMarketingEnrichmentJobsStatusFailed -> "failed"
+    BenefactorMarketingEnrichmentJobsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_benefactor_marketing_enrichment_jobs_status(value: String) -> Result(BenefactorMarketingEnrichmentJobsStatus, String) {
+  case value {
+    "queued" -> Ok(BenefactorMarketingEnrichmentJobsStatusQueued)
+    "running" -> Ok(BenefactorMarketingEnrichmentJobsStatusRunning)
+    "completed" -> Ok(BenefactorMarketingEnrichmentJobsStatusCompleted)
+    "failed" -> Ok(BenefactorMarketingEnrichmentJobsStatusFailed)
+    "canceled" -> Ok(BenefactorMarketingEnrichmentJobsStatusCanceled)
+    _ -> Error("unsupported benefactor_marketing_enrichment_jobs.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingEnrichmentJobsRow {
+  BenefactorMarketingEnrichmentJobsRow(
+    id: String,
+    client_id: String,
+    lead_id: Option(String),
+    job_kind: String,
+    status: String,
+    external_job_id: Option(String),
+    scraper_handoff_url: Option(String),
+    input_json: String,
+    result_json: String,
+    error_summary: Option(String),
+    queued_at: String,
+    started_at: Option(String),
+    completed_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_enrichment_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_enrichment_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_enrichment_jobs_job_kind(value: String) -> Result(String, String) {
+  case list.contains(["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_enrichment_jobs.job_kind: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_enrichment_jobs_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "completed", "failed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_enrichment_jobs.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_campaigns_table = "benefactor_marketing_campaigns"
+pub const benefactor_marketing_campaigns_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      campaign_kind,\n      name,\n      objective,\n      budget_cents,\n      starts_on,\n      ends_on,\n      target_segments::text as target_segments_json,\n      kpis::text as kpis_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaigns"
+
+pub type BenefactorMarketingCampaignsStatus {
+  BenefactorMarketingCampaignsStatusDraft
+  BenefactorMarketingCampaignsStatusActive
+  BenefactorMarketingCampaignsStatusPaused
+  BenefactorMarketingCampaignsStatusCompleted
+  BenefactorMarketingCampaignsStatusArchived
+}
+
+pub fn benefactor_marketing_campaigns_status_to_string(value: BenefactorMarketingCampaignsStatus) -> String {
+  case value {
+    BenefactorMarketingCampaignsStatusDraft -> "draft"
+    BenefactorMarketingCampaignsStatusActive -> "active"
+    BenefactorMarketingCampaignsStatusPaused -> "paused"
+    BenefactorMarketingCampaignsStatusCompleted -> "completed"
+    BenefactorMarketingCampaignsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaigns_status(value: String) -> Result(BenefactorMarketingCampaignsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingCampaignsStatusDraft)
+    "active" -> Ok(BenefactorMarketingCampaignsStatusActive)
+    "paused" -> Ok(BenefactorMarketingCampaignsStatusPaused)
+    "completed" -> Ok(BenefactorMarketingCampaignsStatusCompleted)
+    "archived" -> Ok(BenefactorMarketingCampaignsStatusArchived)
+    _ -> Error("unsupported benefactor_marketing_campaigns.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignsCampaignKind {
+  BenefactorMarketingCampaignsCampaignKindSocialMedia
+  BenefactorMarketingCampaignsCampaignKindSeoAeo
+  BenefactorMarketingCampaignsCampaignKindEmail
+  BenefactorMarketingCampaignsCampaignKindOutreach
+  BenefactorMarketingCampaignsCampaignKindPaidAds
+  BenefactorMarketingCampaignsCampaignKindContent
+  BenefactorMarketingCampaignsCampaignKindMultiChannel
+}
+
+pub fn benefactor_marketing_campaigns_campaign_kind_to_string(value: BenefactorMarketingCampaignsCampaignKind) -> String {
+  case value {
+    BenefactorMarketingCampaignsCampaignKindSocialMedia -> "social_media"
+    BenefactorMarketingCampaignsCampaignKindSeoAeo -> "seo_aeo"
+    BenefactorMarketingCampaignsCampaignKindEmail -> "email"
+    BenefactorMarketingCampaignsCampaignKindOutreach -> "outreach"
+    BenefactorMarketingCampaignsCampaignKindPaidAds -> "paid_ads"
+    BenefactorMarketingCampaignsCampaignKindContent -> "content"
+    BenefactorMarketingCampaignsCampaignKindMultiChannel -> "multi_channel"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaigns_campaign_kind(value: String) -> Result(BenefactorMarketingCampaignsCampaignKind, String) {
+  case value {
+    "social_media" -> Ok(BenefactorMarketingCampaignsCampaignKindSocialMedia)
+    "seo_aeo" -> Ok(BenefactorMarketingCampaignsCampaignKindSeoAeo)
+    "email" -> Ok(BenefactorMarketingCampaignsCampaignKindEmail)
+    "outreach" -> Ok(BenefactorMarketingCampaignsCampaignKindOutreach)
+    "paid_ads" -> Ok(BenefactorMarketingCampaignsCampaignKindPaidAds)
+    "content" -> Ok(BenefactorMarketingCampaignsCampaignKindContent)
+    "multi_channel" -> Ok(BenefactorMarketingCampaignsCampaignKindMultiChannel)
+    _ -> Error("unsupported benefactor_marketing_campaigns.campaign_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignsRow {
+  BenefactorMarketingCampaignsRow(
+    id: String,
+    client_id: String,
+    status: String,
+    campaign_kind: String,
+    name: String,
+    objective: Option(String),
+    budget_cents: Int,
+    starts_on: Option(String),
+    ends_on: Option(String),
+    target_segments_json: String,
+    kpis_json: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_campaigns_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_campaigns.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_campaigns_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "active", "paused", "completed", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaigns.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_campaigns_campaign_kind(value: String) -> Result(String, String) {
+  case list.contains(["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaigns.campaign_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_campaign_channels_table = "benefactor_marketing_campaign_channels"
+pub const benefactor_marketing_campaign_channels_select_sql = "select\n      id::text as id,\n      campaign_id::text as campaign_id,\n      channel,\n      status,\n      external_campaign_id,\n      strategy::text as strategy_json,\n      schedule::text as schedule_json,\n      metrics_snapshot::text as metrics_snapshot_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaign_channels"
+
+pub type BenefactorMarketingCampaignChannelsChannel {
+  BenefactorMarketingCampaignChannelsChannelSocial
+  BenefactorMarketingCampaignChannelsChannelLinkedin
+  BenefactorMarketingCampaignChannelsChannelEmail
+  BenefactorMarketingCampaignChannelsChannelSms
+  BenefactorMarketingCampaignChannelsChannelSeo
+  BenefactorMarketingCampaignChannelsChannelAeo
+  BenefactorMarketingCampaignChannelsChannelGoogleAds
+  BenefactorMarketingCampaignChannelsChannelMetaAds
+  BenefactorMarketingCampaignChannelsChannelLandingPage
+  BenefactorMarketingCampaignChannelsChannelContent
+}
+
+pub fn benefactor_marketing_campaign_channels_channel_to_string(value: BenefactorMarketingCampaignChannelsChannel) -> String {
+  case value {
+    BenefactorMarketingCampaignChannelsChannelSocial -> "social"
+    BenefactorMarketingCampaignChannelsChannelLinkedin -> "linkedin"
+    BenefactorMarketingCampaignChannelsChannelEmail -> "email"
+    BenefactorMarketingCampaignChannelsChannelSms -> "sms"
+    BenefactorMarketingCampaignChannelsChannelSeo -> "seo"
+    BenefactorMarketingCampaignChannelsChannelAeo -> "aeo"
+    BenefactorMarketingCampaignChannelsChannelGoogleAds -> "google_ads"
+    BenefactorMarketingCampaignChannelsChannelMetaAds -> "meta_ads"
+    BenefactorMarketingCampaignChannelsChannelLandingPage -> "landing_page"
+    BenefactorMarketingCampaignChannelsChannelContent -> "content"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaign_channels_channel(value: String) -> Result(BenefactorMarketingCampaignChannelsChannel, String) {
+  case value {
+    "social" -> Ok(BenefactorMarketingCampaignChannelsChannelSocial)
+    "linkedin" -> Ok(BenefactorMarketingCampaignChannelsChannelLinkedin)
+    "email" -> Ok(BenefactorMarketingCampaignChannelsChannelEmail)
+    "sms" -> Ok(BenefactorMarketingCampaignChannelsChannelSms)
+    "seo" -> Ok(BenefactorMarketingCampaignChannelsChannelSeo)
+    "aeo" -> Ok(BenefactorMarketingCampaignChannelsChannelAeo)
+    "google_ads" -> Ok(BenefactorMarketingCampaignChannelsChannelGoogleAds)
+    "meta_ads" -> Ok(BenefactorMarketingCampaignChannelsChannelMetaAds)
+    "landing_page" -> Ok(BenefactorMarketingCampaignChannelsChannelLandingPage)
+    "content" -> Ok(BenefactorMarketingCampaignChannelsChannelContent)
+    _ -> Error("unsupported benefactor_marketing_campaign_channels.channel: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignChannelsStatus {
+  BenefactorMarketingCampaignChannelsStatusDraft
+  BenefactorMarketingCampaignChannelsStatusScheduled
+  BenefactorMarketingCampaignChannelsStatusLive
+  BenefactorMarketingCampaignChannelsStatusPaused
+  BenefactorMarketingCampaignChannelsStatusCompleted
+}
+
+pub fn benefactor_marketing_campaign_channels_status_to_string(value: BenefactorMarketingCampaignChannelsStatus) -> String {
+  case value {
+    BenefactorMarketingCampaignChannelsStatusDraft -> "draft"
+    BenefactorMarketingCampaignChannelsStatusScheduled -> "scheduled"
+    BenefactorMarketingCampaignChannelsStatusLive -> "live"
+    BenefactorMarketingCampaignChannelsStatusPaused -> "paused"
+    BenefactorMarketingCampaignChannelsStatusCompleted -> "completed"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaign_channels_status(value: String) -> Result(BenefactorMarketingCampaignChannelsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingCampaignChannelsStatusDraft)
+    "scheduled" -> Ok(BenefactorMarketingCampaignChannelsStatusScheduled)
+    "live" -> Ok(BenefactorMarketingCampaignChannelsStatusLive)
+    "paused" -> Ok(BenefactorMarketingCampaignChannelsStatusPaused)
+    "completed" -> Ok(BenefactorMarketingCampaignChannelsStatusCompleted)
+    _ -> Error("unsupported benefactor_marketing_campaign_channels.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignChannelsRow {
+  BenefactorMarketingCampaignChannelsRow(
+    id: String,
+    campaign_id: String,
+    channel: String,
+    status: String,
+    external_campaign_id: Option(String),
+    strategy_json: String,
+    schedule_json: String,
+    metrics_snapshot_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_campaign_channels_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_campaign_channels.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_campaign_channels_channel(value: String) -> Result(String, String) {
+  case list.contains(["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaign_channels.channel: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_campaign_channels_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "scheduled", "live", "paused", "completed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaign_channels.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_campaign_experiments_table = "benefactor_marketing_campaign_experiments"
+pub const benefactor_marketing_campaign_experiments_select_sql = "select\n      id::text as id,\n      campaign_id::text as campaign_id,\n      status,\n      experiment_kind,\n      hypothesis,\n      variants::text as variants_json,\n      winning_variant,\n      result_summary::text as result_summary_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ended_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaign_experiments"
+
+pub type BenefactorMarketingCampaignExperimentsStatus {
+  BenefactorMarketingCampaignExperimentsStatusDraft
+  BenefactorMarketingCampaignExperimentsStatusRunning
+  BenefactorMarketingCampaignExperimentsStatusWinnerSelected
+  BenefactorMarketingCampaignExperimentsStatusStopped
+}
+
+pub fn benefactor_marketing_campaign_experiments_status_to_string(value: BenefactorMarketingCampaignExperimentsStatus) -> String {
+  case value {
+    BenefactorMarketingCampaignExperimentsStatusDraft -> "draft"
+    BenefactorMarketingCampaignExperimentsStatusRunning -> "running"
+    BenefactorMarketingCampaignExperimentsStatusWinnerSelected -> "winner_selected"
+    BenefactorMarketingCampaignExperimentsStatusStopped -> "stopped"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaign_experiments_status(value: String) -> Result(BenefactorMarketingCampaignExperimentsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingCampaignExperimentsStatusDraft)
+    "running" -> Ok(BenefactorMarketingCampaignExperimentsStatusRunning)
+    "winner_selected" -> Ok(BenefactorMarketingCampaignExperimentsStatusWinnerSelected)
+    "stopped" -> Ok(BenefactorMarketingCampaignExperimentsStatusStopped)
+    _ -> Error("unsupported benefactor_marketing_campaign_experiments.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignExperimentsExperimentKind {
+  BenefactorMarketingCampaignExperimentsExperimentKindSubjectLine
+  BenefactorMarketingCampaignExperimentsExperimentKindCreative
+  BenefactorMarketingCampaignExperimentsExperimentKindCopy
+  BenefactorMarketingCampaignExperimentsExperimentKindLandingPage
+  BenefactorMarketingCampaignExperimentsExperimentKindAudience
+  BenefactorMarketingCampaignExperimentsExperimentKindBudget
+}
+
+pub fn benefactor_marketing_campaign_experiments_experiment_kind_to_string(value: BenefactorMarketingCampaignExperimentsExperimentKind) -> String {
+  case value {
+    BenefactorMarketingCampaignExperimentsExperimentKindSubjectLine -> "subject_line"
+    BenefactorMarketingCampaignExperimentsExperimentKindCreative -> "creative"
+    BenefactorMarketingCampaignExperimentsExperimentKindCopy -> "copy"
+    BenefactorMarketingCampaignExperimentsExperimentKindLandingPage -> "landing_page"
+    BenefactorMarketingCampaignExperimentsExperimentKindAudience -> "audience"
+    BenefactorMarketingCampaignExperimentsExperimentKindBudget -> "budget"
+  }
+}
+
+pub fn parse_benefactor_marketing_campaign_experiments_experiment_kind(value: String) -> Result(BenefactorMarketingCampaignExperimentsExperimentKind, String) {
+  case value {
+    "subject_line" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindSubjectLine)
+    "creative" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindCreative)
+    "copy" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindCopy)
+    "landing_page" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindLandingPage)
+    "audience" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindAudience)
+    "budget" -> Ok(BenefactorMarketingCampaignExperimentsExperimentKindBudget)
+    _ -> Error("unsupported benefactor_marketing_campaign_experiments.experiment_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingCampaignExperimentsRow {
+  BenefactorMarketingCampaignExperimentsRow(
+    id: String,
+    campaign_id: String,
+    status: String,
+    experiment_kind: String,
+    hypothesis: Option(String),
+    variants_json: String,
+    winning_variant: Option(String),
+    result_summary_json: String,
+    started_at: Option(String),
+    ended_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_campaign_experiments_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_campaign_experiments.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_campaign_experiments_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "running", "winner_selected", "stopped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaign_experiments.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_campaign_experiments_experiment_kind(value: String) -> Result(String, String) {
+  case list.contains(["subject_line", "creative", "copy", "landing_page", "audience", "budget"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_campaign_experiments.experiment_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_automation_workflows_table = "benefactor_marketing_automation_workflows"
+pub const benefactor_marketing_automation_workflows_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      name,\n      trigger_kind,\n      trigger_config::text as trigger_config_json,\n      action_graph::text as action_graph_json,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_automation_workflows"
+
+pub type BenefactorMarketingAutomationWorkflowsStatus {
+  BenefactorMarketingAutomationWorkflowsStatusDraft
+  BenefactorMarketingAutomationWorkflowsStatusActive
+  BenefactorMarketingAutomationWorkflowsStatusPaused
+  BenefactorMarketingAutomationWorkflowsStatusArchived
+}
+
+pub fn benefactor_marketing_automation_workflows_status_to_string(value: BenefactorMarketingAutomationWorkflowsStatus) -> String {
+  case value {
+    BenefactorMarketingAutomationWorkflowsStatusDraft -> "draft"
+    BenefactorMarketingAutomationWorkflowsStatusActive -> "active"
+    BenefactorMarketingAutomationWorkflowsStatusPaused -> "paused"
+    BenefactorMarketingAutomationWorkflowsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_benefactor_marketing_automation_workflows_status(value: String) -> Result(BenefactorMarketingAutomationWorkflowsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingAutomationWorkflowsStatusDraft)
+    "active" -> Ok(BenefactorMarketingAutomationWorkflowsStatusActive)
+    "paused" -> Ok(BenefactorMarketingAutomationWorkflowsStatusPaused)
+    "archived" -> Ok(BenefactorMarketingAutomationWorkflowsStatusArchived)
+    _ -> Error("unsupported benefactor_marketing_automation_workflows.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingAutomationWorkflowsTriggerKind {
+  BenefactorMarketingAutomationWorkflowsTriggerKindLeadCreated
+  BenefactorMarketingAutomationWorkflowsTriggerKindScoreChanged
+  BenefactorMarketingAutomationWorkflowsTriggerKindFormSubmit
+  BenefactorMarketingAutomationWorkflowsTriggerKindEmailEvent
+  BenefactorMarketingAutomationWorkflowsTriggerKindCampaignEvent
+  BenefactorMarketingAutomationWorkflowsTriggerKindManual
+  BenefactorMarketingAutomationWorkflowsTriggerKindSchedule
+  BenefactorMarketingAutomationWorkflowsTriggerKindWebhook
+}
+
+pub fn benefactor_marketing_automation_workflows_trigger_kind_to_string(value: BenefactorMarketingAutomationWorkflowsTriggerKind) -> String {
+  case value {
+    BenefactorMarketingAutomationWorkflowsTriggerKindLeadCreated -> "lead_created"
+    BenefactorMarketingAutomationWorkflowsTriggerKindScoreChanged -> "score_changed"
+    BenefactorMarketingAutomationWorkflowsTriggerKindFormSubmit -> "form_submit"
+    BenefactorMarketingAutomationWorkflowsTriggerKindEmailEvent -> "email_event"
+    BenefactorMarketingAutomationWorkflowsTriggerKindCampaignEvent -> "campaign_event"
+    BenefactorMarketingAutomationWorkflowsTriggerKindManual -> "manual"
+    BenefactorMarketingAutomationWorkflowsTriggerKindSchedule -> "schedule"
+    BenefactorMarketingAutomationWorkflowsTriggerKindWebhook -> "webhook"
+  }
+}
+
+pub fn parse_benefactor_marketing_automation_workflows_trigger_kind(value: String) -> Result(BenefactorMarketingAutomationWorkflowsTriggerKind, String) {
+  case value {
+    "lead_created" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindLeadCreated)
+    "score_changed" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindScoreChanged)
+    "form_submit" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindFormSubmit)
+    "email_event" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindEmailEvent)
+    "campaign_event" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindCampaignEvent)
+    "manual" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindManual)
+    "schedule" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindSchedule)
+    "webhook" -> Ok(BenefactorMarketingAutomationWorkflowsTriggerKindWebhook)
+    _ -> Error("unsupported benefactor_marketing_automation_workflows.trigger_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingAutomationWorkflowsRow {
+  BenefactorMarketingAutomationWorkflowsRow(
+    id: String,
+    client_id: String,
+    status: String,
+    name: String,
+    trigger_kind: String,
+    trigger_config_json: String,
+    action_graph_json: String,
+    last_run_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_automation_workflows_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_automation_workflows.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_automation_workflows_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_automation_workflows.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_automation_workflows_trigger_kind(value: String) -> Result(String, String) {
+  case list.contains(["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_automation_workflows.trigger_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_automation_events_table = "benefactor_marketing_automation_events"
+pub const benefactor_marketing_automation_events_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      workflow_id::text as workflow_id,\n      lead_id::text as lead_id,\n      event_kind,\n      status,\n      payload::text as payload_json,\n      error_summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from benefactor_marketing_automation_events"
+
+pub type BenefactorMarketingAutomationEventsStatus {
+  BenefactorMarketingAutomationEventsStatusReceived
+  BenefactorMarketingAutomationEventsStatusProcessed
+  BenefactorMarketingAutomationEventsStatusFailed
+  BenefactorMarketingAutomationEventsStatusSkipped
+}
+
+pub fn benefactor_marketing_automation_events_status_to_string(value: BenefactorMarketingAutomationEventsStatus) -> String {
+  case value {
+    BenefactorMarketingAutomationEventsStatusReceived -> "received"
+    BenefactorMarketingAutomationEventsStatusProcessed -> "processed"
+    BenefactorMarketingAutomationEventsStatusFailed -> "failed"
+    BenefactorMarketingAutomationEventsStatusSkipped -> "skipped"
+  }
+}
+
+pub fn parse_benefactor_marketing_automation_events_status(value: String) -> Result(BenefactorMarketingAutomationEventsStatus, String) {
+  case value {
+    "received" -> Ok(BenefactorMarketingAutomationEventsStatusReceived)
+    "processed" -> Ok(BenefactorMarketingAutomationEventsStatusProcessed)
+    "failed" -> Ok(BenefactorMarketingAutomationEventsStatusFailed)
+    "skipped" -> Ok(BenefactorMarketingAutomationEventsStatusSkipped)
+    _ -> Error("unsupported benefactor_marketing_automation_events.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingAutomationEventsRow {
+  BenefactorMarketingAutomationEventsRow(
+    id: String,
+    client_id: String,
+    workflow_id: Option(String),
+    lead_id: Option(String),
+    event_kind: String,
+    status: String,
+    payload_json: String,
+    error_summary: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_automation_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_automation_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_automation_events_status(value: String) -> Result(String, String) {
+  case list.contains(["received", "processed", "failed", "skipped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_automation_events.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_reports_table = "benefactor_marketing_reports"
+pub const benefactor_marketing_reports_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      report_kind,\n      status,\n      period_start,\n      period_end,\n      metrics::text as metrics_json,\n      narrative,\n      delivery_targets::text as delivery_targets_json,\n      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as generated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_reports"
+
+pub type BenefactorMarketingReportsReportKind {
+  BenefactorMarketingReportsReportKindDashboard
+  BenefactorMarketingReportsReportKindExecutiveSummary
+  BenefactorMarketingReportsReportKindAttribution
+  BenefactorMarketingReportsReportKindFunnel
+  BenefactorMarketingReportsReportKindRoi
+  BenefactorMarketingReportsReportKindSeoAeo
+  BenefactorMarketingReportsReportKindClientPortal
+}
+
+pub fn benefactor_marketing_reports_report_kind_to_string(value: BenefactorMarketingReportsReportKind) -> String {
+  case value {
+    BenefactorMarketingReportsReportKindDashboard -> "dashboard"
+    BenefactorMarketingReportsReportKindExecutiveSummary -> "executive_summary"
+    BenefactorMarketingReportsReportKindAttribution -> "attribution"
+    BenefactorMarketingReportsReportKindFunnel -> "funnel"
+    BenefactorMarketingReportsReportKindRoi -> "roi"
+    BenefactorMarketingReportsReportKindSeoAeo -> "seo_aeo"
+    BenefactorMarketingReportsReportKindClientPortal -> "client_portal"
+  }
+}
+
+pub fn parse_benefactor_marketing_reports_report_kind(value: String) -> Result(BenefactorMarketingReportsReportKind, String) {
+  case value {
+    "dashboard" -> Ok(BenefactorMarketingReportsReportKindDashboard)
+    "executive_summary" -> Ok(BenefactorMarketingReportsReportKindExecutiveSummary)
+    "attribution" -> Ok(BenefactorMarketingReportsReportKindAttribution)
+    "funnel" -> Ok(BenefactorMarketingReportsReportKindFunnel)
+    "roi" -> Ok(BenefactorMarketingReportsReportKindRoi)
+    "seo_aeo" -> Ok(BenefactorMarketingReportsReportKindSeoAeo)
+    "client_portal" -> Ok(BenefactorMarketingReportsReportKindClientPortal)
+    _ -> Error("unsupported benefactor_marketing_reports.report_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingReportsStatus {
+  BenefactorMarketingReportsStatusDraft
+  BenefactorMarketingReportsStatusReady
+  BenefactorMarketingReportsStatusSent
+  BenefactorMarketingReportsStatusArchived
+}
+
+pub fn benefactor_marketing_reports_status_to_string(value: BenefactorMarketingReportsStatus) -> String {
+  case value {
+    BenefactorMarketingReportsStatusDraft -> "draft"
+    BenefactorMarketingReportsStatusReady -> "ready"
+    BenefactorMarketingReportsStatusSent -> "sent"
+    BenefactorMarketingReportsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_benefactor_marketing_reports_status(value: String) -> Result(BenefactorMarketingReportsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingReportsStatusDraft)
+    "ready" -> Ok(BenefactorMarketingReportsStatusReady)
+    "sent" -> Ok(BenefactorMarketingReportsStatusSent)
+    "archived" -> Ok(BenefactorMarketingReportsStatusArchived)
+    _ -> Error("unsupported benefactor_marketing_reports.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingReportsRow {
+  BenefactorMarketingReportsRow(
+    id: String,
+    client_id: String,
+    campaign_id: Option(String),
+    report_kind: String,
+    status: String,
+    period_start: Option(String),
+    period_end: Option(String),
+    metrics_json: String,
+    narrative: Option(String),
+    delivery_targets_json: String,
+    generated_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_reports_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_reports.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_reports_report_kind(value: String) -> Result(String, String) {
+  case list.contains(["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_reports.report_kind: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_reports_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "ready", "sent", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_reports.status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_attribution_events_table = "benefactor_marketing_attribution_events"
+pub const benefactor_marketing_attribution_events_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      lead_id::text as lead_id,\n      event_type,\n      source_platform,\n      source_event_id,\n      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as occurred_at,\n      value_cents,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from benefactor_marketing_attribution_events"
+
+pub type BenefactorMarketingAttributionEventsEventType {
+  BenefactorMarketingAttributionEventsEventTypeImpression
+  BenefactorMarketingAttributionEventsEventTypeClick
+  BenefactorMarketingAttributionEventsEventTypeFormSubmit
+  BenefactorMarketingAttributionEventsEventTypeEmailOpen
+  BenefactorMarketingAttributionEventsEventTypeEmailClick
+  BenefactorMarketingAttributionEventsEventTypeMeetingBooked
+  BenefactorMarketingAttributionEventsEventTypeOpportunityCreated
+  BenefactorMarketingAttributionEventsEventTypeDealWon
+  BenefactorMarketingAttributionEventsEventTypeRevenue
+}
+
+pub fn benefactor_marketing_attribution_events_event_type_to_string(value: BenefactorMarketingAttributionEventsEventType) -> String {
+  case value {
+    BenefactorMarketingAttributionEventsEventTypeImpression -> "impression"
+    BenefactorMarketingAttributionEventsEventTypeClick -> "click"
+    BenefactorMarketingAttributionEventsEventTypeFormSubmit -> "form_submit"
+    BenefactorMarketingAttributionEventsEventTypeEmailOpen -> "email_open"
+    BenefactorMarketingAttributionEventsEventTypeEmailClick -> "email_click"
+    BenefactorMarketingAttributionEventsEventTypeMeetingBooked -> "meeting_booked"
+    BenefactorMarketingAttributionEventsEventTypeOpportunityCreated -> "opportunity_created"
+    BenefactorMarketingAttributionEventsEventTypeDealWon -> "deal_won"
+    BenefactorMarketingAttributionEventsEventTypeRevenue -> "revenue"
+  }
+}
+
+pub fn parse_benefactor_marketing_attribution_events_event_type(value: String) -> Result(BenefactorMarketingAttributionEventsEventType, String) {
+  case value {
+    "impression" -> Ok(BenefactorMarketingAttributionEventsEventTypeImpression)
+    "click" -> Ok(BenefactorMarketingAttributionEventsEventTypeClick)
+    "form_submit" -> Ok(BenefactorMarketingAttributionEventsEventTypeFormSubmit)
+    "email_open" -> Ok(BenefactorMarketingAttributionEventsEventTypeEmailOpen)
+    "email_click" -> Ok(BenefactorMarketingAttributionEventsEventTypeEmailClick)
+    "meeting_booked" -> Ok(BenefactorMarketingAttributionEventsEventTypeMeetingBooked)
+    "opportunity_created" -> Ok(BenefactorMarketingAttributionEventsEventTypeOpportunityCreated)
+    "deal_won" -> Ok(BenefactorMarketingAttributionEventsEventTypeDealWon)
+    "revenue" -> Ok(BenefactorMarketingAttributionEventsEventTypeRevenue)
+    _ -> Error("unsupported benefactor_marketing_attribution_events.event_type: " <> value)
+  }
+}
+
+pub type BenefactorMarketingAttributionEventsRow {
+  BenefactorMarketingAttributionEventsRow(
+    id: String,
+    client_id: String,
+    campaign_id: Option(String),
+    lead_id: Option(String),
+    event_type: String,
+    source_platform: Option(String),
+    source_event_id: Option(String),
+    occurred_at: String,
+    value_cents: Int,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_attribution_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_attribution_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_attribution_events_event_type(value: String) -> Result(String, String) {
+  case list.contains(["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_attribution_events.event_type: " <> value)
+  }
+}
+
+pub const benefactor_marketing_opportunities_table = "benefactor_marketing_opportunities"
+pub const benefactor_marketing_opportunities_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      status,\n      stage,\n      name,\n      amount_cents,\n      probability_micros,\n      expected_close_on,\n      owner_user_id::text as owner_user_id,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_opportunities"
+
+pub type BenefactorMarketingOpportunitiesStatus {
+  BenefactorMarketingOpportunitiesStatusOpen
+  BenefactorMarketingOpportunitiesStatusWon
+  BenefactorMarketingOpportunitiesStatusLost
+  BenefactorMarketingOpportunitiesStatusPaused
+}
+
+pub fn benefactor_marketing_opportunities_status_to_string(value: BenefactorMarketingOpportunitiesStatus) -> String {
+  case value {
+    BenefactorMarketingOpportunitiesStatusOpen -> "open"
+    BenefactorMarketingOpportunitiesStatusWon -> "won"
+    BenefactorMarketingOpportunitiesStatusLost -> "lost"
+    BenefactorMarketingOpportunitiesStatusPaused -> "paused"
+  }
+}
+
+pub fn parse_benefactor_marketing_opportunities_status(value: String) -> Result(BenefactorMarketingOpportunitiesStatus, String) {
+  case value {
+    "open" -> Ok(BenefactorMarketingOpportunitiesStatusOpen)
+    "won" -> Ok(BenefactorMarketingOpportunitiesStatusWon)
+    "lost" -> Ok(BenefactorMarketingOpportunitiesStatusLost)
+    "paused" -> Ok(BenefactorMarketingOpportunitiesStatusPaused)
+    _ -> Error("unsupported benefactor_marketing_opportunities.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingOpportunitiesStage {
+  BenefactorMarketingOpportunitiesStageProspecting
+  BenefactorMarketingOpportunitiesStageQualified
+  BenefactorMarketingOpportunitiesStageMeeting
+  BenefactorMarketingOpportunitiesStageProposal
+  BenefactorMarketingOpportunitiesStageNegotiation
+  BenefactorMarketingOpportunitiesStageClosed
+}
+
+pub fn benefactor_marketing_opportunities_stage_to_string(value: BenefactorMarketingOpportunitiesStage) -> String {
+  case value {
+    BenefactorMarketingOpportunitiesStageProspecting -> "prospecting"
+    BenefactorMarketingOpportunitiesStageQualified -> "qualified"
+    BenefactorMarketingOpportunitiesStageMeeting -> "meeting"
+    BenefactorMarketingOpportunitiesStageProposal -> "proposal"
+    BenefactorMarketingOpportunitiesStageNegotiation -> "negotiation"
+    BenefactorMarketingOpportunitiesStageClosed -> "closed"
+  }
+}
+
+pub fn parse_benefactor_marketing_opportunities_stage(value: String) -> Result(BenefactorMarketingOpportunitiesStage, String) {
+  case value {
+    "prospecting" -> Ok(BenefactorMarketingOpportunitiesStageProspecting)
+    "qualified" -> Ok(BenefactorMarketingOpportunitiesStageQualified)
+    "meeting" -> Ok(BenefactorMarketingOpportunitiesStageMeeting)
+    "proposal" -> Ok(BenefactorMarketingOpportunitiesStageProposal)
+    "negotiation" -> Ok(BenefactorMarketingOpportunitiesStageNegotiation)
+    "closed" -> Ok(BenefactorMarketingOpportunitiesStageClosed)
+    _ -> Error("unsupported benefactor_marketing_opportunities.stage: " <> value)
+  }
+}
+
+pub type BenefactorMarketingOpportunitiesRow {
+  BenefactorMarketingOpportunitiesRow(
+    id: String,
+    client_id: String,
+    lead_id: Option(String),
+    status: String,
+    stage: String,
+    name: String,
+    amount_cents: Int,
+    probability_micros: Int,
+    expected_close_on: Option(String),
+    owner_user_id: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_opportunities_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_opportunities.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_opportunities_status(value: String) -> Result(String, String) {
+  case list.contains(["open", "won", "lost", "paused"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_opportunities.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_opportunities_stage(value: String) -> Result(String, String) {
+  case list.contains(["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_opportunities.stage: " <> value)
+  }
+}
+
+pub const benefactor_marketing_content_assets_table = "benefactor_marketing_content_assets"
+pub const benefactor_marketing_content_assets_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      status,\n      asset_kind,\n      title,\n      channel,\n      body,\n      asset_uri,\n      seo_keywords::text as seo_keywords_json,\n      approval_status,\n      to_char(publish_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as publish_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_content_assets"
+
+pub type BenefactorMarketingContentAssetsStatus {
+  BenefactorMarketingContentAssetsStatusDraft
+  BenefactorMarketingContentAssetsStatusInReview
+  BenefactorMarketingContentAssetsStatusApproved
+  BenefactorMarketingContentAssetsStatusScheduled
+  BenefactorMarketingContentAssetsStatusPublished
+  BenefactorMarketingContentAssetsStatusArchived
+}
+
+pub fn benefactor_marketing_content_assets_status_to_string(value: BenefactorMarketingContentAssetsStatus) -> String {
+  case value {
+    BenefactorMarketingContentAssetsStatusDraft -> "draft"
+    BenefactorMarketingContentAssetsStatusInReview -> "in_review"
+    BenefactorMarketingContentAssetsStatusApproved -> "approved"
+    BenefactorMarketingContentAssetsStatusScheduled -> "scheduled"
+    BenefactorMarketingContentAssetsStatusPublished -> "published"
+    BenefactorMarketingContentAssetsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_benefactor_marketing_content_assets_status(value: String) -> Result(BenefactorMarketingContentAssetsStatus, String) {
+  case value {
+    "draft" -> Ok(BenefactorMarketingContentAssetsStatusDraft)
+    "in_review" -> Ok(BenefactorMarketingContentAssetsStatusInReview)
+    "approved" -> Ok(BenefactorMarketingContentAssetsStatusApproved)
+    "scheduled" -> Ok(BenefactorMarketingContentAssetsStatusScheduled)
+    "published" -> Ok(BenefactorMarketingContentAssetsStatusPublished)
+    "archived" -> Ok(BenefactorMarketingContentAssetsStatusArchived)
+    _ -> Error("unsupported benefactor_marketing_content_assets.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContentAssetsAssetKind {
+  BenefactorMarketingContentAssetsAssetKindBlog
+  BenefactorMarketingContentAssetsAssetKindSocialPost
+  BenefactorMarketingContentAssetsAssetKindEmail
+  BenefactorMarketingContentAssetsAssetKindLandingPage
+  BenefactorMarketingContentAssetsAssetKindAdCreative
+  BenefactorMarketingContentAssetsAssetKindVideo
+  BenefactorMarketingContentAssetsAssetKindScript
+  BenefactorMarketingContentAssetsAssetKindProposal
+  BenefactorMarketingContentAssetsAssetKindReport
+}
+
+pub fn benefactor_marketing_content_assets_asset_kind_to_string(value: BenefactorMarketingContentAssetsAssetKind) -> String {
+  case value {
+    BenefactorMarketingContentAssetsAssetKindBlog -> "blog"
+    BenefactorMarketingContentAssetsAssetKindSocialPost -> "social_post"
+    BenefactorMarketingContentAssetsAssetKindEmail -> "email"
+    BenefactorMarketingContentAssetsAssetKindLandingPage -> "landing_page"
+    BenefactorMarketingContentAssetsAssetKindAdCreative -> "ad_creative"
+    BenefactorMarketingContentAssetsAssetKindVideo -> "video"
+    BenefactorMarketingContentAssetsAssetKindScript -> "script"
+    BenefactorMarketingContentAssetsAssetKindProposal -> "proposal"
+    BenefactorMarketingContentAssetsAssetKindReport -> "report"
+  }
+}
+
+pub fn parse_benefactor_marketing_content_assets_asset_kind(value: String) -> Result(BenefactorMarketingContentAssetsAssetKind, String) {
+  case value {
+    "blog" -> Ok(BenefactorMarketingContentAssetsAssetKindBlog)
+    "social_post" -> Ok(BenefactorMarketingContentAssetsAssetKindSocialPost)
+    "email" -> Ok(BenefactorMarketingContentAssetsAssetKindEmail)
+    "landing_page" -> Ok(BenefactorMarketingContentAssetsAssetKindLandingPage)
+    "ad_creative" -> Ok(BenefactorMarketingContentAssetsAssetKindAdCreative)
+    "video" -> Ok(BenefactorMarketingContentAssetsAssetKindVideo)
+    "script" -> Ok(BenefactorMarketingContentAssetsAssetKindScript)
+    "proposal" -> Ok(BenefactorMarketingContentAssetsAssetKindProposal)
+    "report" -> Ok(BenefactorMarketingContentAssetsAssetKindReport)
+    _ -> Error("unsupported benefactor_marketing_content_assets.asset_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContentAssetsApprovalStatus {
+  BenefactorMarketingContentAssetsApprovalStatusPending
+  BenefactorMarketingContentAssetsApprovalStatusApproved
+  BenefactorMarketingContentAssetsApprovalStatusRejected
+  BenefactorMarketingContentAssetsApprovalStatusChangesRequested
+}
+
+pub fn benefactor_marketing_content_assets_approval_status_to_string(value: BenefactorMarketingContentAssetsApprovalStatus) -> String {
+  case value {
+    BenefactorMarketingContentAssetsApprovalStatusPending -> "pending"
+    BenefactorMarketingContentAssetsApprovalStatusApproved -> "approved"
+    BenefactorMarketingContentAssetsApprovalStatusRejected -> "rejected"
+    BenefactorMarketingContentAssetsApprovalStatusChangesRequested -> "changes_requested"
+  }
+}
+
+pub fn parse_benefactor_marketing_content_assets_approval_status(value: String) -> Result(BenefactorMarketingContentAssetsApprovalStatus, String) {
+  case value {
+    "pending" -> Ok(BenefactorMarketingContentAssetsApprovalStatusPending)
+    "approved" -> Ok(BenefactorMarketingContentAssetsApprovalStatusApproved)
+    "rejected" -> Ok(BenefactorMarketingContentAssetsApprovalStatusRejected)
+    "changes_requested" -> Ok(BenefactorMarketingContentAssetsApprovalStatusChangesRequested)
+    _ -> Error("unsupported benefactor_marketing_content_assets.approval_status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingContentAssetsRow {
+  BenefactorMarketingContentAssetsRow(
+    id: String,
+    client_id: String,
+    campaign_id: Option(String),
+    status: String,
+    asset_kind: String,
+    title: String,
+    channel: Option(String),
+    body: Option(String),
+    asset_uri: Option(String),
+    seo_keywords_json: String,
+    approval_status: String,
+    publish_at: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_content_assets_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_content_assets.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_content_assets_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "in_review", "approved", "scheduled", "published", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_content_assets.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_content_assets_asset_kind(value: String) -> Result(String, String) {
+  case list.contains(["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_content_assets.asset_kind: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_content_assets_approval_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "approved", "rejected", "changes_requested"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_content_assets.approval_status: " <> value)
+  }
+}
+
+pub const benefactor_marketing_project_tasks_table = "benefactor_marketing_project_tasks"
+pub const benefactor_marketing_project_tasks_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      content_asset_id::text as content_asset_id,\n      status,\n      priority,\n      title,\n      description,\n      assigned_to::text as assigned_to,\n      due_on,\n      to_char(sla_due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sla_due_at,\n      time_spent_minutes,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_project_tasks"
+
+pub type BenefactorMarketingProjectTasksStatus {
+  BenefactorMarketingProjectTasksStatusTodo
+  BenefactorMarketingProjectTasksStatusInProgress
+  BenefactorMarketingProjectTasksStatusBlocked
+  BenefactorMarketingProjectTasksStatusDone
+  BenefactorMarketingProjectTasksStatusCanceled
+}
+
+pub fn benefactor_marketing_project_tasks_status_to_string(value: BenefactorMarketingProjectTasksStatus) -> String {
+  case value {
+    BenefactorMarketingProjectTasksStatusTodo -> "todo"
+    BenefactorMarketingProjectTasksStatusInProgress -> "in_progress"
+    BenefactorMarketingProjectTasksStatusBlocked -> "blocked"
+    BenefactorMarketingProjectTasksStatusDone -> "done"
+    BenefactorMarketingProjectTasksStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_benefactor_marketing_project_tasks_status(value: String) -> Result(BenefactorMarketingProjectTasksStatus, String) {
+  case value {
+    "todo" -> Ok(BenefactorMarketingProjectTasksStatusTodo)
+    "in_progress" -> Ok(BenefactorMarketingProjectTasksStatusInProgress)
+    "blocked" -> Ok(BenefactorMarketingProjectTasksStatusBlocked)
+    "done" -> Ok(BenefactorMarketingProjectTasksStatusDone)
+    "canceled" -> Ok(BenefactorMarketingProjectTasksStatusCanceled)
+    _ -> Error("unsupported benefactor_marketing_project_tasks.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingProjectTasksPriority {
+  BenefactorMarketingProjectTasksPriorityLow
+  BenefactorMarketingProjectTasksPriorityNormal
+  BenefactorMarketingProjectTasksPriorityHigh
+  BenefactorMarketingProjectTasksPriorityUrgent
+}
+
+pub fn benefactor_marketing_project_tasks_priority_to_string(value: BenefactorMarketingProjectTasksPriority) -> String {
+  case value {
+    BenefactorMarketingProjectTasksPriorityLow -> "low"
+    BenefactorMarketingProjectTasksPriorityNormal -> "normal"
+    BenefactorMarketingProjectTasksPriorityHigh -> "high"
+    BenefactorMarketingProjectTasksPriorityUrgent -> "urgent"
+  }
+}
+
+pub fn parse_benefactor_marketing_project_tasks_priority(value: String) -> Result(BenefactorMarketingProjectTasksPriority, String) {
+  case value {
+    "low" -> Ok(BenefactorMarketingProjectTasksPriorityLow)
+    "normal" -> Ok(BenefactorMarketingProjectTasksPriorityNormal)
+    "high" -> Ok(BenefactorMarketingProjectTasksPriorityHigh)
+    "urgent" -> Ok(BenefactorMarketingProjectTasksPriorityUrgent)
+    _ -> Error("unsupported benefactor_marketing_project_tasks.priority: " <> value)
+  }
+}
+
+pub type BenefactorMarketingProjectTasksRow {
+  BenefactorMarketingProjectTasksRow(
+    id: String,
+    client_id: String,
+    campaign_id: Option(String),
+    content_asset_id: Option(String),
+    status: String,
+    priority: String,
+    title: String,
+    description: Option(String),
+    assigned_to: Option(String),
+    due_on: Option(String),
+    sla_due_at: Option(String),
+    time_spent_minutes: Int,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_project_tasks_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_project_tasks.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_project_tasks_status(value: String) -> Result(String, String) {
+  case list.contains(["todo", "in_progress", "blocked", "done", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_project_tasks.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_project_tasks_priority(value: String) -> Result(String, String) {
+  case list.contains(["low", "normal", "high", "urgent"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_project_tasks.priority: " <> value)
+  }
+}
+
+pub const benefactor_marketing_client_approvals_table = "benefactor_marketing_client_approvals"
+pub const benefactor_marketing_client_approvals_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      content_asset_id::text as content_asset_id,\n      requested_by::text as requested_by,\n      status,\n      approval_kind,\n      title,\n      request_payload::text as request_payload_json,\n      response_note,\n      to_char(due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as due_at,\n      to_char(decided_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as decided_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_client_approvals"
+
+pub type BenefactorMarketingClientApprovalsStatus {
+  BenefactorMarketingClientApprovalsStatusPending
+  BenefactorMarketingClientApprovalsStatusApproved
+  BenefactorMarketingClientApprovalsStatusRejected
+  BenefactorMarketingClientApprovalsStatusExpired
+  BenefactorMarketingClientApprovalsStatusCanceled
+}
+
+pub fn benefactor_marketing_client_approvals_status_to_string(value: BenefactorMarketingClientApprovalsStatus) -> String {
+  case value {
+    BenefactorMarketingClientApprovalsStatusPending -> "pending"
+    BenefactorMarketingClientApprovalsStatusApproved -> "approved"
+    BenefactorMarketingClientApprovalsStatusRejected -> "rejected"
+    BenefactorMarketingClientApprovalsStatusExpired -> "expired"
+    BenefactorMarketingClientApprovalsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_benefactor_marketing_client_approvals_status(value: String) -> Result(BenefactorMarketingClientApprovalsStatus, String) {
+  case value {
+    "pending" -> Ok(BenefactorMarketingClientApprovalsStatusPending)
+    "approved" -> Ok(BenefactorMarketingClientApprovalsStatusApproved)
+    "rejected" -> Ok(BenefactorMarketingClientApprovalsStatusRejected)
+    "expired" -> Ok(BenefactorMarketingClientApprovalsStatusExpired)
+    "canceled" -> Ok(BenefactorMarketingClientApprovalsStatusCanceled)
+    _ -> Error("unsupported benefactor_marketing_client_approvals.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingClientApprovalsApprovalKind {
+  BenefactorMarketingClientApprovalsApprovalKindCampaignLaunch
+  BenefactorMarketingClientApprovalsApprovalKindContentPublish
+  BenefactorMarketingClientApprovalsApprovalKindBudgetChange
+  BenefactorMarketingClientApprovalsApprovalKindReportSend
+  BenefactorMarketingClientApprovalsApprovalKindLeadList
+}
+
+pub fn benefactor_marketing_client_approvals_approval_kind_to_string(value: BenefactorMarketingClientApprovalsApprovalKind) -> String {
+  case value {
+    BenefactorMarketingClientApprovalsApprovalKindCampaignLaunch -> "campaign_launch"
+    BenefactorMarketingClientApprovalsApprovalKindContentPublish -> "content_publish"
+    BenefactorMarketingClientApprovalsApprovalKindBudgetChange -> "budget_change"
+    BenefactorMarketingClientApprovalsApprovalKindReportSend -> "report_send"
+    BenefactorMarketingClientApprovalsApprovalKindLeadList -> "lead_list"
+  }
+}
+
+pub fn parse_benefactor_marketing_client_approvals_approval_kind(value: String) -> Result(BenefactorMarketingClientApprovalsApprovalKind, String) {
+  case value {
+    "campaign_launch" -> Ok(BenefactorMarketingClientApprovalsApprovalKindCampaignLaunch)
+    "content_publish" -> Ok(BenefactorMarketingClientApprovalsApprovalKindContentPublish)
+    "budget_change" -> Ok(BenefactorMarketingClientApprovalsApprovalKindBudgetChange)
+    "report_send" -> Ok(BenefactorMarketingClientApprovalsApprovalKindReportSend)
+    "lead_list" -> Ok(BenefactorMarketingClientApprovalsApprovalKindLeadList)
+    _ -> Error("unsupported benefactor_marketing_client_approvals.approval_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingClientApprovalsRow {
+  BenefactorMarketingClientApprovalsRow(
+    id: String,
+    client_id: String,
+    campaign_id: Option(String),
+    content_asset_id: Option(String),
+    requested_by: Option(String),
+    status: String,
+    approval_kind: String,
+    title: String,
+    request_payload_json: String,
+    response_note: Option(String),
+    due_at: Option(String),
+    decided_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_client_approvals_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_client_approvals.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_client_approvals_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "approved", "rejected", "expired", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_client_approvals.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_client_approvals_approval_kind(value: String) -> Result(String, String) {
+  case list.contains(["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_client_approvals.approval_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_tickets_table = "benefactor_marketing_tickets"
+pub const benefactor_marketing_tickets_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      priority,\n      subject,\n      description,\n      source,\n      assigned_to::text as assigned_to,\n      to_char(last_activity_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_activity_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_tickets"
+
+pub type BenefactorMarketingTicketsStatus {
+  BenefactorMarketingTicketsStatusOpen
+  BenefactorMarketingTicketsStatusPendingClient
+  BenefactorMarketingTicketsStatusPendingAgency
+  BenefactorMarketingTicketsStatusResolved
+  BenefactorMarketingTicketsStatusClosed
+}
+
+pub fn benefactor_marketing_tickets_status_to_string(value: BenefactorMarketingTicketsStatus) -> String {
+  case value {
+    BenefactorMarketingTicketsStatusOpen -> "open"
+    BenefactorMarketingTicketsStatusPendingClient -> "pending_client"
+    BenefactorMarketingTicketsStatusPendingAgency -> "pending_agency"
+    BenefactorMarketingTicketsStatusResolved -> "resolved"
+    BenefactorMarketingTicketsStatusClosed -> "closed"
+  }
+}
+
+pub fn parse_benefactor_marketing_tickets_status(value: String) -> Result(BenefactorMarketingTicketsStatus, String) {
+  case value {
+    "open" -> Ok(BenefactorMarketingTicketsStatusOpen)
+    "pending_client" -> Ok(BenefactorMarketingTicketsStatusPendingClient)
+    "pending_agency" -> Ok(BenefactorMarketingTicketsStatusPendingAgency)
+    "resolved" -> Ok(BenefactorMarketingTicketsStatusResolved)
+    "closed" -> Ok(BenefactorMarketingTicketsStatusClosed)
+    _ -> Error("unsupported benefactor_marketing_tickets.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingTicketsPriority {
+  BenefactorMarketingTicketsPriorityLow
+  BenefactorMarketingTicketsPriorityNormal
+  BenefactorMarketingTicketsPriorityHigh
+  BenefactorMarketingTicketsPriorityUrgent
+}
+
+pub fn benefactor_marketing_tickets_priority_to_string(value: BenefactorMarketingTicketsPriority) -> String {
+  case value {
+    BenefactorMarketingTicketsPriorityLow -> "low"
+    BenefactorMarketingTicketsPriorityNormal -> "normal"
+    BenefactorMarketingTicketsPriorityHigh -> "high"
+    BenefactorMarketingTicketsPriorityUrgent -> "urgent"
+  }
+}
+
+pub fn parse_benefactor_marketing_tickets_priority(value: String) -> Result(BenefactorMarketingTicketsPriority, String) {
+  case value {
+    "low" -> Ok(BenefactorMarketingTicketsPriorityLow)
+    "normal" -> Ok(BenefactorMarketingTicketsPriorityNormal)
+    "high" -> Ok(BenefactorMarketingTicketsPriorityHigh)
+    "urgent" -> Ok(BenefactorMarketingTicketsPriorityUrgent)
+    _ -> Error("unsupported benefactor_marketing_tickets.priority: " <> value)
+  }
+}
+
+pub type BenefactorMarketingTicketsSource {
+  BenefactorMarketingTicketsSourcePortal
+  BenefactorMarketingTicketsSourceEmail
+  BenefactorMarketingTicketsSourceInternal
+}
+
+pub fn benefactor_marketing_tickets_source_to_string(value: BenefactorMarketingTicketsSource) -> String {
+  case value {
+    BenefactorMarketingTicketsSourcePortal -> "portal"
+    BenefactorMarketingTicketsSourceEmail -> "email"
+    BenefactorMarketingTicketsSourceInternal -> "internal"
+  }
+}
+
+pub fn parse_benefactor_marketing_tickets_source(value: String) -> Result(BenefactorMarketingTicketsSource, String) {
+  case value {
+    "portal" -> Ok(BenefactorMarketingTicketsSourcePortal)
+    "email" -> Ok(BenefactorMarketingTicketsSourceEmail)
+    "internal" -> Ok(BenefactorMarketingTicketsSourceInternal)
+    _ -> Error("unsupported benefactor_marketing_tickets.source: " <> value)
+  }
+}
+
+pub type BenefactorMarketingTicketsRow {
+  BenefactorMarketingTicketsRow(
+    id: String,
+    client_id: String,
+    status: String,
+    priority: String,
+    subject: String,
+    description: Option(String),
+    source: String,
+    assigned_to: Option(String),
+    last_activity_at: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_tickets_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_tickets.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_tickets_status(value: String) -> Result(String, String) {
+  case list.contains(["open", "pending_client", "pending_agency", "resolved", "closed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_tickets.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_tickets_priority(value: String) -> Result(String, String) {
+  case list.contains(["low", "normal", "high", "urgent"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_tickets.priority: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_tickets_source(value: String) -> Result(String, String) {
+  case list.contains(["portal", "email", "internal"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_tickets.source: " <> value)
+  }
+}
+
+pub const benefactor_marketing_meetings_table = "benefactor_marketing_meetings"
+pub const benefactor_marketing_meetings_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      opportunity_id::text as opportunity_id,\n      status,\n      meeting_kind,\n      title,\n      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as scheduled_at,\n      duration_minutes,\n      notes,\n      recording_uri,\n      transcript_summary::text as transcript_summary_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_meetings"
+
+pub type BenefactorMarketingMeetingsStatus {
+  BenefactorMarketingMeetingsStatusScheduled
+  BenefactorMarketingMeetingsStatusCompleted
+  BenefactorMarketingMeetingsStatusCanceled
+  BenefactorMarketingMeetingsStatusNoShow
+}
+
+pub fn benefactor_marketing_meetings_status_to_string(value: BenefactorMarketingMeetingsStatus) -> String {
+  case value {
+    BenefactorMarketingMeetingsStatusScheduled -> "scheduled"
+    BenefactorMarketingMeetingsStatusCompleted -> "completed"
+    BenefactorMarketingMeetingsStatusCanceled -> "canceled"
+    BenefactorMarketingMeetingsStatusNoShow -> "no_show"
+  }
+}
+
+pub fn parse_benefactor_marketing_meetings_status(value: String) -> Result(BenefactorMarketingMeetingsStatus, String) {
+  case value {
+    "scheduled" -> Ok(BenefactorMarketingMeetingsStatusScheduled)
+    "completed" -> Ok(BenefactorMarketingMeetingsStatusCompleted)
+    "canceled" -> Ok(BenefactorMarketingMeetingsStatusCanceled)
+    "no_show" -> Ok(BenefactorMarketingMeetingsStatusNoShow)
+    _ -> Error("unsupported benefactor_marketing_meetings.status: " <> value)
+  }
+}
+
+pub type BenefactorMarketingMeetingsMeetingKind {
+  BenefactorMarketingMeetingsMeetingKindOnboarding
+  BenefactorMarketingMeetingsMeetingKindReportReview
+  BenefactorMarketingMeetingsMeetingKindSalesDiscovery
+  BenefactorMarketingMeetingsMeetingKindStrategy
+  BenefactorMarketingMeetingsMeetingKindContentReview
+  BenefactorMarketingMeetingsMeetingKindSupport
+}
+
+pub fn benefactor_marketing_meetings_meeting_kind_to_string(value: BenefactorMarketingMeetingsMeetingKind) -> String {
+  case value {
+    BenefactorMarketingMeetingsMeetingKindOnboarding -> "onboarding"
+    BenefactorMarketingMeetingsMeetingKindReportReview -> "report_review"
+    BenefactorMarketingMeetingsMeetingKindSalesDiscovery -> "sales_discovery"
+    BenefactorMarketingMeetingsMeetingKindStrategy -> "strategy"
+    BenefactorMarketingMeetingsMeetingKindContentReview -> "content_review"
+    BenefactorMarketingMeetingsMeetingKindSupport -> "support"
+  }
+}
+
+pub fn parse_benefactor_marketing_meetings_meeting_kind(value: String) -> Result(BenefactorMarketingMeetingsMeetingKind, String) {
+  case value {
+    "onboarding" -> Ok(BenefactorMarketingMeetingsMeetingKindOnboarding)
+    "report_review" -> Ok(BenefactorMarketingMeetingsMeetingKindReportReview)
+    "sales_discovery" -> Ok(BenefactorMarketingMeetingsMeetingKindSalesDiscovery)
+    "strategy" -> Ok(BenefactorMarketingMeetingsMeetingKindStrategy)
+    "content_review" -> Ok(BenefactorMarketingMeetingsMeetingKindContentReview)
+    "support" -> Ok(BenefactorMarketingMeetingsMeetingKindSupport)
+    _ -> Error("unsupported benefactor_marketing_meetings.meeting_kind: " <> value)
+  }
+}
+
+pub type BenefactorMarketingMeetingsRow {
+  BenefactorMarketingMeetingsRow(
+    id: String,
+    client_id: String,
+    lead_id: Option(String),
+    opportunity_id: Option(String),
+    status: String,
+    meeting_kind: String,
+    title: String,
+    scheduled_at: String,
+    duration_minutes: Int,
+    notes: Option(String),
+    recording_uri: Option(String),
+    transcript_summary_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_meetings_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_meetings.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_meetings_status(value: String) -> Result(String, String) {
+  case list.contains(["scheduled", "completed", "canceled", "no_show"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_meetings.status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_marketing_meetings_meeting_kind(value: String) -> Result(String, String) {
+  case list.contains(["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_meetings.meeting_kind: " <> value)
+  }
+}
+
+pub const benefactor_marketing_team_allocations_table = "benefactor_marketing_team_allocations"
+pub const benefactor_marketing_team_allocations_select_sql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      user_id::text as user_id,\n      role,\n      allocation_percent,\n      starts_on,\n      ends_on,\n      billable,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_team_allocations"
+
+pub type BenefactorMarketingTeamAllocationsRole {
+  BenefactorMarketingTeamAllocationsRoleStrategist
+  BenefactorMarketingTeamAllocationsRoleDesigner
+  BenefactorMarketingTeamAllocationsRoleCopywriter
+  BenefactorMarketingTeamAllocationsRoleAnalyst
+  BenefactorMarketingTeamAllocationsRoleSdr
+  BenefactorMarketingTeamAllocationsRoleAccountManager
+  BenefactorMarketingTeamAllocationsRoleSeoSpecialist
+}
+
+pub fn benefactor_marketing_team_allocations_role_to_string(value: BenefactorMarketingTeamAllocationsRole) -> String {
+  case value {
+    BenefactorMarketingTeamAllocationsRoleStrategist -> "strategist"
+    BenefactorMarketingTeamAllocationsRoleDesigner -> "designer"
+    BenefactorMarketingTeamAllocationsRoleCopywriter -> "copywriter"
+    BenefactorMarketingTeamAllocationsRoleAnalyst -> "analyst"
+    BenefactorMarketingTeamAllocationsRoleSdr -> "sdr"
+    BenefactorMarketingTeamAllocationsRoleAccountManager -> "account_manager"
+    BenefactorMarketingTeamAllocationsRoleSeoSpecialist -> "seo_specialist"
+  }
+}
+
+pub fn parse_benefactor_marketing_team_allocations_role(value: String) -> Result(BenefactorMarketingTeamAllocationsRole, String) {
+  case value {
+    "strategist" -> Ok(BenefactorMarketingTeamAllocationsRoleStrategist)
+    "designer" -> Ok(BenefactorMarketingTeamAllocationsRoleDesigner)
+    "copywriter" -> Ok(BenefactorMarketingTeamAllocationsRoleCopywriter)
+    "analyst" -> Ok(BenefactorMarketingTeamAllocationsRoleAnalyst)
+    "sdr" -> Ok(BenefactorMarketingTeamAllocationsRoleSdr)
+    "account_manager" -> Ok(BenefactorMarketingTeamAllocationsRoleAccountManager)
+    "seo_specialist" -> Ok(BenefactorMarketingTeamAllocationsRoleSeoSpecialist)
+    _ -> Error("unsupported benefactor_marketing_team_allocations.role: " <> value)
+  }
+}
+
+pub type BenefactorMarketingTeamAllocationsRow {
+  BenefactorMarketingTeamAllocationsRow(
+    id: String,
+    client_id: Option(String),
+    campaign_id: Option(String),
+    user_id: String,
+    role: String,
+    allocation_percent: Int,
+    starts_on: Option(String),
+    ends_on: Option(String),
+    billable: Bool,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_benefactor_marketing_team_allocations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_marketing_team_allocations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_marketing_team_allocations_role(value: String) -> Result(String, String) {
+  case list.contains(["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_marketing_team_allocations.role: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

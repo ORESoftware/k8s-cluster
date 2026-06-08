@@ -1252,6 +1252,572 @@ class DesFelElevatorPomdpBeliefsTable extends Table {
   };
 }
 
+@DataClassName("BenefactorMarketingClientsData")
+class BenefactorMarketingClientsTable extends Table {
+  @override String get tableName => "benefactor_marketing_clients";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'onboarding')();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  TextColumn get slug => text().named("slug").withLength(max: 220)();
+  TextColumn get industry => text().named("industry").withLength(max: 120).nullable()();
+  TextColumn get websiteUrl => text().named("website_url").nullable()();
+  TextColumn get billingEmail => text().named("billing_email").withLength(max: 240).nullable()();
+  TextColumn get ownerUserId => text().named("owner_user_id").nullable().customConstraint("UUID")();
+  TextColumn get servicePackage => text().named("service_package").withLength(max: 120).nullable()();
+  TextColumn get onboardingStage => text().named("onboarding_stage").withLength(max: 80).clientDefault(() => 'intake')();
+  BoolColumn get portalEnabled => boolean().named("portal_enabled").clientDefault(() => true)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingContactsData")
+class BenefactorMarketingContactsTable extends Table {
+  @override String get tableName => "benefactor_marketing_contacts";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get firstName => text().named("first_name").withLength(max: 120).nullable()();
+  TextColumn get lastName => text().named("last_name").withLength(max: 120).nullable()();
+  TextColumn get email => text().named("email").withLength(max: 240).nullable()();
+  TextColumn get phone => text().named("phone").withLength(max: 80).nullable()();
+  TextColumn get jobTitle => text().named("job_title").withLength(max: 160).nullable()();
+  TextColumn get lifecycleRole => text().named("lifecycle_role").clientDefault(() => 'other')();
+  TextColumn get consentStatus => text().named("consent_status").clientDefault(() => 'unknown')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingServicePackagesData")
+class BenefactorMarketingServicePackagesTable extends Table {
+  @override String get tableName => "benefactor_marketing_service_packages";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get code => text().named("code").withLength(max: 120)();
+  TextColumn get name => text().named("name").withLength(max: 200)();
+  TextColumn get channelMix => text().named("channel_mix").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get deliverables => text().named("deliverables").clientDefault(() => '[]').customConstraint("JSONB")();
+  IntColumn get monthlyBudgetCents => integer().named("monthly_budget_cents").clientDefault(() => 0)();
+  IntColumn get retainerCents => integer().named("retainer_cents").clientDefault(() => 0)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingContractsData")
+class BenefactorMarketingContractsTable extends Table {
+  @override String get tableName => "benefactor_marketing_contracts";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get packageId => text().named("package_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_service_packages (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get contractNumber => text().named("contract_number").withLength(max: 120).nullable()();
+  TextColumn get startsOn => text().named("starts_on").withLength(max: 10).nullable()();
+  TextColumn get endsOn => text().named("ends_on").withLength(max: 10).nullable()();
+  TextColumn get billingTerms => text().named("billing_terms").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get totalValueCents => integer().named("total_value_cents").clientDefault(() => 0)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingInvoicesData")
+class BenefactorMarketingInvoicesTable extends Table {
+  @override String get tableName => "benefactor_marketing_invoices";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get contractId => text().named("contract_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_contracts (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get invoiceNumber => text().named("invoice_number").withLength(max: 120).nullable()();
+  TextColumn get dueOn => text().named("due_on").withLength(max: 10).nullable()();
+  IntColumn get amountCents => integer().named("amount_cents").clientDefault(() => 0)();
+  DateTimeColumn get paidAt => dateTime().named("paid_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lineItems => text().named("line_items").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingIntegrationsData")
+class BenefactorMarketingIntegrationsTable extends Table {
+  @override String get tableName => "benefactor_marketing_integrations";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get platform => text().named("platform")();
+  TextColumn get status => text().named("status").clientDefault(() => 'connected')();
+  TextColumn get authKind => text().named("auth_kind").clientDefault(() => 'manual')();
+  TextColumn get externalAccountId => text().named("external_account_id").withLength(max: 200).nullable()();
+  TextColumn get syncCursor => text().named("sync_cursor").nullable()();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get lastSyncAt => dateTime().named("last_sync_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingLeadsData")
+class BenefactorMarketingLeadsTable extends Table {
+  @override String get tableName => "benefactor_marketing_leads";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get sourceIntegrationId => text().named("source_integration_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_integrations (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'new')();
+  TextColumn get companyName => text().named("company_name").withLength(max: 240)();
+  TextColumn get domain => text().named("domain").withLength(max: 240).nullable()();
+  TextColumn get contactName => text().named("contact_name").withLength(max: 200).nullable()();
+  TextColumn get contactEmail => text().named("contact_email").withLength(max: 240).nullable()();
+  TextColumn get contactTitle => text().named("contact_title").withLength(max: 160).nullable()();
+  TextColumn get countryCode => text().named("country_code").withLength(max: 8).nullable()();
+  IntColumn get leadScore => integer().named("lead_score").clientDefault(() => 0)();
+  IntColumn get icpFitScore => integer().named("icp_fit_score").clientDefault(() => 0)();
+  TextColumn get verificationStatus => text().named("verification_status").clientDefault(() => 'unknown')();
+  TextColumn get enrichmentStatus => text().named("enrichment_status").clientDefault(() => 'pending')();
+  TextColumn get companyProfile => text().named("company_profile").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get signals => text().named("signals").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingEnrichmentJobsData")
+class BenefactorMarketingEnrichmentJobsTable extends Table {
+  @override String get tableName => "benefactor_marketing_enrichment_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get leadId => text().named("lead_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_leads (id)")();
+  TextColumn get jobKind => text().named("job_kind")();
+  TextColumn get status => text().named("status").clientDefault(() => 'queued')();
+  TextColumn get externalJobId => text().named("external_job_id").withLength(max: 200).nullable()();
+  TextColumn get scraperHandoffUrl => text().named("scraper_handoff_url").nullable()();
+  TextColumn get input => text().named("input").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get result => text().named("result").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get errorSummary => text().named("error_summary").nullable()();
+  DateTimeColumn get queuedAt => dateTime().named("queued_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get completedAt => dateTime().named("completed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingCampaignsData")
+class BenefactorMarketingCampaignsTable extends Table {
+  @override String get tableName => "benefactor_marketing_campaigns";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get campaignKind => text().named("campaign_kind").clientDefault(() => 'multi_channel')();
+  TextColumn get name => text().named("name").withLength(max: 220)();
+  TextColumn get objective => text().named("objective").nullable()();
+  IntColumn get budgetCents => integer().named("budget_cents").clientDefault(() => 0)();
+  TextColumn get startsOn => text().named("starts_on").withLength(max: 10).nullable()();
+  TextColumn get endsOn => text().named("ends_on").withLength(max: 10).nullable()();
+  TextColumn get targetSegments => text().named("target_segments").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get kpis => text().named("kpis").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingCampaignChannelsData")
+class BenefactorMarketingCampaignChannelsTable extends Table {
+  @override String get tableName => "benefactor_marketing_campaign_channels";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get campaignId => text().named("campaign_id").customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get channel => text().named("channel")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get externalCampaignId => text().named("external_campaign_id").withLength(max: 200).nullable()();
+  TextColumn get strategy => text().named("strategy").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get schedule => text().named("schedule").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get metricsSnapshot => text().named("metrics_snapshot").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingCampaignExperimentsData")
+class BenefactorMarketingCampaignExperimentsTable extends Table {
+  @override String get tableName => "benefactor_marketing_campaign_experiments";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get campaignId => text().named("campaign_id").customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get experimentKind => text().named("experiment_kind")();
+  TextColumn get hypothesis => text().named("hypothesis").nullable()();
+  TextColumn get variants => text().named("variants").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get winningVariant => text().named("winning_variant").withLength(max: 120).nullable()();
+  TextColumn get resultSummary => text().named("result_summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get endedAt => dateTime().named("ended_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingAutomationWorkflowsData")
+class BenefactorMarketingAutomationWorkflowsTable extends Table {
+  @override String get tableName => "benefactor_marketing_automation_workflows";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get name => text().named("name").withLength(max: 220)();
+  TextColumn get triggerKind => text().named("trigger_kind")();
+  TextColumn get triggerConfig => text().named("trigger_config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get actionGraph => text().named("action_graph").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get lastRunAt => dateTime().named("last_run_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingAutomationEventsData")
+class BenefactorMarketingAutomationEventsTable extends Table {
+  @override String get tableName => "benefactor_marketing_automation_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get workflowId => text().named("workflow_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_automation_workflows (id)")();
+  TextColumn get leadId => text().named("lead_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_leads (id)")();
+  TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
+  TextColumn get status => text().named("status").clientDefault(() => 'received')();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get errorSummary => text().named("error_summary").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingReportsData")
+class BenefactorMarketingReportsTable extends Table {
+  @override String get tableName => "benefactor_marketing_reports";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get reportKind => text().named("report_kind").clientDefault(() => 'dashboard')();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get periodStart => text().named("period_start").withLength(max: 10).nullable()();
+  TextColumn get periodEnd => text().named("period_end").withLength(max: 10).nullable()();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get narrative => text().named("narrative").nullable()();
+  TextColumn get deliveryTargets => text().named("delivery_targets").clientDefault(() => '[]').customConstraint("JSONB")();
+  DateTimeColumn get generatedAt => dateTime().named("generated_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingAttributionEventsData")
+class BenefactorMarketingAttributionEventsTable extends Table {
+  @override String get tableName => "benefactor_marketing_attribution_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get leadId => text().named("lead_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_leads (id)")();
+  TextColumn get eventType => text().named("event_type")();
+  TextColumn get sourcePlatform => text().named("source_platform").withLength(max: 64).nullable()();
+  TextColumn get sourceEventId => text().named("source_event_id").withLength(max: 200).nullable()();
+  DateTimeColumn get occurredAt => dateTime().named("occurred_at").customConstraint("TIMESTAMPTZ")();
+  IntColumn get valueCents => integer().named("value_cents").clientDefault(() => 0)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingOpportunitiesData")
+class BenefactorMarketingOpportunitiesTable extends Table {
+  @override String get tableName => "benefactor_marketing_opportunities";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get leadId => text().named("lead_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_leads (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'open')();
+  TextColumn get stage => text().named("stage").clientDefault(() => 'prospecting')();
+  TextColumn get name => text().named("name").withLength(max: 220)();
+  IntColumn get amountCents => integer().named("amount_cents").clientDefault(() => 0)();
+  IntColumn get probabilityMicros => integer().named("probability_micros").clientDefault(() => 0)();
+  TextColumn get expectedCloseOn => text().named("expected_close_on").withLength(max: 10).nullable()();
+  TextColumn get ownerUserId => text().named("owner_user_id").nullable().customConstraint("UUID")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingContentAssetsData")
+class BenefactorMarketingContentAssetsTable extends Table {
+  @override String get tableName => "benefactor_marketing_content_assets";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get assetKind => text().named("asset_kind")();
+  TextColumn get title => text().named("title").withLength(max: 240)();
+  TextColumn get channel => text().named("channel").withLength(max: 64).nullable()();
+  TextColumn get body => text().named("body").nullable()();
+  TextColumn get assetUri => text().named("asset_uri").nullable()();
+  TextColumn get seoKeywords => text().named("seo_keywords").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get approvalStatus => text().named("approval_status").clientDefault(() => 'pending')();
+  DateTimeColumn get publishAt => dateTime().named("publish_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingProjectTasksData")
+class BenefactorMarketingProjectTasksTable extends Table {
+  @override String get tableName => "benefactor_marketing_project_tasks";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get contentAssetId => text().named("content_asset_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_content_assets (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'todo')();
+  TextColumn get priority => text().named("priority").clientDefault(() => 'normal')();
+  TextColumn get title => text().named("title").withLength(max: 240)();
+  TextColumn get description => text().named("description").nullable()();
+  TextColumn get assignedTo => text().named("assigned_to").nullable().customConstraint("UUID")();
+  TextColumn get dueOn => text().named("due_on").withLength(max: 10).nullable()();
+  DateTimeColumn get slaDueAt => dateTime().named("sla_due_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get timeSpentMinutes => integer().named("time_spent_minutes").clientDefault(() => 0)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingClientApprovalsData")
+class BenefactorMarketingClientApprovalsTable extends Table {
+  @override String get tableName => "benefactor_marketing_client_approvals";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get contentAssetId => text().named("content_asset_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_content_assets (id)")();
+  TextColumn get requestedBy => text().named("requested_by").nullable().customConstraint("UUID")();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  TextColumn get approvalKind => text().named("approval_kind")();
+  TextColumn get title => text().named("title").withLength(max: 240)();
+  TextColumn get requestPayload => text().named("request_payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get responseNote => text().named("response_note").nullable()();
+  DateTimeColumn get dueAt => dateTime().named("due_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get decidedAt => dateTime().named("decided_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingTicketsData")
+class BenefactorMarketingTicketsTable extends Table {
+  @override String get tableName => "benefactor_marketing_tickets";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'open')();
+  TextColumn get priority => text().named("priority").clientDefault(() => 'normal')();
+  TextColumn get subject => text().named("subject").withLength(max: 240)();
+  TextColumn get description => text().named("description").nullable()();
+  TextColumn get source => text().named("source").clientDefault(() => 'portal')();
+  TextColumn get assignedTo => text().named("assigned_to").nullable().customConstraint("UUID")();
+  DateTimeColumn get lastActivityAt => dateTime().named("last_activity_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingMeetingsData")
+class BenefactorMarketingMeetingsTable extends Table {
+  @override String get tableName => "benefactor_marketing_meetings";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get leadId => text().named("lead_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_leads (id)")();
+  TextColumn get opportunityId => text().named("opportunity_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_opportunities (id)")();
+  TextColumn get status => text().named("status").clientDefault(() => 'scheduled')();
+  TextColumn get meetingKind => text().named("meeting_kind")();
+  TextColumn get title => text().named("title").withLength(max: 240)();
+  DateTimeColumn get scheduledAt => dateTime().named("scheduled_at").customConstraint("TIMESTAMPTZ")();
+  IntColumn get durationMinutes => integer().named("duration_minutes").clientDefault(() => 30)();
+  TextColumn get notes => text().named("notes").nullable()();
+  TextColumn get recordingUri => text().named("recording_uri").nullable()();
+  TextColumn get transcriptSummary => text().named("transcript_summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorMarketingTeamAllocationsData")
+class BenefactorMarketingTeamAllocationsTable extends Table {
+  @override String get tableName => "benefactor_marketing_team_allocations";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get clientId => text().named("client_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_clients (id)")();
+  TextColumn get campaignId => text().named("campaign_id").nullable().customConstraint("UUID REFERENCES benefactor_marketing_campaigns (id)")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get role => text().named("role")();
+  IntColumn get allocationPercent => integer().named("allocation_percent").clientDefault(() => 100)();
+  TextColumn get startsOn => text().named("starts_on").withLength(max: 10).nullable()();
+  TextColumn get endsOn => text().named("ends_on").withLength(max: 10).nullable()();
+  BoolColumn get billable => boolean().named("billable").clientDefault(() => true)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -1301,4 +1867,26 @@ const List<Type> registeredDriftTables = <Type>[
   DesFelElevatorPolicyStatesTable,
   DesFelElevatorDispatchDecisionsTable,
   DesFelElevatorPomdpBeliefsTable,
+  BenefactorMarketingClientsTable,
+  BenefactorMarketingContactsTable,
+  BenefactorMarketingServicePackagesTable,
+  BenefactorMarketingContractsTable,
+  BenefactorMarketingInvoicesTable,
+  BenefactorMarketingIntegrationsTable,
+  BenefactorMarketingLeadsTable,
+  BenefactorMarketingEnrichmentJobsTable,
+  BenefactorMarketingCampaignsTable,
+  BenefactorMarketingCampaignChannelsTable,
+  BenefactorMarketingCampaignExperimentsTable,
+  BenefactorMarketingAutomationWorkflowsTable,
+  BenefactorMarketingAutomationEventsTable,
+  BenefactorMarketingReportsTable,
+  BenefactorMarketingAttributionEventsTable,
+  BenefactorMarketingOpportunitiesTable,
+  BenefactorMarketingContentAssetsTable,
+  BenefactorMarketingProjectTasksTable,
+  BenefactorMarketingClientApprovalsTable,
+  BenefactorMarketingTicketsTable,
+  BenefactorMarketingMeetingsTable,
+  BenefactorMarketingTeamAllocationsTable,
 ];

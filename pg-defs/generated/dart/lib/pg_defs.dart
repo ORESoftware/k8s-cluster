@@ -4772,6 +4772,2085 @@ class DesFelElevatorPomdpBeliefsRow {
   }
 }
 
+const benefactorMarketingClientsTable = "benefactor_marketing_clients";
+const benefactorMarketingClientsSelectSql = "select\n      id::text as id,\n      status,\n      name,\n      slug,\n      industry,\n      website_url,\n      billing_email,\n      owner_user_id::text as owner_user_id,\n      service_package,\n      onboarding_stage,\n      portal_enabled,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_clients";
+
+const benefactorMarketingClientsStatusValues = <String>["onboarding", "active", "paused", "archived"];
+
+class BenefactorMarketingClientsRow {
+  const BenefactorMarketingClientsRow({
+    required this.id,
+    required this.status,
+    required this.name,
+    required this.slug,
+    this.industry,
+    this.websiteUrl,
+    this.billingEmail,
+    this.ownerUserId,
+    this.servicePackage,
+    required this.onboardingStage,
+    required this.portalEnabled,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String status;
+  final String name;
+  final String slug;
+  final String? industry;
+  final String? websiteUrl;
+  final String? billingEmail;
+  final String? ownerUserId;
+  final String? servicePackage;
+  final String onboardingStage;
+  final bool portalEnabled;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingClientsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingClientsRow(
+      id: _readRequiredString(json, "id"),
+      status: _readRequiredString(json, "status"),
+      name: _readRequiredString(json, "name"),
+      slug: _readRequiredString(json, "slug"),
+      industry: _readOptionalString(json, "industry"),
+      websiteUrl: _readOptionalString(json, "websiteUrl"),
+      billingEmail: _readOptionalString(json, "billingEmail"),
+      ownerUserId: _readOptionalString(json, "ownerUserId"),
+      servicePackage: _readOptionalString(json, "servicePackage"),
+      onboardingStage: _readRequiredString(json, "onboardingStage"),
+      portalEnabled: _readRequiredBool(json, "portalEnabled"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "name": name,
+    "slug": slug,
+    "industry": industry,
+    "websiteUrl": websiteUrl,
+    "billingEmail": billingEmail,
+    "ownerUserId": ownerUserId,
+    "servicePackage": servicePackage,
+    "onboardingStage": onboardingStage,
+    "portalEnabled": portalEnabled,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingClientsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_clients.status");
+    }
+    if (utf8.encode(name).length > 200) {
+      errors.add("benefactor_marketing_clients.name exceeds 200 bytes");
+    }
+    if (utf8.encode(name).length < 1) {
+      errors.add("benefactor_marketing_clients.name is below 1 bytes");
+    }
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{1,218}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("benefactor_marketing_clients.slug must be a lowercase slug");
+    }
+    if (industry != null && utf8.encode(industry!).length > 120) {
+      errors.add("benefactor_marketing_clients.industry exceeds 120 bytes");
+    }
+    if (industry != null && utf8.encode(industry!).length < 1) {
+      errors.add("benefactor_marketing_clients.industry is below 1 bytes");
+    }
+    if (websiteUrl != null && utf8.encode(websiteUrl!).length > 2048) {
+      errors.add("benefactor_marketing_clients.website_url exceeds 2048 bytes");
+    }
+    if (billingEmail != null && utf8.encode(billingEmail!).length > 240) {
+      errors.add("benefactor_marketing_clients.billing_email exceeds 240 bytes");
+    }
+    if (servicePackage != null && utf8.encode(servicePackage!).length > 120) {
+      errors.add("benefactor_marketing_clients.service_package exceeds 120 bytes");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(onboardingStage)) {
+      errors.add("benefactor_marketing_clients.onboarding_stage does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingContactsTable = "benefactor_marketing_contacts";
+const benefactorMarketingContactsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      first_name,\n      last_name,\n      email,\n      phone,\n      job_title,\n      lifecycle_role,\n      consent_status,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_contacts";
+
+const benefactorMarketingContactsStatusValues = <String>["active", "inactive", "bounced", "unsubscribed"];
+const benefactorMarketingContactsLifecycleRoleValues = <String>["primary", "decision_maker", "billing", "technical", "marketing", "other"];
+const benefactorMarketingContactsConsentStatusValues = <String>["unknown", "opted_in", "opted_out"];
+
+class BenefactorMarketingContactsRow {
+  const BenefactorMarketingContactsRow({
+    required this.id,
+    required this.clientId,
+    required this.status,
+    this.firstName,
+    this.lastName,
+    this.email,
+    this.phone,
+    this.jobTitle,
+    required this.lifecycleRole,
+    required this.consentStatus,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String status;
+  final String? firstName;
+  final String? lastName;
+  final String? email;
+  final String? phone;
+  final String? jobTitle;
+  final String lifecycleRole;
+  final String consentStatus;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingContactsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingContactsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      status: _readRequiredString(json, "status"),
+      firstName: _readOptionalString(json, "firstName"),
+      lastName: _readOptionalString(json, "lastName"),
+      email: _readOptionalString(json, "email"),
+      phone: _readOptionalString(json, "phone"),
+      jobTitle: _readOptionalString(json, "jobTitle"),
+      lifecycleRole: _readRequiredString(json, "lifecycleRole"),
+      consentStatus: _readRequiredString(json, "consentStatus"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "status": status,
+    "firstName": firstName,
+    "lastName": lastName,
+    "email": email,
+    "phone": phone,
+    "jobTitle": jobTitle,
+    "lifecycleRole": lifecycleRole,
+    "consentStatus": consentStatus,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingContactsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_contacts.status");
+    }
+    if (firstName != null && utf8.encode(firstName!).length > 120) {
+      errors.add("benefactor_marketing_contacts.first_name exceeds 120 bytes");
+    }
+    if (firstName != null && utf8.encode(firstName!).length < 1) {
+      errors.add("benefactor_marketing_contacts.first_name is below 1 bytes");
+    }
+    if (lastName != null && utf8.encode(lastName!).length > 120) {
+      errors.add("benefactor_marketing_contacts.last_name exceeds 120 bytes");
+    }
+    if (lastName != null && utf8.encode(lastName!).length < 1) {
+      errors.add("benefactor_marketing_contacts.last_name is below 1 bytes");
+    }
+    if (email != null && utf8.encode(email!).length > 240) {
+      errors.add("benefactor_marketing_contacts.email exceeds 240 bytes");
+    }
+    if (phone != null && utf8.encode(phone!).length > 80) {
+      errors.add("benefactor_marketing_contacts.phone exceeds 80 bytes");
+    }
+    if (jobTitle != null && utf8.encode(jobTitle!).length > 160) {
+      errors.add("benefactor_marketing_contacts.job_title exceeds 160 bytes");
+    }
+    if (!benefactorMarketingContactsLifecycleRoleValues.contains(lifecycleRole)) {
+      errors.add("unsupported benefactor_marketing_contacts.lifecycle_role");
+    }
+    if (!benefactorMarketingContactsConsentStatusValues.contains(consentStatus)) {
+      errors.add("unsupported benefactor_marketing_contacts.consent_status");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingServicePackagesTable = "benefactor_marketing_service_packages";
+const benefactorMarketingServicePackagesSelectSql = "select\n      id::text as id,\n      status,\n      code,\n      name,\n      channel_mix::text as channel_mix_json,\n      deliverables::text as deliverables_json,\n      monthly_budget_cents,\n      retainer_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_service_packages";
+
+const benefactorMarketingServicePackagesStatusValues = <String>["active", "retired"];
+
+class BenefactorMarketingServicePackagesRow {
+  const BenefactorMarketingServicePackagesRow({
+    required this.id,
+    required this.status,
+    required this.code,
+    required this.name,
+    required this.channelMix,
+    required this.deliverables,
+    required this.monthlyBudgetCents,
+    required this.retainerCents,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String status;
+  final String code;
+  final String name;
+  final List<Object?> channelMix;
+  final List<Object?> deliverables;
+  final int monthlyBudgetCents;
+  final int retainerCents;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingServicePackagesRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingServicePackagesRow(
+      id: _readRequiredString(json, "id"),
+      status: _readRequiredString(json, "status"),
+      code: _readRequiredString(json, "code"),
+      name: _readRequiredString(json, "name"),
+      channelMix: _readRequiredArray(json, "channelMix"),
+      deliverables: _readRequiredArray(json, "deliverables"),
+      monthlyBudgetCents: _readRequiredInt(json, "monthlyBudgetCents"),
+      retainerCents: _readRequiredInt(json, "retainerCents"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "status": status,
+    "code": code,
+    "name": name,
+    "channelMix": channelMix,
+    "deliverables": deliverables,
+    "monthlyBudgetCents": monthlyBudgetCents,
+    "retainerCents": retainerCents,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingServicePackagesStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_service_packages.status");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(code)) {
+      errors.add("benefactor_marketing_service_packages.code does not match the required pattern");
+    }
+    if (utf8.encode(name).length > 200) {
+      errors.add("benefactor_marketing_service_packages.name exceeds 200 bytes");
+    }
+    if (utf8.encode(name).length < 1) {
+      errors.add("benefactor_marketing_service_packages.name is below 1 bytes");
+    }
+    if (monthlyBudgetCents < 0) {
+      errors.add("benefactor_marketing_service_packages.monthly_budget_cents is below the minimum");
+    }
+    if (retainerCents < 0) {
+      errors.add("benefactor_marketing_service_packages.retainer_cents is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingContractsTable = "benefactor_marketing_contracts";
+const benefactorMarketingContractsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      package_id::text as package_id,\n      status,\n      contract_number,\n      starts_on,\n      ends_on,\n      billing_terms::text as billing_terms_json,\n      total_value_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_contracts";
+
+const benefactorMarketingContractsStatusValues = <String>["draft", "active", "renewal", "expired", "terminated"];
+
+class BenefactorMarketingContractsRow {
+  const BenefactorMarketingContractsRow({
+    required this.id,
+    required this.clientId,
+    this.packageId,
+    required this.status,
+    this.contractNumber,
+    this.startsOn,
+    this.endsOn,
+    required this.billingTerms,
+    required this.totalValueCents,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? packageId;
+  final String status;
+  final String? contractNumber;
+  final String? startsOn;
+  final String? endsOn;
+  final Map<String, Object?> billingTerms;
+  final int totalValueCents;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingContractsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingContractsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      packageId: _readOptionalString(json, "packageId"),
+      status: _readRequiredString(json, "status"),
+      contractNumber: _readOptionalString(json, "contractNumber"),
+      startsOn: _readOptionalString(json, "startsOn"),
+      endsOn: _readOptionalString(json, "endsOn"),
+      billingTerms: _readRequiredObject(json, "billingTerms"),
+      totalValueCents: _readRequiredInt(json, "totalValueCents"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "packageId": packageId,
+    "status": status,
+    "contractNumber": contractNumber,
+    "startsOn": startsOn,
+    "endsOn": endsOn,
+    "billingTerms": billingTerms,
+    "totalValueCents": totalValueCents,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingContractsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_contracts.status");
+    }
+    if (contractNumber != null && utf8.encode(contractNumber!).length > 120) {
+      errors.add("benefactor_marketing_contracts.contract_number exceeds 120 bytes");
+    }
+    if (startsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(startsOn!)) {
+      errors.add("benefactor_marketing_contracts.starts_on does not match the required pattern");
+    }
+    if (endsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(endsOn!)) {
+      errors.add("benefactor_marketing_contracts.ends_on does not match the required pattern");
+    }
+    if (totalValueCents < 0) {
+      errors.add("benefactor_marketing_contracts.total_value_cents is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingInvoicesTable = "benefactor_marketing_invoices";
+const benefactorMarketingInvoicesSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      contract_id::text as contract_id,\n      status,\n      invoice_number,\n      due_on,\n      amount_cents,\n      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as paid_at,\n      line_items::text as line_items_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_invoices";
+
+const benefactorMarketingInvoicesStatusValues = <String>["draft", "sent", "paid", "overdue", "void"];
+
+class BenefactorMarketingInvoicesRow {
+  const BenefactorMarketingInvoicesRow({
+    required this.id,
+    required this.clientId,
+    this.contractId,
+    required this.status,
+    this.invoiceNumber,
+    this.dueOn,
+    required this.amountCents,
+    this.paidAt,
+    required this.lineItems,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? contractId;
+  final String status;
+  final String? invoiceNumber;
+  final String? dueOn;
+  final int amountCents;
+  final String? paidAt;
+  final List<Object?> lineItems;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingInvoicesRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingInvoicesRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      contractId: _readOptionalString(json, "contractId"),
+      status: _readRequiredString(json, "status"),
+      invoiceNumber: _readOptionalString(json, "invoiceNumber"),
+      dueOn: _readOptionalString(json, "dueOn"),
+      amountCents: _readRequiredInt(json, "amountCents"),
+      paidAt: _readOptionalString(json, "paidAt"),
+      lineItems: _readRequiredArray(json, "lineItems"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "contractId": contractId,
+    "status": status,
+    "invoiceNumber": invoiceNumber,
+    "dueOn": dueOn,
+    "amountCents": amountCents,
+    "paidAt": paidAt,
+    "lineItems": lineItems,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingInvoicesStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_invoices.status");
+    }
+    if (invoiceNumber != null && utf8.encode(invoiceNumber!).length > 120) {
+      errors.add("benefactor_marketing_invoices.invoice_number exceeds 120 bytes");
+    }
+    if (dueOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(dueOn!)) {
+      errors.add("benefactor_marketing_invoices.due_on does not match the required pattern");
+    }
+    if (amountCents < 0) {
+      errors.add("benefactor_marketing_invoices.amount_cents is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingIntegrationsTable = "benefactor_marketing_integrations";
+const benefactorMarketingIntegrationsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      platform,\n      status,\n      auth_kind,\n      external_account_id,\n      sync_cursor,\n      config::text as config_json,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_integrations";
+
+const benefactorMarketingIntegrationsPlatformValues = <String>["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"];
+const benefactorMarketingIntegrationsStatusValues = <String>["connected", "disabled", "error"];
+const benefactorMarketingIntegrationsAuthKindValues = <String>["oauth2", "api_key", "webhook", "manual"];
+
+class BenefactorMarketingIntegrationsRow {
+  const BenefactorMarketingIntegrationsRow({
+    required this.id,
+    this.clientId,
+    required this.platform,
+    required this.status,
+    required this.authKind,
+    this.externalAccountId,
+    this.syncCursor,
+    required this.config,
+    this.lastSyncAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? clientId;
+  final String platform;
+  final String status;
+  final String authKind;
+  final String? externalAccountId;
+  final String? syncCursor;
+  final Map<String, Object?> config;
+  final String? lastSyncAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingIntegrationsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingIntegrationsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readOptionalString(json, "clientId"),
+      platform: _readRequiredString(json, "platform"),
+      status: _readRequiredString(json, "status"),
+      authKind: _readRequiredString(json, "authKind"),
+      externalAccountId: _readOptionalString(json, "externalAccountId"),
+      syncCursor: _readOptionalString(json, "syncCursor"),
+      config: _readRequiredObject(json, "config"),
+      lastSyncAt: _readOptionalString(json, "lastSyncAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "platform": platform,
+    "status": status,
+    "authKind": authKind,
+    "externalAccountId": externalAccountId,
+    "syncCursor": syncCursor,
+    "config": config,
+    "lastSyncAt": lastSyncAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingIntegrationsPlatformValues.contains(platform)) {
+      errors.add("unsupported benefactor_marketing_integrations.platform");
+    }
+    if (!benefactorMarketingIntegrationsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_integrations.status");
+    }
+    if (!benefactorMarketingIntegrationsAuthKindValues.contains(authKind)) {
+      errors.add("unsupported benefactor_marketing_integrations.auth_kind");
+    }
+    if (externalAccountId != null && utf8.encode(externalAccountId!).length > 200) {
+      errors.add("benefactor_marketing_integrations.external_account_id exceeds 200 bytes");
+    }
+    if (syncCursor != null && utf8.encode(syncCursor!).length > 4000) {
+      errors.add("benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingLeadsTable = "benefactor_marketing_leads";
+const benefactorMarketingLeadsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      source_integration_id::text as source_integration_id,\n      status,\n      company_name,\n      domain,\n      contact_name,\n      contact_email,\n      contact_title,\n      country_code,\n      lead_score,\n      icp_fit_score,\n      verification_status,\n      enrichment_status,\n      company_profile::text as company_profile_json,\n      signals::text as signals_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_leads";
+
+const benefactorMarketingLeadsStatusValues = <String>["new", "researching", "qualified", "disqualified", "contacted", "converted"];
+const benefactorMarketingLeadsVerificationStatusValues = <String>["unknown", "verified", "invalid", "risky"];
+const benefactorMarketingLeadsEnrichmentStatusValues = <String>["pending", "running", "completed", "failed"];
+
+class BenefactorMarketingLeadsRow {
+  const BenefactorMarketingLeadsRow({
+    required this.id,
+    required this.clientId,
+    this.sourceIntegrationId,
+    required this.status,
+    required this.companyName,
+    this.domain,
+    this.contactName,
+    this.contactEmail,
+    this.contactTitle,
+    this.countryCode,
+    required this.leadScore,
+    required this.icpFitScore,
+    required this.verificationStatus,
+    required this.enrichmentStatus,
+    required this.companyProfile,
+    required this.signals,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? sourceIntegrationId;
+  final String status;
+  final String companyName;
+  final String? domain;
+  final String? contactName;
+  final String? contactEmail;
+  final String? contactTitle;
+  final String? countryCode;
+  final int leadScore;
+  final int icpFitScore;
+  final String verificationStatus;
+  final String enrichmentStatus;
+  final Map<String, Object?> companyProfile;
+  final List<Object?> signals;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingLeadsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingLeadsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      sourceIntegrationId: _readOptionalString(json, "sourceIntegrationId"),
+      status: _readRequiredString(json, "status"),
+      companyName: _readRequiredString(json, "companyName"),
+      domain: _readOptionalString(json, "domain"),
+      contactName: _readOptionalString(json, "contactName"),
+      contactEmail: _readOptionalString(json, "contactEmail"),
+      contactTitle: _readOptionalString(json, "contactTitle"),
+      countryCode: _readOptionalString(json, "countryCode"),
+      leadScore: _readRequiredInt(json, "leadScore"),
+      icpFitScore: _readRequiredInt(json, "icpFitScore"),
+      verificationStatus: _readRequiredString(json, "verificationStatus"),
+      enrichmentStatus: _readRequiredString(json, "enrichmentStatus"),
+      companyProfile: _readRequiredObject(json, "companyProfile"),
+      signals: _readRequiredArray(json, "signals"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "sourceIntegrationId": sourceIntegrationId,
+    "status": status,
+    "companyName": companyName,
+    "domain": domain,
+    "contactName": contactName,
+    "contactEmail": contactEmail,
+    "contactTitle": contactTitle,
+    "countryCode": countryCode,
+    "leadScore": leadScore,
+    "icpFitScore": icpFitScore,
+    "verificationStatus": verificationStatus,
+    "enrichmentStatus": enrichmentStatus,
+    "companyProfile": companyProfile,
+    "signals": signals,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingLeadsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_leads.status");
+    }
+    if (utf8.encode(companyName).length > 240) {
+      errors.add("benefactor_marketing_leads.company_name exceeds 240 bytes");
+    }
+    if (utf8.encode(companyName).length < 1) {
+      errors.add("benefactor_marketing_leads.company_name is below 1 bytes");
+    }
+    if (domain != null && utf8.encode(domain!).length > 240) {
+      errors.add("benefactor_marketing_leads.domain exceeds 240 bytes");
+    }
+    if (contactName != null && utf8.encode(contactName!).length > 200) {
+      errors.add("benefactor_marketing_leads.contact_name exceeds 200 bytes");
+    }
+    if (contactEmail != null && utf8.encode(contactEmail!).length > 240) {
+      errors.add("benefactor_marketing_leads.contact_email exceeds 240 bytes");
+    }
+    if (contactTitle != null && utf8.encode(contactTitle!).length > 160) {
+      errors.add("benefactor_marketing_leads.contact_title exceeds 160 bytes");
+    }
+    if (countryCode != null && utf8.encode(countryCode!).length > 8) {
+      errors.add("benefactor_marketing_leads.country_code exceeds 8 bytes");
+    }
+    if (leadScore < 0) {
+      errors.add("benefactor_marketing_leads.lead_score is below the minimum");
+    }
+    if (leadScore > 100) {
+      errors.add("benefactor_marketing_leads.lead_score is above the maximum");
+    }
+    if (icpFitScore < 0) {
+      errors.add("benefactor_marketing_leads.icp_fit_score is below the minimum");
+    }
+    if (icpFitScore > 100) {
+      errors.add("benefactor_marketing_leads.icp_fit_score is above the maximum");
+    }
+    if (!benefactorMarketingLeadsVerificationStatusValues.contains(verificationStatus)) {
+      errors.add("unsupported benefactor_marketing_leads.verification_status");
+    }
+    if (!benefactorMarketingLeadsEnrichmentStatusValues.contains(enrichmentStatus)) {
+      errors.add("unsupported benefactor_marketing_leads.enrichment_status");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingEnrichmentJobsTable = "benefactor_marketing_enrichment_jobs";
+const benefactorMarketingEnrichmentJobsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      job_kind,\n      status,\n      external_job_id,\n      scraper_handoff_url,\n      input::text as input_json,\n      result::text as result_json,\n      error_summary,\n      to_char(queued_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as queued_at,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_enrichment_jobs";
+
+const benefactorMarketingEnrichmentJobsJobKindValues = <String>["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"];
+const benefactorMarketingEnrichmentJobsStatusValues = <String>["queued", "running", "completed", "failed", "canceled"];
+
+class BenefactorMarketingEnrichmentJobsRow {
+  const BenefactorMarketingEnrichmentJobsRow({
+    required this.id,
+    required this.clientId,
+    this.leadId,
+    required this.jobKind,
+    required this.status,
+    this.externalJobId,
+    this.scraperHandoffUrl,
+    required this.input,
+    required this.result,
+    this.errorSummary,
+    required this.queuedAt,
+    this.startedAt,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? leadId;
+  final String jobKind;
+  final String status;
+  final String? externalJobId;
+  final String? scraperHandoffUrl;
+  final Map<String, Object?> input;
+  final Map<String, Object?> result;
+  final String? errorSummary;
+  final String queuedAt;
+  final String? startedAt;
+  final String? completedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingEnrichmentJobsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingEnrichmentJobsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      leadId: _readOptionalString(json, "leadId"),
+      jobKind: _readRequiredString(json, "jobKind"),
+      status: _readRequiredString(json, "status"),
+      externalJobId: _readOptionalString(json, "externalJobId"),
+      scraperHandoffUrl: _readOptionalString(json, "scraperHandoffUrl"),
+      input: _readRequiredObject(json, "input"),
+      result: _readRequiredObject(json, "result"),
+      errorSummary: _readOptionalString(json, "errorSummary"),
+      queuedAt: _readRequiredString(json, "queuedAt"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      completedAt: _readOptionalString(json, "completedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "leadId": leadId,
+    "jobKind": jobKind,
+    "status": status,
+    "externalJobId": externalJobId,
+    "scraperHandoffUrl": scraperHandoffUrl,
+    "input": input,
+    "result": result,
+    "errorSummary": errorSummary,
+    "queuedAt": queuedAt,
+    "startedAt": startedAt,
+    "completedAt": completedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingEnrichmentJobsJobKindValues.contains(jobKind)) {
+      errors.add("unsupported benefactor_marketing_enrichment_jobs.job_kind");
+    }
+    if (!benefactorMarketingEnrichmentJobsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_enrichment_jobs.status");
+    }
+    if (externalJobId != null && utf8.encode(externalJobId!).length > 200) {
+      errors.add("benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes");
+    }
+    if (scraperHandoffUrl != null && utf8.encode(scraperHandoffUrl!).length > 2048) {
+      errors.add("benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes");
+    }
+    if (errorSummary != null && utf8.encode(errorSummary!).length > 4000) {
+      errors.add("benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingCampaignsTable = "benefactor_marketing_campaigns";
+const benefactorMarketingCampaignsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      campaign_kind,\n      name,\n      objective,\n      budget_cents,\n      starts_on,\n      ends_on,\n      target_segments::text as target_segments_json,\n      kpis::text as kpis_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaigns";
+
+const benefactorMarketingCampaignsStatusValues = <String>["draft", "active", "paused", "completed", "archived"];
+const benefactorMarketingCampaignsCampaignKindValues = <String>["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"];
+
+class BenefactorMarketingCampaignsRow {
+  const BenefactorMarketingCampaignsRow({
+    required this.id,
+    required this.clientId,
+    required this.status,
+    required this.campaignKind,
+    required this.name,
+    this.objective,
+    required this.budgetCents,
+    this.startsOn,
+    this.endsOn,
+    required this.targetSegments,
+    required this.kpis,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String status;
+  final String campaignKind;
+  final String name;
+  final String? objective;
+  final int budgetCents;
+  final String? startsOn;
+  final String? endsOn;
+  final List<Object?> targetSegments;
+  final Map<String, Object?> kpis;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingCampaignsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCampaignsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      status: _readRequiredString(json, "status"),
+      campaignKind: _readRequiredString(json, "campaignKind"),
+      name: _readRequiredString(json, "name"),
+      objective: _readOptionalString(json, "objective"),
+      budgetCents: _readRequiredInt(json, "budgetCents"),
+      startsOn: _readOptionalString(json, "startsOn"),
+      endsOn: _readOptionalString(json, "endsOn"),
+      targetSegments: _readRequiredArray(json, "targetSegments"),
+      kpis: _readRequiredObject(json, "kpis"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "status": status,
+    "campaignKind": campaignKind,
+    "name": name,
+    "objective": objective,
+    "budgetCents": budgetCents,
+    "startsOn": startsOn,
+    "endsOn": endsOn,
+    "targetSegments": targetSegments,
+    "kpis": kpis,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingCampaignsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_campaigns.status");
+    }
+    if (!benefactorMarketingCampaignsCampaignKindValues.contains(campaignKind)) {
+      errors.add("unsupported benefactor_marketing_campaigns.campaign_kind");
+    }
+    if (utf8.encode(name).length > 220) {
+      errors.add("benefactor_marketing_campaigns.name exceeds 220 bytes");
+    }
+    if (utf8.encode(name).length < 1) {
+      errors.add("benefactor_marketing_campaigns.name is below 1 bytes");
+    }
+    if (objective != null && utf8.encode(objective!).length > 4000) {
+      errors.add("benefactor_marketing_campaigns.objective exceeds 4000 bytes");
+    }
+    if (budgetCents < 0) {
+      errors.add("benefactor_marketing_campaigns.budget_cents is below the minimum");
+    }
+    if (startsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(startsOn!)) {
+      errors.add("benefactor_marketing_campaigns.starts_on does not match the required pattern");
+    }
+    if (endsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(endsOn!)) {
+      errors.add("benefactor_marketing_campaigns.ends_on does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingCampaignChannelsTable = "benefactor_marketing_campaign_channels";
+const benefactorMarketingCampaignChannelsSelectSql = "select\n      id::text as id,\n      campaign_id::text as campaign_id,\n      channel,\n      status,\n      external_campaign_id,\n      strategy::text as strategy_json,\n      schedule::text as schedule_json,\n      metrics_snapshot::text as metrics_snapshot_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaign_channels";
+
+const benefactorMarketingCampaignChannelsChannelValues = <String>["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"];
+const benefactorMarketingCampaignChannelsStatusValues = <String>["draft", "scheduled", "live", "paused", "completed"];
+
+class BenefactorMarketingCampaignChannelsRow {
+  const BenefactorMarketingCampaignChannelsRow({
+    required this.id,
+    required this.campaignId,
+    required this.channel,
+    required this.status,
+    this.externalCampaignId,
+    required this.strategy,
+    required this.schedule,
+    required this.metricsSnapshot,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String campaignId;
+  final String channel;
+  final String status;
+  final String? externalCampaignId;
+  final Map<String, Object?> strategy;
+  final Map<String, Object?> schedule;
+  final Map<String, Object?> metricsSnapshot;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingCampaignChannelsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCampaignChannelsRow(
+      id: _readRequiredString(json, "id"),
+      campaignId: _readRequiredString(json, "campaignId"),
+      channel: _readRequiredString(json, "channel"),
+      status: _readRequiredString(json, "status"),
+      externalCampaignId: _readOptionalString(json, "externalCampaignId"),
+      strategy: _readRequiredObject(json, "strategy"),
+      schedule: _readRequiredObject(json, "schedule"),
+      metricsSnapshot: _readRequiredObject(json, "metricsSnapshot"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "campaignId": campaignId,
+    "channel": channel,
+    "status": status,
+    "externalCampaignId": externalCampaignId,
+    "strategy": strategy,
+    "schedule": schedule,
+    "metricsSnapshot": metricsSnapshot,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingCampaignChannelsChannelValues.contains(channel)) {
+      errors.add("unsupported benefactor_marketing_campaign_channels.channel");
+    }
+    if (!benefactorMarketingCampaignChannelsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_campaign_channels.status");
+    }
+    if (externalCampaignId != null && utf8.encode(externalCampaignId!).length > 200) {
+      errors.add("benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingCampaignExperimentsTable = "benefactor_marketing_campaign_experiments";
+const benefactorMarketingCampaignExperimentsSelectSql = "select\n      id::text as id,\n      campaign_id::text as campaign_id,\n      status,\n      experiment_kind,\n      hypothesis,\n      variants::text as variants_json,\n      winning_variant,\n      result_summary::text as result_summary_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ended_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_campaign_experiments";
+
+const benefactorMarketingCampaignExperimentsStatusValues = <String>["draft", "running", "winner_selected", "stopped"];
+const benefactorMarketingCampaignExperimentsExperimentKindValues = <String>["subject_line", "creative", "copy", "landing_page", "audience", "budget"];
+
+class BenefactorMarketingCampaignExperimentsRow {
+  const BenefactorMarketingCampaignExperimentsRow({
+    required this.id,
+    required this.campaignId,
+    required this.status,
+    required this.experimentKind,
+    this.hypothesis,
+    required this.variants,
+    this.winningVariant,
+    required this.resultSummary,
+    this.startedAt,
+    this.endedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String campaignId;
+  final String status;
+  final String experimentKind;
+  final String? hypothesis;
+  final List<Object?> variants;
+  final String? winningVariant;
+  final Map<String, Object?> resultSummary;
+  final String? startedAt;
+  final String? endedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingCampaignExperimentsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCampaignExperimentsRow(
+      id: _readRequiredString(json, "id"),
+      campaignId: _readRequiredString(json, "campaignId"),
+      status: _readRequiredString(json, "status"),
+      experimentKind: _readRequiredString(json, "experimentKind"),
+      hypothesis: _readOptionalString(json, "hypothesis"),
+      variants: _readRequiredArray(json, "variants"),
+      winningVariant: _readOptionalString(json, "winningVariant"),
+      resultSummary: _readRequiredObject(json, "resultSummary"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      endedAt: _readOptionalString(json, "endedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "campaignId": campaignId,
+    "status": status,
+    "experimentKind": experimentKind,
+    "hypothesis": hypothesis,
+    "variants": variants,
+    "winningVariant": winningVariant,
+    "resultSummary": resultSummary,
+    "startedAt": startedAt,
+    "endedAt": endedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingCampaignExperimentsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_campaign_experiments.status");
+    }
+    if (!benefactorMarketingCampaignExperimentsExperimentKindValues.contains(experimentKind)) {
+      errors.add("unsupported benefactor_marketing_campaign_experiments.experiment_kind");
+    }
+    if (hypothesis != null && utf8.encode(hypothesis!).length > 4000) {
+      errors.add("benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes");
+    }
+    if (winningVariant != null && utf8.encode(winningVariant!).length > 120) {
+      errors.add("benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingAutomationWorkflowsTable = "benefactor_marketing_automation_workflows";
+const benefactorMarketingAutomationWorkflowsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      name,\n      trigger_kind,\n      trigger_config::text as trigger_config_json,\n      action_graph::text as action_graph_json,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_automation_workflows";
+
+const benefactorMarketingAutomationWorkflowsStatusValues = <String>["draft", "active", "paused", "archived"];
+const benefactorMarketingAutomationWorkflowsTriggerKindValues = <String>["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"];
+
+class BenefactorMarketingAutomationWorkflowsRow {
+  const BenefactorMarketingAutomationWorkflowsRow({
+    required this.id,
+    required this.clientId,
+    required this.status,
+    required this.name,
+    required this.triggerKind,
+    required this.triggerConfig,
+    required this.actionGraph,
+    this.lastRunAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String status;
+  final String name;
+  final String triggerKind;
+  final Map<String, Object?> triggerConfig;
+  final Map<String, Object?> actionGraph;
+  final String? lastRunAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingAutomationWorkflowsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingAutomationWorkflowsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      status: _readRequiredString(json, "status"),
+      name: _readRequiredString(json, "name"),
+      triggerKind: _readRequiredString(json, "triggerKind"),
+      triggerConfig: _readRequiredObject(json, "triggerConfig"),
+      actionGraph: _readRequiredObject(json, "actionGraph"),
+      lastRunAt: _readOptionalString(json, "lastRunAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "status": status,
+    "name": name,
+    "triggerKind": triggerKind,
+    "triggerConfig": triggerConfig,
+    "actionGraph": actionGraph,
+    "lastRunAt": lastRunAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingAutomationWorkflowsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_automation_workflows.status");
+    }
+    if (utf8.encode(name).length > 220) {
+      errors.add("benefactor_marketing_automation_workflows.name exceeds 220 bytes");
+    }
+    if (utf8.encode(name).length < 1) {
+      errors.add("benefactor_marketing_automation_workflows.name is below 1 bytes");
+    }
+    if (!benefactorMarketingAutomationWorkflowsTriggerKindValues.contains(triggerKind)) {
+      errors.add("unsupported benefactor_marketing_automation_workflows.trigger_kind");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingAutomationEventsTable = "benefactor_marketing_automation_events";
+const benefactorMarketingAutomationEventsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      workflow_id::text as workflow_id,\n      lead_id::text as lead_id,\n      event_kind,\n      status,\n      payload::text as payload_json,\n      error_summary,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from benefactor_marketing_automation_events";
+
+const benefactorMarketingAutomationEventsStatusValues = <String>["received", "processed", "failed", "skipped"];
+
+class BenefactorMarketingAutomationEventsRow {
+  const BenefactorMarketingAutomationEventsRow({
+    required this.id,
+    required this.clientId,
+    this.workflowId,
+    this.leadId,
+    required this.eventKind,
+    required this.status,
+    required this.payload,
+    this.errorSummary,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? workflowId;
+  final String? leadId;
+  final String eventKind;
+  final String status;
+  final Map<String, Object?> payload;
+  final String? errorSummary;
+  final String createdAt;
+
+  factory BenefactorMarketingAutomationEventsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingAutomationEventsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      workflowId: _readOptionalString(json, "workflowId"),
+      leadId: _readOptionalString(json, "leadId"),
+      eventKind: _readRequiredString(json, "eventKind"),
+      status: _readRequiredString(json, "status"),
+      payload: _readRequiredObject(json, "payload"),
+      errorSummary: _readOptionalString(json, "errorSummary"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "workflowId": workflowId,
+    "leadId": leadId,
+    "eventKind": eventKind,
+    "status": status,
+    "payload": payload,
+    "errorSummary": errorSummary,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(eventKind)) {
+      errors.add("benefactor_marketing_automation_events.event_kind does not match the required pattern");
+    }
+    if (!benefactorMarketingAutomationEventsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_automation_events.status");
+    }
+    if (errorSummary != null && utf8.encode(errorSummary!).length > 4000) {
+      errors.add("benefactor_marketing_automation_events.error_summary exceeds 4000 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingReportsTable = "benefactor_marketing_reports";
+const benefactorMarketingReportsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      report_kind,\n      status,\n      period_start,\n      period_end,\n      metrics::text as metrics_json,\n      narrative,\n      delivery_targets::text as delivery_targets_json,\n      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as generated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_reports";
+
+const benefactorMarketingReportsReportKindValues = <String>["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"];
+const benefactorMarketingReportsStatusValues = <String>["draft", "ready", "sent", "archived"];
+
+class BenefactorMarketingReportsRow {
+  const BenefactorMarketingReportsRow({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    required this.reportKind,
+    required this.status,
+    this.periodStart,
+    this.periodEnd,
+    required this.metrics,
+    this.narrative,
+    required this.deliveryTargets,
+    this.generatedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? campaignId;
+  final String reportKind;
+  final String status;
+  final String? periodStart;
+  final String? periodEnd;
+  final Map<String, Object?> metrics;
+  final String? narrative;
+  final List<Object?> deliveryTargets;
+  final String? generatedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingReportsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingReportsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      reportKind: _readRequiredString(json, "reportKind"),
+      status: _readRequiredString(json, "status"),
+      periodStart: _readOptionalString(json, "periodStart"),
+      periodEnd: _readOptionalString(json, "periodEnd"),
+      metrics: _readRequiredObject(json, "metrics"),
+      narrative: _readOptionalString(json, "narrative"),
+      deliveryTargets: _readRequiredArray(json, "deliveryTargets"),
+      generatedAt: _readOptionalString(json, "generatedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "reportKind": reportKind,
+    "status": status,
+    "periodStart": periodStart,
+    "periodEnd": periodEnd,
+    "metrics": metrics,
+    "narrative": narrative,
+    "deliveryTargets": deliveryTargets,
+    "generatedAt": generatedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingReportsReportKindValues.contains(reportKind)) {
+      errors.add("unsupported benefactor_marketing_reports.report_kind");
+    }
+    if (!benefactorMarketingReportsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_reports.status");
+    }
+    if (periodStart != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(periodStart!)) {
+      errors.add("benefactor_marketing_reports.period_start does not match the required pattern");
+    }
+    if (periodEnd != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(periodEnd!)) {
+      errors.add("benefactor_marketing_reports.period_end does not match the required pattern");
+    }
+    if (narrative != null && utf8.encode(narrative!).length > 20000) {
+      errors.add("benefactor_marketing_reports.narrative exceeds 20000 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingAttributionEventsTable = "benefactor_marketing_attribution_events";
+const benefactorMarketingAttributionEventsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      lead_id::text as lead_id,\n      event_type,\n      source_platform,\n      source_event_id,\n      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as occurred_at,\n      value_cents,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from benefactor_marketing_attribution_events";
+
+const benefactorMarketingAttributionEventsEventTypeValues = <String>["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"];
+
+class BenefactorMarketingAttributionEventsRow {
+  const BenefactorMarketingAttributionEventsRow({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    this.leadId,
+    required this.eventType,
+    this.sourcePlatform,
+    this.sourceEventId,
+    required this.occurredAt,
+    required this.valueCents,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? campaignId;
+  final String? leadId;
+  final String eventType;
+  final String? sourcePlatform;
+  final String? sourceEventId;
+  final String occurredAt;
+  final int valueCents;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory BenefactorMarketingAttributionEventsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingAttributionEventsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      leadId: _readOptionalString(json, "leadId"),
+      eventType: _readRequiredString(json, "eventType"),
+      sourcePlatform: _readOptionalString(json, "sourcePlatform"),
+      sourceEventId: _readOptionalString(json, "sourceEventId"),
+      occurredAt: _readRequiredString(json, "occurredAt"),
+      valueCents: _readRequiredInt(json, "valueCents"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "leadId": leadId,
+    "eventType": eventType,
+    "sourcePlatform": sourcePlatform,
+    "sourceEventId": sourceEventId,
+    "occurredAt": occurredAt,
+    "valueCents": valueCents,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingAttributionEventsEventTypeValues.contains(eventType)) {
+      errors.add("unsupported benefactor_marketing_attribution_events.event_type");
+    }
+    if (sourcePlatform != null && utf8.encode(sourcePlatform!).length > 64) {
+      errors.add("benefactor_marketing_attribution_events.source_platform exceeds 64 bytes");
+    }
+    if (sourceEventId != null && utf8.encode(sourceEventId!).length > 200) {
+      errors.add("benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes");
+    }
+    if (valueCents < 0) {
+      errors.add("benefactor_marketing_attribution_events.value_cents is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingOpportunitiesTable = "benefactor_marketing_opportunities";
+const benefactorMarketingOpportunitiesSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      status,\n      stage,\n      name,\n      amount_cents,\n      probability_micros,\n      expected_close_on,\n      owner_user_id::text as owner_user_id,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_opportunities";
+
+const benefactorMarketingOpportunitiesStatusValues = <String>["open", "won", "lost", "paused"];
+const benefactorMarketingOpportunitiesStageValues = <String>["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"];
+
+class BenefactorMarketingOpportunitiesRow {
+  const BenefactorMarketingOpportunitiesRow({
+    required this.id,
+    required this.clientId,
+    this.leadId,
+    required this.status,
+    required this.stage,
+    required this.name,
+    required this.amountCents,
+    required this.probabilityMicros,
+    this.expectedCloseOn,
+    this.ownerUserId,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? leadId;
+  final String status;
+  final String stage;
+  final String name;
+  final int amountCents;
+  final int probabilityMicros;
+  final String? expectedCloseOn;
+  final String? ownerUserId;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingOpportunitiesRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingOpportunitiesRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      leadId: _readOptionalString(json, "leadId"),
+      status: _readRequiredString(json, "status"),
+      stage: _readRequiredString(json, "stage"),
+      name: _readRequiredString(json, "name"),
+      amountCents: _readRequiredInt(json, "amountCents"),
+      probabilityMicros: _readRequiredInt(json, "probabilityMicros"),
+      expectedCloseOn: _readOptionalString(json, "expectedCloseOn"),
+      ownerUserId: _readOptionalString(json, "ownerUserId"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "leadId": leadId,
+    "status": status,
+    "stage": stage,
+    "name": name,
+    "amountCents": amountCents,
+    "probabilityMicros": probabilityMicros,
+    "expectedCloseOn": expectedCloseOn,
+    "ownerUserId": ownerUserId,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingOpportunitiesStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_opportunities.status");
+    }
+    if (!benefactorMarketingOpportunitiesStageValues.contains(stage)) {
+      errors.add("unsupported benefactor_marketing_opportunities.stage");
+    }
+    if (utf8.encode(name).length > 220) {
+      errors.add("benefactor_marketing_opportunities.name exceeds 220 bytes");
+    }
+    if (utf8.encode(name).length < 1) {
+      errors.add("benefactor_marketing_opportunities.name is below 1 bytes");
+    }
+    if (amountCents < 0) {
+      errors.add("benefactor_marketing_opportunities.amount_cents is below the minimum");
+    }
+    if (probabilityMicros < 0) {
+      errors.add("benefactor_marketing_opportunities.probability_micros is below the minimum");
+    }
+    if (probabilityMicros > 1000000) {
+      errors.add("benefactor_marketing_opportunities.probability_micros is above the maximum");
+    }
+    if (expectedCloseOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(expectedCloseOn!)) {
+      errors.add("benefactor_marketing_opportunities.expected_close_on does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingContentAssetsTable = "benefactor_marketing_content_assets";
+const benefactorMarketingContentAssetsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      status,\n      asset_kind,\n      title,\n      channel,\n      body,\n      asset_uri,\n      seo_keywords::text as seo_keywords_json,\n      approval_status,\n      to_char(publish_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as publish_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_content_assets";
+
+const benefactorMarketingContentAssetsStatusValues = <String>["draft", "in_review", "approved", "scheduled", "published", "archived"];
+const benefactorMarketingContentAssetsAssetKindValues = <String>["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"];
+const benefactorMarketingContentAssetsApprovalStatusValues = <String>["pending", "approved", "rejected", "changes_requested"];
+
+class BenefactorMarketingContentAssetsRow {
+  const BenefactorMarketingContentAssetsRow({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    required this.status,
+    required this.assetKind,
+    required this.title,
+    this.channel,
+    this.body,
+    this.assetUri,
+    required this.seoKeywords,
+    required this.approvalStatus,
+    this.publishAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? campaignId;
+  final String status;
+  final String assetKind;
+  final String title;
+  final String? channel;
+  final String? body;
+  final String? assetUri;
+  final List<Object?> seoKeywords;
+  final String approvalStatus;
+  final String? publishAt;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingContentAssetsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingContentAssetsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      status: _readRequiredString(json, "status"),
+      assetKind: _readRequiredString(json, "assetKind"),
+      title: _readRequiredString(json, "title"),
+      channel: _readOptionalString(json, "channel"),
+      body: _readOptionalString(json, "body"),
+      assetUri: _readOptionalString(json, "assetUri"),
+      seoKeywords: _readRequiredArray(json, "seoKeywords"),
+      approvalStatus: _readRequiredString(json, "approvalStatus"),
+      publishAt: _readOptionalString(json, "publishAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "status": status,
+    "assetKind": assetKind,
+    "title": title,
+    "channel": channel,
+    "body": body,
+    "assetUri": assetUri,
+    "seoKeywords": seoKeywords,
+    "approvalStatus": approvalStatus,
+    "publishAt": publishAt,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingContentAssetsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_content_assets.status");
+    }
+    if (!benefactorMarketingContentAssetsAssetKindValues.contains(assetKind)) {
+      errors.add("unsupported benefactor_marketing_content_assets.asset_kind");
+    }
+    if (utf8.encode(title).length > 240) {
+      errors.add("benefactor_marketing_content_assets.title exceeds 240 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("benefactor_marketing_content_assets.title is below 1 bytes");
+    }
+    if (channel != null && utf8.encode(channel!).length > 64) {
+      errors.add("benefactor_marketing_content_assets.channel exceeds 64 bytes");
+    }
+    if (body != null && utf8.encode(body!).length > 100000) {
+      errors.add("benefactor_marketing_content_assets.body exceeds 100000 bytes");
+    }
+    if (assetUri != null && utf8.encode(assetUri!).length > 2048) {
+      errors.add("benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes");
+    }
+    if (!benefactorMarketingContentAssetsApprovalStatusValues.contains(approvalStatus)) {
+      errors.add("unsupported benefactor_marketing_content_assets.approval_status");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingProjectTasksTable = "benefactor_marketing_project_tasks";
+const benefactorMarketingProjectTasksSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      content_asset_id::text as content_asset_id,\n      status,\n      priority,\n      title,\n      description,\n      assigned_to::text as assigned_to,\n      due_on,\n      to_char(sla_due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sla_due_at,\n      time_spent_minutes,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_project_tasks";
+
+const benefactorMarketingProjectTasksStatusValues = <String>["todo", "in_progress", "blocked", "done", "canceled"];
+const benefactorMarketingProjectTasksPriorityValues = <String>["low", "normal", "high", "urgent"];
+
+class BenefactorMarketingProjectTasksRow {
+  const BenefactorMarketingProjectTasksRow({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    this.contentAssetId,
+    required this.status,
+    required this.priority,
+    required this.title,
+    this.description,
+    this.assignedTo,
+    this.dueOn,
+    this.slaDueAt,
+    required this.timeSpentMinutes,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? campaignId;
+  final String? contentAssetId;
+  final String status;
+  final String priority;
+  final String title;
+  final String? description;
+  final String? assignedTo;
+  final String? dueOn;
+  final String? slaDueAt;
+  final int timeSpentMinutes;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingProjectTasksRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingProjectTasksRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      contentAssetId: _readOptionalString(json, "contentAssetId"),
+      status: _readRequiredString(json, "status"),
+      priority: _readRequiredString(json, "priority"),
+      title: _readRequiredString(json, "title"),
+      description: _readOptionalString(json, "description"),
+      assignedTo: _readOptionalString(json, "assignedTo"),
+      dueOn: _readOptionalString(json, "dueOn"),
+      slaDueAt: _readOptionalString(json, "slaDueAt"),
+      timeSpentMinutes: _readRequiredInt(json, "timeSpentMinutes"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "contentAssetId": contentAssetId,
+    "status": status,
+    "priority": priority,
+    "title": title,
+    "description": description,
+    "assignedTo": assignedTo,
+    "dueOn": dueOn,
+    "slaDueAt": slaDueAt,
+    "timeSpentMinutes": timeSpentMinutes,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingProjectTasksStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_project_tasks.status");
+    }
+    if (!benefactorMarketingProjectTasksPriorityValues.contains(priority)) {
+      errors.add("unsupported benefactor_marketing_project_tasks.priority");
+    }
+    if (utf8.encode(title).length > 240) {
+      errors.add("benefactor_marketing_project_tasks.title exceeds 240 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("benefactor_marketing_project_tasks.title is below 1 bytes");
+    }
+    if (description != null && utf8.encode(description!).length > 20000) {
+      errors.add("benefactor_marketing_project_tasks.description exceeds 20000 bytes");
+    }
+    if (dueOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(dueOn!)) {
+      errors.add("benefactor_marketing_project_tasks.due_on does not match the required pattern");
+    }
+    if (timeSpentMinutes < 0) {
+      errors.add("benefactor_marketing_project_tasks.time_spent_minutes is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingClientApprovalsTable = "benefactor_marketing_client_approvals";
+const benefactorMarketingClientApprovalsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      content_asset_id::text as content_asset_id,\n      requested_by::text as requested_by,\n      status,\n      approval_kind,\n      title,\n      request_payload::text as request_payload_json,\n      response_note,\n      to_char(due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as due_at,\n      to_char(decided_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as decided_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_client_approvals";
+
+const benefactorMarketingClientApprovalsStatusValues = <String>["pending", "approved", "rejected", "expired", "canceled"];
+const benefactorMarketingClientApprovalsApprovalKindValues = <String>["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"];
+
+class BenefactorMarketingClientApprovalsRow {
+  const BenefactorMarketingClientApprovalsRow({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    this.contentAssetId,
+    this.requestedBy,
+    required this.status,
+    required this.approvalKind,
+    required this.title,
+    required this.requestPayload,
+    this.responseNote,
+    this.dueAt,
+    this.decidedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? campaignId;
+  final String? contentAssetId;
+  final String? requestedBy;
+  final String status;
+  final String approvalKind;
+  final String title;
+  final Map<String, Object?> requestPayload;
+  final String? responseNote;
+  final String? dueAt;
+  final String? decidedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingClientApprovalsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingClientApprovalsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      contentAssetId: _readOptionalString(json, "contentAssetId"),
+      requestedBy: _readOptionalString(json, "requestedBy"),
+      status: _readRequiredString(json, "status"),
+      approvalKind: _readRequiredString(json, "approvalKind"),
+      title: _readRequiredString(json, "title"),
+      requestPayload: _readRequiredObject(json, "requestPayload"),
+      responseNote: _readOptionalString(json, "responseNote"),
+      dueAt: _readOptionalString(json, "dueAt"),
+      decidedAt: _readOptionalString(json, "decidedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "contentAssetId": contentAssetId,
+    "requestedBy": requestedBy,
+    "status": status,
+    "approvalKind": approvalKind,
+    "title": title,
+    "requestPayload": requestPayload,
+    "responseNote": responseNote,
+    "dueAt": dueAt,
+    "decidedAt": decidedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingClientApprovalsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_client_approvals.status");
+    }
+    if (!benefactorMarketingClientApprovalsApprovalKindValues.contains(approvalKind)) {
+      errors.add("unsupported benefactor_marketing_client_approvals.approval_kind");
+    }
+    if (utf8.encode(title).length > 240) {
+      errors.add("benefactor_marketing_client_approvals.title exceeds 240 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("benefactor_marketing_client_approvals.title is below 1 bytes");
+    }
+    if (responseNote != null && utf8.encode(responseNote!).length > 4000) {
+      errors.add("benefactor_marketing_client_approvals.response_note exceeds 4000 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingTicketsTable = "benefactor_marketing_tickets";
+const benefactorMarketingTicketsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      status,\n      priority,\n      subject,\n      description,\n      source,\n      assigned_to::text as assigned_to,\n      to_char(last_activity_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_activity_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_tickets";
+
+const benefactorMarketingTicketsStatusValues = <String>["open", "pending_client", "pending_agency", "resolved", "closed"];
+const benefactorMarketingTicketsPriorityValues = <String>["low", "normal", "high", "urgent"];
+const benefactorMarketingTicketsSourceValues = <String>["portal", "email", "internal"];
+
+class BenefactorMarketingTicketsRow {
+  const BenefactorMarketingTicketsRow({
+    required this.id,
+    required this.clientId,
+    required this.status,
+    required this.priority,
+    required this.subject,
+    this.description,
+    required this.source,
+    this.assignedTo,
+    required this.lastActivityAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String status;
+  final String priority;
+  final String subject;
+  final String? description;
+  final String source;
+  final String? assignedTo;
+  final String lastActivityAt;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingTicketsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingTicketsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      status: _readRequiredString(json, "status"),
+      priority: _readRequiredString(json, "priority"),
+      subject: _readRequiredString(json, "subject"),
+      description: _readOptionalString(json, "description"),
+      source: _readRequiredString(json, "source"),
+      assignedTo: _readOptionalString(json, "assignedTo"),
+      lastActivityAt: _readRequiredString(json, "lastActivityAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "status": status,
+    "priority": priority,
+    "subject": subject,
+    "description": description,
+    "source": source,
+    "assignedTo": assignedTo,
+    "lastActivityAt": lastActivityAt,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingTicketsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_tickets.status");
+    }
+    if (!benefactorMarketingTicketsPriorityValues.contains(priority)) {
+      errors.add("unsupported benefactor_marketing_tickets.priority");
+    }
+    if (utf8.encode(subject).length > 240) {
+      errors.add("benefactor_marketing_tickets.subject exceeds 240 bytes");
+    }
+    if (utf8.encode(subject).length < 1) {
+      errors.add("benefactor_marketing_tickets.subject is below 1 bytes");
+    }
+    if (description != null && utf8.encode(description!).length > 20000) {
+      errors.add("benefactor_marketing_tickets.description exceeds 20000 bytes");
+    }
+    if (!benefactorMarketingTicketsSourceValues.contains(source)) {
+      errors.add("unsupported benefactor_marketing_tickets.source");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingMeetingsTable = "benefactor_marketing_meetings";
+const benefactorMarketingMeetingsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      lead_id::text as lead_id,\n      opportunity_id::text as opportunity_id,\n      status,\n      meeting_kind,\n      title,\n      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as scheduled_at,\n      duration_minutes,\n      notes,\n      recording_uri,\n      transcript_summary::text as transcript_summary_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_meetings";
+
+const benefactorMarketingMeetingsStatusValues = <String>["scheduled", "completed", "canceled", "no_show"];
+const benefactorMarketingMeetingsMeetingKindValues = <String>["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"];
+
+class BenefactorMarketingMeetingsRow {
+  const BenefactorMarketingMeetingsRow({
+    required this.id,
+    required this.clientId,
+    this.leadId,
+    this.opportunityId,
+    required this.status,
+    required this.meetingKind,
+    required this.title,
+    required this.scheduledAt,
+    required this.durationMinutes,
+    this.notes,
+    this.recordingUri,
+    required this.transcriptSummary,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String clientId;
+  final String? leadId;
+  final String? opportunityId;
+  final String status;
+  final String meetingKind;
+  final String title;
+  final String scheduledAt;
+  final int durationMinutes;
+  final String? notes;
+  final String? recordingUri;
+  final Map<String, Object?> transcriptSummary;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingMeetingsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingMeetingsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readRequiredString(json, "clientId"),
+      leadId: _readOptionalString(json, "leadId"),
+      opportunityId: _readOptionalString(json, "opportunityId"),
+      status: _readRequiredString(json, "status"),
+      meetingKind: _readRequiredString(json, "meetingKind"),
+      title: _readRequiredString(json, "title"),
+      scheduledAt: _readRequiredString(json, "scheduledAt"),
+      durationMinutes: _readRequiredInt(json, "durationMinutes"),
+      notes: _readOptionalString(json, "notes"),
+      recordingUri: _readOptionalString(json, "recordingUri"),
+      transcriptSummary: _readRequiredObject(json, "transcriptSummary"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "leadId": leadId,
+    "opportunityId": opportunityId,
+    "status": status,
+    "meetingKind": meetingKind,
+    "title": title,
+    "scheduledAt": scheduledAt,
+    "durationMinutes": durationMinutes,
+    "notes": notes,
+    "recordingUri": recordingUri,
+    "transcriptSummary": transcriptSummary,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingMeetingsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_marketing_meetings.status");
+    }
+    if (!benefactorMarketingMeetingsMeetingKindValues.contains(meetingKind)) {
+      errors.add("unsupported benefactor_marketing_meetings.meeting_kind");
+    }
+    if (utf8.encode(title).length > 240) {
+      errors.add("benefactor_marketing_meetings.title exceeds 240 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("benefactor_marketing_meetings.title is below 1 bytes");
+    }
+    if (durationMinutes < 1) {
+      errors.add("benefactor_marketing_meetings.duration_minutes is below the minimum");
+    }
+    if (durationMinutes > 1440) {
+      errors.add("benefactor_marketing_meetings.duration_minutes is above the maximum");
+    }
+    if (notes != null && utf8.encode(notes!).length > 20000) {
+      errors.add("benefactor_marketing_meetings.notes exceeds 20000 bytes");
+    }
+    if (recordingUri != null && utf8.encode(recordingUri!).length > 2048) {
+      errors.add("benefactor_marketing_meetings.recording_uri exceeds 2048 bytes");
+    }
+    return errors;
+  }
+}
+
+const benefactorMarketingTeamAllocationsTable = "benefactor_marketing_team_allocations";
+const benefactorMarketingTeamAllocationsSelectSql = "select\n      id::text as id,\n      client_id::text as client_id,\n      campaign_id::text as campaign_id,\n      user_id::text as user_id,\n      role,\n      allocation_percent,\n      starts_on,\n      ends_on,\n      billable,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from benefactor_marketing_team_allocations";
+
+const benefactorMarketingTeamAllocationsRoleValues = <String>["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"];
+
+class BenefactorMarketingTeamAllocationsRow {
+  const BenefactorMarketingTeamAllocationsRow({
+    required this.id,
+    this.clientId,
+    this.campaignId,
+    required this.userId,
+    required this.role,
+    required this.allocationPercent,
+    this.startsOn,
+    this.endsOn,
+    required this.billable,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? clientId;
+  final String? campaignId;
+  final String userId;
+  final String role;
+  final int allocationPercent;
+  final String? startsOn;
+  final String? endsOn;
+  final bool billable;
+  final String createdAt;
+  final String updatedAt;
+
+  factory BenefactorMarketingTeamAllocationsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingTeamAllocationsRow(
+      id: _readRequiredString(json, "id"),
+      clientId: _readOptionalString(json, "clientId"),
+      campaignId: _readOptionalString(json, "campaignId"),
+      userId: _readRequiredString(json, "userId"),
+      role: _readRequiredString(json, "role"),
+      allocationPercent: _readRequiredInt(json, "allocationPercent"),
+      startsOn: _readOptionalString(json, "startsOn"),
+      endsOn: _readOptionalString(json, "endsOn"),
+      billable: _readRequiredBool(json, "billable"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "userId": userId,
+    "role": role,
+    "allocationPercent": allocationPercent,
+    "startsOn": startsOn,
+    "endsOn": endsOn,
+    "billable": billable,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorMarketingTeamAllocationsRoleValues.contains(role)) {
+      errors.add("unsupported benefactor_marketing_team_allocations.role");
+    }
+    if (allocationPercent < 0) {
+      errors.add("benefactor_marketing_team_allocations.allocation_percent is below the minimum");
+    }
+    if (allocationPercent > 100) {
+      errors.add("benefactor_marketing_team_allocations.allocation_percent is above the maximum");
+    }
+    if (startsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(startsOn!)) {
+      errors.add("benefactor_marketing_team_allocations.starts_on does not match the required pattern");
+    }
+    if (endsOn != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(endsOn!)) {
+      errors.add("benefactor_marketing_team_allocations.ends_on does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

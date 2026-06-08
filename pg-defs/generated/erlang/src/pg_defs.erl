@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, vapi_phone_call_events_table/0, vapi_phone_call_events_columns/0, vapi_phone_call_events_select_sql/0, music_songs_table/0, music_songs_columns/0, music_songs_select_sql/0, music_songs_status_values/0, validate_music_songs_status/1, music_songs_storage_provider_values/0, validate_music_songs_storage_provider/1, music_song_votes_table/0, music_song_votes_columns/0, music_song_votes_select_sql/0, sound_recorder_accounts_table/0, sound_recorder_accounts_columns/0, sound_recorder_accounts_select_sql/0, sound_recorder_accounts_status_values/0, validate_sound_recorder_accounts_status/1, sound_recorder_devices_table/0, sound_recorder_devices_columns/0, sound_recorder_devices_select_sql/0, sound_recorder_devices_platform_values/0, validate_sound_recorder_devices_platform/1, sound_recorder_devices_status_values/0, validate_sound_recorder_devices_status/1, sound_recorder_upload_sessions_table/0, sound_recorder_upload_sessions_columns/0, sound_recorder_upload_sessions_select_sql/0, sound_recorder_upload_sessions_status_values/0, validate_sound_recorder_upload_sessions_status/1, sound_recorder_upload_sessions_storage_provider_values/0, validate_sound_recorder_upload_sessions_storage_provider/1, sound_recorder_segments_table/0, sound_recorder_segments_columns/0, sound_recorder_segments_select_sql/0, sound_recorder_segments_status_values/0, validate_sound_recorder_segments_status/1, sound_recorder_segments_storage_provider_values/0, validate_sound_recorder_segments_storage_provider/1, sound_recorder_evidence_exports_table/0, sound_recorder_evidence_exports_columns/0, sound_recorder_evidence_exports_select_sql/0, sound_recorder_evidence_exports_status_values/0, validate_sound_recorder_evidence_exports_status/1, sound_recorder_audit_events_table/0, sound_recorder_audit_events_columns/0, sound_recorder_audit_events_select_sql/0, sound_recorder_oauth_states_table/0, sound_recorder_oauth_states_columns/0, sound_recorder_oauth_states_select_sql/0, sound_recorder_oauth_states_provider_values/0, validate_sound_recorder_oauth_states_provider/1, sound_recorder_oauth_states_status_values/0, validate_sound_recorder_oauth_states_status/1, sound_recorder_cloud_connections_table/0, sound_recorder_cloud_connections_columns/0, sound_recorder_cloud_connections_select_sql/0, sound_recorder_cloud_connections_provider_values/0, validate_sound_recorder_cloud_connections_provider/1, sound_recorder_cloud_connections_link_mode_values/0, validate_sound_recorder_cloud_connections_link_mode/1, sound_recorder_cloud_connections_status_values/0, validate_sound_recorder_cloud_connections_status/1, sound_recorder_cloud_copy_jobs_table/0, sound_recorder_cloud_copy_jobs_columns/0, sound_recorder_cloud_copy_jobs_select_sql/0, sound_recorder_cloud_copy_jobs_provider_values/0, validate_sound_recorder_cloud_copy_jobs_provider/1, sound_recorder_cloud_copy_jobs_status_values/0, validate_sound_recorder_cloud_copy_jobs_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_versions_retention_kind_values/0, validate_des_soccer_learning_policy_versions_retention_kind/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1, des_fel_elevator_learning_runs_table/0, des_fel_elevator_learning_runs_columns/0, des_fel_elevator_learning_runs_select_sql/0, des_fel_elevator_learning_runs_status_values/0, validate_des_fel_elevator_learning_runs_status/1, des_fel_elevator_learning_runs_dispatch_policy_values/0, validate_des_fel_elevator_learning_runs_dispatch_policy/1, des_fel_elevator_policy_states_table/0, des_fel_elevator_policy_states_columns/0, des_fel_elevator_policy_states_select_sql/0, des_fel_elevator_policy_states_policy_kind_values/0, validate_des_fel_elevator_policy_states_policy_kind/1, des_fel_elevator_policy_states_source_kind_values/0, validate_des_fel_elevator_policy_states_source_kind/1, des_fel_elevator_dispatch_decisions_table/0, des_fel_elevator_dispatch_decisions_columns/0, des_fel_elevator_dispatch_decisions_select_sql/0, des_fel_elevator_dispatch_decisions_policy_kind_values/0, validate_des_fel_elevator_dispatch_decisions_policy_kind/1, des_fel_elevator_pomdp_beliefs_table/0, des_fel_elevator_pomdp_beliefs_columns/0, des_fel_elevator_pomdp_beliefs_select_sql/0, des_fel_elevator_pomdp_beliefs_action_values/0, validate_des_fel_elevator_pomdp_beliefs_action/1, des_fel_elevator_pomdp_beliefs_observation_values/0, validate_des_fel_elevator_pomdp_beliefs_observation/1]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, vapi_phone_call_events_table/0, vapi_phone_call_events_columns/0, vapi_phone_call_events_select_sql/0, music_songs_table/0, music_songs_columns/0, music_songs_select_sql/0, music_songs_status_values/0, validate_music_songs_status/1, music_songs_storage_provider_values/0, validate_music_songs_storage_provider/1, music_song_votes_table/0, music_song_votes_columns/0, music_song_votes_select_sql/0, sound_recorder_accounts_table/0, sound_recorder_accounts_columns/0, sound_recorder_accounts_select_sql/0, sound_recorder_accounts_status_values/0, validate_sound_recorder_accounts_status/1, sound_recorder_devices_table/0, sound_recorder_devices_columns/0, sound_recorder_devices_select_sql/0, sound_recorder_devices_platform_values/0, validate_sound_recorder_devices_platform/1, sound_recorder_devices_status_values/0, validate_sound_recorder_devices_status/1, sound_recorder_upload_sessions_table/0, sound_recorder_upload_sessions_columns/0, sound_recorder_upload_sessions_select_sql/0, sound_recorder_upload_sessions_status_values/0, validate_sound_recorder_upload_sessions_status/1, sound_recorder_upload_sessions_storage_provider_values/0, validate_sound_recorder_upload_sessions_storage_provider/1, sound_recorder_segments_table/0, sound_recorder_segments_columns/0, sound_recorder_segments_select_sql/0, sound_recorder_segments_status_values/0, validate_sound_recorder_segments_status/1, sound_recorder_segments_storage_provider_values/0, validate_sound_recorder_segments_storage_provider/1, sound_recorder_evidence_exports_table/0, sound_recorder_evidence_exports_columns/0, sound_recorder_evidence_exports_select_sql/0, sound_recorder_evidence_exports_status_values/0, validate_sound_recorder_evidence_exports_status/1, sound_recorder_audit_events_table/0, sound_recorder_audit_events_columns/0, sound_recorder_audit_events_select_sql/0, sound_recorder_oauth_states_table/0, sound_recorder_oauth_states_columns/0, sound_recorder_oauth_states_select_sql/0, sound_recorder_oauth_states_provider_values/0, validate_sound_recorder_oauth_states_provider/1, sound_recorder_oauth_states_status_values/0, validate_sound_recorder_oauth_states_status/1, sound_recorder_cloud_connections_table/0, sound_recorder_cloud_connections_columns/0, sound_recorder_cloud_connections_select_sql/0, sound_recorder_cloud_connections_provider_values/0, validate_sound_recorder_cloud_connections_provider/1, sound_recorder_cloud_connections_link_mode_values/0, validate_sound_recorder_cloud_connections_link_mode/1, sound_recorder_cloud_connections_status_values/0, validate_sound_recorder_cloud_connections_status/1, sound_recorder_cloud_copy_jobs_table/0, sound_recorder_cloud_copy_jobs_columns/0, sound_recorder_cloud_copy_jobs_select_sql/0, sound_recorder_cloud_copy_jobs_provider_values/0, validate_sound_recorder_cloud_copy_jobs_provider/1, sound_recorder_cloud_copy_jobs_status_values/0, validate_sound_recorder_cloud_copy_jobs_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_versions_retention_kind_values/0, validate_des_soccer_learning_policy_versions_retention_kind/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1, des_fel_elevator_learning_runs_table/0, des_fel_elevator_learning_runs_columns/0, des_fel_elevator_learning_runs_select_sql/0, des_fel_elevator_learning_runs_status_values/0, validate_des_fel_elevator_learning_runs_status/1, des_fel_elevator_learning_runs_dispatch_policy_values/0, validate_des_fel_elevator_learning_runs_dispatch_policy/1, des_fel_elevator_policy_states_table/0, des_fel_elevator_policy_states_columns/0, des_fel_elevator_policy_states_select_sql/0, des_fel_elevator_policy_states_policy_kind_values/0, validate_des_fel_elevator_policy_states_policy_kind/1, des_fel_elevator_policy_states_source_kind_values/0, validate_des_fel_elevator_policy_states_source_kind/1, des_fel_elevator_dispatch_decisions_table/0, des_fel_elevator_dispatch_decisions_columns/0, des_fel_elevator_dispatch_decisions_select_sql/0, des_fel_elevator_dispatch_decisions_policy_kind_values/0, validate_des_fel_elevator_dispatch_decisions_policy_kind/1, des_fel_elevator_pomdp_beliefs_table/0, des_fel_elevator_pomdp_beliefs_columns/0, des_fel_elevator_pomdp_beliefs_select_sql/0, des_fel_elevator_pomdp_beliefs_action_values/0, validate_des_fel_elevator_pomdp_beliefs_action/1, des_fel_elevator_pomdp_beliefs_observation_values/0, validate_des_fel_elevator_pomdp_beliefs_observation/1, benefactor_marketing_clients_table/0, benefactor_marketing_clients_columns/0, benefactor_marketing_clients_select_sql/0, benefactor_marketing_clients_status_values/0, validate_benefactor_marketing_clients_status/1, benefactor_marketing_contacts_table/0, benefactor_marketing_contacts_columns/0, benefactor_marketing_contacts_select_sql/0, benefactor_marketing_contacts_status_values/0, validate_benefactor_marketing_contacts_status/1, benefactor_marketing_contacts_lifecycle_role_values/0, validate_benefactor_marketing_contacts_lifecycle_role/1, benefactor_marketing_contacts_consent_status_values/0, validate_benefactor_marketing_contacts_consent_status/1, benefactor_marketing_service_packages_table/0, benefactor_marketing_service_packages_columns/0, benefactor_marketing_service_packages_select_sql/0, benefactor_marketing_service_packages_status_values/0, validate_benefactor_marketing_service_packages_status/1, benefactor_marketing_contracts_table/0, benefactor_marketing_contracts_columns/0, benefactor_marketing_contracts_select_sql/0, benefactor_marketing_contracts_status_values/0, validate_benefactor_marketing_contracts_status/1, benefactor_marketing_invoices_table/0, benefactor_marketing_invoices_columns/0, benefactor_marketing_invoices_select_sql/0, benefactor_marketing_invoices_status_values/0, validate_benefactor_marketing_invoices_status/1, benefactor_marketing_integrations_table/0, benefactor_marketing_integrations_columns/0, benefactor_marketing_integrations_select_sql/0, benefactor_marketing_integrations_platform_values/0, validate_benefactor_marketing_integrations_platform/1, benefactor_marketing_integrations_status_values/0, validate_benefactor_marketing_integrations_status/1, benefactor_marketing_integrations_auth_kind_values/0, validate_benefactor_marketing_integrations_auth_kind/1, benefactor_marketing_leads_table/0, benefactor_marketing_leads_columns/0, benefactor_marketing_leads_select_sql/0, benefactor_marketing_leads_status_values/0, validate_benefactor_marketing_leads_status/1, benefactor_marketing_leads_verification_status_values/0, validate_benefactor_marketing_leads_verification_status/1, benefactor_marketing_leads_enrichment_status_values/0, validate_benefactor_marketing_leads_enrichment_status/1, benefactor_marketing_enrichment_jobs_table/0, benefactor_marketing_enrichment_jobs_columns/0, benefactor_marketing_enrichment_jobs_select_sql/0, benefactor_marketing_enrichment_jobs_job_kind_values/0, validate_benefactor_marketing_enrichment_jobs_job_kind/1, benefactor_marketing_enrichment_jobs_status_values/0, validate_benefactor_marketing_enrichment_jobs_status/1, benefactor_marketing_campaigns_table/0, benefactor_marketing_campaigns_columns/0, benefactor_marketing_campaigns_select_sql/0, benefactor_marketing_campaigns_status_values/0, validate_benefactor_marketing_campaigns_status/1, benefactor_marketing_campaigns_campaign_kind_values/0, validate_benefactor_marketing_campaigns_campaign_kind/1, benefactor_marketing_campaign_channels_table/0, benefactor_marketing_campaign_channels_columns/0, benefactor_marketing_campaign_channels_select_sql/0, benefactor_marketing_campaign_channels_channel_values/0, validate_benefactor_marketing_campaign_channels_channel/1, benefactor_marketing_campaign_channels_status_values/0, validate_benefactor_marketing_campaign_channels_status/1, benefactor_marketing_campaign_experiments_table/0, benefactor_marketing_campaign_experiments_columns/0, benefactor_marketing_campaign_experiments_select_sql/0, benefactor_marketing_campaign_experiments_status_values/0, validate_benefactor_marketing_campaign_experiments_status/1, benefactor_marketing_campaign_experiments_experiment_kind_values/0, validate_benefactor_marketing_campaign_experiments_experiment_kind/1, benefactor_marketing_automation_workflows_table/0, benefactor_marketing_automation_workflows_columns/0, benefactor_marketing_automation_workflows_select_sql/0, benefactor_marketing_automation_workflows_status_values/0, validate_benefactor_marketing_automation_workflows_status/1, benefactor_marketing_automation_workflows_trigger_kind_values/0, validate_benefactor_marketing_automation_workflows_trigger_kind/1, benefactor_marketing_automation_events_table/0, benefactor_marketing_automation_events_columns/0, benefactor_marketing_automation_events_select_sql/0, benefactor_marketing_automation_events_status_values/0, validate_benefactor_marketing_automation_events_status/1, benefactor_marketing_reports_table/0, benefactor_marketing_reports_columns/0, benefactor_marketing_reports_select_sql/0, benefactor_marketing_reports_report_kind_values/0, validate_benefactor_marketing_reports_report_kind/1, benefactor_marketing_reports_status_values/0, validate_benefactor_marketing_reports_status/1, benefactor_marketing_attribution_events_table/0, benefactor_marketing_attribution_events_columns/0, benefactor_marketing_attribution_events_select_sql/0, benefactor_marketing_attribution_events_event_type_values/0, validate_benefactor_marketing_attribution_events_event_type/1, benefactor_marketing_opportunities_table/0, benefactor_marketing_opportunities_columns/0, benefactor_marketing_opportunities_select_sql/0, benefactor_marketing_opportunities_status_values/0, validate_benefactor_marketing_opportunities_status/1, benefactor_marketing_opportunities_stage_values/0, validate_benefactor_marketing_opportunities_stage/1, benefactor_marketing_content_assets_table/0, benefactor_marketing_content_assets_columns/0, benefactor_marketing_content_assets_select_sql/0, benefactor_marketing_content_assets_status_values/0, validate_benefactor_marketing_content_assets_status/1, benefactor_marketing_content_assets_asset_kind_values/0, validate_benefactor_marketing_content_assets_asset_kind/1, benefactor_marketing_content_assets_approval_status_values/0, validate_benefactor_marketing_content_assets_approval_status/1, benefactor_marketing_project_tasks_table/0, benefactor_marketing_project_tasks_columns/0, benefactor_marketing_project_tasks_select_sql/0, benefactor_marketing_project_tasks_status_values/0, validate_benefactor_marketing_project_tasks_status/1, benefactor_marketing_project_tasks_priority_values/0, validate_benefactor_marketing_project_tasks_priority/1, benefactor_marketing_client_approvals_table/0, benefactor_marketing_client_approvals_columns/0, benefactor_marketing_client_approvals_select_sql/0, benefactor_marketing_client_approvals_status_values/0, validate_benefactor_marketing_client_approvals_status/1, benefactor_marketing_client_approvals_approval_kind_values/0, validate_benefactor_marketing_client_approvals_approval_kind/1, benefactor_marketing_tickets_table/0, benefactor_marketing_tickets_columns/0, benefactor_marketing_tickets_select_sql/0, benefactor_marketing_tickets_status_values/0, validate_benefactor_marketing_tickets_status/1, benefactor_marketing_tickets_priority_values/0, validate_benefactor_marketing_tickets_priority/1, benefactor_marketing_tickets_source_values/0, validate_benefactor_marketing_tickets_source/1, benefactor_marketing_meetings_table/0, benefactor_marketing_meetings_columns/0, benefactor_marketing_meetings_select_sql/0, benefactor_marketing_meetings_status_values/0, validate_benefactor_marketing_meetings_status/1, benefactor_marketing_meetings_meeting_kind_values/0, validate_benefactor_marketing_meetings_meeting_kind/1, benefactor_marketing_team_allocations_table/0, benefactor_marketing_team_allocations_columns/0, benefactor_marketing_team_allocations_select_sql/0, benefactor_marketing_team_allocations_role_values/0, validate_benefactor_marketing_team_allocations_role/1]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -1593,3 +1593,857 @@ validate_des_fel_elevator_pomdp_beliefs_observation(Value) when is_binary(Value)
     end;
 validate_des_fel_elevator_pomdp_beliefs_observation(Value) when is_list(Value) ->
     validate_des_fel_elevator_pomdp_beliefs_observation(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_clients_table() -> <<"benefactor_marketing_clients">>.
+
+benefactor_marketing_clients_columns() -> [<<"id">>, <<"status">>, <<"name">>, <<"slug">>, <<"industry">>, <<"website_url">>, <<"billing_email">>, <<"owner_user_id">>, <<"service_package">>, <<"onboarding_stage">>, <<"portal_enabled">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_clients_select_sql() -> <<"select
+      id::text as id,
+      status,
+      name,
+      slug,
+      industry,
+      website_url,
+      billing_email,
+      owner_user_id::text as owner_user_id,
+      service_package,
+      onboarding_stage,
+      portal_enabled,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_clients">>.
+
+benefactor_marketing_clients_status_values() -> [<<"onboarding">>, <<"active">>, <<"paused">>, <<"archived">>].
+
+validate_benefactor_marketing_clients_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_clients_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_clients.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_clients_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_clients_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_contacts_table() -> <<"benefactor_marketing_contacts">>.
+
+benefactor_marketing_contacts_columns() -> [<<"id">>, <<"client_id">>, <<"status">>, <<"first_name">>, <<"last_name">>, <<"email">>, <<"phone">>, <<"job_title">>, <<"lifecycle_role">>, <<"consent_status">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_contacts_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      first_name,
+      last_name,
+      email,
+      phone,
+      job_title,
+      lifecycle_role,
+      consent_status,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_contacts">>.
+
+benefactor_marketing_contacts_status_values() -> [<<"active">>, <<"inactive">>, <<"bounced">>, <<"unsubscribed">>].
+
+validate_benefactor_marketing_contacts_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_contacts_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_contacts.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_contacts_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_contacts_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_contacts_lifecycle_role_values() -> [<<"primary">>, <<"decision_maker">>, <<"billing">>, <<"technical">>, <<"marketing">>, <<"other">>].
+
+validate_benefactor_marketing_contacts_lifecycle_role(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_contacts_lifecycle_role_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_contacts.lifecycle_role: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_contacts_lifecycle_role(Value) when is_list(Value) ->
+    validate_benefactor_marketing_contacts_lifecycle_role(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_contacts_consent_status_values() -> [<<"unknown">>, <<"opted_in">>, <<"opted_out">>].
+
+validate_benefactor_marketing_contacts_consent_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_contacts_consent_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_contacts.consent_status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_contacts_consent_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_contacts_consent_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_service_packages_table() -> <<"benefactor_marketing_service_packages">>.
+
+benefactor_marketing_service_packages_columns() -> [<<"id">>, <<"status">>, <<"code">>, <<"name">>, <<"channel_mix">>, <<"deliverables">>, <<"monthly_budget_cents">>, <<"retainer_cents">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_service_packages_select_sql() -> <<"select
+      id::text as id,
+      status,
+      code,
+      name,
+      channel_mix::text as channel_mix_json,
+      deliverables::text as deliverables_json,
+      monthly_budget_cents,
+      retainer_cents,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_service_packages">>.
+
+benefactor_marketing_service_packages_status_values() -> [<<"active">>, <<"retired">>].
+
+validate_benefactor_marketing_service_packages_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_service_packages_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_service_packages.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_service_packages_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_service_packages_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_contracts_table() -> <<"benefactor_marketing_contracts">>.
+
+benefactor_marketing_contracts_columns() -> [<<"id">>, <<"client_id">>, <<"package_id">>, <<"status">>, <<"contract_number">>, <<"starts_on">>, <<"ends_on">>, <<"billing_terms">>, <<"total_value_cents">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_contracts_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      package_id::text as package_id,
+      status,
+      contract_number,
+      starts_on,
+      ends_on,
+      billing_terms::text as billing_terms_json,
+      total_value_cents,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_contracts">>.
+
+benefactor_marketing_contracts_status_values() -> [<<"draft">>, <<"active">>, <<"renewal">>, <<"expired">>, <<"terminated">>].
+
+validate_benefactor_marketing_contracts_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_contracts_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_contracts.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_contracts_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_contracts_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_invoices_table() -> <<"benefactor_marketing_invoices">>.
+
+benefactor_marketing_invoices_columns() -> [<<"id">>, <<"client_id">>, <<"contract_id">>, <<"status">>, <<"invoice_number">>, <<"due_on">>, <<"amount_cents">>, <<"paid_at">>, <<"line_items">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_invoices_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      contract_id::text as contract_id,
+      status,
+      invoice_number,
+      due_on,
+      amount_cents,
+      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as paid_at,
+      line_items::text as line_items_json,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_invoices">>.
+
+benefactor_marketing_invoices_status_values() -> [<<"draft">>, <<"sent">>, <<"paid">>, <<"overdue">>, <<"void">>].
+
+validate_benefactor_marketing_invoices_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_invoices_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_invoices.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_invoices_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_invoices_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_integrations_table() -> <<"benefactor_marketing_integrations">>.
+
+benefactor_marketing_integrations_columns() -> [<<"id">>, <<"client_id">>, <<"platform">>, <<"status">>, <<"auth_kind">>, <<"external_account_id">>, <<"sync_cursor">>, <<"config">>, <<"last_sync_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_integrations_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      platform,
+      status,
+      auth_kind,
+      external_account_id,
+      sync_cursor,
+      config::text as config_json,
+      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_integrations">>.
+
+benefactor_marketing_integrations_platform_values() -> [<<"salesforce">>, <<"hubspot">>, <<"apollo">>, <<"zoominfo">>, <<"google_analytics">>, <<"google_ads">>, <<"linkedin_ads">>, <<"meta_ads">>, <<"mailchimp">>, <<"sendgrid">>, <<"scraper">>, <<"custom">>].
+
+validate_benefactor_marketing_integrations_platform(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_integrations_platform_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_integrations.platform: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_integrations_platform(Value) when is_list(Value) ->
+    validate_benefactor_marketing_integrations_platform(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_integrations_status_values() -> [<<"connected">>, <<"disabled">>, <<"error">>].
+
+validate_benefactor_marketing_integrations_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_integrations_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_integrations.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_integrations_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_integrations_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_integrations_auth_kind_values() -> [<<"oauth2">>, <<"api_key">>, <<"webhook">>, <<"manual">>].
+
+validate_benefactor_marketing_integrations_auth_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_integrations_auth_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_integrations.auth_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_integrations_auth_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_integrations_auth_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_leads_table() -> <<"benefactor_marketing_leads">>.
+
+benefactor_marketing_leads_columns() -> [<<"id">>, <<"client_id">>, <<"source_integration_id">>, <<"status">>, <<"company_name">>, <<"domain">>, <<"contact_name">>, <<"contact_email">>, <<"contact_title">>, <<"country_code">>, <<"lead_score">>, <<"icp_fit_score">>, <<"verification_status">>, <<"enrichment_status">>, <<"company_profile">>, <<"signals">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_leads_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      source_integration_id::text as source_integration_id,
+      status,
+      company_name,
+      domain,
+      contact_name,
+      contact_email,
+      contact_title,
+      country_code,
+      lead_score,
+      icp_fit_score,
+      verification_status,
+      enrichment_status,
+      company_profile::text as company_profile_json,
+      signals::text as signals_json,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_leads">>.
+
+benefactor_marketing_leads_status_values() -> [<<"new">>, <<"researching">>, <<"qualified">>, <<"disqualified">>, <<"contacted">>, <<"converted">>].
+
+validate_benefactor_marketing_leads_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_leads_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_leads.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_leads_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_leads_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_leads_verification_status_values() -> [<<"unknown">>, <<"verified">>, <<"invalid">>, <<"risky">>].
+
+validate_benefactor_marketing_leads_verification_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_leads_verification_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_leads.verification_status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_leads_verification_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_leads_verification_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_leads_enrichment_status_values() -> [<<"pending">>, <<"running">>, <<"completed">>, <<"failed">>].
+
+validate_benefactor_marketing_leads_enrichment_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_leads_enrichment_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_leads.enrichment_status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_leads_enrichment_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_leads_enrichment_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_enrichment_jobs_table() -> <<"benefactor_marketing_enrichment_jobs">>.
+
+benefactor_marketing_enrichment_jobs_columns() -> [<<"id">>, <<"client_id">>, <<"lead_id">>, <<"job_kind">>, <<"status">>, <<"external_job_id">>, <<"scraper_handoff_url">>, <<"input">>, <<"result">>, <<"error_summary">>, <<"queued_at">>, <<"started_at">>, <<"completed_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_enrichment_jobs_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      job_kind,
+      status,
+      external_job_id,
+      scraper_handoff_url,
+      input::text as input_json,
+      result::text as result_json,
+      error_summary,
+      to_char(queued_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as queued_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_enrichment_jobs">>.
+
+benefactor_marketing_enrichment_jobs_job_kind_values() -> [<<"lead_enrichment">>, <<"company_research">>, <<"contact_verification">>, <<"prospect_scrape">>, <<"competitive_intel">>].
+
+validate_benefactor_marketing_enrichment_jobs_job_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_enrichment_jobs_job_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_enrichment_jobs.job_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_enrichment_jobs_job_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_enrichment_jobs_job_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_enrichment_jobs_status_values() -> [<<"queued">>, <<"running">>, <<"completed">>, <<"failed">>, <<"canceled">>].
+
+validate_benefactor_marketing_enrichment_jobs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_enrichment_jobs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_enrichment_jobs.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_enrichment_jobs_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_enrichment_jobs_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaigns_table() -> <<"benefactor_marketing_campaigns">>.
+
+benefactor_marketing_campaigns_columns() -> [<<"id">>, <<"client_id">>, <<"status">>, <<"campaign_kind">>, <<"name">>, <<"objective">>, <<"budget_cents">>, <<"starts_on">>, <<"ends_on">>, <<"target_segments">>, <<"kpis">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_campaigns_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      campaign_kind,
+      name,
+      objective,
+      budget_cents,
+      starts_on,
+      ends_on,
+      target_segments::text as target_segments_json,
+      kpis::text as kpis_json,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_campaigns">>.
+
+benefactor_marketing_campaigns_status_values() -> [<<"draft">>, <<"active">>, <<"paused">>, <<"completed">>, <<"archived">>].
+
+validate_benefactor_marketing_campaigns_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaigns_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaigns.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaigns_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaigns_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaigns_campaign_kind_values() -> [<<"social_media">>, <<"seo_aeo">>, <<"email">>, <<"outreach">>, <<"paid_ads">>, <<"content">>, <<"multi_channel">>].
+
+validate_benefactor_marketing_campaigns_campaign_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaigns_campaign_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaigns.campaign_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaigns_campaign_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaigns_campaign_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaign_channels_table() -> <<"benefactor_marketing_campaign_channels">>.
+
+benefactor_marketing_campaign_channels_columns() -> [<<"id">>, <<"campaign_id">>, <<"channel">>, <<"status">>, <<"external_campaign_id">>, <<"strategy">>, <<"schedule">>, <<"metrics_snapshot">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_campaign_channels_select_sql() -> <<"select
+      id::text as id,
+      campaign_id::text as campaign_id,
+      channel,
+      status,
+      external_campaign_id,
+      strategy::text as strategy_json,
+      schedule::text as schedule_json,
+      metrics_snapshot::text as metrics_snapshot_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_campaign_channels">>.
+
+benefactor_marketing_campaign_channels_channel_values() -> [<<"social">>, <<"linkedin">>, <<"email">>, <<"sms">>, <<"seo">>, <<"aeo">>, <<"google_ads">>, <<"meta_ads">>, <<"landing_page">>, <<"content">>].
+
+validate_benefactor_marketing_campaign_channels_channel(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaign_channels_channel_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaign_channels.channel: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaign_channels_channel(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaign_channels_channel(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaign_channels_status_values() -> [<<"draft">>, <<"scheduled">>, <<"live">>, <<"paused">>, <<"completed">>].
+
+validate_benefactor_marketing_campaign_channels_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaign_channels_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaign_channels.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaign_channels_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaign_channels_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaign_experiments_table() -> <<"benefactor_marketing_campaign_experiments">>.
+
+benefactor_marketing_campaign_experiments_columns() -> [<<"id">>, <<"campaign_id">>, <<"status">>, <<"experiment_kind">>, <<"hypothesis">>, <<"variants">>, <<"winning_variant">>, <<"result_summary">>, <<"started_at">>, <<"ended_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_campaign_experiments_select_sql() -> <<"select
+      id::text as id,
+      campaign_id::text as campaign_id,
+      status,
+      experiment_kind,
+      hypothesis,
+      variants::text as variants_json,
+      winning_variant,
+      result_summary::text as result_summary_json,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ended_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_campaign_experiments">>.
+
+benefactor_marketing_campaign_experiments_status_values() -> [<<"draft">>, <<"running">>, <<"winner_selected">>, <<"stopped">>].
+
+validate_benefactor_marketing_campaign_experiments_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaign_experiments_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaign_experiments.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaign_experiments_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaign_experiments_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_campaign_experiments_experiment_kind_values() -> [<<"subject_line">>, <<"creative">>, <<"copy">>, <<"landing_page">>, <<"audience">>, <<"budget">>].
+
+validate_benefactor_marketing_campaign_experiments_experiment_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_campaign_experiments_experiment_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_campaign_experiments.experiment_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_campaign_experiments_experiment_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_campaign_experiments_experiment_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_automation_workflows_table() -> <<"benefactor_marketing_automation_workflows">>.
+
+benefactor_marketing_automation_workflows_columns() -> [<<"id">>, <<"client_id">>, <<"status">>, <<"name">>, <<"trigger_kind">>, <<"trigger_config">>, <<"action_graph">>, <<"last_run_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_automation_workflows_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      name,
+      trigger_kind,
+      trigger_config::text as trigger_config_json,
+      action_graph::text as action_graph_json,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_automation_workflows">>.
+
+benefactor_marketing_automation_workflows_status_values() -> [<<"draft">>, <<"active">>, <<"paused">>, <<"archived">>].
+
+validate_benefactor_marketing_automation_workflows_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_automation_workflows_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_automation_workflows.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_automation_workflows_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_automation_workflows_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_automation_workflows_trigger_kind_values() -> [<<"lead_created">>, <<"score_changed">>, <<"form_submit">>, <<"email_event">>, <<"campaign_event">>, <<"manual">>, <<"schedule">>, <<"webhook">>].
+
+validate_benefactor_marketing_automation_workflows_trigger_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_automation_workflows_trigger_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_automation_workflows.trigger_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_automation_workflows_trigger_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_automation_workflows_trigger_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_automation_events_table() -> <<"benefactor_marketing_automation_events">>.
+
+benefactor_marketing_automation_events_columns() -> [<<"id">>, <<"client_id">>, <<"workflow_id">>, <<"lead_id">>, <<"event_kind">>, <<"status">>, <<"payload">>, <<"error_summary">>, <<"created_at">>].
+
+benefactor_marketing_automation_events_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      workflow_id::text as workflow_id,
+      lead_id::text as lead_id,
+      event_kind,
+      status,
+      payload::text as payload_json,
+      error_summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from benefactor_marketing_automation_events">>.
+
+benefactor_marketing_automation_events_status_values() -> [<<"received">>, <<"processed">>, <<"failed">>, <<"skipped">>].
+
+validate_benefactor_marketing_automation_events_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_automation_events_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_automation_events.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_automation_events_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_automation_events_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_reports_table() -> <<"benefactor_marketing_reports">>.
+
+benefactor_marketing_reports_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"report_kind">>, <<"status">>, <<"period_start">>, <<"period_end">>, <<"metrics">>, <<"narrative">>, <<"delivery_targets">>, <<"generated_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_reports_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      report_kind,
+      status,
+      period_start,
+      period_end,
+      metrics::text as metrics_json,
+      narrative,
+      delivery_targets::text as delivery_targets_json,
+      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as generated_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_reports">>.
+
+benefactor_marketing_reports_report_kind_values() -> [<<"dashboard">>, <<"executive_summary">>, <<"attribution">>, <<"funnel">>, <<"roi">>, <<"seo_aeo">>, <<"client_portal">>].
+
+validate_benefactor_marketing_reports_report_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_reports_report_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_reports.report_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_reports_report_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_reports_report_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_reports_status_values() -> [<<"draft">>, <<"ready">>, <<"sent">>, <<"archived">>].
+
+validate_benefactor_marketing_reports_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_reports_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_reports.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_reports_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_reports_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_attribution_events_table() -> <<"benefactor_marketing_attribution_events">>.
+
+benefactor_marketing_attribution_events_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"lead_id">>, <<"event_type">>, <<"source_platform">>, <<"source_event_id">>, <<"occurred_at">>, <<"value_cents">>, <<"payload">>, <<"created_at">>].
+
+benefactor_marketing_attribution_events_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      event_type,
+      source_platform,
+      source_event_id,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as occurred_at,
+      value_cents,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from benefactor_marketing_attribution_events">>.
+
+benefactor_marketing_attribution_events_event_type_values() -> [<<"impression">>, <<"click">>, <<"form_submit">>, <<"email_open">>, <<"email_click">>, <<"meeting_booked">>, <<"opportunity_created">>, <<"deal_won">>, <<"revenue">>].
+
+validate_benefactor_marketing_attribution_events_event_type(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_attribution_events_event_type_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_attribution_events.event_type: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_attribution_events_event_type(Value) when is_list(Value) ->
+    validate_benefactor_marketing_attribution_events_event_type(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_opportunities_table() -> <<"benefactor_marketing_opportunities">>.
+
+benefactor_marketing_opportunities_columns() -> [<<"id">>, <<"client_id">>, <<"lead_id">>, <<"status">>, <<"stage">>, <<"name">>, <<"amount_cents">>, <<"probability_micros">>, <<"expected_close_on">>, <<"owner_user_id">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_opportunities_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      status,
+      stage,
+      name,
+      amount_cents,
+      probability_micros,
+      expected_close_on,
+      owner_user_id::text as owner_user_id,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_opportunities">>.
+
+benefactor_marketing_opportunities_status_values() -> [<<"open">>, <<"won">>, <<"lost">>, <<"paused">>].
+
+validate_benefactor_marketing_opportunities_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_opportunities_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_opportunities.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_opportunities_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_opportunities_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_opportunities_stage_values() -> [<<"prospecting">>, <<"qualified">>, <<"meeting">>, <<"proposal">>, <<"negotiation">>, <<"closed">>].
+
+validate_benefactor_marketing_opportunities_stage(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_opportunities_stage_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_opportunities.stage: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_opportunities_stage(Value) when is_list(Value) ->
+    validate_benefactor_marketing_opportunities_stage(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_content_assets_table() -> <<"benefactor_marketing_content_assets">>.
+
+benefactor_marketing_content_assets_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"status">>, <<"asset_kind">>, <<"title">>, <<"channel">>, <<"body">>, <<"asset_uri">>, <<"seo_keywords">>, <<"approval_status">>, <<"publish_at">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_content_assets_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      status,
+      asset_kind,
+      title,
+      channel,
+      body,
+      asset_uri,
+      seo_keywords::text as seo_keywords_json,
+      approval_status,
+      to_char(publish_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as publish_at,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_content_assets">>.
+
+benefactor_marketing_content_assets_status_values() -> [<<"draft">>, <<"in_review">>, <<"approved">>, <<"scheduled">>, <<"published">>, <<"archived">>].
+
+validate_benefactor_marketing_content_assets_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_content_assets_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_content_assets.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_content_assets_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_content_assets_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_content_assets_asset_kind_values() -> [<<"blog">>, <<"social_post">>, <<"email">>, <<"landing_page">>, <<"ad_creative">>, <<"video">>, <<"script">>, <<"proposal">>, <<"report">>].
+
+validate_benefactor_marketing_content_assets_asset_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_content_assets_asset_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_content_assets.asset_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_content_assets_asset_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_content_assets_asset_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_content_assets_approval_status_values() -> [<<"pending">>, <<"approved">>, <<"rejected">>, <<"changes_requested">>].
+
+validate_benefactor_marketing_content_assets_approval_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_content_assets_approval_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_content_assets.approval_status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_content_assets_approval_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_content_assets_approval_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_project_tasks_table() -> <<"benefactor_marketing_project_tasks">>.
+
+benefactor_marketing_project_tasks_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"content_asset_id">>, <<"status">>, <<"priority">>, <<"title">>, <<"description">>, <<"assigned_to">>, <<"due_on">>, <<"sla_due_at">>, <<"time_spent_minutes">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_project_tasks_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      status,
+      priority,
+      title,
+      description,
+      assigned_to::text as assigned_to,
+      due_on,
+      to_char(sla_due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sla_due_at,
+      time_spent_minutes,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_project_tasks">>.
+
+benefactor_marketing_project_tasks_status_values() -> [<<"todo">>, <<"in_progress">>, <<"blocked">>, <<"done">>, <<"canceled">>].
+
+validate_benefactor_marketing_project_tasks_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_project_tasks_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_project_tasks.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_project_tasks_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_project_tasks_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_project_tasks_priority_values() -> [<<"low">>, <<"normal">>, <<"high">>, <<"urgent">>].
+
+validate_benefactor_marketing_project_tasks_priority(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_project_tasks_priority_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_project_tasks.priority: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_project_tasks_priority(Value) when is_list(Value) ->
+    validate_benefactor_marketing_project_tasks_priority(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_client_approvals_table() -> <<"benefactor_marketing_client_approvals">>.
+
+benefactor_marketing_client_approvals_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"content_asset_id">>, <<"requested_by">>, <<"status">>, <<"approval_kind">>, <<"title">>, <<"request_payload">>, <<"response_note">>, <<"due_at">>, <<"decided_at">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_client_approvals_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      requested_by::text as requested_by,
+      status,
+      approval_kind,
+      title,
+      request_payload::text as request_payload_json,
+      response_note,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as due_at,
+      to_char(decided_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as decided_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_client_approvals">>.
+
+benefactor_marketing_client_approvals_status_values() -> [<<"pending">>, <<"approved">>, <<"rejected">>, <<"expired">>, <<"canceled">>].
+
+validate_benefactor_marketing_client_approvals_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_client_approvals_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_client_approvals.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_client_approvals_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_client_approvals_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_client_approvals_approval_kind_values() -> [<<"campaign_launch">>, <<"content_publish">>, <<"budget_change">>, <<"report_send">>, <<"lead_list">>].
+
+validate_benefactor_marketing_client_approvals_approval_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_client_approvals_approval_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_client_approvals.approval_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_client_approvals_approval_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_client_approvals_approval_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_tickets_table() -> <<"benefactor_marketing_tickets">>.
+
+benefactor_marketing_tickets_columns() -> [<<"id">>, <<"client_id">>, <<"status">>, <<"priority">>, <<"subject">>, <<"description">>, <<"source">>, <<"assigned_to">>, <<"last_activity_at">>, <<"meta_data">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_tickets_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      priority,
+      subject,
+      description,
+      source,
+      assigned_to::text as assigned_to,
+      to_char(last_activity_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_activity_at,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_tickets">>.
+
+benefactor_marketing_tickets_status_values() -> [<<"open">>, <<"pending_client">>, <<"pending_agency">>, <<"resolved">>, <<"closed">>].
+
+validate_benefactor_marketing_tickets_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_tickets_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_tickets.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_tickets_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_tickets_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_tickets_priority_values() -> [<<"low">>, <<"normal">>, <<"high">>, <<"urgent">>].
+
+validate_benefactor_marketing_tickets_priority(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_tickets_priority_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_tickets.priority: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_tickets_priority(Value) when is_list(Value) ->
+    validate_benefactor_marketing_tickets_priority(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_tickets_source_values() -> [<<"portal">>, <<"email">>, <<"internal">>].
+
+validate_benefactor_marketing_tickets_source(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_tickets_source_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_tickets.source: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_tickets_source(Value) when is_list(Value) ->
+    validate_benefactor_marketing_tickets_source(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_meetings_table() -> <<"benefactor_marketing_meetings">>.
+
+benefactor_marketing_meetings_columns() -> [<<"id">>, <<"client_id">>, <<"lead_id">>, <<"opportunity_id">>, <<"status">>, <<"meeting_kind">>, <<"title">>, <<"scheduled_at">>, <<"duration_minutes">>, <<"notes">>, <<"recording_uri">>, <<"transcript_summary">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_meetings_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      opportunity_id::text as opportunity_id,
+      status,
+      meeting_kind,
+      title,
+      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as scheduled_at,
+      duration_minutes,
+      notes,
+      recording_uri,
+      transcript_summary::text as transcript_summary_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_meetings">>.
+
+benefactor_marketing_meetings_status_values() -> [<<"scheduled">>, <<"completed">>, <<"canceled">>, <<"no_show">>].
+
+validate_benefactor_marketing_meetings_status(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_meetings_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_meetings.status: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_meetings_status(Value) when is_list(Value) ->
+    validate_benefactor_marketing_meetings_status(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_meetings_meeting_kind_values() -> [<<"onboarding">>, <<"report_review">>, <<"sales_discovery">>, <<"strategy">>, <<"content_review">>, <<"support">>].
+
+validate_benefactor_marketing_meetings_meeting_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_meetings_meeting_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_meetings.meeting_kind: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_meetings_meeting_kind(Value) when is_list(Value) ->
+    validate_benefactor_marketing_meetings_meeting_kind(unicode:characters_to_binary(Value)).
+
+benefactor_marketing_team_allocations_table() -> <<"benefactor_marketing_team_allocations">>.
+
+benefactor_marketing_team_allocations_columns() -> [<<"id">>, <<"client_id">>, <<"campaign_id">>, <<"user_id">>, <<"role">>, <<"allocation_percent">>, <<"starts_on">>, <<"ends_on">>, <<"billable">>, <<"created_at">>, <<"updated_at">>].
+
+benefactor_marketing_team_allocations_select_sql() -> <<"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      user_id::text as user_id,
+      role,
+      allocation_percent,
+      starts_on,
+      ends_on,
+      billable,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from benefactor_marketing_team_allocations">>.
+
+benefactor_marketing_team_allocations_role_values() -> [<<"strategist">>, <<"designer">>, <<"copywriter">>, <<"analyst">>, <<"sdr">>, <<"account_manager">>, <<"seo_specialist">>].
+
+validate_benefactor_marketing_team_allocations_role(Value) when is_binary(Value) ->
+    case lists:member(Value, benefactor_marketing_team_allocations_role_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported benefactor_marketing_team_allocations.role: "/binary, Value/binary>>}
+    end;
+validate_benefactor_marketing_team_allocations_role(Value) when is_list(Value) ->
+    validate_benefactor_marketing_team_allocations_role(unicode:characters_to_binary(Value)).
