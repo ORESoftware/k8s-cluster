@@ -3158,8 +3158,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /dd\.fabrication\.instruction-import-review\.v1/);
   assert.match(source, /dd\.fabrication\.instruction-import-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/instructions\/import\/review"/);
+  assert.match(source, /"generatedAtMs": generated_at_ms/);
   assert.match(source, /"importReleaseBlocked"/);
   assert.match(source, /"packageActions"/);
+  assert.match(source, /fn stored_instruction_import_review_job/);
+  assert.match(source, /fn store_instruction_import_review_response/);
+  assert.match(source, /"instruction-import-machine-release"/);
+  assert.match(source, /"instruction-import-learning-observations"/);
   assert.match(source, /instruction_import_review_endpoint_packages_submitted_streams_for_validation/);
   assert.match(
     source,
@@ -3605,10 +3610,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn instruction_import_review_response/);
   assert.match(source, /dd\.fabrication\.instruction-import-review\.v1/);
   assert.match(source, /"POST \/fabrication\/instructions\/import\/review"/);
+  assert.match(source, /"generatedAtMs": generated_at_ms/);
   assert.match(source, /"importReleaseBlocked"/);
   assert.match(source, /"retain-original-instruction-artifacts"/);
   assert.match(source, /"run-validation-and-boundary-review"/);
   assert.match(source, /dd\.fabrication\.instruction-import-learning-outcome-draft\.v1/);
+  assert.match(source, /fn instruction_import_review_job_severity/);
+  assert.match(source, /fn stored_instruction_import_review_job/);
+  assert.match(source, /fn store_instruction_import_review_response/);
+  assert.match(source, /"instruction-import-validation"/);
+  assert.match(source, /"instruction-import-package-actions"/);
   assert.match(
     source,
     /instruction_import_review_endpoint_packages_submitted_streams_for_validation/,
