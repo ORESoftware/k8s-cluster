@@ -4928,6 +4928,26 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"as-built-deviation-map"/);
   assert.match(source, /"hybrid-split-combine-as-built-interface-evidence"/);
   assert.match(source, /as_built_catalog_endpoint_exposes_deviation_scan_and_learning_contract/);
+  assert.match(source, /async fn as_built_plan_http/);
+  assert.match(source, /fn as_built_planning_response/);
+  assert.match(source, /dd\.fabrication\.as-built-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/as-built\/plan"/);
+  assert.match(source, /"asBuiltPlan"/);
+  assert.match(source, /fabrication\.as_built\.planned/);
+  assert.match(
+    source,
+    /as_built_planning_endpoint_returns_deviation_interface_and_release_contract/,
+  );
+  assert.match(source, /async fn as_built_plan_http/);
+  assert.match(source, /fn as_built_planning_response/);
+  assert.match(source, /dd\.fabrication\.as-built-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/as-built\/plan"/);
+  assert.match(source, /"asBuiltPlan"/);
+  assert.match(source, /fabrication\.as_built\.planned/);
+  assert.match(
+    source,
+    /as_built_planning_endpoint_returns_deviation_interface_and_release_contract/,
+  );
   assert.match(source, /struct AsBuiltResultReviewRequest/);
   assert.match(source, /struct AsBuiltResultMeasurementCheck/);
   assert.match(source, /struct AsBuiltResultDeviationMap/);
@@ -6933,6 +6953,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`as-built-deviation-map`/);
   assert.match(readme, /split\/combine as-built interface evidence/);
   assert.match(readme, /not certified metrology\s+acceptance/);
+  assert.match(readme, /`POST \/fabrication\/as-built\/plan`/);
+  assert.match(readme, /dd\.fabrication\.as-built-planning\.v1/);
+  assert.match(readme, /`asBuiltPlan` with\s+`asBuiltContracts`/);
+  assert.match(readme, /The endpoint keeps `machineReady=false`/);
+  assert.match(readme, /split or combine parts differently/);
+  assert.match(readme, /`POST \/fabrication\/as-built\/plan`/);
+  assert.match(readme, /dd\.fabrication\.as-built-planning\.v1/);
+  assert.match(readme, /`asBuiltPlan` with\s+`asBuiltContracts`/);
+  assert.match(readme, /The endpoint keeps `machineReady=false`/);
+  assert.match(readme, /Deviation-map, scan,\s+measurement, and interface-fit outcomes/);
   assert.match(readme, /`POST \/as-built\/result`/);
   assert.match(readme, /`POST \/fabrication\/as-built\/result`/);
   assert.match(readme, /dd\.fabrication\.as-built-result-review\.v1/);
@@ -9811,6 +9841,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/provenance\/plan"/);
   assert.match(docs, /"path": "\/as-built\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/as-built\/catalog"/);
+  assert.match(docs, /"path": "\/as-built\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/as-built\/plan"/);
+  assert.match(docs, /"path": "\/as-built\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/as-built\/plan"/);
   assert.match(docs, /"path": "\/as-built\/result"/);
   assert.match(docs, /"path": "\/fabrication\/as-built\/result"/);
   assert.match(docs, /"path": "\/setup\/plan"/);
@@ -10088,6 +10122,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/environment\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/environment\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/as-built\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/as-built\/plan"/);
+  assert.match(deployment, /"path": "\/fabrication\/as-built\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/as-built\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/provenance\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/provenance\/plan"/);
@@ -10462,6 +10498,10 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /provenance planning/);
   assert.match(grafanaDashboards, /\/fabrication\/as-built\/catalog/);
   assert.match(grafanaDashboards, /as-built catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/as-built\/plan/);
+  assert.match(grafanaDashboards, /as-built planning/);
+  assert.match(grafanaDashboards, /\/fabrication\/as-built\/plan/);
+  assert.match(grafanaDashboards, /as-built planning/);
   assert.match(grafanaDashboards, /\/fabrication\/as-built\/result/);
   assert.match(grafanaDashboards, /as-built result review/);
   assert.match(grafanaDashboards, /\/fabrication\/provenance\/result/);
@@ -10636,9 +10676,11 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/environment\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/environment\/result/);
   assert.match(runtimeReadme, /\/fabrication\/as-built\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/as-built\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/as-built\/result/);
   assert.match(runtimeReadme, /\/fabrication\/provenance\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/provenance\/plan/);
+  assert.match(runtimeReadme, /POST \/fabrication\/as-built\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/provenance\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/setup\/result/);
@@ -10828,6 +10870,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/dispositions\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/dispositions\/result/);
   assert.match(observabilityReadme, /\/fabrication\/as-built\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/as-built\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/as-built\/result/);
   assert.match(observabilityReadme, /\/fabrication\/costing\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/costing\/result/);
@@ -10876,6 +10919,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/environment\/result/);
   assert.match(observabilityReadme, /\/fabrication\/provenance\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/provenance\/plan/);
+  assert.match(observabilityReadme, /\/fabrication\/as-built\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/provenance\/result/);
   assert.match(observabilityReadme, /\/fabrication\/monitoring\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/postprocess\/catalog/);

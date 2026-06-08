@@ -287,6 +287,7 @@ spec:
                 '"path": "/fabrication/provenance/catalog"' \
                 '"path": "/fabrication/provenance/plan"' \
                 '"path": "/fabrication/as-built/catalog"' \
+                '"path": "/fabrication/as-built/plan"' \
                 '"path": "/fabrication/as-built/result"' \
                 '"path": "/fabrication/provenance/result"' \
                 '"path": "/fabrication/setup/plan"' \

@@ -199,7 +199,7 @@ Gateway path map:
   `/fabrication/environment/catalog`, `POST /fabrication/environment/plan`,
   `POST /fabrication/environment/result`,
   `/fabrication/provenance/catalog`, `POST /fabrication/provenance/plan`,
-  `/fabrication/as-built/catalog`,
+  `/fabrication/as-built/catalog`, `POST /fabrication/as-built/plan`,
   `POST /fabrication/as-built/result`, `POST /fabrication/provenance/result`,
   `POST /fabrication/setup/plan`,
   `POST /fabrication/setup/result`,

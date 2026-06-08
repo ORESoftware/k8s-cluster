@@ -278,7 +278,7 @@ Currently opted-in:
   `/fabrication/environment/catalog`, `/fabrication/environment/plan`,
   `/fabrication/environment/result`,
   `/fabrication/provenance/catalog`, `/fabrication/provenance/plan`,
-  `/fabrication/as-built/catalog`,
+  `/fabrication/as-built/catalog`, `/fabrication/as-built/plan`,
   `/fabrication/as-built/result`, `/fabrication/provenance/result`,
   `/fabrication/setup/plan`,
   `/fabrication/setup/result`,
