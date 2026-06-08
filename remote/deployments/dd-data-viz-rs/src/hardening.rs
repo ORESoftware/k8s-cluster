@@ -164,6 +164,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/etl.rs validates requested fields against dataset shapes, returns lineage and pushdown hints, and does not inspect raw row values.",
         },
         ControlDescriptor {
+            id: "bounded-workbook-grid",
+            status: "implemented",
+            description: "Sigma-style workbook grid pages are capped by projected fields, filters, sorts, formulas, offset, and returned rows, while formula columns are dependency-validated but not executed.",
+            evidence: "src/workbook_grid.rs pages row indexes over columnar datasets; /workbooks/grid/page requires DatasetRead and returns bounded virtual sheet pages.",
+        },
+        ControlDescriptor {
             id: "secret-ref-connections",
             status: "implemented",
             description: "Warehouse and BI connection definitions are capped, require secretRef for network and cloud engines, reject secret-looking inline settings, and expose only dry-run test plans.",

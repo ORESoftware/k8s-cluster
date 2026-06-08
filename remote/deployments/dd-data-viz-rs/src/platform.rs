@@ -204,9 +204,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "cell formula planning",
                 "live-query result grid contract",
                 "warehouse connection metadata for live-query planning",
+                "bounded virtual workbook grid paging over ingested datasets",
             ],
             next_engine_work: vec![
-                "columnar virtual sheet engine",
                 "warehouse-backed lazy paging and execution",
                 "collaborative workbook state",
             ],
