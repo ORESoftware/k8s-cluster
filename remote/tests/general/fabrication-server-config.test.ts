@@ -3889,11 +3889,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"release-readiness-manifest-artifacts"/);
   assert.match(source, /"release-readiness-blockers"/);
   assert.match(source, /"release-readiness-human-interventions"/);
+  assert.match(source, /fn release_readiness_priority_dispositions/);
+  assert.match(source, /"release-readiness-priority"/);
+  assert.match(source, /"release-readiness-priority-dispositions"/);
   assert.match(source, /"release-readiness-learning-observations"/);
   assert.match(source, /release-readiness-decision:/);
   assert.match(source, /release-readiness-blocker:/);
   assert.match(source, /release-readiness-intervention:/);
   assert.match(source, /release-readiness-artifact:/);
+  assert.match(source, /release-readiness-priority:final-decision-closure:blocked/);
   assert.match(
     source,
     /release_readiness_result_endpoint_reviews_final_gate_and_stores_artifacts/,
@@ -7391,11 +7395,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`release-readiness-manifest-artifacts`/);
   assert.match(readme, /`release-readiness-blockers`/);
   assert.match(readme, /`release-readiness-human-interventions`/);
+  assert.match(readme, /`release-readiness-priority-dispositions`/);
   assert.match(readme, /`release-readiness-learning-observations`/);
+  assert.match(readme, /`priorityDispositions`/);
   assert.match(readme, /`release-readiness-decision:\*`/);
   assert.match(readme, /`release-readiness-blocker:\*`/);
   assert.match(readme, /`release-readiness-intervention:\*`/);
   assert.match(readme, /`release-readiness-artifact:\*`/);
+  assert.match(readme, /`release-readiness-priority:\*`/);
   assert.match(readme, /`POST \/execution\/result`/);
   assert.match(readme, /`POST \/fabrication\/execution\/result`/);
   assert.match(readme, /dd\.fabrication\.execution-result-review\.v1/);
