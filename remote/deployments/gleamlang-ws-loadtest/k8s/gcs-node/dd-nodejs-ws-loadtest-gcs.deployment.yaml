@@ -50,6 +50,8 @@ spec:
               value: ws://gcs-router.default.svc.cluster.local:3001
             - name: LOAD_MODE
               value: "gcs"
+            - name: LOADTEST_CLIENT_NAME
+              value: nodejs-ws-loadtest
             - name: CLIENT_COUNT
               value: "2000"
             - name: GCS_CLIENTS_PER_CONV

@@ -11,6 +11,11 @@ const LOAD_MODE_GCS = "gcs";
 const DEFAULT_MESSAGE_ENCODINGS = Object.freeze(["json"]);
 const DEFAULT_LOADTEST_TRANSPORTS = "http,tcp,websocket";
 const SUPPORTED_MESSAGE_ENCODINGS = new Set(["json", "msgpack", "protobuf", "flatbuffers"]);
+const DEFAULT_CLIENT_NAME = "gleamlang-ws-loadtest";
+
+function loadClientName() {
+  return process.env.LOADTEST_CLIENT_NAME || DEFAULT_CLIENT_NAME;
+}
 
 function parsePositiveInt(name, fallback) {
   const raw = process.env[name];
@@ -80,6 +85,7 @@ export function run() {
   );
   const loadtestTransports = process.env.LOADTEST_TRANSPORTS || DEFAULT_LOADTEST_TRANSPORTS;
   const correlationTimeoutMs = parsePositiveInt("CORRELATION_TIMEOUT_MS", 10_000);
+  const clientName = loadClientName();
   // gcs-mode: clients per conversation (fan-out factor + conv-hash grouping)
   // and how many of them send (0/unset => all send).
   const gcsClientsPerConv = parsePositiveInt("GCS_CLIENTS_PER_CONV", 5);
@@ -94,7 +100,7 @@ export function run() {
   let failed = 0;
   let open = 0;
   let messages = 0;
-  // Pipeline-mode counters.
+  // Pipeline/GCS counters.
   let sent = 0;
   let received = 0;
   let receiveErrors = 0;
@@ -105,7 +111,7 @@ export function run() {
 
   console.log(
     [
-      "gleamlang-ws-loadtest starting",
+      `${clientName} starting`,
       `target_ws_url=${targetWsUrl}`,
       `client_count=${clientCount}`,
       `load_mode=${loadMode}`,
@@ -263,7 +269,7 @@ export function run() {
       convMembers[Math.floor(i / gcsClientsPerConv)].push(objectId());
     }
     console.log(
-      `gleamlang-ws-loadtest gcs-setup conversations=${convCount} ` +
+      `${clientName} gcs-setup conversations=${convCount} ` +
         `clients_per_conv=${gcsClientsPerConv} senders_per_conv=${gcsSendersPerConv}`,
     );
   }
@@ -339,20 +345,23 @@ export function run() {
   }
 
   setInterval(() => {
-    // pipeline and gcs both produce per-message latency samples; in gcs mode
-    // received/sent approximates conversation fan-out.
+    // Pipeline and GCS both produce per-message latency samples. In GCS mode,
+    // received counts frames while latency_samples counts parsed markers.
     if (loadMode === LOAD_MODE_PIPELINE || loadMode === LOAD_MODE_GCS) {
       const p = percentiles(latenciesUs);
+      const latencySamples = latenciesUs.length;
+      const reportedReceived = loadMode === LOAD_MODE_GCS ? messages : received;
       console.log(
-        `gleamlang-ws-loadtest ${loadMode}-report attempted=${attempted} connected=${connected} ` +
-          `failed=${failed} open=${open} sent=${sent} received=${received} ` +
+        `${clientName} ${loadMode}-report attempted=${attempted} connected=${connected} ` +
+          `failed=${failed} open=${open} messages=${messages} sent=${sent} received=${reportedReceived} ` +
+          `latency_samples=${latencySamples} ` +
           `in_flight_peak=${inFlightTotal} correlation_misses=${correlationMisses} ` +
           `receive_errors=${receiveErrors} p50_us=${p.p50} p95_us=${p.p95} p99_us=${p.p99} ` +
-          `max_us=${p.max} mean_us=${p.mean} sample=${latenciesUs.length}`,
+          `max_us=${p.max} mean_us=${p.mean} sample=${latencySamples}`,
       );
     } else {
       console.log(
-        `gleamlang-ws-loadtest report attempted=${attempted} connected=${connected} failed=${failed} open=${open} messages=${messages}`,
+        `${clientName} report attempted=${attempted} connected=${connected} failed=${failed} open=${open} messages=${messages}`,
       );
     }
   }, reportIntervalSeconds * 1000);
@@ -744,7 +753,7 @@ async function runContainerPoolSmoke() {
         requestId: echoKey,
         payload: {
           echoKey,
-          client: "gleamlang-ws-loadtest",
+          client: loadClientName(),
         },
       }),
     });
