@@ -54,8 +54,10 @@ concept in `main.rs`:
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
   target compilation.
-- `src/infra_diagrams.rs` owns Terraform, AWS inventory, and GCP inventory graph extraction plus
-  Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw outputs.
+- `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
+  Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus Mermaid, Graphviz, PlantUML,
+  D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
+  Markdown inventory outputs.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -95,7 +97,9 @@ Current first-class parity surfaces:
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
-- `POST /diagrams/infra` - authenticated Terraform/AWS/GCP infrastructure diagram generation.
+- `POST /diagrams/infra` - authenticated Terraform/AWS/GCP infrastructure diagram generation,
+  including Terraform plan JSON, AWS Resource Explorer, GCP Cloud Asset, and multi-renderer graph
+  export targets.
 - `GET /reports/evidence` - Evidence.dev-style Markdown plus SQL report blueprint.
 - `GET /security/policy` - hardening controls, limits, and residual-risk report.
 - `GET /security/rbac` - role and permission policy for protected routes.

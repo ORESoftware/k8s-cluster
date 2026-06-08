@@ -7,6 +7,7 @@ use crate::util::{clean_identifier, now_ms, xml_escape};
 
 const MAX_TERRAFORM_FILES: usize = 64;
 const MAX_TERRAFORM_BYTES: usize = 512 * 1024;
+const MAX_IMPORT_JSON_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INVENTORY_RESOURCES: usize = 2_000;
 const MAX_DIAGRAM_NODES: usize = 2_000;
 const MAX_DIAGRAM_EDGES: usize = 6_000;
@@ -25,14 +26,24 @@ pub(crate) enum InfraSource {
     Terraform {
         files: BTreeMap<String, String>,
     },
+    TerraformPlan {
+        plan: Value,
+    },
     AwsInventory {
         resources: Vec<InventoryResource>,
+    },
+    AwsResourceExplorer {
+        resources: Vec<Value>,
     },
     GcpInventory {
         resources: Vec<InventoryResource>,
     },
+    GcpCloudAsset {
+        assets: Vec<Value>,
+    },
     Mixed {
         terraform: Option<BTreeMap<String, String>>,
+        terraform_plan: Option<Value>,
         resources: Vec<InventoryResource>,
     },
 }
@@ -119,6 +130,11 @@ pub(crate) struct DiagramRenderers {
     cytoscape: Value,
     drawio_mxfile: String,
     excalidraw: Value,
+    vega_force: Value,
+    networkx_json: Value,
+    gexf: String,
+    markmap_markdown: String,
+    markdown_inventory: String,
     renderer_catalog: Vec<&'static str>,
 }
 
@@ -139,18 +155,31 @@ pub(crate) fn generate(request: InfraDiagramRequest) -> Result<InfraDiagramRespo
         InfraSource::Terraform { files } => {
             parse_terraform_files(files, &mut builder, &mut warnings)?
         }
+        InfraSource::TerraformPlan { plan } => {
+            parse_terraform_plan(plan, &mut builder, &mut warnings)?
+        }
         InfraSource::AwsInventory { resources } => {
             parse_inventory("aws", resources, &mut builder, &mut warnings)?
+        }
+        InfraSource::AwsResourceExplorer { resources } => {
+            parse_aws_resource_explorer(resources, &mut builder, &mut warnings)?
         }
         InfraSource::GcpInventory { resources } => {
             parse_inventory("gcp", resources, &mut builder, &mut warnings)?
         }
+        InfraSource::GcpCloudAsset { assets } => {
+            parse_gcp_cloud_assets(assets, &mut builder, &mut warnings)?
+        }
         InfraSource::Mixed {
             terraform,
+            terraform_plan,
             resources,
         } => {
             if let Some(files) = terraform {
                 parse_terraform_files(files, &mut builder, &mut warnings)?;
+            }
+            if let Some(plan) = terraform_plan {
+                parse_terraform_plan(plan, &mut builder, &mut warnings)?;
             }
             parse_inventory("mixed", resources, &mut builder, &mut warnings)?;
         }
@@ -177,8 +206,11 @@ impl InfraSource {
     fn kind_label(&self) -> &'static str {
         match self {
             Self::Terraform { .. } => "terraform",
+            Self::TerraformPlan { .. } => "terraform-plan",
             Self::AwsInventory { .. } => "aws-inventory",
+            Self::AwsResourceExplorer { .. } => "aws-resource-explorer",
             Self::GcpInventory { .. } => "gcp-inventory",
+            Self::GcpCloudAsset { .. } => "gcp-cloud-asset",
             Self::Mixed { .. } => "mixed",
         }
     }
@@ -350,6 +382,85 @@ fn terraform_resources(path: &str, content: &str, warnings: &mut Vec<String>) ->
     resources
 }
 
+fn parse_terraform_plan(
+    plan: Value,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    let estimated_bytes = plan.to_string().len();
+    if estimated_bytes > MAX_IMPORT_JSON_BYTES {
+        return Err(format!(
+            "terraform plan JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
+        ));
+    }
+    let Some(root_module) = plan
+        .pointer("/planned_values/root_module")
+        .or_else(|| plan.pointer("/values/root_module"))
+    else {
+        return Err("terraform plan source requires planned_values.root_module".to_string());
+    };
+    parse_terraform_plan_module(root_module, builder, warnings, "root");
+    Ok(())
+}
+
+fn parse_terraform_plan_module(
+    module: &Value,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+    module_path: &str,
+) {
+    if let Some(resources) = module.get("resources").and_then(Value::as_array) {
+        for resource in resources {
+            let Some(address) = value_string(resource, &["address"]) else {
+                warnings.push(format!(
+                    "ignored Terraform plan resource without address in {module_path}"
+                ));
+                continue;
+            };
+            let id = clean_identifier(&address).unwrap_or_else(|| {
+                safe_id(&address)
+                    .unwrap_or_else(|| format!("terraform-resource-{}", builder.nodes.len()))
+            });
+            let resource_type = value_string(resource, &["type"])
+                .and_then(|value| clean_identifier(&value))
+                .unwrap_or_else(|| "terraform_resource".to_string());
+            let label = value_string(resource, &["name"]).unwrap_or_else(|| id.clone());
+            let tag_count = resource
+                .get("values")
+                .and_then(|values| values.get("tags"))
+                .and_then(Value::as_object)
+                .map(serde_json::Map::len)
+                .unwrap_or(0);
+            builder.add_node(InfraNode {
+                id: id.clone(),
+                label,
+                provider: provider_for_terraform_type(&resource_type).to_string(),
+                service: service_for_type(&resource_type).to_string(),
+                resource_type,
+                region: value_string(resource, &["values", "region"]),
+                zone: value_string(resource, &["values", "zone"]),
+                tag_count,
+                source: format!("terraform-plan:{module_path}"),
+            });
+            for dependency in string_array(resource.get("depends_on")) {
+                if let Some(dependency) =
+                    clean_identifier(&dependency).or_else(|| safe_id(&dependency))
+                {
+                    builder.add_edge(dependency, id.clone(), "terraform-depends-on");
+                }
+            }
+        }
+    }
+
+    if let Some(child_modules) = module.get("child_modules").and_then(Value::as_array) {
+        for child in child_modules {
+            let child_path =
+                value_string(child, &["address"]).unwrap_or_else(|| module_path.to_string());
+            parse_terraform_plan_module(child, builder, warnings, &child_path);
+        }
+    }
+}
+
 fn parse_inventory(
     default_provider: &str,
     resources: Vec<InventoryResource>,
@@ -408,6 +519,148 @@ fn parse_inventory(
                 builder.add_edge(reference, id.clone(), "references");
             } else {
                 warnings.push(format!("ignored invalid inventory reference `{reference}`"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_aws_resource_explorer(
+    resources: Vec<Value>,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if resources.is_empty() {
+        return Err("AWS Resource Explorer source requires at least one resource".to_string());
+    }
+    if resources.len() > MAX_INVENTORY_RESOURCES {
+        return Err(format!(
+            "AWS Resource Explorer resources exceeds max {MAX_INVENTORY_RESOURCES}"
+        ));
+    }
+    let estimated_bytes = Value::Array(resources.clone()).to_string().len();
+    if estimated_bytes > MAX_IMPORT_JSON_BYTES {
+        return Err(format!(
+            "AWS Resource Explorer JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
+        ));
+    }
+
+    for resource in resources {
+        let raw_id = value_string_any(&resource, &["Arn", "arn", "ResourceArn", "id", "Id"])
+            .unwrap_or_else(|| format!("aws-resource-{}", builder.nodes.len()));
+        let id = clean_identifier(&raw_id).unwrap_or_else(|| {
+            safe_id(&raw_id).unwrap_or_else(|| format!("aws-resource-{}", builder.nodes.len()))
+        });
+        let resource_type = value_string_any(
+            &resource,
+            &["ResourceType", "resourceType", "Type", "type", "Service"],
+        )
+        .and_then(|value| safe_id(&value))
+        .unwrap_or_else(|| aws_type_from_arn(&raw_id));
+        let label = value_string_any(&resource, &["Name", "name", "DisplayName", "displayName"])
+            .or_else(|| name_tag(&resource))
+            .unwrap_or_else(|| arn_tail(&raw_id));
+        let service = value_string_any(&resource, &["Service", "service"])
+            .and_then(|value| safe_id(&value))
+            .unwrap_or_else(|| aws_service_from_type(&resource_type));
+        let tag_count = tag_count(&resource);
+        builder.add_node(InfraNode {
+            id: id.clone(),
+            label,
+            provider: "aws".to_string(),
+            service,
+            resource_type,
+            region: value_string_any(&resource, &["Region", "region", "AwsRegion", "awsRegion"]),
+            zone: value_string_any(
+                &resource,
+                &["AvailabilityZone", "availabilityZone", "Zone", "zone"],
+            ),
+            tag_count,
+            source: "aws-resource-explorer".to_string(),
+        });
+        for reference in relationship_targets(&resource) {
+            if let Some(reference) = clean_identifier(&reference).or_else(|| safe_id(&reference)) {
+                builder.add_edge(reference, id.clone(), "aws-relationship");
+            } else {
+                warnings.push(format!(
+                    "ignored invalid AWS relationship target `{reference}`"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_gcp_cloud_assets(
+    assets: Vec<Value>,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if assets.is_empty() {
+        return Err("GCP Cloud Asset source requires at least one asset".to_string());
+    }
+    if assets.len() > MAX_INVENTORY_RESOURCES {
+        return Err(format!(
+            "GCP Cloud Asset resources exceeds max {MAX_INVENTORY_RESOURCES}"
+        ));
+    }
+    let estimated_bytes = Value::Array(assets.clone()).to_string().len();
+    if estimated_bytes > MAX_IMPORT_JSON_BYTES {
+        return Err(format!(
+            "GCP Cloud Asset JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
+        ));
+    }
+
+    for asset in assets {
+        let raw_name = value_string_any(&asset, &["name", "Name"])
+            .unwrap_or_else(|| format!("gcp-asset-{}", builder.nodes.len()));
+        let id = clean_identifier(&raw_name).unwrap_or_else(|| {
+            safe_id(&raw_name).unwrap_or_else(|| format!("gcp-asset-{}", builder.nodes.len()))
+        });
+        let asset_type = value_string_any(&asset, &["assetType", "AssetType", "type"])
+            .unwrap_or_else(|| "gcp.resource".to_string());
+        let resource_type = safe_id(&asset_type).unwrap_or_else(|| "gcp-resource".to_string());
+        let service = gcp_service_from_asset_type(&asset_type);
+        let label = value_string_any(&asset, &["displayName", "name"])
+            .map(|value| gcp_label(&value))
+            .unwrap_or_else(|| gcp_label(&raw_name));
+        let tag_count = asset
+            .pointer("/resource/data/labels")
+            .and_then(Value::as_object)
+            .map(serde_json::Map::len)
+            .unwrap_or(0);
+        builder.add_node(InfraNode {
+            id: id.clone(),
+            label,
+            provider: "gcp".to_string(),
+            service,
+            resource_type,
+            region: value_string_path(&asset, "/resource/location")
+                .or_else(|| value_string_path(&asset, "/resource/data/region")),
+            zone: value_string_path(&asset, "/resource/data/zone"),
+            tag_count,
+            source: "gcp-cloud-asset".to_string(),
+        });
+        for ancestor in string_array(asset.get("ancestors")).into_iter().take(1) {
+            let ancestor_id = safe_id(&ancestor).unwrap_or_else(|| gcp_label(&ancestor));
+            builder.add_node(InfraNode {
+                id: ancestor_id.clone(),
+                label: gcp_label(&ancestor),
+                provider: "gcp".to_string(),
+                service: "resource-manager".to_string(),
+                resource_type: "ancestor".to_string(),
+                region: None,
+                zone: None,
+                tag_count: 0,
+                source: "gcp-cloud-asset-ancestor".to_string(),
+            });
+            builder.add_edge(ancestor_id, id.clone(), "gcp-ancestor");
+        }
+        for reference in gcp_references(&asset) {
+            if let Some(reference) = clean_identifier(&reference).or_else(|| safe_id(&reference)) {
+                builder.add_edge(reference, id.clone(), "gcp-reference");
+            } else {
+                warnings.push(format!("ignored invalid GCP reference `{reference}`"));
             }
         }
     }
@@ -496,6 +749,11 @@ fn renderers(title: &str, graph: &InfraGraph) -> DiagramRenderers {
         cytoscape: cytoscape(graph),
         drawio_mxfile: drawio_mxfile(title, graph),
         excalidraw: excalidraw(graph),
+        vega_force: vega_force(graph),
+        networkx_json: networkx_json(title, graph),
+        gexf: gexf(title, graph),
+        markmap_markdown: markmap_markdown(title, graph),
+        markdown_inventory: markdown_inventory(title, graph),
         renderer_catalog: vec![
             "mermaid",
             "graphviz-dot",
@@ -505,6 +763,11 @@ fn renderers(title: &str, graph: &InfraGraph) -> DiagramRenderers {
             "cytoscape-json",
             "drawio-mxfile",
             "excalidraw-json",
+            "vega-force-json",
+            "networkx-json",
+            "gexf",
+            "markmap-markdown",
+            "markdown-inventory",
         ],
     }
 }
@@ -718,6 +981,504 @@ fn excalidraw(graph: &InfraGraph) -> Value {
     })
 }
 
+fn vega_force(graph: &InfraGraph) -> Value {
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "label": node.label,
+                "provider": node.provider,
+                "service": node.service,
+                "resourceType": node.resource_type,
+                "region": node.region,
+                "zone": node.zone,
+                "tagCount": node.tag_count
+            })
+        })
+        .collect::<Vec<_>>();
+    let links = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "source": edge.from,
+                "target": edge.to,
+                "relation": edge.relation
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "$schema": "https://vega.github.io/schema/vega/v5.json",
+        "description": "Force-directed infrastructure dependency graph.",
+        "width": 960,
+        "height": 640,
+        "padding": 8,
+        "autosize": "fit",
+        "data": [
+            { "name": "node-data", "values": nodes },
+            { "name": "link-data", "values": links }
+        ],
+        "signals": [
+            { "name": "cx", "update": "width / 2" },
+            { "name": "cy", "update": "height / 2" },
+            { "name": "nodeRadius", "value": 8 },
+            { "name": "nodeCharge", "value": -45 },
+            { "name": "linkDistance", "value": 45 }
+        ],
+        "scales": [
+            {
+                "name": "providerColor",
+                "type": "ordinal",
+                "domain": { "data": "node-data", "field": "provider" },
+                "range": "category"
+            }
+        ],
+        "marks": [
+            {
+                "name": "nodes",
+                "type": "symbol",
+                "from": { "data": "node-data" },
+                "encode": {
+                    "enter": {
+                        "fill": { "scale": "providerColor", "field": "provider" },
+                        "size": { "value": 160 },
+                        "tooltip": {
+                            "signal": "datum.label + ' (' + datum.resourceType + ')'"
+                        }
+                    }
+                },
+                "transform": [
+                    {
+                        "type": "force",
+                        "iterations": 180,
+                        "static": false,
+                        "forces": [
+                            { "force": "center", "x": { "signal": "cx" }, "y": { "signal": "cy" } },
+                            { "force": "collide", "radius": { "signal": "nodeRadius" } },
+                            { "force": "nbody", "strength": { "signal": "nodeCharge" } },
+                            { "force": "link", "links": "link-data", "distance": { "signal": "linkDistance" }, "id": "id" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "path",
+                "from": { "data": "link-data" },
+                "interactive": false,
+                "encode": {
+                    "update": {
+                        "stroke": { "value": "#777" },
+                        "strokeOpacity": { "value": 0.55 }
+                    }
+                },
+                "transform": [
+                    {
+                        "type": "linkpath",
+                        "shape": "line",
+                        "sourceX": "datum.source.x",
+                        "sourceY": "datum.source.y",
+                        "targetX": "datum.target.x",
+                        "targetY": "datum.target.y"
+                    }
+                ]
+            }
+        ]
+    })
+}
+
+fn networkx_json(title: &str, graph: &InfraGraph) -> Value {
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "label": node.label,
+                "provider": node.provider,
+                "service": node.service,
+                "resourceType": node.resource_type,
+                "region": node.region,
+                "zone": node.zone,
+                "tagCount": node.tag_count,
+                "source": node.source
+            })
+        })
+        .collect::<Vec<_>>();
+    let links = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "source": edge.from,
+                "target": edge.to,
+                "relation": edge.relation
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "directed": true,
+        "multigraph": false,
+        "graph": { "name": title },
+        "nodes": nodes,
+        "links": links
+    })
+}
+
+fn gexf(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><gexf xmlns="http://www.gexf.net/1.3" version="1.3"><meta><creator>dd-data-viz-rs</creator><description>{}</description></meta><graph mode="static" defaultedgetype="directed"><attributes class="node"><attribute id="provider" title="provider" type="string"/><attribute id="service" title="service" type="string"/><attribute id="resourceType" title="resourceType" type="string"/><attribute id="tagCount" title="tagCount" type="integer"/></attributes><nodes>"#,
+        xml_escape(title)
+    );
+    for node in &graph.nodes {
+        output.push_str(&format!(
+            r#"<node id="{}" label="{}"><attvalues><attvalue for="provider" value="{}"/><attvalue for="service" value="{}"/><attvalue for="resourceType" value="{}"/><attvalue for="tagCount" value="{}"/></attvalues></node>"#,
+            xml_escape(&node.id),
+            xml_escape(&node.label),
+            xml_escape(&node.provider),
+            xml_escape(&node.service),
+            xml_escape(&node.resource_type),
+            node.tag_count
+        ));
+    }
+    output.push_str("</nodes><edges>");
+    for (index, edge) in graph.edges.iter().enumerate() {
+        output.push_str(&format!(
+            r#"<edge id="edge-{}" source="{}" target="{}" label="{}"/>"#,
+            index,
+            xml_escape(&edge.from),
+            xml_escape(&edge.to),
+            xml_escape(&edge.relation)
+        ));
+    }
+    output.push_str("</edges></graph></gexf>");
+    output
+}
+
+fn markmap_markdown(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!("# {}\n", markdown_cell(title));
+    let mut by_group = BTreeMap::<(&str, &str), Vec<&InfraNode>>::new();
+    for node in &graph.nodes {
+        by_group
+            .entry((&node.provider, &node.service))
+            .or_default()
+            .push(node);
+    }
+    for ((provider, service), nodes) in by_group {
+        output.push_str(&format!(
+            "## {} / {}\n",
+            markdown_cell(provider),
+            markdown_cell(service)
+        ));
+        for node in nodes {
+            output.push_str(&format!(
+                "- {} `{}`\n  - type: `{}`\n  - source: `{}`\n",
+                markdown_cell(&node.label),
+                node.id,
+                node.resource_type,
+                node.source
+            ));
+        }
+    }
+    if !graph.edges.is_empty() {
+        output.push_str("## Relationships\n");
+        for edge in &graph.edges {
+            output.push_str(&format!(
+                "- `{}` -> `{}`: {}\n",
+                edge.from,
+                edge.to,
+                markdown_cell(&edge.relation)
+            ));
+        }
+    }
+    output
+}
+
+fn markdown_inventory(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!("# {}\n\n", markdown_cell(title));
+    output.push_str("| ID | Label | Provider | Service | Type | Region | Zone | Tags | Source |\n");
+    output.push_str("| --- | --- | --- | --- | --- | --- | --- | ---: | --- |\n");
+    for node in &graph.nodes {
+        output.push_str(&format!(
+            "| `{}` | {} | {} | {} | `{}` | {} | {} | {} | `{}` |\n",
+            markdown_cell(&node.id),
+            markdown_cell(&node.label),
+            markdown_cell(&node.provider),
+            markdown_cell(&node.service),
+            markdown_cell(&node.resource_type),
+            markdown_cell(node.region.as_deref().unwrap_or("")),
+            markdown_cell(node.zone.as_deref().unwrap_or("")),
+            node.tag_count,
+            markdown_cell(&node.source)
+        ));
+    }
+    if !graph.edges.is_empty() {
+        output.push_str("\n| From | To | Relation |\n");
+        output.push_str("| --- | --- | --- |\n");
+        for edge in &graph.edges {
+            output.push_str(&format!(
+                "| `{}` | `{}` | {} |\n",
+                markdown_cell(&edge.from),
+                markdown_cell(&edge.to),
+                markdown_cell(&edge.relation)
+            ));
+        }
+    }
+    output
+}
+
+fn value_string(value: &Value, path: &[&str]) -> Option<String> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    scalar_string(current)
+}
+
+fn value_string_any(value: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(scalar_string))
+}
+
+fn value_string_path(value: &Value, pointer: &str) -> Option<String> {
+    value.pointer(pointer).and_then(scalar_string)
+}
+
+fn scalar_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::Array(values)) => values.iter().filter_map(scalar_string).collect(),
+        Some(value) => scalar_string(value).into_iter().collect(),
+        None => Vec::new(),
+    }
+}
+
+fn aws_type_from_arn(arn: &str) -> String {
+    let service = arn.split(':').nth(2).unwrap_or("resource");
+    let resource = arn.split(':').skip(5).collect::<Vec<_>>().join(":");
+    let resource_type = resource
+        .split(['/', ':'])
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("resource");
+    safe_id(&format!("{service}:{resource_type}")).unwrap_or_else(|| "aws_resource".to_string())
+}
+
+fn aws_service_from_type(resource_type: &str) -> String {
+    if resource_type.contains(':') {
+        if let Some(service) = resource_type
+            .split(':')
+            .next()
+            .filter(|value| !value.is_empty())
+        {
+            return safe_id(service).unwrap_or_else(|| "aws".to_string());
+        }
+    }
+    service_for_type(resource_type).to_string()
+}
+
+fn arn_tail(arn: &str) -> String {
+    arn.rsplit(['/', ':'])
+        .find(|part| !part.trim().is_empty())
+        .map(|part| part.trim().to_string())
+        .unwrap_or_else(|| arn.to_string())
+}
+
+fn name_tag(value: &Value) -> Option<String> {
+    tag_value_by_key(value.get("Tags").or_else(|| value.get("tags")), "Name").or_else(|| {
+        tags_from_properties(value).and_then(|tags| tag_value_by_key(Some(tags), "Name"))
+    })
+}
+
+fn tag_count(value: &Value) -> usize {
+    value
+        .get("Tags")
+        .or_else(|| value.get("tags"))
+        .map(tag_count_value)
+        .filter(|count| *count > 0)
+        .or_else(|| tags_from_properties(value).map(tag_count_value))
+        .unwrap_or(0)
+}
+
+fn tags_from_properties(value: &Value) -> Option<&Value> {
+    value
+        .get("Properties")
+        .or_else(|| value.get("properties"))
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|property| {
+            value_string_any(property, &["Name", "name"])
+                .map(|name| name.eq_ignore_ascii_case("tags"))
+                .unwrap_or(false)
+        })
+        .and_then(|property| property.get("Data").or_else(|| property.get("data")))
+}
+
+fn tag_count_value(value: &Value) -> usize {
+    match value {
+        Value::Object(tags) => tags.len(),
+        Value::Array(tags) => tags.len(),
+        _ => 0,
+    }
+}
+
+fn tag_value_by_key(value: Option<&Value>, key: &str) -> Option<String> {
+    match value? {
+        Value::Object(tags) => tags.get(key).and_then(scalar_string),
+        Value::Array(tags) => tags.iter().find_map(|tag| {
+            let tag_key = value_string_any(tag, &["Key", "key"]);
+            if tag_key
+                .as_deref()
+                .map(|candidate| candidate.eq_ignore_ascii_case(key))
+                .unwrap_or(false)
+            {
+                value_string_any(tag, &["Value", "value"])
+            } else {
+                None
+            }
+        }),
+        _ => None,
+    }
+}
+
+fn relationship_targets(value: &Value) -> Vec<String> {
+    let mut targets = BTreeSet::new();
+    for key in [
+        "References",
+        "references",
+        "Relationships",
+        "relationships",
+        "RelatedResources",
+        "relatedResources",
+        "ParentArn",
+        "parentArn",
+    ] {
+        collect_reference_values(value.get(key), &mut targets);
+    }
+    targets.into_iter().collect()
+}
+
+fn collect_reference_values(value: Option<&Value>, targets: &mut BTreeSet<String>) {
+    match value {
+        Some(Value::String(value)) => {
+            targets.insert(value.clone());
+        }
+        Some(Value::Array(values)) => {
+            for value in values {
+                collect_reference_values(Some(value), targets);
+            }
+        }
+        Some(Value::Object(_)) => {
+            for key in [
+                "Arn",
+                "arn",
+                "ResourceArn",
+                "resourceArn",
+                "TargetArn",
+                "targetArn",
+                "Id",
+                "id",
+                "ResourceId",
+                "resourceId",
+            ] {
+                if let Some(value) = value
+                    .and_then(|value| value.get(key))
+                    .and_then(scalar_string)
+                {
+                    targets.insert(value);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn gcp_service_from_asset_type(asset_type: &str) -> String {
+    asset_type
+        .split('/')
+        .next()
+        .unwrap_or(asset_type)
+        .trim_end_matches(".googleapis.com")
+        .split('.')
+        .next()
+        .and_then(safe_id)
+        .unwrap_or_else(|| "gcp".to_string())
+}
+
+fn gcp_label(value: &str) -> String {
+    value
+        .rsplit(['/', ':'])
+        .find(|part| !part.trim().is_empty())
+        .map(|part| part.trim().to_string())
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn gcp_references(value: &Value) -> Vec<String> {
+    let mut references = BTreeSet::new();
+    collect_named_strings(
+        value
+            .get("resource")
+            .and_then(|resource| resource.get("data")),
+        &[
+            "network",
+            "subnetwork",
+            "subnet",
+            "kmsKeyName",
+            "serviceAccount",
+            "target",
+            "backendService",
+            "instance",
+        ],
+        &mut references,
+    );
+    references.into_iter().collect()
+}
+
+fn collect_named_strings(value: Option<&Value>, keys: &[&str], output: &mut BTreeSet<String>) {
+    match value {
+        Some(Value::Object(map)) => {
+            for (key, value) in map {
+                if keys.iter().any(|candidate| key == candidate) {
+                    if let Some(value) = scalar_string(value) {
+                        output.insert(value);
+                    }
+                }
+                collect_named_strings(Some(value), keys, output);
+            }
+        }
+        Some(Value::Array(values)) => {
+            for value in values {
+                collect_named_strings(Some(value), keys, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn markdown_cell(value: &str) -> String {
+    value
+        .replace('|', "\\|")
+        .replace('\n', " ")
+        .trim()
+        .to_string()
+}
+
 fn provider_for_terraform_type(resource_type: &str) -> &'static str {
     if resource_type.starts_with("aws_") {
         "aws"
@@ -750,7 +1511,7 @@ fn mermaid_id(id: &str) -> String {
 }
 
 fn safe_id(input: &str) -> Option<String> {
-    let cleaned = input
+    let mut cleaned = input
         .chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':') {
@@ -760,6 +1521,13 @@ fn safe_id(input: &str) -> Option<String> {
             }
         })
         .collect::<String>();
+    cleaned = cleaned.trim_matches('-').to_string();
+    if cleaned.len() > 128 {
+        let checksum = input.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+            hash.wrapping_mul(0x100000001b3) ^ u64::from(byte)
+        });
+        cleaned = format!("{}-{checksum:016x}", &cleaned[..111]);
+    }
     clean_identifier(&cleaned)
 }
 
@@ -814,6 +1582,81 @@ mod tests {
     }
 
     #[test]
+    fn terraform_plan_diagram_uses_depends_on() {
+        let response = generate(InfraDiagramRequest {
+            title: Some("Plan Network".to_string()),
+            source: InfraSource::TerraformPlan {
+                plan: serde_json::json!({
+                    "planned_values": {
+                        "root_module": {
+                            "resources": [
+                                {
+                                    "address": "aws_vpc.main",
+                                    "type": "aws_vpc",
+                                    "name": "main",
+                                    "values": {
+                                        "tags": { "Name": "main" }
+                                    }
+                                },
+                                {
+                                    "address": "aws_subnet.public",
+                                    "type": "aws_subnet",
+                                    "name": "public",
+                                    "depends_on": ["aws_vpc.main"],
+                                    "values": {
+                                        "region": "us-east-1"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }),
+            },
+            max_nodes: None,
+        })
+        .expect("terraform plan diagram");
+
+        assert_eq!(response.node_count, 2);
+        assert!(response.graph.edges.iter().any(|edge| {
+            edge.from == "aws_vpc.main"
+                && edge.to == "aws_subnet.public"
+                && edge.relation == "terraform-depends-on"
+        }));
+        assert!(response.renderers.renderer_catalog.contains(&"gexf"));
+        assert_eq!(
+            response.renderers.vega_force["data"][0]["name"],
+            "node-data"
+        );
+    }
+
+    #[test]
+    fn aws_resource_explorer_diagram_extracts_arn_nodes() {
+        let response = generate(InfraDiagramRequest {
+            title: Some("AWS Inventory".to_string()),
+            source: InfraSource::AwsResourceExplorer {
+                resources: vec![serde_json::json!({
+                    "Arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-123",
+                    "ResourceType": "ec2:vpc",
+                    "Service": "ec2",
+                    "Region": "us-east-1",
+                    "Tags": [
+                        { "Key": "Name", "Value": "Core VPC" },
+                        { "Key": "env", "Value": "dev" }
+                    ]
+                })],
+            },
+            max_nodes: None,
+        })
+        .expect("aws resource explorer diagram");
+
+        assert_eq!(response.node_count, 1);
+        assert_eq!(response.graph.nodes[0].provider, "aws");
+        assert_eq!(response.graph.nodes[0].service, "ec2");
+        assert_eq!(response.graph.nodes[0].tag_count, 2);
+        assert!(response.renderers.markdown_inventory.contains("Core VPC"));
+    }
+
+    #[test]
     fn gcp_inventory_diagram_uses_parent_and_references() {
         let response = generate(InfraDiagramRequest {
             title: None,
@@ -853,5 +1696,42 @@ mod tests {
         assert_eq!(response.edge_count, 1);
         assert_eq!(response.graph.groups[0].provider, "gcp");
         assert!(response.renderers.drawio_mxfile.contains("<mxfile>"));
+    }
+
+    #[test]
+    fn gcp_cloud_asset_diagram_extracts_assets() {
+        let response = generate(InfraDiagramRequest {
+            title: Some("GCP Assets".to_string()),
+            source: InfraSource::GcpCloudAsset {
+                assets: vec![serde_json::json!({
+                    "name": "//compute.googleapis.com/projects/demo/global/networks/default",
+                    "assetType": "compute.googleapis.com/Network",
+                    "resource": {
+                        "location": "global",
+                        "data": {
+                            "labels": {
+                                "env": "dev"
+                            }
+                        }
+                    },
+                    "ancestors": ["projects/123456789"]
+                })],
+            },
+            max_nodes: None,
+        })
+        .expect("gcp cloud asset diagram");
+
+        assert_eq!(response.node_count, 2);
+        assert!(response.graph.nodes.iter().any(|node| {
+            node.provider == "gcp" && node.service == "compute" && node.label == "default"
+        }));
+        assert!(response
+            .graph
+            .edges
+            .iter()
+            .any(|edge| edge.relation == "gcp-ancestor"));
+        assert!(response.renderers.networkx_json["directed"]
+            .as_bool()
+            .unwrap());
     }
 }

@@ -38,9 +38,10 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
-- Terraform, AWS inventory, and GCP inventory inputs can generate neutral infrastructure graphs and
-  Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw renderer targets
-  through `POST /diagrams/infra`.
+- Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP
+  Cloud Asset inputs can generate neutral infrastructure graphs and Mermaid, Graphviz, PlantUML,
+  D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
+  Markdown inventory renderer targets through `POST /diagrams/infra`.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -62,8 +63,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   database connection registries beyond the current in-memory dashboard catalog and role policy.
 - Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel
   streams.
-- D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages
-  and rendered artifact verification.
+- D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
+  rendered artifact verification, and richer cloud-native relationship extraction beyond topology
+  hints.
 
 ## Hardening gaps
 

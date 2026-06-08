@@ -704,8 +704,8 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
         "infraDiagram": {
-            "sources": ["terraform", "aws-inventory", "gcp-inventory", "mixed"],
-            "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json"],
+            "sources": ["terraform", "terraform-plan", "aws-inventory", "aws-resource-explorer", "gcp-inventory", "gcp-cloud-asset", "mixed"],
+            "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json", "vega-force-json", "networkx-json", "gexf", "markmap-markdown", "markdown-inventory"],
             "posture": "topology only; input attributes are parsed for references and not echoed as secrets"
         },
         "semanticModel": {
@@ -3334,7 +3334,7 @@ fn route_docs() -> Vec<RouteDoc> {
             method: "POST",
             path: "/diagrams/infra",
             auth: "infra-diagram-generate",
-            description: "Generate Terraform, AWS, and GCP infrastructure diagrams for Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw.",
+            description: "Generate Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP Cloud Asset infrastructure diagrams across Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and Markdown inventory targets.",
         },
         RouteDoc {
             method: "GET",

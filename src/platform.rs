@@ -273,7 +273,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "D3 renderer contract",
                 "final-layer JSON",
                 "evolution-generated encodings",
-                "Terraform/AWS/GCP infrastructure diagram render targets",
+                "Terraform/HCL, Terraform plan, AWS, and GCP infrastructure diagram render targets",
             ],
             next_engine_work: vec![
                 "generated TypeScript renderer package",
@@ -538,8 +538,13 @@ pub fn renderer_contracts() -> Vec<RendererContract> {
         RendererContract {
             id: "infra-diagrams",
             analog: "Terraform graph / cloud architecture diagrams",
-            output: "Mermaid, Graphviz DOT, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw blueprints",
-            supports: vec!["Terraform resource graphs", "AWS inventory", "GCP inventory"],
+            output: "Mermaid, Graphviz DOT, PlantUML, D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and Markdown inventory blueprints",
+            supports: vec![
+                "Terraform HCL resource graphs",
+                "Terraform plan JSON",
+                "AWS inventory and Resource Explorer",
+                "GCP inventory and Cloud Asset",
+            ],
         },
     ]
 }
