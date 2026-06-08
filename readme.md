@@ -5461,17 +5461,30 @@ interpretations are visibly advisory until the release packet proves each gate.
 It also calls out `priorityDispositions`, the result-review lanes that mark
 blocked, needs-review, closed, pending-blocker-resolution, and ready-for-learning
 states before any machine-ready release.
+The page includes a "Start Here" workflow that turns the overview into a first
+integration path: discover capabilities, machines, materials, and request
+templates; import or generate design and machine-code evidence; validate,
+remediate, and improve instructions; decide whether to decompose, assemble, or
+release; then submit retained outcomes to the DES/MDP/POMDP learning surfaces.
 
 ## `GET /fabrication/how-it-works`
 
 `GET /how-it-works` and the gateway-prefixed `GET /fabrication/how-it-works`
 return the machine-readable companion to the landing page. The
-`dd.fabrication.how-it-works.v1` payload gives clients a six-step
-intake-to-release flow for discovery, intake, generation, validation, release,
-and learning. Each step names the primary routes and the release gate that keeps
-draft design packages, generated machine code, printer instructions, imported
-CNC/controller streams, text job sheets, split/combine routes, and release
-previews from becoming machine-ready without retained evidence. The overview
+`dd.fabrication.how-it-works.v1` payload gives clients a `startHereWorkflow`
+for the first integration path plus a six-step intake-to-release flow for
+discovery, intake, generation, validation, release, and learning. Starter steps
+cover discovery, import-or-generate work, validation and improvement,
+split/combine release review, and learning-from-results, with primary routes
+such as `GET /fabrication/materials/catalog`,
+`GET /fabrication/design/import/catalog`,
+`GET /fabrication/instructions/validation/catalog`,
+`GET /fabrication/artifacts/catalog`, and
+`GET /fabrication/learning/engines/catalog`. Each flow step names the primary
+routes and the release gate that keeps draft design packages, generated machine
+code, printer instructions, imported CNC/controller streams, text job sheets,
+split/combine routes, and release previews from becoming machine-ready without
+retained evidence. The overview
 also lists supported machine families such as 3D printers, vertical mills,
 horizontal mills, routers, five-axis systems, mill-turn and Swiss machines,
 lathes, sheet cutters, EDM, grinding, inspection, postprocess, assembly cells,
@@ -6275,12 +6288,13 @@ When a policy snapshot has at least two positive samples for a method such as
 `sheet-cutting`, `plastic-joining`, or `turning`, subsequent
 `/fabrication/plan` requests without explicit `preferredMethods` inherit those
 learned process preferences. Repeated multi-method successes such as
-`additive-print+milling` or `additive-print+plastic-joining` are retained as
-method combination preferences; open future requests can be decomposed into
-learned hybrid parts before machine selection. Learned join-cell combinations
-keep each generated part's explicit preferred method authoritative so a
-plastic-joining policy can add a join lane without stealing the printed part's
-printer assignment. Repeated ordered successes such as
+`additive-print+milling`, `additive-print+plastic-joining`, or
+`additive-print+horizontal-milling+turning` are retained as method combination
+preferences; open future requests can be decomposed into learned hybrid parts
+before machine selection. Learned multi-cell combinations keep each generated
+part's explicit preferred method authoritative so a horizontal-milling policy
+can add a side-keyway lane and a turning policy can add a lathe insert lane
+without stealing the printed part's printer assignment. Repeated ordered successes such as
 `additive-print>milling>turning` are retained as operation-sequence preferences;
 open future requests can be decomposed into learned sequence parts in that order
 and surfaced as `learned-operation-sequence-preference:*` POMDP observations

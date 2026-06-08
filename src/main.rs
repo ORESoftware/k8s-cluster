@@ -24478,7 +24478,7 @@ fn choose_machine<'a>(
     constraints: Option<&FabricationConstraints>,
 ) -> &'a MachineProfile {
     let preferred = part.preferred_method.as_deref().map(normalize_token);
-    let preferred_methods = constraints
+    let mut preferred_methods = constraints
         .and_then(|constraints| constraints.preferred_methods.as_ref())
         .map(|methods| {
             methods
@@ -24488,6 +24488,9 @@ fn choose_machine<'a>(
         })
         .unwrap_or_default();
     let allow_constraint_method_routing = preferred.is_none();
+    if !allow_constraint_method_routing {
+        preferred_methods.clear();
+    }
 
     if preferred.is_none() {
         for preferred_machine_kind in &preferred_methods {
@@ -24501,67 +24504,79 @@ fn choose_machine<'a>(
     }
 
     let wants_horizontal_mill = preferred.as_deref().is_some_and(wants_horizontal_milling)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_horizontal_milling(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_horizontal_milling(value)));
     let wants_five_axis_mill = preferred.as_deref().is_some_and(wants_five_axis_milling)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_five_axis_milling(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_five_axis_milling(value)));
     let wants_rotary_index_mill = preferred.as_deref().is_some_and(wants_rotary_index_milling)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_rotary_index_milling(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_rotary_index_milling(value)));
     let wants_resin_printer = preferred.as_deref().is_some_and(wants_resin_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_resin_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_resin_printing(value)));
     let wants_material_jetting_printer = preferred
         .as_deref()
         .is_some_and(wants_material_jetting_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_material_jetting_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_material_jetting_printing(value)));
     let wants_multi_material_fdm_printer = preferred
         .as_deref()
         .is_some_and(wants_multi_material_fdm_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_multi_material_fdm_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_multi_material_fdm_printing(value)));
     let wants_paste_extrusion_printer = preferred
         .as_deref()
         .is_some_and(wants_paste_extrusion_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_paste_extrusion_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_paste_extrusion_printing(value)));
     let wants_bound_metal_fff_printer = preferred
         .as_deref()
         .is_some_and(wants_bound_metal_filament_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_bound_metal_filament_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_bound_metal_filament_printing(value)));
     let wants_pellet_fgf_printer = preferred.as_deref().is_some_and(wants_pellet_fgf_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_pellet_fgf_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_pellet_fgf_printing(value)));
     let wants_robotic_additive_printer = preferred
         .as_deref()
         .is_some_and(wants_robotic_additive_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_robotic_additive_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_robotic_additive_printing(value)));
     let wants_sheet_lamination_printer = preferred
         .as_deref()
         .is_some_and(wants_sheet_lamination_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_sheet_lamination_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_sheet_lamination_printing(value)));
     let wants_ded_cell = preferred
         .as_deref()
         .is_some_and(wants_directed_energy_deposition)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_directed_energy_deposition(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_directed_energy_deposition(value)));
     let wants_composite_layup_cell = preferred.as_deref().is_some_and(wants_composite_layup)
         || (allow_constraint_method_routing
             && preferred_methods
@@ -24578,88 +24593,107 @@ fn choose_machine<'a>(
         && (preferred
             .as_deref()
             .is_some_and(wants_composite_fiber_printing)
-            || preferred_methods
-                .iter()
-                .any(|value| wants_composite_fiber_printing(value)));
+            || (allow_constraint_method_routing
+                && preferred_methods
+                    .iter()
+                    .any(|value| wants_composite_fiber_printing(value))));
     let wants_binder_jet_printer = preferred.as_deref().is_some_and(wants_binder_jet_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_binder_jet_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_binder_jet_printing(value)));
     let wants_powder_bed_printer = preferred.as_deref().is_some_and(wants_powder_bed_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_powder_bed_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_powder_bed_printing(value)));
     let wants_metal_pbf_printer = preferred
         .as_deref()
         .is_some_and(wants_metal_powder_bed_printing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_metal_powder_bed_printing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_metal_powder_bed_printing(value)));
     let wants_swiss_turning_center = preferred.as_deref().is_some_and(wants_swiss_turning)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_swiss_turning(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_swiss_turning(value)));
     let wants_mill_turn_center = preferred.as_deref().is_some_and(wants_mill_turning)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_mill_turning(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_mill_turning(value)));
     let wants_laser_cutter = preferred.as_deref().is_some_and(wants_laser_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_laser_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_laser_cutting(value)));
     let wants_waterjet_cutter = preferred.as_deref().is_some_and(wants_waterjet_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_waterjet_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_waterjet_cutting(value)));
     let wants_plasma_cutter = preferred.as_deref().is_some_and(wants_plasma_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_plasma_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_plasma_cutting(value)));
     let wants_wire_edm = preferred.as_deref().is_some_and(wants_wire_edm_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_wire_edm_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_wire_edm_cutting(value)));
     let wants_sinker_edm = preferred.as_deref().is_some_and(wants_sinker_edm_machining)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_sinker_edm_machining(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_sinker_edm_machining(value)));
     let wants_precision_grinder = preferred.as_deref().is_some_and(wants_precision_grinding)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_precision_grinding(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_precision_grinding(value)));
     let wants_inspection_cell = preferred
         .as_deref()
         .is_some_and(wants_dimensional_inspection)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_dimensional_inspection(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_dimensional_inspection(value)));
     let wants_thermal_postprocess_cell =
         preferred.as_deref().is_some_and(wants_thermal_postprocess)
-            || preferred_methods
-                .iter()
-                .any(|value| wants_thermal_postprocess(value));
+            || (allow_constraint_method_routing
+                && preferred_methods
+                    .iter()
+                    .any(|value| wants_thermal_postprocess(value)));
     let wants_surface_finishing_cell = preferred.as_deref().is_some_and(wants_surface_finishing)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_surface_finishing(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_surface_finishing(value)));
     let wants_pcb_fabrication_cell = preferred.as_deref().is_some_and(wants_pcb_fabrication)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_pcb_fabrication(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_pcb_fabrication(value)));
     let wants_pcb_assembly_cell = preferred.as_deref().is_some_and(wants_pcb_assembly)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_pcb_assembly(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_pcb_assembly(value)));
     let wants_fixture_tooling_cell = preferred.as_deref().is_some_and(wants_fixture_tooling)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_fixture_tooling(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_fixture_tooling(value)));
     let wants_adaptive_compensation_cell = preferred
         .as_deref()
         .is_some_and(wants_adaptive_compensation)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_adaptive_compensation(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_adaptive_compensation(value)));
     let wants_insert_installation_cell =
         preferred.as_deref().is_some_and(wants_insert_installation)
             || (allow_constraint_method_routing
@@ -24705,37 +24739,45 @@ fn choose_machine<'a>(
                 .iter()
                 .any(|value| wants_dynamic_balancing(value)));
     let wants_packaging_labeling_cell = preferred.as_deref().is_some_and(wants_packaging_labeling)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_packaging_labeling(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_packaging_labeling(value)));
     let wants_part_marking_cell = preferred.as_deref().is_some_and(wants_part_marking)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_part_marking(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_part_marking(value)));
     let wants_metal_joining_cell = preferred.as_deref().is_some_and(wants_metal_joining)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_metal_joining(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_metal_joining(value)));
     let wants_molding_casting_cell = preferred.as_deref().is_some_and(wants_molding_casting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_molding_casting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_molding_casting(value)));
     let wants_sheet_forming_cell = preferred.as_deref().is_some_and(wants_sheet_forming)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_sheet_forming(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_sheet_forming(value)));
     let wants_gear_cutting_cell = preferred.as_deref().is_some_and(wants_gear_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_gear_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_gear_cutting(value)));
     let wants_assembly_cell = preferred.as_deref().is_some_and(wants_assembly_joining)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_assembly_joining(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_assembly_joining(value)));
     let wants_sheet_cutter = preferred.as_deref().is_some_and(wants_sheet_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_sheet_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_sheet_cutting(value)));
 
     if wants_swiss_turning_center {
         if let Some(machine) = select_machine(machines, material, |machine| {
@@ -62955,6 +62997,68 @@ fn how_it_works_response() -> Value {
         "routes": ["GET /how-it-works", "GET /fabrication/how-it-works"],
         "purpose": "machine-readable overview of the fabrication server intake-to-release workflow",
         "audiences": ["operators", "integration authors", "CAD/CAM workers", "slicer workers", "learning workers"],
+        "startHereWorkflow": [
+            {
+                "step": "discover",
+                "summary": "Inspect capabilities, machines, materials, templates, schemas, and API docs before selecting a worker lane.",
+                "primaryRoutes": [
+                    "GET /fabrication/capabilities",
+                    "GET /fabrication/machines/catalog",
+                    "GET /fabrication/materials/catalog",
+                    "GET /fabrication/templates/catalog",
+                    "GET /api/docs"
+                ],
+                "evidenceGoal": "choose the right printer, mill, lathe, cutter, material, and request template before submitting work"
+            },
+            {
+                "step": "import-or-generate",
+                "summary": "Submit source geometry, slicer/CAM/controller inputs, or a design-generation request and keep every output as draft evidence.",
+                "primaryRoutes": [
+                    "GET /fabrication/design/import/catalog",
+                    "GET /fabrication/design/generation/catalog",
+                    "GET /fabrication/instructions/languages",
+                    "GET /fabrication/machine-code/catalog",
+                    "POST /fabrication/design/generate"
+                ],
+                "evidenceGoal": "retain source provenance, generated design exports, instruction language, and controller/postprocessor targets"
+            },
+            {
+                "step": "validate-and-improve",
+                "summary": "Analyze imported or generated instructions, find release blockers, and create reviewable remediation or improvement drafts.",
+                "primaryRoutes": [
+                    "GET /fabrication/instructions/validation/catalog",
+                    "GET /fabrication/boundaries/catalog",
+                    "GET /fabrication/remediation/catalog",
+                    "GET /fabrication/improvements/catalog",
+                    "POST /fabrication/instructions/validate"
+                ],
+                "evidenceGoal": "surface machine-failure, human-intervention, split/combine, simulation, and quality blockers before release"
+            },
+            {
+                "step": "split-combine-release",
+                "summary": "Decide whether to decompose, assemble, or release the retained package after setup, simulation, quality, and signoff evidence clears.",
+                "primaryRoutes": [
+                    "GET /fabrication/decomposition/catalog",
+                    "GET /fabrication/assembly/catalog",
+                    "GET /fabrication/release/catalog",
+                    "GET /fabrication/artifacts/catalog",
+                    "POST /fabrication/release/preview"
+                ],
+                "evidenceGoal": "prove interfaces, joins, release gates, retained artifacts, and machineReady blockers before downstream approval"
+            },
+            {
+                "step": "learn-from-results",
+                "summary": "Feed completed, failed, remediated, or blocked outcomes back into DES/MDP/POMDP/neural policy memory.",
+                "primaryRoutes": [
+                    "GET /fabrication/learning/engines/catalog",
+                    "GET /fabrication/learning/rewards/catalog",
+                    "GET /fabrication/learning/replay/catalog",
+                    "GET /fabrication/learning/outcomes",
+                    "POST /fabrication/learning/outcomes"
+                ],
+                "evidenceGoal": "keep learned preferences advisory until replay, simulation, retained evidence, and release blockers clear"
+            }
+        ],
         "flow": [
             {
                 "step": "discover",
@@ -63215,6 +63319,20 @@ async fn landing_page() -> axum::response::Html<&'static str> {
       border-radius: 8px;
       padding: 10px 12px;
     }
+    .starter-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+      margin: 16px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .starter-list li {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
   </style>
 </head>
 <body>
@@ -63254,6 +63372,18 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <div class="step"><strong>5. Learn</strong><br>Post outcomes and worker result reviews so future jobs can prefer safer strategies.</div>
         <div class="step"><strong>6. Inspect</strong><br>Fetch retained jobs, artifacts, and release bundles before downstream release review.</div>
       </div>
+    </section>
+
+    <section>
+      <h2>Start Here</h2>
+      <p>Most integrations follow the same evidence path: discover what the service supports, submit source geometry or instructions, ask for a draft plan or review, attach validation results, then feed the outcome back into learning.</p>
+      <ul class="starter-list">
+        <li><strong>1. Discover</strong><br><a href="/fabrication/capabilities">Capabilities</a>, <a href="/fabrication/machines/catalog">machines</a>, <a href="/fabrication/materials/catalog">materials</a>, and <a href="/fabrication/templates/catalog">request templates</a>.</li>
+        <li><strong>2. Import Or Generate</strong><br><a href="/fabrication/design/import/catalog">Design import</a>, <a href="/fabrication/design/generation/catalog">design generation</a>, <a href="/fabrication/instructions/languages">instruction languages</a>, and <a href="/fabrication/machine-code/catalog">machine-code generation</a>.</li>
+        <li><strong>3. Validate And Improve</strong><br><a href="/fabrication/instructions/validation/catalog">Validation</a>, <a href="/fabrication/boundaries/catalog">failure boundaries</a>, <a href="/fabrication/remediation/catalog">remediation</a>, and <a href="/fabrication/improvements/catalog">instruction improvement</a>.</li>
+        <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
+        <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
+      </ul>
     </section>
 
     <section>
@@ -124265,6 +124395,12 @@ mod tests {
             "decomposes or combines parts when a single process is risky",
             "records outcomes so later jobs can learn from the route",
             "Design And Toolchain Intake",
+            "Start Here",
+            "Most integrations follow the same evidence path",
+            "Import Or Generate",
+            "Validate And Improve",
+            "Split, Combine, Or Release",
+            "Learn From Results",
             "PTC Creo / Pro/ENGINEER",
             "SOLIDWORKS",
             "Autodesk Fusion",
@@ -124303,6 +124439,22 @@ mod tests {
             "/fabrication/capabilities",
             "/fabrication/intake/catalog",
             "/fabrication/templates/catalog",
+            "/fabrication/design/import/catalog",
+            "/fabrication/design/generation/catalog",
+            "/fabrication/instructions/languages",
+            "/fabrication/machine-code/catalog",
+            "/fabrication/instructions/validation/catalog",
+            "/fabrication/boundaries/catalog",
+            "/fabrication/remediation/catalog",
+            "/fabrication/improvements/catalog",
+            "/fabrication/decomposition/catalog",
+            "/fabrication/assembly/catalog",
+            "/fabrication/release/catalog",
+            "/fabrication/artifacts/catalog",
+            "/fabrication/learning/engines/catalog",
+            "/fabrication/learning/rewards/catalog",
+            "/fabrication/learning/replay/catalog",
+            "/fabrication/learning/outcomes",
             "/fabrication/schema",
             "/fabrication/examples",
         ] {
@@ -124376,6 +124528,24 @@ mod tests {
             .get("flow")
             .and_then(Value::as_array)
             .expect("how-it-works overview should include workflow steps");
+        let start_here = payload
+            .get("startHereWorkflow")
+            .and_then(Value::as_array)
+            .expect("how-it-works overview should include starter workflow steps");
+        for expected in [
+            "discover",
+            "import-or-generate",
+            "validate-and-improve",
+            "split-combine-release",
+            "learn-from-results",
+        ] {
+            assert!(
+                start_here
+                    .iter()
+                    .any(|step| step.get("step").and_then(Value::as_str) == Some(expected)),
+                "missing starter workflow step {expected}"
+            );
+        }
         for expected in [
             "discover", "intake", "generate", "validate", "release", "learn",
         ] {
@@ -124424,6 +124594,12 @@ mod tests {
             "priorityDispositionContract",
             "<family>:<priority>:<disposition>",
             "pending-blocker-resolution",
+            "startHereWorkflow",
+            "GET /fabrication/materials/catalog",
+            "GET /fabrication/design/import/catalog",
+            "GET /fabrication/instructions/validation/catalog",
+            "GET /fabrication/artifacts/catalog",
+            "GET /fabrication/learning/engines/catalog",
         ] {
             assert!(
                 payload_text.contains(expected),
@@ -173930,6 +174106,175 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-milling"
+        }));
+    }
+
+    #[test]
+    fn learned_horizontal_mill_turning_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("horizontal-turning-methods-1".to_string()),
+            job_id: Some("plan-horizontal-turning-1".to_string()),
+            objective: Some(
+                "printed fixture body with horizontal-milled keyway and turned insert".to_string(),
+            ),
+            material: Some(material("pla", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "horizontal-milling".to_string(),
+                "turning".to_string(),
+            ]),
+            machine_kind: Some("horizontal-mill".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed body plus horizontal-milled keyway and turned insert".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(3.1),
+            observations: Some(vec![
+                "horizontal keyway fit passed".to_string(),
+                "turned insert runout accepted".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus horizontal-mill plus turning route".to_string(),
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned horizontal mill turning outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("horizontal-turning-methods-2".to_string()),
+            job_id: Some("plan-horizontal-turning-2".to_string()),
+            objective: Some("printed jig with side-milled datum and lathe bushing".to_string()),
+            material: Some(material("pla", "polymer")),
+            manufacturing_methods: Some(vec![
+                "turning".to_string(),
+                "additive-print".to_string(),
+                "side-slotting".to_string(),
+            ]),
+            machine_kind: Some("lathe".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed body plus horizontal-milled keyway and turned insert".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.8),
+            observations: Some(vec![
+                "side slot datum reused".to_string(),
+                "threaded insert passed gauge".to_string(),
+            ]),
+            notes: Some(vec!["same three-cell route completed".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned horizontal mill turning outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+horizontal-milling+turning"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-horizontal-mill-turning-combination".to_string()),
+                objective:
+                    "PLA assembly that can reuse learned printed, side-milled, and turned process"
+                        .to_string(),
+                material: Some(material("pla", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.12),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "hybrid-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["pla".to_string()]),
+                        work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "hybrid-horizontal-mill".to_string(),
+                        kind: "horizontal-mill".to_string(),
+                        controller: Some("iso-gcode".to_string()),
+                        materials: Some(vec!["pla".to_string()]),
+                        work_envelope_mm: Some(vec![420.0, 220.0, 180.0]),
+                        axes: Some(4),
+                        operations: Some(vec![
+                            "horizontal-milling".to_string(),
+                            "side-slotting".to_string(),
+                            "keyway-milling".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "hybrid-lathe".to_string(),
+                        kind: "lathe".to_string(),
+                        controller: Some("fanuc-lathe".to_string()),
+                        materials: Some(vec!["pla".to_string()]),
+                        work_envelope_mm: Some(vec![160.0, 160.0, 260.0]),
+                        axes: Some(2),
+                        operations: Some(vec!["turning".to_string(), "threading".to_string()]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned horizontal mill turning plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-horizontal-milling-part"
+                && part.machine_kind == "horizontal-mill"
+                && part.manufacturing_method == "subtractive-milling"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-turning-part"
+                && part.machine_kind == "lathe"
+                && part.manufacturing_method == "turning"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-horizontal-milling-part"
+                && program.machine_id == "hybrid-horizontal-mill"
+                && program.language == "iso-gcode"
+                && program
+                    .instructions
+                    .iter()
+                    .any(|instruction| instruction.contains("draft horizontal milling program"))
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-turning-part"
+                && program.machine_id == "hybrid-lathe"
+                && program.language == "fanuc-lathe"
+                && program
+                    .instructions
+                    .iter()
+                    .any(|instruction| instruction.contains("draft turning program"))
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed body plus horizontal-milled keyway and turned insert"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-horizontal-milling-turning"
         }));
     }
 
