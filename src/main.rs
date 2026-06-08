@@ -118698,6 +118698,89 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "toolpath-result-feedback",
+            "label": "Review retained toolpath simulation, clearance, and release evidence",
+            "route": "POST /fabrication/toolpaths/result",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["toolpath-result", "simulation-dry-run", "fixture-clearance", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["toolpath segments retained", "collision/envelope/clearance simulation", "dry-run status", "release-blocking checks", "artifact checksum"],
+            "releaseGateHints": ["toolpathResult.simulationChecks", "toolpathResult.priorityDispositions", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers", "learning.outcomeDraft"],
+            "request": {
+                "templateId": "toolpath-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "toolpath-result-001",
+                "planRequestId": "simulate-imported-cnc-001",
+                "jobId": "job-toolpath-review-001",
+                "workerId": "toolpath-simulation-worker",
+                "machineId": "router-1",
+                "machineKind": "cnc-router",
+                "programId": "imported-router-program",
+                "toolpathId": "router-profile-toolpath",
+                "success": true,
+                "machineReady": false,
+                "releaseReady": false,
+                "toolpaths": [
+                    {
+                        "toolpathId": "router-profile-toolpath",
+                        "programId": "imported-router-program",
+                        "partId": "router-profile",
+                        "operation": "profile-cut",
+                        "machineId": "router-1",
+                        "machineKind": "cnc-router",
+                        "lineCount": 42,
+                        "motionLineCount": 18,
+                        "status": "simulation-blocked",
+                        "machineReady": false,
+                        "requiresHumanIntervention": true,
+                        "message": "toolpath needs fixture/tab clearance review before release",
+                        "evidence": ["retained CAM path and setup sheet"]
+                    }
+                ],
+                "simulations": [
+                    {
+                        "simulationId": "router-profile-dry-run-001",
+                        "toolpathId": "router-profile-toolpath",
+                        "programId": "imported-router-program",
+                        "status": "clearance-blocked",
+                        "collisionFree": false,
+                        "envelopeOk": true,
+                        "clearanceOk": false,
+                        "dryRunRequired": true,
+                        "dryRunPassed": false,
+                        "maxDeviationMm": 0.42,
+                        "toleranceMm": 0.20,
+                        "requiresHumanIntervention": true,
+                        "evidence": ["simulated clamp clearance conflict retained"]
+                    }
+                ],
+                "checks": [
+                    {
+                        "checkId": "fixture-clearance",
+                        "checkKind": "fixture-clearance",
+                        "status": "blocked",
+                        "required": true,
+                        "releaseBlocker": true,
+                        "requiresHumanIntervention": true,
+                        "message": "fixture or tab clearance must be reviewed before machine-ready release",
+                        "evidence": ["clearance report shows clamp conflict"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "toolpath-clearance-report",
+                        "artifactKind": "toolpath-simulation-report",
+                        "sourceRefId": "router-profile-dry-run-001",
+                        "uri": "s3://fabrication-toolpaths/job-toolpath-review-001/clearance-report.json",
+                        "sha256": "1212121212121212121212121212121212121212121212121212121212121212",
+                        "format": "json",
+                        "evidence": ["checksum verified"]
+                    }
+                ],
+                "warnings": ["toolpath remains advisory until clearance and dry-run evidence clear"],
+                "reviewMetadata": { "fixtureRevision": "rev-a", "simulator": "operator-reviewed" }
+            }
+        },
+        {
             "id": "imported-cnc-program-review",
             "label": "Imported CNC program validation and improvement",
             "route": "POST /fabrication/instructions/analyze",
@@ -118835,6 +118918,103 @@ fn request_templates() -> Value {
                 ],
                 "warnings": ["patched program still requires dry-run simulation and human approval"],
                 "reviewMetadata": { "controllerFamily": "fanuc", "plant": "alpha" }
+            }
+        },
+        {
+            "id": "non-gcode-additive-improvement-result-feedback",
+            "label": "Review retained non-G-code additive job-sheet improvement results before release",
+            "route": "POST /fabrication/instructions/improvement/result",
+            "machineKind": "additive-printer",
+            "preferredMethods": ["instruction-improvement-result", "resin-job-validation", "powder-bed-build-validation", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["worker identity and improver version", "resin exposure or powder-bed profile evidence", "postprocess or powder-handling blocker disposition", "retained job-sheet artifact checksum", "human approval before machine release"],
+            "releaseGateHints": ["instructionImprovementResult.improvedPrograms", "instructionImprovementResult.patchOperations", "resinPostprocessEvidence", "powderHandlingEvidence", "instructionImprovementLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "non-gcode-additive-improvement-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "non-gcode-additive-improvement-result-001",
+                "planRequestId": "review-imported-resin-or-powder-001",
+                "jobId": "job-improve-non-gcode-additive-001",
+                "workerId": "additive-job-sheet-improvement-worker-01",
+                "improver": "non-gcode-additive-evidence-reviewer",
+                "improverVersion": "2026.06-additive-improvement",
+                "instructionId": "imported-additive-job-sheet-needs-evidence",
+                "language": "resin-job-sheet",
+                "machineId": "additive-cell-01",
+                "machineKind": "additive-printer",
+                "controller": "job-sheet-review",
+                "success": true,
+                "machineReady": false,
+                "releaseReady": false,
+                "improvedPrograms": [
+                    {
+                        "programId": "imported-resin-job-sheet-patched",
+                        "sourceProgramId": "imported-resin-job-sheet",
+                        "language": "resin-job-sheet",
+                        "status": "postprocess-review-required",
+                        "changed": true,
+                        "machineReady": false,
+                        "releaseBlocker": true,
+                        "requiresHumanApproval": true,
+                        "previewLines": ["RESIN_PROFILE material=engineering-resin exposure=2.6s lift=6mm", "SUPPORT_REVIEW raft=medium islands=operator-reviewed", "POSTPROCESS wash=ipa-2-stage cure=405nm-30min ppe=required"],
+                        "evidence": ["exposure stack and wash/cure postprocess evidence retained for release review"]
+                    },
+                    {
+                        "programId": "imported-powder-bed-build-patched",
+                        "sourceProgramId": "imported-powder-bed-build",
+                        "language": "powder-bed-build-packet",
+                        "status": "powder-handling-review-required",
+                        "changed": true,
+                        "machineReady": false,
+                        "releaseBlocker": true,
+                        "requiresHumanApproval": true,
+                        "previewLines": ["BUILD_PROFILE material=PA12 lot=PA12-44 layer=100um energy=validated", "NESTING_REVIEW packing_density=0.11 recoater_clearance=2mm", "DEPOWDER cooldown=12h recovery_bin=labelled ppe=required"],
+                        "evidence": ["powder lot, recoater clearance, cooldown, and depowder evidence retained for release review"]
+                    }
+                ],
+                "patchOperations": [
+                    {
+                        "operationId": "retain-resin-postprocess-evidence-001",
+                        "programId": "imported-resin-job-sheet-patched",
+                        "operation": "append-job-sheet-evidence",
+                        "action": "add resin postprocess blocker disposition",
+                        "summary": "Added exposure-stack, wash, cure, and PPE evidence before release review",
+                        "requiresHumanReview": true,
+                        "releaseBlocker": true,
+                        "evidence": ["resin postprocess evidence remains human-review gated"]
+                    },
+                    {
+                        "operationId": "retain-powder-handling-evidence-001",
+                        "programId": "imported-powder-bed-build-patched",
+                        "operation": "append-job-sheet-evidence",
+                        "action": "add powder handling blocker disposition",
+                        "summary": "Added powder lot, recoater clearance, cooldown, depowdering, and recovery evidence before release review",
+                        "requiresHumanReview": true,
+                        "releaseBlocker": true,
+                        "evidence": ["powder handling evidence remains human-review gated"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "resin-job-sheet-improvement-artifact-001",
+                        "artifactKind": "patched-resin-job-sheet",
+                        "programId": "imported-resin-job-sheet-patched",
+                        "uri": "s3://fabrication-instruction-improvements/job-improve-non-gcode-additive-001/resin-job-sheet.json",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "format": "resin-job-sheet",
+                        "evidence": ["retained resin job-sheet checksum verified before release package review"]
+                    },
+                    {
+                        "artifactId": "powder-bed-build-improvement-artifact-001",
+                        "artifactKind": "patched-powder-bed-build-packet",
+                        "programId": "imported-powder-bed-build-patched",
+                        "uri": "s3://fabrication-instruction-improvements/job-improve-non-gcode-additive-001/powder-bed-build-packet.json",
+                        "sha256": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                        "format": "powder-bed-build-packet",
+                        "evidence": ["retained powder-bed build-packet checksum verified before release package review"]
+                    }
+                ],
+                "warnings": ["non-G-code additive job-sheet patches still require operator release review"],
+                "reviewMetadata": { "instructionFamily": "non-gcode-additive-job-sheet", "plant": "alpha" }
             }
         },
         {
@@ -124260,6 +124440,7 @@ mod tests {
             "generated-fdm-instruction-handoff",
             "generated-cnc-instruction-handoff",
             "imported-cnc-dry-run-simulation",
+            "toolpath-result-feedback",
             "imported-cnc-program-review",
             "imported-controller-stream-boundary-review",
             "imported-cnc-improvement-review",
@@ -124288,6 +124469,7 @@ mod tests {
             "POST /fabrication/machine-code/generate",
             "POST /fabrication/instructions/generate",
             "POST /fabrication/simulation/run",
+            "POST /fabrication/toolpaths/result",
             "POST /fabrication/instructions/analyze",
             "POST /fabrication/instructions/import/review",
             "POST /fabrication/instructions/improve",
@@ -124335,8 +124517,12 @@ mod tests {
             "instruction-generation",
             "instructionGeneration.generatedPrograms",
             "simulation-dry-run",
+            "toolpath-result",
+            "fixture-clearance",
             "simulation.programs.axisExtents",
             "simulation.riskProfile.programRisks",
+            "toolpathResult.simulationChecks",
+            "toolpathResult.priorityDispositions",
             "learning.releaseProbePlan",
             "designExports.reviewGates",
             "designInputReview.supportedFormats",
@@ -124574,6 +124760,73 @@ mod tests {
     }
 
     #[test]
+    fn request_template_toolpath_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str) == Some("toolpath-result-feedback")
+            })
+            .expect("toolpath result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/toolpaths/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("toolpath result template should include request body");
+        let parsed: ToolpathResultReviewRequest = serde_json::from_value(request)
+            .expect("toolpath result template should match review schema");
+        assert_eq!(parsed.worker_id, "toolpath-simulation-worker");
+        assert!(!parsed.machine_ready);
+        assert!(
+            parsed
+                .toolpaths
+                .as_ref()
+                .is_some_and(|segments| segments.iter().any(|segment| {
+                    segment.machine_ready == Some(false)
+                        && segment.requires_human_intervention == Some(true)
+                })),
+            "toolpath result template should retain blocking toolpath segments"
+        );
+        assert!(
+            parsed
+                .simulations
+                .as_ref()
+                .is_some_and(|simulations| simulations.iter().any(|simulation| {
+                    simulation.collision_free == Some(false)
+                        && simulation.clearance_ok == Some(false)
+                        && simulation.dry_run_passed == Some(false)
+                })),
+            "toolpath result template should retain collision, clearance, and dry-run blockers"
+        );
+        assert!(
+            parsed
+                .checks
+                .as_ref()
+                .is_some_and(|checks| checks.iter().any(|check| {
+                    check.release_blocker == Some(true)
+                        && check.requires_human_intervention == Some(true)
+                })),
+            "toolpath result template should retain release-blocking checks"
+        );
+        let payload = toolpath_result_review_response(parsed)
+            .expect("toolpath result template should normalize");
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.toolpath-result-review.v1")
+        );
+    }
+
+    #[test]
     fn request_template_design_import_bodies_match_review_contract() {
         let templates = request_templates();
         let template_entries = templates
@@ -124772,6 +125025,80 @@ mod tests {
                 })),
             "instruction improvement result template should retain artifact checksums and evidence"
         );
+    }
+
+    #[test]
+    fn request_template_non_gcode_additive_improvement_result_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("non-gcode-additive-improvement-result-feedback")
+            })
+            .expect("non-G-code additive improvement result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/instructions/improvement/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("non-G-code additive improvement result template should include request body");
+        let parsed: InstructionImprovementResultReviewRequest = serde_json::from_value(request)
+            .expect("non-G-code additive improvement result template should match review schema");
+        assert_eq!(parsed.worker_id, "additive-job-sheet-improvement-worker-01");
+        assert_eq!(parsed.improver, "non-gcode-additive-evidence-reviewer");
+        assert!(!parsed.machine_ready);
+        let programs = parsed
+            .improved_programs
+            .as_ref()
+            .expect("non-G-code additive result template should include improved programs");
+        for expected_language in ["resin-job-sheet", "powder-bed-build-packet"] {
+            assert!(
+                programs
+                    .iter()
+                    .any(|program| program.language == expected_language
+                        && program.changed == Some(true)
+                        && program.release_blocker == Some(true)
+                        && program.requires_human_approval == Some(true)),
+                "non-G-code additive result template should retain blocking {expected_language} patches"
+            );
+        }
+        let operations = parsed
+            .patch_operations
+            .as_ref()
+            .expect("non-G-code additive result template should include patch operations");
+        for expected_summary in ["wash, cure", "cooldown, depowdering"] {
+            assert!(
+                operations.iter().any(|operation| {
+                    operation.requires_human_review == Some(true)
+                        && operation.release_blocker == Some(true)
+                        && operation.summary.contains(expected_summary)
+                }),
+                "non-G-code additive result template should retain {expected_summary} patch review blockers"
+            );
+        }
+        let artifacts = parsed
+            .artifacts
+            .as_ref()
+            .expect("non-G-code additive result template should include artifacts");
+        for expected_format in ["resin-job-sheet", "powder-bed-build-packet"] {
+            assert!(
+                artifacts.iter().any(|artifact| {
+                    artifact.format.as_deref() == Some(expected_format)
+                        && artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                }),
+                "non-G-code additive result template should retain {expected_format} artifacts"
+            );
+        }
     }
 
     #[test]
