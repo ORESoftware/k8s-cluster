@@ -54,6 +54,8 @@ concept in `main.rs`:
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
   target compilation.
+- `src/etl.rs` owns Domo Magic ETL/Power Query-style metadata flow validation, lineage, and
+  connector pushdown hints.
 - `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
   Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus Mermaid, Graphviz, PlantUML,
   D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
@@ -73,7 +75,8 @@ Current first-class parity surfaces:
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
   selection state.
 - Sigma: workbook blueprints for live-grid and executive-card workflows.
-- Domo / Power Query: connector catalog plus ETL planner primitives.
+- Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
+  for bounded visual flows.
 - Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, and
   saved dashboard catalog.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, and
@@ -97,6 +100,8 @@ Current first-class parity surfaces:
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
+- `POST /etl/plans` - authenticated Domo Magic ETL/Power Query-style flow validation with lineage,
+  materialization, and connector pushdown hints.
 - `POST /diagrams/infra` - authenticated Terraform/AWS/GCP infrastructure diagram generation,
   including Terraform plan JSON, AWS Resource Explorer, GCP Cloud Asset, and multi-renderer graph
   export targets.

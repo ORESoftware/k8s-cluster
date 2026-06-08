@@ -146,6 +146,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/semantic.rs validates dimensions, measures, tags, and generated SQL targets before storing model definitions.",
         },
         ControlDescriptor {
+            id: "bounded-etl-plans",
+            status: "implemented",
+            description: "Domo Magic ETL/Power Query-style plans are capped by step count, output field count, aggregation count, and formula length, and formulas are treated as metadata instead of executed code.",
+            evidence: "src/etl.rs validates requested fields against dataset shapes, returns lineage and pushdown hints, and does not inspect raw row values.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
