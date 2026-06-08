@@ -4788,14 +4788,19 @@ human-intervention gates.
 accept retained model result reviews from DES/MDP/POMDP/neural workers. The
 `dd.fabrication.learning-model-result-review.v1` response normalizes model id,
 family, worker, retained artifact URI/checksum, metrics, promotion blockers,
-model-card evidence, and learning observations into the job artifact ledger.
+model-card evidence, `modelCardCompatibility`, and learning observations into
+the job artifact ledger. Stored jobs retain a dedicated
+`learning-model-card-compatibility` artifact that compares neural model-card
+feature names and declared input dimensions against the retained
+`neuralTrainingCorpus.featureNames` contract.
 It also emits a `learning.outcomeDraft` with source job/request ids, reward
 hints, model-family hints, promotion status, metric-failure counts, blocker
-hints, and artifact hints for `POST /fabrication/learning/outcomes`. Even
-accepted model results keep `machineReady=false`; promotion for future advisory
-planning requires retained artifacts, replay verification, metric review, and
-cleared promotion blockers, and remains subordinate to fabrication validation,
-simulation, setup, quality, telemetry, and human-intervention gates.
+hints, model-card compatibility status, and artifact hints for
+`POST /fabrication/learning/outcomes`. Even accepted model results keep
+`machineReady=false`; promotion for future advisory planning requires retained artifacts,
+replay verification, metric review, neural model-card compatibility,
+and cleared promotion blockers, and remains subordinate to fabrication
+validation, simulation, setup, quality, telemetry, and human-intervention gates.
 
 `GET /learning/replay/catalog` and
 `GET /fabrication/learning/replay/catalog` return the live

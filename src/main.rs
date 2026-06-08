@@ -103494,6 +103494,106 @@ fn validate_learning_model_result_artifacts(
         .collect()
 }
 
+fn learning_model_card_feature_names(model_card: &Value) -> Vec<String> {
+    ["featureNames", "features", "inputFeatures"]
+        .iter()
+        .filter_map(|field| model_card.get(field).and_then(Value::as_array))
+        .flat_map(|features| {
+            features
+                .iter()
+                .filter_map(Value::as_str)
+                .map(normalize_token)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn learning_model_card_declared_feature_count(model_card: &Value) -> Option<usize> {
+    ["featureVectorLength", "inputDim", "inputDimension"]
+        .iter()
+        .find_map(|field| {
+            model_card
+                .get(field)
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+        })
+}
+
+fn learning_model_card_compatibility_review(
+    model_id: &str,
+    model_family: &str,
+    model_card: &Value,
+) -> Value {
+    let expected_features = [
+        "objective-embedding",
+        "material-family",
+        "stock-envelope",
+        "machine-envelope",
+        "toolpath-token-sequence",
+        "simulated-force-temperature-vibration",
+        "inspection-error-vector",
+        "automation-requirement-vector",
+        "resolution-step-policy-state",
+    ];
+    let model_token = normalize_token(&format!("{model_id} {model_family}"));
+    let neural_policy_model = model_token.contains("neural")
+        || model_token.contains("feed-forward")
+        || model_token.contains("feedforward")
+        || model_token.contains("training-corpus");
+    let model_card_present = model_card.as_object().is_some_and(|card| !card.is_empty());
+    let feature_names = learning_model_card_feature_names(model_card);
+    let feature_set = feature_names.iter().cloned().collect::<BTreeSet<_>>();
+    let missing_features = expected_features
+        .iter()
+        .filter(|feature| !feature_set.contains(**feature))
+        .map(|feature| (*feature).to_string())
+        .collect::<Vec<_>>();
+    let matched_feature_count = expected_features.len() - missing_features.len();
+    let declared_feature_count = learning_model_card_declared_feature_count(model_card);
+    let feature_count_matches = declared_feature_count
+        .map(|count| count == expected_features.len())
+        .unwrap_or_else(|| {
+            !feature_names.is_empty() && feature_names.len() == expected_features.len()
+        });
+    let feature_schema_compatible =
+        model_card_present && missing_features.is_empty() && feature_count_matches;
+    let promotion_blocker = neural_policy_model && !feature_schema_compatible;
+    let review_status = if promotion_blocker {
+        "neural-model-card-incompatible"
+    } else if neural_policy_model {
+        "neural-model-card-compatible"
+    } else if model_card_present {
+        "model-card-retained-non-neural"
+    } else {
+        "model-card-not-provided"
+    };
+
+    json!({
+        "reviewStatus": review_status,
+        "neuralPolicyModel": neural_policy_model,
+        "modelCardPresent": model_card_present,
+        "featureSchemaCompatible": feature_schema_compatible,
+        "declaredFeatureCount": declared_feature_count,
+        "expectedFeatureCount": expected_features.len(),
+        "matchedFeatureCount": matched_feature_count,
+        "missingFeatures": missing_features,
+        "promotionBlocker": promotion_blocker,
+        "responseSurfaces": [
+            "learningModelResult.modelCard",
+            "learning.neuralFeatures",
+            "neuralTrainingCorpus.featureNames",
+            "neuralTrainingCorpus.examples.featureVector"
+        ],
+        "releasePolicy": if promotion_blocker {
+            "neural model promotion is blocked until the model card declares the retained neuralTrainingCorpus feature schema"
+        } else {
+            "model-card compatibility review is retained as advisory learning evidence and does not certify machine release"
+        },
+        "learningObservation": format!("learning-model-card-compatibility:{review_status}")
+    })
+}
+
 fn learning_model_result_review_response(
     request: LearningModelResultReviewRequest,
 ) -> Result<Value, String> {
@@ -103524,6 +103624,13 @@ fn learning_model_result_review_response(
     let artifacts = validate_learning_model_result_artifacts(request.artifacts)?;
     let evidence = validate_signal_list(request.evidence, "evidence", MAX_LABEL_LEN)?;
     let notes = validate_signal_list(request.notes, "notes", MAX_TEXT_LEN)?;
+    let model_card = request.model_card.unwrap_or_else(|| json!({}));
+    let model_card_compatibility =
+        learning_model_card_compatibility_review(&model_id, &model_family, &model_card);
+    let model_card_promotion_blocker = model_card_compatibility
+        .get("promotionBlocker")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let metric_failure_count = metrics
         .iter()
         .filter(|metric| {
@@ -103548,6 +103655,7 @@ fn learning_model_result_review_response(
         || !replay_verified
         || !has_retained_artifact
         || metric_failure_count > 0
+        || model_card_promotion_blocker
         || !promotion_blockers.is_empty();
     let promotion_status = if promotion_requested && !promotion_blocked {
         "promotion-ready-for-advisory-planning"
@@ -103577,6 +103685,12 @@ fn learning_model_result_review_response(
             "learning-model-promotion-blockers:{}",
             promotion_blockers.len()
         ));
+    }
+    if let Some(observation) = model_card_compatibility
+        .get("learningObservation")
+        .and_then(Value::as_str)
+    {
+        learning_observations.push(observation.to_string());
     }
 
     Ok(json!({
@@ -103609,12 +103723,13 @@ fn learning_model_result_review_response(
             "retainedArtifactFormat": retained_artifact_format,
             "hasRetainedArtifact": has_retained_artifact,
             "metricFailureCount": metric_failure_count,
+            "modelCardCompatibility": model_card_compatibility,
             "metrics": metrics,
             "promotionBlockers": promotion_blockers,
             "artifacts": artifacts,
             "evidence": evidence,
             "notes": notes,
-            "modelCard": request.model_card.unwrap_or_else(|| json!({}))
+            "modelCard": model_card
         },
         "learning": {
             "engine": {
@@ -103640,6 +103755,9 @@ fn learning_model_result_review_response(
                 "workerId": worker_id,
                 "promotionStatus": promotion_status,
                 "metricFailureCount": metric_failure_count,
+                "modelCardCompatibilityStatus": model_card_compatibility
+                    .get("reviewStatus")
+                    .and_then(Value::as_str),
                 "blockerCount": promotion_blockers.len(),
                 "manufacturingMethodHints": [],
                 "machineKindHints": [],
@@ -103651,12 +103769,12 @@ fn learning_model_result_review_response(
                     .iter()
                     .filter_map(|artifact| artifact.get("artifactKind").and_then(Value::as_str))
                     .collect::<Vec<_>>(),
-                "notes": ["learning-model-result is advisory until replay, metric, artifact, validation, and release gates clear"]
+                "notes": ["learning-model-result is advisory until replay, metric, artifact, model-card compatibility, validation, and release gates clear"]
             }
         },
         "releasePolicy": [
             "learning model results are retained model-artifact evidence and do not certify machine-ready release",
-            "model promotion for future planning requires retained artifacts, replay verification, metric review, and cleared promotion blockers",
+            "model promotion for future planning requires retained artifacts, replay verification, metric review, model-card compatibility for neural policies, and cleared promotion blockers",
             "advisory DES/MDP/POMDP/neural outputs remain subordinate to validation, simulation, setup, quality, telemetry, and human-intervention gates"
         ]
     }))
@@ -103692,6 +103810,10 @@ fn stored_learning_model_result_job(response: &Value) -> StoredFabricationJob {
         .get("promotionBlockers")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let model_card_compatibility = result
+        .get("modelCardCompatibility")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let model_artifacts = result
         .get("artifacts")
         .cloned()
@@ -103718,6 +103840,12 @@ fn stored_learning_model_result_job(response: &Value) -> StoredFabricationJob {
             "learning-model-promotion-blockers".to_string(),
             "learning-model-promotion-blockers",
             promotion_blockers,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "learning-model-card-compatibility".to_string(),
+            "learning-model-card-compatibility",
+            model_card_compatibility,
             generated_at_ms,
         ),
         json_artifact(
@@ -118977,6 +119105,50 @@ mod tests {
         assert!(job
             .artifacts
             .contains_key("instruction-review-learning-observations"));
+    }
+
+    #[test]
+    fn instruction_validation_result_endpoint_reviews_priority_dispositions() {
+        let dispositions = instruction_validation_priority_dispositions(
+            true,
+            true,
+            1,
+            1,
+            true,
+            true,
+            false,
+            "haas-gcode",
+        );
+
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some(
+                        "instruction-validation-priority:machine-failure-boundary-first:blocked",
+                    )
+        }));
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("human-intervention-required")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+        }));
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("ready-to-submit")
+                && disposition
+                    .get("nextRoutes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|routes| {
+                        routes.iter().any(|route| {
+                            route.as_str() == Some("POST /fabrication/learning/outcomes")
+                        })
+                    })
+        }));
     }
 
     #[test]
@@ -137153,6 +137325,12 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|observation| {
                 observation.as_str() == Some("learning-model-replay-not-verified")
             })));
+        assert_eq!(
+            payload
+                .pointer("/learningModelResult/modelCardCompatibility/reviewStatus")
+                .and_then(Value::as_str),
+            Some("model-card-retained-non-neural")
+        );
 
         let job = stored_learning_model_result_job(&payload);
         assert_eq!(job.record.kind, "learning-model-result");
@@ -137161,6 +137339,7 @@ mod tests {
             "learning-model-result",
             "learning-model-metrics",
             "learning-model-promotion-blockers",
+            "learning-model-card-compatibility",
             "learning-model-artifacts",
             "learning-model-observations",
         ] {
@@ -137169,6 +137348,92 @@ mod tests {
                 "missing retained artifact {artifact_id}"
             );
         }
+    }
+
+    #[test]
+    fn learning_model_result_blocks_neural_promotion_on_feature_schema_mismatch() {
+        let payload = learning_model_result_review_response(LearningModelResultReviewRequest {
+            request_id: Some("unit-neural-model-card-mismatch".to_string()),
+            source_job_id: Some("plan-job-neural-corpus".to_string()),
+            model_id: "fabrication-neural-policy-v2".to_string(),
+            model_family: "bounded-neural-policy".to_string(),
+            worker_id: "neural-policy-trainer".to_string(),
+            worker_version: Some("0.3.0".to_string()),
+            status: "accepted".to_string(),
+            promote_for_planning: Some(true),
+            replay_verified: Some(true),
+            retained_artifact_uri: Some(
+                "s3://operator-controlled-cad/models/neural-policy.onnx".to_string(),
+            ),
+            retained_artifact_sha256: Some("feed123".to_string()),
+            retained_artifact_format: Some("onnx".to_string()),
+            metrics: Some(vec![LearningModelResultMetric {
+                metric_id: "replay-pass-rate".to_string(),
+                name: "replay-pass-rate".to_string(),
+                value: 0.98,
+                threshold: Some(0.95),
+                passed: None,
+                evidence: Some(vec!["retained-neural-replay-set".to_string()]),
+            }]),
+            promotion_blockers: None,
+            artifacts: Some(vec![LearningModelResultArtifact {
+                artifact_id: "neural-model-card".to_string(),
+                artifact_kind: "model-card".to_string(),
+                uri: Some(
+                    "s3://operator-controlled-cad/models/neural-policy-card.json".to_string(),
+                ),
+                sha256: Some("face456".to_string()),
+                format: Some("json".to_string()),
+                evidence: Some(vec!["feature-schema-export".to_string()]),
+            }]),
+            evidence: Some(vec!["neural-training-corpus".to_string()]),
+            notes: Some(vec![
+                "model card intentionally omits retained corpus feature names".to_string(),
+            ]),
+            model_card: Some(json!({
+                "featureVectorLength": 3,
+                "featureNames": ["machine-kind", "boundary-kind", "reward"],
+                "knownLimits": ["does not match retained neuralTrainingCorpus.featureNames"]
+            })),
+        })
+        .expect("neural model result should normalize");
+
+        assert_eq!(payload.get("ok").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            payload.get("reviewStatus").and_then(Value::as_str),
+            Some("promotion-blocked-review-required")
+        );
+        assert_eq!(
+            payload
+                .pointer("/learningModelResult/modelCardCompatibility/reviewStatus")
+                .and_then(Value::as_str),
+            Some("neural-model-card-incompatible")
+        );
+        assert_eq!(
+            payload
+                .pointer("/learningModelResult/modelCardCompatibility/promotionBlocker")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(payload
+            .pointer("/learningModelResult/modelCardCompatibility/missingFeatures")
+            .and_then(Value::as_array)
+            .is_some_and(|features| features
+                .iter()
+                .any(|feature| { feature.as_str() == Some("objective-embedding") })));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("learning-model-card-compatibility:neural-model-card-incompatible")
+            })));
+
+        let job = stored_learning_model_result_job(&payload);
+        assert!(job
+            .artifacts
+            .contains_key("learning-model-card-compatibility"));
     }
 
     #[test]
