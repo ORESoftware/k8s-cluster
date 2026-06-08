@@ -109,6 +109,7 @@ spec:
                 exit 1
               fi
               cd "$PROJ"
+              gleam clean || true
               gleam build
               if [ ! -f "$PROJ/build/dev/erlang/gleam_mcp_server/ebin/gleam_mcp_server@@main.beam" ]; then
                 echo "build: build/dev is missing the generated MCP entry module after gleam build"
@@ -131,8 +132,8 @@ spec:
               ephemeral-storage: 512Mi
             limits:
               cpu: "2"
-              memory: 2Gi
-              ephemeral-storage: 2Gi
+              memory: 8Gi
+              ephemeral-storage: 4Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
@@ -276,11 +277,11 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 512Mi
               ephemeral-storage: 256Mi
             limits:
               cpu: "2"
-              memory: 300Mi
+              memory: 2Gi
               ephemeral-storage: 2Gi
           volumeMounts:
             - name: work
@@ -297,7 +298,7 @@ spec:
             type: Directory
         - name: work
           emptyDir:
-            sizeLimit: 2Gi
+            sizeLimit: 4Gi
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
