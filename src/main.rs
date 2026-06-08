@@ -62174,6 +62174,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/manufacturability/result",
         "GET /failure-modes/catalog",
         "GET /fabrication/failure-modes/catalog",
+        "POST /failure-modes/plan",
+        "POST /fabrication/failure-modes/plan",
         "POST /failure-modes/result",
         "POST /fabrication/failure-modes/result",
         "GET /safety/catalog",
@@ -90958,6 +90960,8 @@ fn failure_mode_catalog_response() -> Value {
         "machineKinds": machine_kinds,
         "failureModes": failure_modes,
         "planningRoutes": [
+            "POST /failure-modes/plan",
+            "POST /fabrication/failure-modes/plan",
             "POST /instructions/analyze",
             "POST /fabrication/instructions/analyze",
             "POST /instructions/boundaries/review",
@@ -91005,6 +91009,205 @@ fn failure_mode_catalog_response() -> Value {
 
 async fn failure_mode_catalog_http() -> impl IntoResponse {
     Json(failure_mode_catalog_response())
+}
+
+fn failure_mode_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let failure_mode_blocked = !response.validation.failure_boundaries.is_empty()
+        || response.boundary_summary.machine_failure_risks > 0
+        || response.boundary_summary.human_intervention_required > 0
+        || response.boundary_summary.split_recommended > 0
+        || response.intervention_map.machine_release_blocked
+        || response.operator_intervention_plan.machine_release_blocked
+        || response.simulation.risk_profile.high_risk_program_count > 0
+        || response
+            .simulation
+            .risk_profile
+            .machine_failure_boundary_count
+            > 0
+        || response
+            .simulation
+            .risk_profile
+            .human_intervention_boundary_count
+            > 0
+        || response.execution_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked;
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.failure-mode-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /failure-modes/plan",
+            "POST /fabrication/failure-modes/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /failure-modes/catalog",
+            "GET /fabrication/failure-modes/catalog",
+            "GET /boundaries/catalog",
+            "GET /fabrication/boundaries/catalog",
+            "GET /simulation/catalog",
+            "GET /fabrication/simulation/catalog",
+            "GET /interventions/catalog",
+            "GET /fabrication/interventions/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /failure-modes/result",
+            "POST /fabrication/failure-modes/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /execution/result",
+            "POST /fabrication/execution/result",
+            "POST /learning/outcomes",
+            "POST /fabrication/learning/outcomes"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!failure_mode_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(failure_mode_blocked),
+    );
+    object.insert(
+        "failureBoundaryCount".to_string(),
+        json!(response.validation.failure_boundaries.len()),
+    );
+    object.insert(
+        "machineFailureRiskCount".to_string(),
+        json!(response.boundary_summary.machine_failure_risks),
+    );
+    object.insert(
+        "humanInterventionRequiredCount".to_string(),
+        json!(response.boundary_summary.human_intervention_required),
+    );
+    object.insert(
+        "splitRecommendedCount".to_string(),
+        json!(response.boundary_summary.split_recommended),
+    );
+    object.insert(
+        "executionStopPointCount".to_string(),
+        json!(response.execution_plan.stop_points.len()),
+    );
+    object.insert(
+        "operatorActionCount".to_string(),
+        json!(response
+            .operator_intervention_plan
+            .required_operator_actions
+            .len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "validation.failureBoundaries",
+            "boundarySummary",
+            "interventionMap.programBoundaries",
+            "interventionMap.requiredInterventions",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "simulation.riskProfile.programRisks",
+            "executionPlan.executionStopPoints",
+            "decompositionPlan.targets",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "failure-mode-plan",
+            "failure-mode-catalog",
+            "boundary-summary",
+            "intervention-map",
+            "operator-intervention-plan",
+            "simulation-report",
+            "execution-plan",
+            "decomposition-plan",
+            "machine-release",
+            "mdp-request.artifacts.failureModes"
+        ]),
+    );
+    object.insert(
+        "failureModePolicy".to_string(),
+        json!([
+            "failure-mode planning returns draft machine-failure, human-intervention, recovery, restart, and split/combine evidence, not certified machine diagnostics or safety approval",
+            "machineReady=false while likely failures, recovery actions, operator interventions, support restarts, simulation risks, execution stop points, or split/combine evidence remain unresolved",
+            "failure signatures, remediation choices, operator interventions, and split/combine outcomes are retained for MDP/POMDP/neural workers so future plans can avoid unrecoverable machine states"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "failureModePlan".to_string(),
+        json!({
+            "failureModeContracts": failure_mode_catalog_entries(),
+            "validation": &response.validation,
+            "boundarySummary": &response.boundary_summary,
+            "interventionMap": &response.intervention_map,
+            "operatorInterventionPlan": &response.operator_intervention_plan,
+            "simulation": &response.simulation,
+            "executionPlan": &response.execution_plan,
+            "decompositionPlan": &response.decomposition_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert("validation".to_string(), json!(&response.validation));
+    object.insert(
+        "boundarySummary".to_string(),
+        json!(&response.boundary_summary),
+    );
+    object.insert(
+        "interventionMap".to_string(),
+        json!(&response.intervention_map),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert("executionPlan".to_string(), json!(&response.execution_plan));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn validate_failure_mode_result_events(
@@ -116421,6 +116624,7 @@ async fn request_schema() -> impl IntoResponse {
         "manufacturabilityPlan": ["POST /manufacturability/plan", "POST /fabrication/manufacturability/plan"],
         "manufacturabilityResult": ["POST /manufacturability/result", "POST /fabrication/manufacturability/result"],
         "failureModeCatalog": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
+        "failureModePlan": ["POST /failure-modes/plan", "POST /fabrication/failure-modes/plan"],
         "failureModeResult": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
             "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
@@ -117692,6 +117896,50 @@ async fn as_built_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn failure_mode_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.failure_mode.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(failure_mode_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -119752,6 +120000,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/failure-modes/catalog",
             get(failure_mode_catalog_http),
+        )
+        .route("/failure-modes/plan", post(failure_mode_plan_http))
+        .route(
+            "/fabrication/failure-modes/plan",
+            post(failure_mode_plan_http),
         )
         .route("/failure-modes/result", post(failure_mode_result_http))
         .route(
@@ -141790,6 +142043,114 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified machine diagnostics")))));
+    }
+
+    #[test]
+    fn failure_mode_planning_endpoint_returns_failure_intervention_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-failure-mode-plan".to_string()),
+                objective:
+                    "large PLA printer cover that may need split/combine and operator recovery review"
+                        .to_string(),
+                material: Some(material("pla", "polymer")),
+                stock: Some(StockSpec {
+                    form: "sheet".to_string(),
+                    dimensions_mm: Some(vec![300.0, 300.0, 80.0]),
+                }),
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "small-printer".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["pla".to_string()]),
+                    work_envelope_mm: Some(vec![120.0, 120.0, 120.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                    profile_evidence: None,
+                }]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("failure-mode planning should return release blockers");
+
+        let payload = failure_mode_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.failure-mode-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/failure-modes/plan"))));
+        assert!(payload
+            .get("machineReady")
+            .and_then(Value::as_bool)
+            .is_some_and(|ready| !ready));
+        assert!(payload
+            .get("failureBoundaryCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("failureModePlan")
+            .and_then(|plan| plan.get("failureModeContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("failureFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-route-and-human-intervention-failures"))));
+        assert!(payload
+            .get("failureModePlan")
+            .and_then(|plan| plan.get("interventionMap"))
+            .is_some());
+        assert!(payload
+            .get("failureModePlan")
+            .and_then(|plan| plan.get("executionPlan"))
+            .is_some());
+        assert!(payload
+            .get("machineRelease")
+            .and_then(|release| release.get("blockers"))
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| !blockers.is_empty()));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("validation.failureBoundaries") })));
+        assert!(payload
+            .get("failureModePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("neuralTrainingCorpus"))
+            .is_some());
     }
 
     #[test]

@@ -309,6 +309,8 @@ outcomes.
 - `POST /fabrication/manufacturability/result`
 - `GET /failure-modes/catalog`
 - `GET /fabrication/failure-modes/catalog`
+- `POST /failure-modes/plan`
+- `POST /fabrication/failure-modes/plan`
 - `POST /failure-modes/result`
 - `POST /fabrication/failure-modes/result`
 - `GET /safety/catalog`
@@ -4247,6 +4249,25 @@ require unresolved human intervention, redesign, support restart, tool/process
 state recovery, or split/combine planning. Failure signatures, remediation
 choices, split/combine outcomes, and operator interventions are retained as
 MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `POST /fabrication/failure-modes/plan`
+
+`POST /failure-modes/plan` and the gateway-prefixed
+`POST /fabrication/failure-modes/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.failure-mode-planning.v1` projection for likely machine
+failures, human intervention, recovery, restart, simulation, execution stop
+points, and split/combine review before release. The response includes
+`failureModeContracts`, `validation`, `boundarySummary`, `interventionMap`,
+`operatorInterventionPlan`, `simulation`, `executionPlan`,
+`decompositionPlan`, `machineRelease`, and learning surfaces.
+
+The endpoint keeps `machineReady=false` while likely failures, recovery actions,
+operator interventions, support-media restarts, simulation risks, execution stop
+points, or split/combine evidence remain unresolved. Failure signatures,
+remediation choices, operator interventions, and split/combine outcomes are
+retained for the MDP/POMDP/neural lanes so future plans can avoid unrecoverable
+machine states instead of handing an operator an impossible job.
 
 ## `POST /fabrication/failure-modes/result`
 
