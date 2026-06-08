@@ -1023,3 +1023,421 @@ model DesFelElevatorPomdpBeliefs {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_fel_elevator_pomdp_beliefs")
 }
+
+model BenefactorMarketingClients {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status String @default("onboarding") @db.VarChar(32)
+  name String @db.VarChar(200)
+  slug String @db.VarChar(220)
+  industry String? @db.VarChar(120)
+  websiteUrl String? @map("website_url") @db.Text
+  billingEmail String? @map("billing_email") @db.VarChar(240)
+  ownerUserId String? @map("owner_user_id") @db.Uuid
+  servicePackage String? @map("service_package") @db.VarChar(120)
+  onboardingStage String @map("onboarding_stage") @default("intake") @db.VarChar(80)
+  portalEnabled Boolean @map("portal_enabled") @default(true)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([slug], map: "benefactor_marketing_clients_slug_uq")
+  @@index([status, updatedAt], map: "benefactor_marketing_clients_status_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_clients")
+}
+
+model BenefactorMarketingContacts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  status String @default("active") @db.VarChar(32)
+  firstName String? @map("first_name") @db.VarChar(120)
+  lastName String? @map("last_name") @db.VarChar(120)
+  email String? @db.VarChar(240)
+  phone String? @db.VarChar(80)
+  jobTitle String? @map("job_title") @db.VarChar(160)
+  lifecycleRole String @map("lifecycle_role") @default("other") @db.VarChar(40)
+  consentStatus String @map("consent_status") @default("unknown") @db.VarChar(32)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_contacts_client_status_idx")
+  // benefactor_marketing_contacts_client_email_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_contacts")
+}
+
+model BenefactorMarketingServicePackages {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  status String @default("active") @db.VarChar(32)
+  code String @db.VarChar(120)
+  name String @db.VarChar(200)
+  channelMix Json @map("channel_mix") @default("[]")
+  deliverables Json @default("[]")
+  monthlyBudgetCents Int @map("monthly_budget_cents") @default(0)
+  retainerCents Int @map("retainer_cents") @default(0)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([code], map: "benefactor_marketing_service_packages_code_uq")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_service_packages")
+}
+
+model BenefactorMarketingContracts {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  packageId String? @map("package_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  contractNumber String? @map("contract_number") @db.VarChar(120)
+  startsOn String? @map("starts_on") @db.VarChar(10)
+  endsOn String? @map("ends_on") @db.VarChar(10)
+  billingTerms Json @map("billing_terms") @default("{}")
+  totalValueCents Int @map("total_value_cents") @default(0)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_contracts_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_contracts")
+}
+
+model BenefactorMarketingInvoices {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  contractId String? @map("contract_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  invoiceNumber String? @map("invoice_number") @db.VarChar(120)
+  dueOn String? @map("due_on") @db.VarChar(10)
+  amountCents Int @map("amount_cents") @default(0)
+  paidAt DateTime? @map("paid_at") @db.Timestamptz(6)
+  lineItems Json @map("line_items") @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_invoices_client_status_idx")
+  // benefactor_marketing_invoices_client_number_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_invoices")
+}
+
+model BenefactorMarketingIntegrations {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String? @map("client_id") @db.Uuid
+  platform String @db.VarChar(64)
+  status String @default("connected") @db.VarChar(32)
+  authKind String @map("auth_kind") @default("manual") @db.VarChar(32)
+  externalAccountId String? @map("external_account_id") @db.VarChar(200)
+  syncCursor String? @map("sync_cursor") @db.Text
+  config Json @default("{}")
+  lastSyncAt DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, platform, status], map: "benefactor_marketing_integrations_client_platform_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_integrations")
+}
+
+model BenefactorMarketingLeads {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  sourceIntegrationId String? @map("source_integration_id") @db.Uuid
+  status String @default("new") @db.VarChar(32)
+  companyName String @map("company_name") @db.VarChar(240)
+  domain String? @db.VarChar(240)
+  contactName String? @map("contact_name") @db.VarChar(200)
+  contactEmail String? @map("contact_email") @db.VarChar(240)
+  contactTitle String? @map("contact_title") @db.VarChar(160)
+  countryCode String? @map("country_code") @db.VarChar(8)
+  leadScore Int @map("lead_score") @default(0)
+  icpFitScore Int @map("icp_fit_score") @default(0)
+  verificationStatus String @map("verification_status") @default("unknown") @db.VarChar(32)
+  enrichmentStatus String @map("enrichment_status") @default("pending") @db.VarChar(32)
+  companyProfile Json @map("company_profile") @default("{}")
+  signals Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, leadScore, updatedAt], map: "benefactor_marketing_leads_client_status_score_idx")
+  // benefactor_marketing_leads_domain_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_leads")
+}
+
+model BenefactorMarketingEnrichmentJobs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  leadId String? @map("lead_id") @db.Uuid
+  jobKind String @map("job_kind") @db.VarChar(48)
+  status String @default("queued") @db.VarChar(32)
+  externalJobId String? @map("external_job_id") @db.VarChar(200)
+  scraperHandoffUrl String? @map("scraper_handoff_url") @db.Text
+  input Json @default("{}")
+  result Json @default("{}")
+  errorSummary String? @map("error_summary") @db.Text
+  queuedAt DateTime @map("queued_at") @default(now()) @db.Timestamptz(6)
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, queuedAt], map: "benefactor_marketing_enrichment_jobs_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_enrichment_jobs")
+}
+
+model BenefactorMarketingCampaigns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  campaignKind String @map("campaign_kind") @default("multi_channel") @db.VarChar(48)
+  name String @db.VarChar(220)
+  objective String? @db.Text
+  budgetCents Int @map("budget_cents") @default(0)
+  startsOn String? @map("starts_on") @db.VarChar(10)
+  endsOn String? @map("ends_on") @db.VarChar(10)
+  targetSegments Json @map("target_segments") @default("[]")
+  kpis Json @default("{}")
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_campaigns_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_campaigns")
+}
+
+model BenefactorMarketingCampaignChannels {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  channel String @db.VarChar(48)
+  status String @default("draft") @db.VarChar(32)
+  externalCampaignId String? @map("external_campaign_id") @db.VarChar(200)
+  strategy Json @default("{}")
+  schedule Json @default("{}")
+  metricsSnapshot Json @map("metrics_snapshot") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([campaignId, channel, status], map: "benefactor_marketing_campaign_channels_campaign_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_campaign_channels")
+}
+
+model BenefactorMarketingCampaignExperiments {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  experimentKind String @map("experiment_kind") @db.VarChar(48)
+  hypothesis String? @db.Text
+  variants Json @default("[]")
+  winningVariant String? @map("winning_variant") @db.VarChar(120)
+  resultSummary Json @map("result_summary") @default("{}")
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  endedAt DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([campaignId, status, updatedAt], map: "benefactor_marketing_campaign_experiments_campaign_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_campaign_experiments")
+}
+
+model BenefactorMarketingAutomationWorkflows {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  name String @db.VarChar(220)
+  triggerKind String @map("trigger_kind") @db.VarChar(64)
+  triggerConfig Json @map("trigger_config") @default("{}")
+  actionGraph Json @map("action_graph") @default("{}")
+  lastRunAt DateTime? @map("last_run_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_automation_workflows_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_automation_workflows")
+}
+
+model BenefactorMarketingAutomationEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  workflowId String? @map("workflow_id") @db.Uuid
+  leadId String? @map("lead_id") @db.Uuid
+  eventKind String @map("event_kind") @db.VarChar(80)
+  status String @default("received") @db.VarChar(32)
+  payload Json @default("{}")
+  errorSummary String? @map("error_summary") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, createdAt], map: "benefactor_marketing_automation_events_client_created_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_automation_events")
+}
+
+model BenefactorMarketingReports {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  reportKind String @map("report_kind") @default("dashboard") @db.VarChar(48)
+  status String @default("draft") @db.VarChar(32)
+  periodStart String? @map("period_start") @db.VarChar(10)
+  periodEnd String? @map("period_end") @db.VarChar(10)
+  metrics Json @default("{}")
+  narrative String? @db.Text
+  deliveryTargets Json @map("delivery_targets") @default("[]")
+  generatedAt DateTime? @map("generated_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, reportKind, updatedAt], map: "benefactor_marketing_reports_client_kind_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_reports")
+}
+
+model BenefactorMarketingAttributionEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  leadId String? @map("lead_id") @db.Uuid
+  eventType String @map("event_type") @db.VarChar(64)
+  sourcePlatform String? @map("source_platform") @db.VarChar(64)
+  sourceEventId String? @map("source_event_id") @db.VarChar(200)
+  occurredAt DateTime @map("occurred_at") @default(now()) @db.Timestamptz(6)
+  valueCents Int @map("value_cents") @default(0)
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, eventType, occurredAt], map: "benefactor_marketing_attribution_events_client_type_idx")
+  // benefactor_marketing_attribution_events_source_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_attribution_events")
+}
+
+model BenefactorMarketingOpportunities {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  leadId String? @map("lead_id") @db.Uuid
+  status String @default("open") @db.VarChar(32)
+  stage String @default("prospecting") @db.VarChar(48)
+  name String @db.VarChar(220)
+  amountCents Int @map("amount_cents") @default(0)
+  probabilityMicros Int @map("probability_micros") @default(0)
+  expectedCloseOn String? @map("expected_close_on") @db.VarChar(10)
+  ownerUserId String? @map("owner_user_id") @db.Uuid
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, stage, updatedAt], map: "benefactor_marketing_opportunities_client_stage_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_opportunities")
+}
+
+model BenefactorMarketingContentAssets {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  status String @default("draft") @db.VarChar(32)
+  assetKind String @map("asset_kind") @db.VarChar(48)
+  title String @db.VarChar(240)
+  channel String? @db.VarChar(64)
+  body String? @db.Text
+  assetUri String? @map("asset_uri") @db.Text
+  seoKeywords Json @map("seo_keywords") @default("[]")
+  approvalStatus String @map("approval_status") @default("pending") @db.VarChar(32)
+  publishAt DateTime? @map("publish_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_content_assets_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_content_assets")
+}
+
+model BenefactorMarketingProjectTasks {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  contentAssetId String? @map("content_asset_id") @db.Uuid
+  status String @default("todo") @db.VarChar(32)
+  priority String @default("normal") @db.VarChar(32)
+  title String @db.VarChar(240)
+  description String? @db.Text
+  assignedTo String? @map("assigned_to") @db.Uuid
+  dueOn String? @map("due_on") @db.VarChar(10)
+  slaDueAt DateTime? @map("sla_due_at") @db.Timestamptz(6)
+  timeSpentMinutes Int @map("time_spent_minutes") @default(0)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, priority, updatedAt], map: "benefactor_marketing_project_tasks_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_project_tasks")
+}
+
+model BenefactorMarketingClientApprovals {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  contentAssetId String? @map("content_asset_id") @db.Uuid
+  requestedBy String? @map("requested_by") @db.Uuid
+  status String @default("pending") @db.VarChar(32)
+  approvalKind String @map("approval_kind") @db.VarChar(48)
+  title String @db.VarChar(240)
+  requestPayload Json @map("request_payload") @default("{}")
+  responseNote String? @map("response_note") @db.Text
+  dueAt DateTime? @map("due_at") @db.Timestamptz(6)
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, updatedAt], map: "benefactor_marketing_client_approvals_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_client_approvals")
+}
+
+model BenefactorMarketingTickets {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  status String @default("open") @db.VarChar(32)
+  priority String @default("normal") @db.VarChar(32)
+  subject String @db.VarChar(240)
+  description String? @db.Text
+  source String @default("portal") @db.VarChar(32)
+  assignedTo String? @map("assigned_to") @db.Uuid
+  lastActivityAt DateTime @map("last_activity_at") @default(now()) @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, status, priority, updatedAt], map: "benefactor_marketing_tickets_client_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_tickets")
+}
+
+model BenefactorMarketingMeetings {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  leadId String? @map("lead_id") @db.Uuid
+  opportunityId String? @map("opportunity_id") @db.Uuid
+  status String @default("scheduled") @db.VarChar(32)
+  meetingKind String @map("meeting_kind") @db.VarChar(48)
+  title String @db.VarChar(240)
+  scheduledAt DateTime @map("scheduled_at") @db.Timestamptz(6)
+  durationMinutes Int @map("duration_minutes") @default(30)
+  notes String? @db.Text
+  recordingUri String? @map("recording_uri") @db.Text
+  transcriptSummary Json @map("transcript_summary") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([clientId, scheduledAt], map: "benefactor_marketing_meetings_client_scheduled_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_meetings")
+}
+
+model BenefactorMarketingTeamAllocations {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clientId String? @map("client_id") @db.Uuid
+  campaignId String? @map("campaign_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  role String @db.VarChar(48)
+  allocationPercent Int @map("allocation_percent") @default(100)
+  startsOn String? @map("starts_on") @db.VarChar(10)
+  endsOn String? @map("ends_on") @db.VarChar(10)
+  billable Boolean @default(true)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([userId, startsOn, endsOn], map: "benefactor_marketing_team_allocations_user_idx")
+  // benefactor_marketing_team_allocations_client_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_marketing_team_allocations")
+}

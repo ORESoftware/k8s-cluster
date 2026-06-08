@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd-benefactor-marketing-rs API docs</title>
+  <style>
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
+    header { padding:28px 0 18px; }
+    h1 { margin:0 0 6px; font-size:30px; line-height:1.15; letter-spacing:0; }
+    p { margin:0; color:var(--muted); }
+    .summary { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    .summary span, .badge { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--line); border-radius:6px; padding:3px 9px; background:var(--panel); white-space:nowrap; }
+    .badge { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0; }
+    .service { color:var(--service); }
+    .user-generated { color:var(--custom); }
+    .internal-db { color:var(--internal); }
+    .runtime-config { color:var(--runtime); }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    th, td { padding:12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
+    tr:last-child td { border-bottom:0; }
+    code { display:inline-block; max-width:100%; padding:2px 5px; border-radius:5px; background:var(--code); overflow-wrap:anywhere; font-family:ui-monospace, "SFMono-Regular", Consolas, monospace; font-size:12px; }
+    .methods { display:flex; flex-wrap:wrap; gap:5px; }
+    .method { background:#17202a; color:#fff; border-radius:5px; padding:2px 6px; font-size:12px; font-weight:700; }
+    .muted { color:var(--muted); font-size:12px; margin-top:4px; }
+    @media (max-width:760px) {
+      header, main { width:min(100% - 20px, 1180px); }
+      table, tbody, tr, td { display:block; width:100%; }
+      thead { display:none; }
+      tr { border-bottom:1px solid var(--line); }
+      td { border-bottom:0; padding:8px 10px; }
+      td::before { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; content:attr(data-label); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>dd-benefactor-marketing-rs API docs</h1>
+    <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
+    <div class="summary">
+      <span>36 routes</span>
+      <span>rust</span>
+      <span>7 service</span>
+      <span>29 user-generated</span>
+    </div>
+  </header>
+  <main>
+    <table>
+      <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
+      <tbody>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+  <td data-label="Handlers"><code>descriptor</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Handlers"><code>api_docs_html</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+  <td data-label="Handlers"><code>api_docs_json</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/approvals</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_approval</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">PATCH</span></div></td>
+  <td data-label="Path"><code>/approvals/{approval_id}/decision</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>decide_approval</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/attribution/events</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>record_attribution_event</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/automation/events</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>record_automation_event</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/automation/workflows</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_automation_workflow</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/campaigns</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_campaign</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/campaigns/{campaign_id}/channels</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_campaign_channel</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/campaigns/{campaign_id}/experiments</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_campaign_experiment</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/capabilities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>capabilities</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_client</code> <code>list_clients</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/campaigns</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>list_client_campaigns</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/contacts</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_contact</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/contracts</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_contract</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/dashboard</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>client_dashboard</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/integrations</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_integration</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/invoices</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_invoice</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/leads</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>list_client_leads</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/clients/{client_id}/overview</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>client_dashboard</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/content/assets</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_content_asset</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/descriptor</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>descriptor</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Handlers"><code>api_docs_html</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+  <td data-label="Handlers"><code>healthz</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/leads/{lead_id}/enrichment-jobs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>queue_enrichment_job</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/leads/{lead_id}/score</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>score_lead</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/leads/import</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>import_leads</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/meetings</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_meeting</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+  <td data-label="Handlers"><code>metrics</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/opportunities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_opportunity</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/projects/tasks</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_project_task</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><code>readyz</code></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/reports/snapshots</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_report_snapshot</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/service-packages</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_service_package</code> <code>list_service_packages</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/tickets</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>create_ticket</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
