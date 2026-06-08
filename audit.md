@@ -9,18 +9,19 @@ This audit tracks the current hardening and visualization-platform parity postur
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
   `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, alert notification policy
-  validation lives in `src/notifications.rs`, Qlik-style selection state lives in
-  `src/associative.rs`, semantic model parsing and compilation lives in `src/semantic.rs`, ETL flow
-  planning lives in `src/etl.rs`, secretRef-backed data connection metadata lives in
-  `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
-  hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard
-  validation lives in `src/dashboard.rs`, publishing approval validation lives in
-  `src/publishing.rs`, Power BI-style DAX expression parsing lives in `src/dax.rs`, self-service
-  question/chart validation lives in `src/self_service.rs`, natural-language question planning lives
-  in `src/question_nl.rs`, SQL Lab history validation lives in `src/sql_lab.rs`, query result cache
-  bounds live in `src/query_cache.rs`, Sigma-style workbook grid paging lives in
-  `src/workbook_grid.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
-  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
+  validation lives in `src/notifications.rs`, Loki log frame conversion lives in
+  `src/loki_frames.rs`, Qlik-style selection state lives in `src/associative.rs`, semantic model
+  parsing and compilation lives in `src/semantic.rs`, ETL flow planning lives in `src/etl.rs`,
+  secretRef-backed data connection metadata lives in `src/connections.rs`, infrastructure diagram
+  extraction lives in `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC
+  policy lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, publishing
+  approval validation lives in `src/publishing.rs`, Power BI-style DAX expression parsing lives in
+  `src/dax.rs`, self-service question/chart validation lives in `src/self_service.rs`,
+  natural-language question planning lives in `src/question_nl.rs`, SQL Lab history validation lives
+  in `src/sql_lab.rs`, query result cache bounds live in `src/query_cache.rs`, Sigma-style workbook
+  grid paging lives in `src/workbook_grid.rs`, parser-backed SQL compilation lives in
+  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
+  modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -66,6 +67,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   `POST /alerts/contact-points`, `POST /alerts/notification-policies`, and
   `POST /alerts/rules/:rule_id/notification-preview` without storing raw tokens or sending
   outbound messages.
+- Loki-native query results and structured log streams can be adapted through
+  `POST /observability/loki/frame` into bounded, redacted Grafana-style log frame rows with label
+  keys and level counts.
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
@@ -107,8 +111,7 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Superset and Metabase parity still need richer natural-language intent parsing, actual external
   connector execution, durable cache/storage backends, and durable ownership beyond the current
   in-memory role-gated connection/SQL-Lab/cache/question/chart/publishing catalog.
-- Grafana parity still needs a real notification dispatcher worker, Loki log frames, and live
-  WebSocket panel streams.
+- Grafana parity still needs a real notification dispatcher worker and live WebSocket panel streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
   rendered artifact verification, live cloud inventory connectors, and richer cloud-native
   relationship extraction beyond topology hints.

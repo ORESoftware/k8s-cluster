@@ -276,9 +276,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "Prometheus metrics route",
                 "alert rule catalog and evaluator",
                 "secretRef-backed contact points and notification policy preview",
+                "bounded Loki log frame adapter",
             ],
             next_engine_work: vec![
-                "Loki log frame adapter",
                 "WebSocket live panel stream",
                 "real notification dispatcher worker",
             ],
@@ -365,7 +365,7 @@ pub fn connector_catalog() -> Vec<ConnectorDescriptor> {
         ConnectorDescriptor {
             id: "prometheus-loki",
             family: "observability",
-            mode: "planned query federation",
+            mode: "implemented Loki frame adapter; planned query federation",
             auth: "cluster service auth",
             planner_notes: "Grafana parity path for metrics and log panels",
         },

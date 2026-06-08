@@ -146,6 +146,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/notifications.rs requires secretRef for webhook-like channels and /alerts/rules/:rule_id/notification-preview computes delivery plans without network side effects.",
         },
         ControlDescriptor {
+            id: "bounded-loki-frames",
+            status: "implemented",
+            description: "Loki log frame conversion is capped by stream count, entry count, label count, query bytes, and line bytes, and common secret-bearing log fragments are redacted.",
+            evidence: "src/loki_frames.rs validates Loki-native and structured stream inputs; /observability/loki/frame requires QueryExecute and does not call external Loki APIs.",
+        },
+        ControlDescriptor {
             id: "bounded-semantic-models",
             status: "implemented",
             description: "LookML-like semantic models are capped, parsed as a strict subset, and validated against ingested dataset fields before compilation.",

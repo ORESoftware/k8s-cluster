@@ -26,6 +26,7 @@ mod dax;
 mod etl;
 mod hardening;
 mod infra_diagrams;
+mod loki_frames;
 mod notifications;
 mod platform;
 mod publishing;
@@ -92,6 +93,7 @@ struct Metrics {
     evolution_runs_total: AtomicU64,
     presentation_exports_total: AtomicU64,
     workbook_grid_pages_total: AtomicU64,
+    loki_frames_total: AtomicU64,
     platform_requests_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
@@ -577,6 +579,7 @@ fn app_router(state: AppState) -> Router {
         .route("/expressions/dax/compile", post(compile_dax_expression))
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/workbooks/grid/page", post(workbook_grid_page))
+        .route("/observability/loki/frame", post(loki_frame))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
         .route("/diagrams/tools", get(diagram_tool_catalog))
@@ -816,6 +819,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limits": workbook_grid::limits_payload(),
             "posture": "bounded in-memory page over columnar datasets; request shape is ready for future warehouse pushdown"
         },
+        "lokiFrame": {
+            "surfaces": ["Loki result frame", "structured log stream frame", "label extraction", "level counts", "line redaction"],
+            "limits": loki_frames::limits_payload(),
+            "posture": "offline frame adapter only; does not call Loki, bounds streams/entries/line bytes, and redacts common secret-bearing fragments"
+        },
         "connectionRegistry": {
             "engines": ["postgres", "mysql", "bigquery", "snowflake", "redshift", "prometheus", "loki", "parquet", "csv-json"],
             "modes": ["live-query", "import", "metadata-only"],
@@ -889,7 +897,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
-            "observabilityPanels": "Grafana-style time-series panel catalog, alert rule evaluator, and dry-run notification policies",
+            "observabilityPanels": "Grafana-style time-series panel catalog, Loki log frames, alert rule evaluator, and dry-run notification policies",
             "programmaticRenderers": "D3, Plotly/Dash, Evidence, infrastructure diagrams, and Office export contracts"
         }
     }))
@@ -983,6 +991,9 @@ dd_data_viz_presentation_exports_total {}
 # HELP dd_data_viz_workbook_grid_pages_total Workbook grid pages served.
 # TYPE dd_data_viz_workbook_grid_pages_total counter
 dd_data_viz_workbook_grid_pages_total {}
+# HELP dd_data_viz_loki_frames_total Loki log frames adapted.
+# TYPE dd_data_viz_loki_frames_total counter
+dd_data_viz_loki_frames_total {}
 # HELP dd_data_viz_platform_requests_total Platform parity requests handled.
 # TYPE dd_data_viz_platform_requests_total counter
 dd_data_viz_platform_requests_total {}
@@ -1090,6 +1101,7 @@ dd_data_viz_errors_total {}
         metrics.evolution_runs_total.load(Ordering::Relaxed),
         metrics.presentation_exports_total.load(Ordering::Relaxed),
         metrics.workbook_grid_pages_total.load(Ordering::Relaxed),
+        metrics.loki_frames_total.load(Ordering::Relaxed),
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
@@ -1736,6 +1748,24 @@ async fn workbook_grid_page(
         .workbook_grid_pages_total
         .fetch_add(1, Ordering::Relaxed);
     Ok(Json(page))
+}
+
+async fn loki_frame(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<loki_frames::LokiFrameRequest>,
+) -> Result<Json<loki_frames::LokiFrameResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryExecute)?;
+    let frame = loki_frames::frame(request).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .loki_frames_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(frame))
 }
 
 async fn dashboard_panels(State(state): State<AppState>) -> Json<Value> {
@@ -4793,6 +4823,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Read a bounded Sigma-style virtual workbook grid page with projection, filters, sorts, offset/limit paging, and formula-column planning.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/observability/loki/frame",
+            auth: "query-execute",
+            description: "Adapt a bounded Loki result or structured log stream into redacted Grafana-style log frame rows with labels and level counts.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/dashboards/panels",
             auth: "public",
@@ -5835,6 +5871,7 @@ mod tests {
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
         assert!(paths.contains(&"/expressions/dax/compile"));
         assert!(paths.contains(&"/workbooks/grid/page"));
+        assert!(paths.contains(&"/observability/loki/frame"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
     }
