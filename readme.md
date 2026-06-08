@@ -42,6 +42,8 @@ outcomes.
 - `GET /fabrication/mill-router/catalog`
 - `GET /sheet-cutting/catalog`
 - `GET /fabrication/sheet-cutting/catalog`
+- `GET /edm/catalog`
+- `GET /fabrication/edm/catalog`
 - `GET /turning/catalog`
 - `GET /fabrication/turning/catalog`
 - `GET /turning/preflight/catalog`
@@ -204,6 +206,8 @@ outcomes.
 - `POST /fabrication/execution/result`
 - `GET /hybrid/catalog`
 - `GET /fabrication/hybrid/catalog`
+- `POST /hybrid/plan`
+- `POST /fabrication/hybrid/plan`
 - `GET /strategy/catalog`
 - `GET /fabrication/strategy/catalog`
 - `GET /methods/catalog`
@@ -997,6 +1001,26 @@ or automation signoff evidence are retained. Sheet-cutting outcomes should feed
 setup, nesting, support-strategy, simulation, quality, telemetry, and learning
 routes so DES, MDP/POMDP, and neural workers can learn safer split, combine,
 tab, bridge, or human-intervention strategies.
+
+## `GET /fabrication/edm/catalog`
+
+`GET /edm/catalog` and the gateway-prefixed
+`GET /fabrication/edm/catalog` return the live
+`dd.fabrication.edm-catalog.v1` discovery view for wire-EDM and sinker-EDM
+profiles derived from `default_machines()` and the subtractive catalog. The
+catalog exposes EDM machine kinds, controllers, conductive materials, operations,
+accepted instruction languages, release gates, and links to subtractive
+preflight, tooling, process-recipe, setup, simulation, quality, telemetry, and
+learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until conductive material, electrode or wire profile,
+dielectric/flushing, wire threading, tension, skim-pass allowance, slug
+retention, electrode wear, burn depth, recast-layer, debris-trap, simulation,
+quality, and operator or automation signoff evidence are retained. EDM outcomes
+should feed setup, tooling, process-recipe, simulation, quality, telemetry, and
+learning routes so DES, MDP/POMDP, and neural workers can learn safer cavity,
+profile, split, combine, reroute, or human-intervention strategies.
 
 ## `GET /fabrication/turning/catalog`
 
@@ -2960,6 +2984,26 @@ certified manufacturing release. Hybrid routes remain blocked until interface,
 datum, tolerance, workholding, join, simulation, quality, and operator or
 automation evidence clear; retained observations feed DES, MDP/POMDP, and neural
 policy workers so future plans can choose one-piece, split-route, recomposed, or
+human-intervention paths earlier.
+
+## `POST /fabrication/hybrid/plan`
+
+`POST /hybrid/plan` and the gateway-prefixed `POST /fabrication/hybrid/plan`
+accept the same request body as `POST /fabrication/plan`, then return the live
+`dd.fabrication.hybrid-planning.v1` split/combine planning envelope. The response
+starts from the decomposition planning contract and adds selected hybrid strategy,
+part-route summaries, generated program links, join counts, split/combine counts,
+human-intervention interface counts, method-family metadata, release evidence
+requirements, response surfaces, artifact surfaces, POMDP belief state, neural
+training corpus, and DES/MDP/POMDP policy snapshot evidence.
+
+Hybrid planning is advisory rather than a machine-release approval. Printed,
+milled, turned, cut, inspected, postprocessed, and assembled child routes remain
+blocked until per-route machine code, datum transfer, interface fit, join
+process, simulation, inspection, release package, and operator or automation
+evidence clear. The retained hybrid route, split/combine, join, boundary,
+intervention, and release observations feed DES, MDP/POMDP, and neural workers so
+future requests can choose one-piece, split-route, recomposed, rerouted, or
 human-intervention paths earlier.
 
 ## `GET /fabrication/methods/catalog`

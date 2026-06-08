@@ -61911,6 +61911,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/mill-router/catalog",
         "GET /sheet-cutting/catalog",
         "GET /fabrication/sheet-cutting/catalog",
+        "GET /edm/catalog",
+        "GET /fabrication/edm/catalog",
         "GET /turning/catalog",
         "GET /fabrication/turning/catalog",
         "GET /turning/preflight/catalog",
@@ -62071,6 +62073,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/interfaces/result",
         "GET /hybrid/catalog",
         "GET /fabrication/hybrid/catalog",
+        "POST /hybrid/plan",
+        "POST /fabrication/hybrid/plan",
         "GET /strategy/catalog",
         "GET /fabrication/strategy/catalog",
         "GET /methods/catalog",
@@ -66873,6 +66877,8 @@ fn hybrid_catalog_response() -> Value {
             "GET /fabrication/cells/catalog"
         ],
         "planningRoutes": [
+            "POST /hybrid/plan",
+            "POST /fabrication/hybrid/plan",
             "POST /plan",
             "POST /fabrication/plan",
             "POST /decomposition/plan",
@@ -66924,6 +66930,226 @@ fn hybrid_catalog_response() -> Value {
 
 async fn hybrid_catalog_http() -> impl IntoResponse {
     Json(hybrid_catalog_response())
+}
+
+fn hybrid_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let mut object = match decomposition_planning_response(response, policy) {
+        Value::Object(object) => object,
+        _ => Map::new(),
+    };
+    let hybrid_catalog = hybrid_catalog_response();
+    let method_families = hybrid_catalog
+        .get("families")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let multi_method_route_count = response
+        .hybrid_make_plan
+        .part_routes
+        .iter()
+        .map(|route| normalize_token(&route.manufacturing_method))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let human_intervention_interface_count = response
+        .assembly
+        .assembly_graph
+        .interfaces
+        .iter()
+        .filter(|interface| interface.requires_human_intervention)
+        .count();
+    let hybrid_blocked = response.machine_release.machine_release_blocked
+        || response.decomposition_plan.release_blocked
+        || response.interface_control_plan.machine_release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.boundary_summary.human_intervention_required > 0;
+    let hybrid_route_summaries = response
+        .hybrid_make_plan
+        .part_routes
+        .iter()
+        .map(|route| {
+            let generated_program = route.program_id.as_ref().and_then(|program_id| {
+                response
+                    .generated_programs
+                    .iter()
+                    .find(|program| &program.program_id == program_id)
+            });
+            let process_node = route.process_node_id.as_ref().and_then(|node_id| {
+                response
+                    .process_graph
+                    .nodes
+                    .iter()
+                    .find(|node| &node.node_id == node_id)
+            });
+            json!({
+                "partId": &route.part_id,
+                "role": &route.role,
+                "routeType": &route.route_type,
+                "manufacturingMethod": &route.manufacturing_method,
+                "machineKind": &route.machine_kind,
+                "processNode": process_node,
+                "generatedProgram": generated_program,
+                "releaseEvidenceRequired": [
+                    "per-route design export and machine-code artifact",
+                    "datum transfer and interface-control evidence",
+                    "join, fit, tolerance, and inspection evidence",
+                    "simulation, release-package, and operator signoff evidence"
+                ]
+            })
+        })
+        .collect::<Vec<_>>();
+
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.hybrid-planning.v1"),
+    );
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /hybrid/plan", "POST /fabrication/hybrid/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /hybrid/catalog",
+            "GET /fabrication/hybrid/catalog",
+            "GET /methods/catalog",
+            "GET /fabrication/methods/catalog",
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog",
+            "GET /turning/catalog",
+            "GET /fabrication/turning/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!([
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /decomposition/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /assembly/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /toolpaths/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /slicers/plan",
+            "POST /fabrication/slicers/plan"
+        ]),
+    );
+    object.insert("hybridBlocked".to_string(), json!(hybrid_blocked));
+    object.insert(
+        "machineReady".to_string(),
+        json!(!hybrid_blocked && !response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "selectedStrategy".to_string(),
+        json!(&response.hybrid_make_plan.selected_strategy),
+    );
+    object.insert(
+        "hybridStatus".to_string(),
+        json!(&response.hybrid_make_plan.status),
+    );
+    object.insert(
+        "hybridRouteCount".to_string(),
+        json!(response.hybrid_make_plan.route_count),
+    );
+    object.insert(
+        "multiMethodRouteFamilyCount".to_string(),
+        json!(multi_method_route_count),
+    );
+    object.insert(
+        "hybridJoinCount".to_string(),
+        json!(response.hybrid_make_plan.join_count),
+    );
+    object.insert(
+        "hybridSplitCount".to_string(),
+        json!(response.hybrid_make_plan.split_count),
+    );
+    object.insert(
+        "hybridCombineCount".to_string(),
+        json!(response.hybrid_make_plan.combine_count),
+    );
+    object.insert(
+        "humanInterventionInterfaceCount".to_string(),
+        json!(human_intervention_interface_count),
+    );
+    object.insert("hybridMethodFamilies".to_string(), method_families);
+    object.insert("hybridRoutes".to_string(), json!(hybrid_route_summaries));
+    object.insert(
+        "generatedPrograms".to_string(),
+        json!(&response.generated_programs),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "hybridRoutes",
+            "hybridRoutes.generatedProgram",
+            "hybridMakePlan.partRoutes",
+            "hybridMakePlan.joinOperations",
+            "hybridMakePlan.splitCombineDecisions",
+            "decompositionPlan.routeContracts",
+            "interfaceControlPlan.controls",
+            "assembly.assemblyGraph",
+            "generatedPrograms.instructions",
+            "machineSelection",
+            "machineSchedule",
+            "releasePackagePlan.packages",
+            "boundarySummary",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "learning.strategyCandidates",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "hybrid-make-plan",
+            "hybrid-route-plan",
+            "decomposition-plan",
+            "interface-control-plan",
+            "assembly-plan",
+            "generated-machine-programs",
+            "release-package-plan",
+            "operator-intervention-plan",
+            "mdp-request.artifacts.hybridMakePlan",
+            "pomdp-belief-state",
+            "neural-training-corpus"
+        ]),
+    );
+    object.insert(
+        "hybridPolicy".to_string(),
+        json!([
+            "hybrid planning returns advisory split/combine, print, mill, turn, cut, inspect, and recomposition route evidence, not certified machine release",
+            "machine-ready release remains blocked until per-route machine code, datum transfer, interface fit, join process, simulation, inspection, release package, and operator or automation evidence clear",
+            "hybrid route, split/combine, join, boundary, intervention, and release observations feed DES, MDP/POMDP, and neural workers so future jobs can choose one-piece, split-route, recomposed, rerouted, or human-intervention paths earlier"
+        ]),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "strategyCandidates": &response.learning.strategy_candidates,
+            "pomdpBeliefState": &response.learning.pomdp_belief_state,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus,
+            "policySnapshot": {
+                "outcomeCount": policy.outcome_count,
+                "successes": policy.successes,
+                "failures": policy.failures,
+                "averageReward": policy.average_reward
+            }
+        }),
+    );
+    object.insert(
+        "operatorInterventionPlan".to_string(),
+        json!(&response.operator_intervention_plan),
+    );
+    Value::Object(object)
 }
 
 fn manufacturing_method_catalog_contracts() -> Vec<Value> {
@@ -109339,6 +109565,118 @@ async fn sheet_cutting_catalog_http() -> impl IntoResponse {
     Json(sheet_cutting_catalog_response())
 }
 
+fn edm_catalog_response() -> Value {
+    let subtractive_payload = subtractive_catalog_response();
+    let edm_machines = subtractive_payload
+        .get("subtractiveMachines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| is_wire_edm_kind(kind) || is_sinker_edm_kind(kind))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let edm_machine_kinds = unique_sorted(edm_machines.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(edm_machines.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(edm_machines.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(edm_machines.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.edm-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /edm/catalog", "GET /fabrication/edm/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog",
+            "GET /sheet-cutting/catalog",
+            "GET /fabrication/sheet-cutting/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog"
+        ],
+        "edmMachineCount": edm_machines.len(),
+        "edmMachineKinds": edm_machine_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/setup/plan"
+        ],
+        "instructionAnalysisRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/machines/select",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/tooling/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/simulation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "EDM catalog entries are default wire-EDM and sinker-EDM planning profiles, not certified live machine availability",
+            "machine-ready release remains blocked until conductive material, electrode or wire profile, dielectric/flushing, wire threading, tension, skim-pass allowance, slug retention, electrode wear, burn depth, recast-layer, debris-trap, simulation, quality, and signoff evidence are retained",
+            "EDM outcomes should feed setup, tooling, process-recipe, simulation, quality, telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn safer cavity, profile, split, combine, reroute, or human-intervention strategies"
+        ],
+        "edmMachines": edm_machines
+    })
+}
+
+async fn edm_catalog_http() -> impl IntoResponse {
+    Json(edm_catalog_response())
+}
+
 fn turning_catalog_response() -> Value {
     let subtractive_payload = subtractive_catalog_response();
     let turning_machines = subtractive_payload
@@ -118602,6 +118940,7 @@ async fn request_schema() -> impl IntoResponse {
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "sheetCuttingCatalog": ["GET /sheet-cutting/catalog", "GET /fabrication/sheet-cutting/catalog"],
+            "edmCatalog": ["GET /edm/catalog", "GET /fabrication/edm/catalog"],
             "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "turningPreflightCatalog": ["GET /turning/preflight/catalog", "GET /fabrication/turning/preflight/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
@@ -118648,6 +118987,7 @@ async fn request_schema() -> impl IntoResponse {
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
             "interfaceResult": ["POST /interfaces/result", "POST /fabrication/interfaces/result"],
+            "hybridPlan": ["POST /hybrid/plan", "POST /fabrication/hybrid/plan"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
             "releasePreflightCatalog": ["GET /release/preflight/catalog", "GET /fabrication/release/preflight/catalog"],
             "releaseReadinessResult": ["POST /release/result", "POST /fabrication/release/result"],
@@ -120880,6 +121220,50 @@ async fn assembly_plan_http(
     }
 }
 
+async fn hybrid_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.hybrid.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(hybrid_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn simulation_run_http(
     State(state): State<AppState>,
     Json(request): Json<FabricationPlanRequest>,
@@ -121743,6 +122127,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/sheet-cutting/catalog",
             get(sheet_cutting_catalog_http),
         )
+        .route("/edm/catalog", get(edm_catalog_http))
+        .route("/fabrication/edm/catalog", get(edm_catalog_http))
         .route("/turning/catalog", get(turning_catalog_http))
         .route("/fabrication/turning/catalog", get(turning_catalog_http))
         .route(
@@ -122146,6 +122532,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/workflow/catalog", get(workflow_catalog_http))
         .route("/hybrid/catalog", get(hybrid_catalog_http))
         .route("/fabrication/hybrid/catalog", get(hybrid_catalog_http))
+        .route("/hybrid/plan", post(hybrid_plan_http))
+        .route("/fabrication/hybrid/plan", post(hybrid_plan_http))
         .route("/strategy/catalog", get(strategy_catalog_http))
         .route("/fabrication/strategy/catalog", get(strategy_catalog_http))
         .route("/methods/catalog", get(manufacturing_method_catalog_http))
@@ -135622,6 +136010,100 @@ mod tests {
     }
 
     #[test]
+    fn hybrid_planning_endpoint_exposes_split_combine_routes_and_learning_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-hybrid-plan".to_string()),
+                objective:
+                    "aluminum gearbox housing with a printed cover, machined datum bore, and turned shaft insert"
+                        .to_string(),
+                material: Some(material("aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate-bar-and-print".to_string(),
+                    dimensions_mm: Some(vec![180.0, 110.0, 45.0]),
+                }),
+                tolerance_mm: Some(0.03),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(4),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: None,
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("hybrid planning should succeed");
+
+        let payload = hybrid_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.hybrid-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/hybrid/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("hybridRouteCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+        assert!(payload
+            .get("hybridSplitCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("hybridRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| route
+                .get("releaseEvidenceRequired")
+                .and_then(Value::as_array)
+                .is_some_and(|evidence| evidence.iter().any(|item| item
+                    .as_str()
+                    .is_some_and(|item| item.contains("datum transfer")))))));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("hybridRoutes.generatedProgram"))));
+        assert!(payload
+            .get("hybridPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
     fn manufacturing_method_catalog_endpoint_exposes_process_families_and_learning_routes() {
         let payload = manufacturing_method_catalog_response();
         assert_eq!(
@@ -148351,6 +148833,56 @@ mod tests {
     }
 
     #[test]
+    fn edm_catalog_endpoint_exposes_wire_and_sinker_release_contracts() {
+        let payload = edm_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.edm-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/edm/catalog"))));
+
+        let kinds = payload
+            .get("edmMachineKinds")
+            .and_then(Value::as_array)
+            .expect("EDM machine kinds should be present");
+        for kind in ["wire-edm", "sinker-edm"] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing EDM kind {kind}"
+            );
+        }
+        assert!(payload
+            .get("controllers")
+            .and_then(Value::as_array)
+            .is_some_and(|controllers| controllers
+                .iter()
+                .any(|controller| controller.as_str() == Some("wire-edm-job"))));
+        assert!(payload
+            .get("operations")
+            .and_then(Value::as_array)
+            .is_some_and(|operations| operations
+                .iter()
+                .any(|operation| operation.as_str() == Some("edm-cavity"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("dielectric/flushing")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
     fn turning_preflight_catalog_endpoint_exposes_lathe_mill_turn_release_gates() {
         let payload = turning_preflight_catalog_response();
         assert_eq!(
@@ -150408,6 +150940,124 @@ mod tests {
             .generated_programs
             .iter()
             .all(|program| program.draft && !program.machine_ready));
+    }
+
+    #[test]
+    fn hybrid_planning_endpoint_exposes_split_combine_routes_and_learning_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-hybrid-plan-endpoint".to_string()),
+                objective:
+                    "hybrid aluminum gearbox with printed cover, milled datum pads, and turned shaft insert"
+                        .to_string(),
+                material: Some(material("aluminum plus PETG", "hybrid")),
+                stock: Some(StockSpec {
+                    form: "bar-plate-and-filament".to_string(),
+                    dimensions_mm: Some(vec![160.0, 90.0, 45.0]),
+                }),
+                tolerance_mm: Some(0.04),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(5),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "fdm-3d-printing".to_string(),
+                        "milling".to_string(),
+                        "turning".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("printed cover plus machined datum insert".to_string()),
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("hybrid endpoint plan should be generated");
+
+        let payload = hybrid_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.hybrid-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/hybrid/plan"))));
+        assert!(payload
+            .get("hybridRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| !routes.is_empty()
+                && routes.iter().any(|route| route
+                    .get("releaseEvidenceRequired")
+                    .and_then(Value::as_array)
+                    .is_some_and(|evidence| evidence.iter().any(|item| item
+                        .as_str()
+                        .is_some_and(|item| item.contains("datum transfer")))))));
+        assert!(payload
+            .get("hybridRouteCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("splitCombineDecisionCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("generatedPrograms")
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| program
+                .get("instructions")
+                .and_then(Value::as_array)
+                .is_some_and(|instructions| !instructions.is_empty()))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("hybridMakePlan.splitCombineDecisions")
+            })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.hybridMakePlan")
+            })));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("neuralTrainingCorpus"))
+            .and_then(|corpus| corpus.get("examples"))
+            .and_then(Value::as_array)
+            .is_some());
+        assert!(payload
+            .get("hybridPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified machine release")))));
     }
 
     #[test]
