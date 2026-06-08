@@ -4383,6 +4383,7 @@ struct InstructionAnalysisResponse {
     postprocess_plan: PostprocessPlan,
     simulation: SimulationReport,
     des_instruction_model: FabricationDesInstructionModel,
+    instruction_intent_map: InstructionIntentMap,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
     learning: LearningPlan,
@@ -6440,6 +6441,34 @@ struct AnalyzedProgram {
     has_homing_or_fixture_reference: bool,
     has_spindle_or_heatup: bool,
     has_program_end: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionIntentMap {
+    schema_version: &'static str,
+    program_count: usize,
+    language_counts: BTreeMap<String, usize>,
+    process_intents: Vec<String>,
+    risk_intents: Vec<String>,
+    release_handoff_routes: Vec<String>,
+    learning_observations: Vec<String>,
+    programs: Vec<ProgramInstructionIntent>,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgramInstructionIntent {
+    program_id: String,
+    language: String,
+    machine_kind: String,
+    primary_process: String,
+    detected_intents: Vec<String>,
+    review_lanes: Vec<String>,
+    machine_failure_watchpoints: Vec<String>,
+    human_intervention_watchpoints: Vec<String>,
+    split_combine_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41366,6 +41395,177 @@ fn instruction_patch_manifest(
     }
 }
 
+fn instruction_intent_map(
+    programs: &[InstructionProgram],
+    analyzed: &[AnalyzedProgram],
+) -> InstructionIntentMap {
+    let mut language_counts = BTreeMap::<String, usize>::new();
+    let mut process_intents = Vec::new();
+    let mut risk_intents = Vec::new();
+    let mut release_handoff_routes = BTreeSet::<String>::new();
+    let mut learning_observations = Vec::new();
+    let mut mapped_programs = Vec::with_capacity(analyzed.len());
+
+    for (index, analyzed_program) in analyzed.iter().enumerate() {
+        let source = programs.get(index);
+        let token = normalize_token(&format!(
+            "{} {} {}",
+            analyzed_program.language,
+            analyzed_program.machine_kind,
+            source
+                .map(|program| program.instructions.join(" "))
+                .unwrap_or_default()
+        ));
+        let language_token = normalize_token(&analyzed_program.language);
+        *language_counts.entry(language_token.clone()).or_default() += 1;
+
+        let machine_class = machine_class(&analyzed_program.machine_kind);
+        let primary_process = if machine_class == MachineClass::Additive
+            || token.contains("extrud")
+            || token.contains("layer")
+            || token.contains("slicer")
+            || token.contains("resin")
+        {
+            "additive-print"
+        } else if machine_class == MachineClass::Lathe
+            || token.contains("turn")
+            || token.contains("lathe")
+            || token.contains("partoff")
+        {
+            "turning"
+        } else if matches!(machine_class, MachineClass::Mill | MachineClass::Router)
+            || token.contains("spindle")
+            || token.contains("mill")
+            || token.contains("tool")
+        {
+            "subtractive-machining"
+        } else if wants_plastic_joining(&token)
+            || wants_adhesive_bonding(&token)
+            || wants_metal_joining(&token)
+        {
+            "joining"
+        } else if token.contains("inspect") || token.contains("probe") {
+            "inspection"
+        } else {
+            "general-instruction"
+        }
+        .to_string();
+        process_intents.push(primary_process.clone());
+
+        let mut detected_intents = vec![primary_process.clone()];
+        let mut review_lanes = vec![
+            "POST /fabrication/instructions/validate".to_string(),
+            "POST /fabrication/simulation/run".to_string(),
+        ];
+        let mut machine_failure_watchpoints = Vec::new();
+        let mut human_intervention_watchpoints = Vec::new();
+        let mut split_combine_hints = Vec::new();
+
+        if analyzed_program.has_units_mode {
+            detected_intents.push("modal-units-established".to_string());
+        } else {
+            risk_intents.push("missing-units-mode".to_string());
+            machine_failure_watchpoints.push("missing units mode before motion".to_string());
+        }
+        if analyzed_program.has_positioning_mode {
+            detected_intents.push("positioning-mode-established".to_string());
+        } else {
+            risk_intents.push("missing-positioning-mode".to_string());
+            machine_failure_watchpoints.push("missing absolute/incremental mode".to_string());
+        }
+        if analyzed_program.has_homing_or_fixture_reference {
+            detected_intents.push("fixture-or-home-reference".to_string());
+        } else {
+            risk_intents.push("missing-home-or-fixture-reference".to_string());
+            human_intervention_watchpoints
+                .push("operator must prove home, work offset, or fixture reference".to_string());
+        }
+        if analyzed_program.has_spindle_or_heatup {
+            detected_intents.push("process-energy-enabled".to_string());
+        } else {
+            risk_intents.push("missing-process-energy".to_string());
+            machine_failure_watchpoints
+                .push("spindle, laser, heat, or extrusion energy is not proven".to_string());
+        }
+        if analyzed_program.has_program_end {
+            detected_intents.push("program-end-declared".to_string());
+        } else {
+            risk_intents.push("missing-program-end".to_string());
+            human_intervention_watchpoints
+                .push("operator must verify shutdown or end-of-job state".to_string());
+        }
+        if token.contains("pause") || token.contains("m0") || token.contains("m1") {
+            detected_intents.push("operator-stop-or-pause".to_string());
+            human_intervention_watchpoints.push(
+                "pause requires resume, rehome, and extrusion/feed recovery evidence".to_string(),
+            );
+            review_lanes.push("POST /fabrication/interventions/result".to_string());
+        }
+        if token.contains("split")
+            || token.contains("combine")
+            || token.contains("assembly")
+            || token.contains("join")
+            || token.contains("interface")
+        {
+            detected_intents.push("split-combine-or-interface-work".to_string());
+            split_combine_hints.push(
+                "route through decomposition, interface control, and assembly review before release"
+                    .to_string(),
+            );
+            review_lanes.push("POST /fabrication/decomposition/plan".to_string());
+            review_lanes.push("POST /fabrication/assembly/plan".to_string());
+            review_lanes.push("POST /fabrication/interfaces/result".to_string());
+        }
+        if token.contains("probe") || token.contains("inspect") || token.contains("measure") {
+            detected_intents.push("inspection-or-probing".to_string());
+            review_lanes.push("POST /fabrication/quality/result".to_string());
+        }
+
+        release_handoff_routes.extend(review_lanes.iter().cloned());
+        learning_observations.push(format!(
+            "instruction-intent:{}:{}",
+            normalize_token(&analyzed_program.program_id),
+            normalize_token(&primary_process)
+        ));
+        for intent in &detected_intents {
+            learning_observations.push(format!(
+                "instruction-intent-signal:{}:{}",
+                normalize_token(&analyzed_program.program_id),
+                normalize_token(intent)
+            ));
+        }
+
+        mapped_programs.push(ProgramInstructionIntent {
+            program_id: analyzed_program.program_id.clone(),
+            language: analyzed_program.language.clone(),
+            machine_kind: analyzed_program.machine_kind.clone(),
+            primary_process,
+            detected_intents: unique_sorted(detected_intents.into_iter()),
+            review_lanes: unique_sorted(review_lanes.into_iter()),
+            machine_failure_watchpoints: unique_sorted(machine_failure_watchpoints.into_iter()),
+            human_intervention_watchpoints: unique_sorted(
+                human_intervention_watchpoints.into_iter(),
+            ),
+            split_combine_hints: unique_sorted(split_combine_hints.into_iter()),
+        });
+    }
+
+    InstructionIntentMap {
+        schema_version: "dd.fabrication.instruction-intent-map.v1",
+        program_count: mapped_programs.len(),
+        language_counts,
+        process_intents: unique_sorted(process_intents.into_iter()),
+        risk_intents: unique_sorted(risk_intents.into_iter()),
+        release_handoff_routes: release_handoff_routes.into_iter().collect(),
+        learning_observations: unique_sorted(learning_observations.into_iter()),
+        programs: mapped_programs,
+        notes: vec![
+            "Intent maps normalize mixed CNC, slicer, printer, probing, joining, and operator-instruction streams before validation or rewrite".to_string(),
+            "Detected intents are routing evidence only; machine-ready release still requires validation, simulation or dry-run, provenance, and operator or automation signoff".to_string(),
+        ],
+    }
+}
+
 fn improve_instruction_programs(
     programs: &[InstructionProgram],
     validation: &ValidationReport,
@@ -43317,6 +43517,12 @@ fn analysis_artifacts(response: &InstructionAnalysisResponse) -> Vec<Fabrication
             "analysis-des-instruction-model".to_string(),
             "analysis-des-instruction-model",
             json!(response.des_instruction_model),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "analysis-instruction-intent-map".to_string(),
+            "analysis-instruction-intent-map",
+            json!(response.instruction_intent_map),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -48155,6 +48361,7 @@ fn analyze_instruction_request(
         None,
     );
     let des_instruction_model = fabrication_des_instruction_model(&analyzed, &validation);
+    let instruction_intent_map = instruction_intent_map(&programs, &analyzed);
 
     Ok(InstructionAnalysisResponse {
         ok: validation.ok,
@@ -48171,6 +48378,7 @@ fn analyze_instruction_request(
         postprocess_plan,
         simulation,
         des_instruction_model,
+        instruction_intent_map,
         improvements,
         improved_programs,
         learning,
@@ -48242,6 +48450,7 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
             "executionPlan.programRuns",
             "postprocessPlan.targets",
             "simulation.programs",
+            "instructionIntentMap",
             "improvements",
             "improvedPrograms",
             "improvedPrograms.patchManifest"
@@ -48252,9 +48461,11 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
             "analysis-machine-release",
             "analysis-execution-plan",
             "analysis-postprocess-plan",
+            "analysis-instruction-intent-map",
             "analysis-mdp-request"
         ],
         "learningSurfaces": [
+            "instruction-intent:*",
             "instruction-patch:*",
             "instruction-patch-action:*",
             "patch-action:*",
@@ -48315,6 +48526,7 @@ fn instruction_improvement_review_response(response: &InstructionAnalysisRespons
         "executionPlan": &response.execution_plan,
         "postprocessPlan": &response.postprocess_plan,
         "simulation": &response.simulation,
+        "instructionIntentMap": &response.instruction_intent_map,
         "improvements": &response.improvements,
         "improvedPrograms": &response.improved_programs
     })
@@ -48456,9 +48668,11 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
             "postprocessPlan.controllerTargets",
             "simulation.programs",
             "simulation.failureBoundaries",
+            "instructionIntentMap",
             "improvements",
             "improvedPrograms.patchManifest",
             "learning.desInstructionModel",
+            "learning.instructionIntentMap",
             "learning.neuralTrainingCorpus"
         ]),
     );
@@ -48471,6 +48685,7 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
             "analysis-intervention-map",
             "analysis-machine-release",
             "analysis-simulation-report",
+            "analysis-instruction-intent-map",
             "analysis-improvements",
             "analysis-mdp-request"
         ]),
@@ -48511,6 +48726,10 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
         json!(&response.postprocess_plan),
     );
     object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "instructionIntentMap".to_string(),
+        json!(&response.instruction_intent_map),
+    );
     object.insert("improvements".to_string(), json!(&response.improvements));
     object.insert(
         "improvedPrograms".to_string(),
@@ -48520,6 +48739,7 @@ fn instruction_validation_response(response: &InstructionAnalysisResponse) -> Va
         "learning".to_string(),
         json!({
             "desInstructionModel": &response.des_instruction_model,
+            "instructionIntentMap": &response.instruction_intent_map,
             "engine": &response.learning.engine,
             "enginePolicy": &response.learning.engine_policy,
             "interventionSignals": &response.learning.intervention_signals,
@@ -58026,6 +58246,7 @@ fn instruction_analysis_mdp_request(response: &InstructionAnalysisResponse) -> V
         "postprocessPlan": &response.postprocess_plan,
         "simulation": &response.simulation,
         "desInstructionModel": &response.des_instruction_model,
+        "instructionIntentMap": &response.instruction_intent_map,
         "improvements": &response.improvements,
         "improvedPrograms": &response.improved_programs,
         "gamma": 0.82,
@@ -99856,6 +100077,73 @@ fn machine_catalog_response() -> Value {
         "maxAxes": max_axes,
         "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
         "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "selectionEvidenceMatrix": [
+            {
+                "machineFamily": "fdm-and-slicer-printers",
+                "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer"],
+                "selectionInputs": ["material family", "build envelope", "nozzle/toolhead count", "slicer or generated job profile", "support/build-surface requirements"],
+                "requiredEvidence": [
+                    "filament/feedstock lot, dry storage, and remaining material",
+                    "nozzle/hotend, bed, extrusion-mode, and homing readiness",
+                    "slicer profile or generated instruction checksum",
+                    "first-layer, purge/prime, runout, and resume-state review"
+                ],
+                "responseSurfaces": ["machineSelection.candidates", "printerCatalog.entries", "materialPlan.routeRequirements", "releasePackagePlan.requiredArtifacts"],
+                "blocks": ["printer material unsupported", "build envelope exceeded", "thermal or extrusion readiness missing"]
+            },
+            {
+                "machineFamily": "resin-and-powder-printers",
+                "machineKinds": ["sla-printer", "sls-powder-printer", "binder-jet-printer", "metal-pbf-printer"],
+                "selectionInputs": ["vat or powder build volume", "resin/powder/alloy lot", "exposure or build profile", "postprocess and safety controls"],
+                "requiredEvidence": [
+                    "resin, powder, or alloy lot and handling controls",
+                    "build profile, layer/exposure/recoater/nesting evidence",
+                    "wash/cure, depowder, stress-relief, or sinter plan",
+                    "PPE, waste, cooldown, and first-article inspection gates"
+                ],
+                "responseSurfaces": ["machineSelection.candidates", "printerPreflightCatalog", "postprocessPlan.requiredArtifacts", "qualityPlan.measurementTargets"],
+                "blocks": ["material lot missing", "profile or postprocess missing", "safety/handling evidence missing"]
+            },
+            {
+                "machineFamily": "vertical-horizontal-and-indexed-mills",
+                "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexed-mill"],
+                "selectionInputs": ["stock envelope", "axis count", "side-feature or multi-face access", "tooling and fixture strategy", "controller/postprocessor"],
+                "requiredEvidence": [
+                    "stock, fixture, vise/clamp, pallet, or tombstone setup proof",
+                    "datum/work-offset, probe, and tool-length evidence",
+                    "feed/speed, spindle, coolant/chip evacuation, and tool-life evidence",
+                    "controller/postprocessor review and exact-program dry-run"
+                ],
+                "responseSurfaces": ["machineSelection.candidates", "subtractiveCatalog.entries", "fixturePlan.setups", "controllerPlan.releaseGates"],
+                "blocks": ["setup evidence missing", "horizontal/rotary access unresolved", "controller or dry-run missing"]
+            },
+            {
+                "machineFamily": "routers-and-sheet-cutters",
+                "machineKinds": ["cnc-router", "laser-cutter", "waterjet-cutter", "plasma-cutter"],
+                "selectionInputs": ["sheet/profile geometry", "material and thickness", "bed/vacuum/tab/slug support", "kerf, cut chart, beam/jet/media support"],
+                "requiredEvidence": [
+                    "hold-down, tab, nest, sheet support, or slug-retention evidence",
+                    "kerf, pierce, cut-chart, beam/jet/pump/gas/abrasive readiness",
+                    "dust/fume/water-table/support-media controls",
+                    "profile dry-run, first article, and release checksum"
+                ],
+                "responseSurfaces": ["machineSelection.candidates", "nestingPlan", "subtractivePreflightCatalog", "simulation.failureBoundaries"],
+                "blocks": ["material/thickness unsupported", "hold-down or slug support missing", "process media not verified"]
+            },
+            {
+                "machineFamily": "lathes-mill-turn-and-swiss",
+                "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
+                "selectionInputs": ["round/bar stock", "stick-out and support", "turning/threading/part-off features", "turret/live-tool/subspindle capability"],
+                "requiredEvidence": [
+                    "chuck, collet, guide-bushing, tailstock, subspindle, or catcher proof",
+                    "tool geometry, wear, nose radius, spindle speed limit, and feed-per-rev/thread pitch evidence",
+                    "live-tool/C/Y/B-axis, transfer, and cutoff clearance review when applicable",
+                    "controller/postprocessor review, simulation or dry-run, and first-piece inspection"
+                ],
+                "responseSurfaces": ["machineSelection.candidates", "turningPreflightCatalog", "toolingPlan.requirements", "machineRelease.blockers"],
+                "blocks": ["workholding or stock support missing", "threading/feed sync missing", "turret/live-tool transfer evidence missing"]
+            }
+        ],
         "releasePolicy": [
             "catalog machines are default planning profiles, not certified shop-floor assets",
             "callers can submit bounded machine profile evidence to override or harden the defaults before planning",
@@ -134460,6 +134748,39 @@ mod tests {
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
 
+        let selection_matrix = payload
+            .get("selectionEvidenceMatrix")
+            .and_then(Value::as_array)
+            .expect("selection evidence matrix should be present");
+        for family in [
+            "fdm-and-slicer-printers",
+            "resin-and-powder-printers",
+            "vertical-horizontal-and-indexed-mills",
+            "routers-and-sheet-cutters",
+            "lathes-mill-turn-and-swiss",
+        ] {
+            assert!(
+                selection_matrix.iter().any(|entry| {
+                    entry.get("machineFamily").and_then(Value::as_str) == Some(family)
+                }),
+                "missing selection evidence family {family}"
+            );
+        }
+        let selection_text = serde_json::to_string(selection_matrix)
+            .expect("selection evidence matrix should serialize");
+        for expected in [
+            "horizontal/rotary access unresolved",
+            "kerf, pierce, cut-chart",
+            "threading/feed sync missing",
+            "first-layer, purge/prime",
+            "controller/postprocessor review and exact-program dry-run",
+        ] {
+            assert!(
+                selection_text.contains(expected),
+                "selection evidence matrix should include {expected}"
+            );
+        }
+
         let machines = payload
             .get("machines")
             .and_then(Value::as_array)
@@ -159096,7 +159417,7 @@ mod tests {
         let programs = vec![program(
             "legacy-print",
             "fdm-printer",
-            &["G21", "G90", "G1 X10 Y10 E2.0 F900"],
+            &["G21", "G90", "M0 pause for insert", "G1 X10 Y10 E2.0 F900"],
         )];
         let machines = default_machines();
         let (analyzed, validation, improvements) = analyze_instruction_programs(&programs);
@@ -159148,6 +159469,7 @@ mod tests {
             None,
         );
         let des_instruction_model = fabrication_des_instruction_model(&analyzed, &validation);
+        let instruction_intent_map = instruction_intent_map(&programs, &analyzed);
         let response = InstructionAnalysisResponse {
             ok: validation.ok,
             job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
@@ -159163,6 +159485,7 @@ mod tests {
             postprocess_plan,
             simulation,
             des_instruction_model,
+            instruction_intent_map,
             improvements,
             improved_programs,
             learning,
@@ -159183,6 +159506,24 @@ mod tests {
         assert!(job.artifacts.contains_key("analysis-postprocess-plan"));
         assert!(job.artifacts.contains_key("analysis-simulation-report"));
         assert!(job.artifacts.contains_key("analysis-des-instruction-model"));
+        assert!(job
+            .artifacts
+            .contains_key("analysis-instruction-intent-map"));
+        assert!(response
+            .instruction_intent_map
+            .process_intents
+            .iter()
+            .any(|intent| intent == "additive-print"));
+        assert!(response
+            .instruction_intent_map
+            .release_handoff_routes
+            .iter()
+            .any(|route| route == "POST /fabrication/interventions/result"));
+        assert!(response
+            .instruction_intent_map
+            .learning_observations
+            .iter()
+            .any(|observation| observation.starts_with("instruction-intent:legacy-print:")));
         assert!(job.artifacts.contains_key("analysis-learning-plan"));
         assert!(job.artifacts.contains_key("analysis-pomdp-belief-state"));
         assert!(job.artifacts.contains_key("analysis-release-probe-plan"));
