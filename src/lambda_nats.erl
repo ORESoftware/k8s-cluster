@@ -8,11 +8,8 @@
 -define(DEFAULT_TIMEOUT_MS, 30000).
 
 start() ->
-    case os:getenv("NATS_URL") of
-        false ->
-            io:format("lambda nats disabled: NATS_URL is not configured~n"),
-            nil;
-        "" ->
+    case dd_cli_config_client_ffi:getenv(<<"NATS_URL">>, <<>>) of
+        <<>> ->
             io:format("lambda nats disabled: NATS_URL is not configured~n"),
             nil;
         _Url ->
@@ -472,20 +469,12 @@ safe_binary_to_integer(Value) ->
     end.
 
 env_binary(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> unicode:characters_to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Default).
 
 env_int(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value ->
-            try list_to_integer(Value)
-            catch _:_ -> Default
-            end
+    Value = dd_cli_config_client_ffi:getenv(Name, <<>>),
+    try binary_to_integer(Value)
+    catch _:_ -> Default
     end.
 
 has_prefix(Value, Prefix) ->
