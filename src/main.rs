@@ -62186,6 +62186,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/safety/result",
         "GET /environment/catalog",
         "GET /fabrication/environment/catalog",
+        "POST /environment/plan",
+        "POST /fabrication/environment/plan",
         "POST /environment/result",
         "POST /fabrication/environment/result",
         "GET /provenance/catalog",
@@ -93374,6 +93376,8 @@ fn environment_catalog_response() -> Value {
         "machineKinds": machine_kinds,
         "conditionScopes": condition_scopes,
         "planningRoutes": [
+            "POST /environment/plan",
+            "POST /fabrication/environment/plan",
             "POST /materials/plan",
             "POST /fabrication/materials/plan",
             "POST /monitoring/plan",
@@ -93419,6 +93423,199 @@ fn environment_catalog_response() -> Value {
 
 async fn environment_catalog_http() -> impl IntoResponse {
     Json(environment_catalog_response())
+}
+
+fn environment_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let environment_blocked = response.material_plan.review_required
+        || response.monitoring_plan.human_review_required
+        || !response.monitoring_plan.unattended_run_allowed
+        || response.quality_plan.status != "quality-plan-ready"
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || response.boundary_summary.human_intervention_required > 0
+        || !response.validation.failure_boundaries.is_empty();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.environment-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /environment/plan",
+            "POST /fabrication/environment/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!([
+            "POST /materials/plan",
+            "POST /fabrication/materials/plan",
+            "POST /monitoring/plan",
+            "POST /fabrication/monitoring/plan",
+            "POST /quality/plan",
+            "POST /fabrication/quality/plan",
+            "POST /packages/plan",
+            "POST /fabrication/packages/plan"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /environment/result",
+            "POST /fabrication/environment/result",
+            "POST /materials/result",
+            "POST /fabrication/materials/result",
+            "POST /monitoring/result",
+            "POST /fabrication/monitoring/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!environment_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(environment_blocked),
+    );
+    object.insert(
+        "materialReviewRequired".to_string(),
+        json!(response.material_plan.review_required),
+    );
+    object.insert(
+        "unattendedRunAllowed".to_string(),
+        json!(response.monitoring_plan.unattended_run_allowed && !environment_blocked),
+    );
+    object.insert(
+        "humanReviewRequired".to_string(),
+        json!(
+            response.monitoring_plan.human_review_required
+                || response.boundary_summary.human_intervention_required > 0
+        ),
+    );
+    object.insert(
+        "materialRouteRequirementCount".to_string(),
+        json!(response.material_plan.route_requirements.len()),
+    );
+    object.insert(
+        "monitorPointCount".to_string(),
+        json!(response.monitoring_plan.monitor_points.len()),
+    );
+    object.insert(
+        "alertRuleCount".to_string(),
+        json!(response.monitoring_plan.alert_rules.len()),
+    );
+    object.insert(
+        "qualityMeasurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "releasePackageRequiredArtifactCount".to_string(),
+        json!(response.release_package_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "materialPlan.routeRequirements",
+            "materialPlan.releaseGates",
+            "monitoringPlan.monitorPoints",
+            "monitoringPlan.alertRules",
+            "monitoringPlan.recoveryActions",
+            "qualityPlan.measurementTargets",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "environment-plan",
+            "environment-catalog",
+            "material-plan",
+            "monitoring-plan",
+            "quality-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.environmentEvidence"
+        ]),
+    );
+    object.insert(
+        "environmentPolicy".to_string(),
+        json!([
+            "environment planning returns draft humidity, drying, thermal, coolant, extraction, utility, vibration, and metrology-environment evidence, not certified facility qualification",
+            "machineReady=false while material conditioning, ambient or process utilities, extraction, thermal stability, monitoring, inspection environment, release package, or human-intervention evidence remains unresolved",
+            "humidity, drying, coolant, extraction, utility, vibration, temperature, and metrology outcomes are retained for MDP/POMDP/neural workers so future plans can choose safer machines, routes, checkpoints, and conditioning gates"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "environmentPlan".to_string(),
+        json!({
+            "environmentContracts": environment_catalog_entries(),
+            "materialPlan": &response.material_plan,
+            "monitoringPlan": &response.monitoring_plan,
+            "qualityPlan": &response.quality_plan,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert("materialPlan".to_string(), json!(&response.material_plan));
+    object.insert(
+        "monitoringPlan".to_string(),
+        json!(&response.monitoring_plan),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn validate_environment_result_condition_checks(
@@ -116832,6 +117029,7 @@ async fn request_schema() -> impl IntoResponse {
             "safetyCatalog": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
             "safetyPlan": ["POST /safety/plan", "POST /fabrication/safety/plan"],
             "environmentCatalog": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
+            "environmentPlan": ["POST /environment/plan", "POST /fabrication/environment/plan"],
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
             "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
             "asBuiltResult": ["POST /as-built/result", "POST /fabrication/as-built/result"],
@@ -118093,6 +118291,50 @@ async fn safety_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn environment_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.environment.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(environment_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -120270,6 +120512,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/environment/catalog",
             get(environment_catalog_http),
         )
+        .route("/environment/plan", post(environment_plan_http))
+        .route("/fabrication/environment/plan", post(environment_plan_http))
         .route("/environment/result", post(environment_result_http))
         .route(
             "/fabrication/environment/result",
@@ -140743,6 +140987,130 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified facility qualifications")))));
+    }
+
+    #[test]
+    fn environment_planning_endpoint_returns_condition_utility_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 1,
+            successes: 0,
+            failures: 1,
+            average_reward: -0.55,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: vec![
+                "boundary-memory job=nylon-humidity-print success=false reward=-0.550 methods=additive-print machineKind=fdm-printer operationSequence=dry,print,inspect assembly=none observations=filament-humidity utility-recovery-required".to_string()
+            ],
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-environment-plan".to_string()),
+                objective:
+                    "print a nylon duct with dried filament, chamber humidity control, fume extraction, temperature-stable inspection, and retained environment release evidence"
+                        .to_string(),
+                material: Some(material("PA12 nylon", "polymer")),
+                stock: Some(StockSpec {
+                    form: "filament".to_string(),
+                    dimensions_mm: Some(vec![1.75]),
+                }),
+                tolerance_mm: Some(0.12),
+                quantity: Some(2),
+                machines: Some(vec![MachineProfile {
+                    id: "nylon-fdm-01".to_string(),
+                    kind: "fdm-printer".to_string(),
+                    controller: Some("marlin".to_string()),
+                    materials: Some(vec!["PA12 nylon".to_string()]),
+                    work_envelope_mm: Some(vec![250.0, 250.0, 250.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["additive-print".to_string()]),
+                    profile_evidence: Some(MachineProfileEvidence {
+                        calibration: Some(vec!["bed mesh current".to_string()]),
+                        tools: Some(vec!["hardened nozzle installed".to_string()]),
+                        fixtures: None,
+                        materials: Some(vec!["spool drying log required before release".to_string()]),
+                        process: Some(vec!["enclosed chamber draft profile".to_string()]),
+                        maintenance: None,
+                        release: None,
+                        blockers: Some(vec![
+                            "filament humidity evidence missing".to_string(),
+                            "fume extraction heartbeat missing".to_string(),
+                        ]),
+                    }),
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(1),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["additive-print".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("environment planning should return release blockers");
+
+        let payload = environment_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.environment-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/environment/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("environmentPlan")
+            .and_then(|plan| plan.get("environmentContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("environmentFamily")
+                .and_then(Value::as_str)
+                == Some("additive-material-storage-and-printroom-state"))));
+        assert!(payload
+            .get("materialRouteRequirementCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("monitorPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("qualityMeasurementTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("releasePackagePlan.requiredArtifacts")
+            })));
+        assert!(payload
+            .get("environmentPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("neuralTrainingCorpus"))
+            .is_some());
     }
 
     #[test]

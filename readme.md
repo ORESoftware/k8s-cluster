@@ -321,6 +321,8 @@ outcomes.
 - `POST /fabrication/safety/result`
 - `GET /environment/catalog`
 - `GET /fabrication/environment/catalog`
+- `POST /environment/plan`
+- `POST /fabrication/environment/plan`
 - `POST /environment/result`
 - `POST /fabrication/environment/result`
 - `GET /provenance/catalog`
@@ -4399,6 +4401,25 @@ monitoring, inspection environment, and signoff evidence clear. Humidity,
 drying, coolant, extraction, utility, vibration, temperature, and metrology
 outcomes are retained as MDP/POMDP/neural learning signals for future planning
 and instruction repair.
+
+## `POST /fabrication/environment/plan`
+
+`POST /environment/plan` and the gateway-prefixed
+`POST /fabrication/environment/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.environment-planning.v1` projection for humidity, drying,
+thermal/chamber state, coolant, extraction, utilities, vibration, metrology
+environment, monitoring, inspection, release package, and machine-release
+evidence. The response includes `environmentContracts`, `materialPlan`,
+`monitoringPlan`, `qualityPlan`, `releasePackagePlan`, `machineRelease`, and
+learning surfaces.
+
+The endpoint keeps `machineReady=false` while material conditioning, ambient or
+process utilities, extraction, thermal stability, monitoring, inspection
+environment, release package, or human-intervention evidence remains unresolved.
+Humidity, drying, coolant, extraction, utility, vibration, temperature, and
+metrology outcomes are retained for the MDP/POMDP/neural lanes so future plans
+can choose safer machines, routes, checkpoints, and conditioning gates.
 
 ## `POST /fabrication/environment/result`
 
