@@ -58717,6 +58717,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/learning/engines/catalog",
         "GET /learning/preflight/catalog",
         "GET /fabrication/learning/preflight/catalog",
+        "GET /learning/features/catalog",
+        "GET /fabrication/learning/features/catalog",
         "GET /learning/models/catalog",
         "GET /fabrication/learning/models/catalog",
         "GET /learning/replay/catalog",
@@ -90213,6 +90215,73 @@ fn workflow_planning_stage(
     })
 }
 
+fn workflow_action_queue(workflow_stages: &[Value]) -> Vec<Value> {
+    workflow_stages
+        .iter()
+        .filter(|stage| {
+            stage
+                .get("blocked")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .map(|stage| {
+            let stage_id = stage.get("stageId").and_then(Value::as_str).unwrap_or("unknown-stage");
+            let (action, priority, learning_signal) = match stage_id {
+                "design-intake" => (
+                    "review-or-convert-design-input",
+                    "high",
+                    "workflow-action:design-intake",
+                ),
+                "machine-material-routing" => (
+                    "attach-machine-material-schedule-evidence",
+                    "high",
+                    "workflow-action:machine-material-routing",
+                ),
+                "split-combine-assembly" => (
+                    "resolve-split-combine-interface-control",
+                    "high",
+                    "workflow-action:split-combine",
+                ),
+                "instruction-machine-code" => (
+                    "generate-or-review-machine-instructions",
+                    "critical",
+                    "workflow-action:instruction-machine-code",
+                ),
+                "validation-remediation-simulation" => (
+                    "analyze-remediate-and-simulate-before-release",
+                    "critical",
+                    "workflow-action:validation-remediation-simulation",
+                ),
+                "setup-quality-postprocess" => (
+                    "attach-setup-quality-monitoring-postprocess-evidence",
+                    "high",
+                    "workflow-action:setup-quality-postprocess",
+                ),
+                "execution-release-learning" => (
+                    "hold-release-and-record-learning-outcome",
+                    "critical",
+                    "workflow-action:execution-release-learning",
+                ),
+                _ => ("review-blocked-workflow-stage", "medium", "workflow-action:unknown"),
+            };
+            json!({
+                "stageId": stage_id,
+                "title": stage.get("title").cloned().unwrap_or(Value::Null),
+                "status": stage.get("status").cloned().unwrap_or(Value::Null),
+                "action": action,
+                "priority": priority,
+                "machineReadyBlocked": true,
+                "routeHandoffs": stage.get("routeHandoffs").cloned().unwrap_or_else(|| json!([])),
+                "resultHandoffs": stage.get("resultHandoffs").cloned().unwrap_or_else(|| json!([])),
+                "responseSurfaces": stage.get("responseSurfaces").cloned().unwrap_or_else(|| json!([])),
+                "evidenceSurfaces": stage.get("evidenceSurfaces").cloned().unwrap_or_else(|| json!([])),
+                "learningSignal": learning_signal,
+                "releasePolicy": "complete this action or attach explicit waiver/review evidence before machine-ready release"
+            })
+        })
+        .collect()
+}
+
 fn workflow_catalog_stage(
     stage_id: &'static str,
     title: &'static str,
@@ -90901,6 +90970,7 @@ fn workflow_planning_response(
                 .unwrap_or(false)
         })
         .count();
+    let workflow_action_queue = workflow_action_queue(&workflow_stages);
 
     json!({
         "ok": response.ok,
@@ -90915,6 +90985,7 @@ fn workflow_planning_response(
         "machineReleaseBlocked": release_blocked,
         "stageCount": workflow_stages.len(),
         "blockedStageCount": blocked_stage_count,
+        "workflowActionCount": workflow_action_queue.len(),
         "generatedProgramCount": generated_program_count,
         "machineReadyProgramCount": machine_ready_program_count,
         "designExportCount": response.design_exports.summary.export_count,
@@ -90944,8 +91015,10 @@ fn workflow_planning_response(
             "machineReadyAfterWorkflow": !release_blocked,
             "stageCount": workflow_stages.len(),
             "blockedStageCount": blocked_stage_count,
+            "actionQueue": &workflow_action_queue,
             "stages": workflow_stages
         },
+        "workflowActionQueue": &workflow_action_queue,
         "responseSurfaces": [
             "workflowPlan.stages",
             "designInputReview",
@@ -101234,6 +101307,163 @@ fn learning_preflight_catalog_response() -> Value {
 
 async fn learning_preflight_catalog_http() -> impl IntoResponse {
     Json(learning_preflight_catalog_response())
+}
+
+fn learning_feature_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-feature-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/features/catalog",
+            "GET /fabrication/learning/features/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/learning/preflight/catalog",
+            "GET /fabrication/learning/models/catalog",
+            "GET /fabrication/learning/replay/catalog",
+            "GET /fabrication/learning/beliefs/catalog",
+            "GET /fabrication/learning/optimizers/catalog",
+            "POST /fabrication/learning/outcomes",
+            "POST /fabrication/learning/models/result",
+            "POST /fabrication/learning/optimizers/result",
+            "POST /fabrication/workflow/plan"
+        ],
+        "featureMapVersion": "dd.fabrication.learning-feature-map.v1",
+        "preferredPrimitiveSource": {
+            "crate": "des_engine",
+            "path": "remote/submodules/discrete-event-system.rs",
+            "primitives": [
+                "des_engine::des::decision::solve_mdp",
+                "des_engine::des::decision::solve_pomdp",
+                "des_engine::des::general::neural_network::FeedForwardNetwork"
+            ]
+        },
+        "featureGroups": [
+            {
+                "group": "plan-route-and-material-state",
+                "usedBy": ["MDP state", "neural training example", "strategy candidate scoring"],
+                "features": [
+                    "part-count",
+                    "quantity",
+                    "material-family",
+                    "tolerance-band",
+                    "preferred-method",
+                    "machine-class",
+                    "stock-envelope",
+                    "machine-envelope"
+                ],
+                "surfaces": [
+                    "productionPlan.parts",
+                    "materialPlan",
+                    "machineSelection",
+                    "neuralTrainingCorpus.examples.featureVector"
+                ]
+            },
+            {
+                "group": "instruction-validation-boundary-state",
+                "usedBy": ["MDP reward", "POMDP hidden risk", "boundary learning example", "instruction patch training"],
+                "features": [
+                    "validation-boundary-count",
+                    "machine-failure-boundary-kind",
+                    "program-line-or-span",
+                    "severity",
+                    "requires-human-intervention",
+                    "automation-gap",
+                    "improvement-patch-count"
+                ],
+                "surfaces": [
+                    "validation.failureBoundaries",
+                    "boundarySummary",
+                    "improvedPrograms.patchManifest",
+                    "learning.neuralTrainingCorpus.boundaryLearningExamples"
+                ]
+            },
+            {
+                "group": "split-combine-interface-state",
+                "usedBy": ["hybrid route optimizer", "POMDP release probe", "assembly preference learning"],
+                "features": [
+                    "split-count",
+                    "combine-count",
+                    "join-count",
+                    "interface-count",
+                    "datum-transfer-risk",
+                    "recomposition-evidence",
+                    "assembly-human-review"
+                ],
+                "surfaces": [
+                    "hybridMakePlan.splitCombineDecisions",
+                    "decompositionPlan",
+                    "interfaceControlPlan",
+                    "assembly.assemblyGraph"
+                ]
+            },
+            {
+                "group": "release-evidence-and-outcome-state",
+                "usedBy": ["reward replay", "optimizer promotion", "policy quality review"],
+                "features": [
+                    "simulation-boundary-count",
+                    "release-blocker-count",
+                    "operator-action-count",
+                    "quality-gate-count",
+                    "artifact-checksum-present",
+                    "reward",
+                    "machine-ready",
+                    "release-ready"
+                ],
+                "surfaces": [
+                    "simulation.failureBoundaries",
+                    "machineRelease.blockers",
+                    "operatorInterventionPlan.requiredOperatorActions",
+                    "releasePackagePlan.releaseGates",
+                    "learning.outcomes"
+                ]
+            },
+            {
+                "group": "neural-policy-input-vector",
+                "usedBy": ["DES FeedForwardNetwork sketch", "external neural model training", "strategy inference candidates"],
+                "features": [
+                    "objective-embedding",
+                    "material-family",
+                    "stock-envelope",
+                    "machine-envelope",
+                    "toolpath-token-sequence",
+                    "simulated-force-temperature-vibration",
+                    "inspection-error-vector",
+                    "automation-requirement-vector",
+                    "resolution-step-policy-state"
+                ],
+                "surfaces": [
+                    "neuralPolicy.featureVector",
+                    "neuralTrainingCorpus.featureNames",
+                    "neuralTrainingCorpus.examples",
+                    "neuralTrainingCorpus.inferenceCandidates"
+                ]
+            }
+        ],
+        "normalizationPolicy": [
+            "feature vectors are bounded, deterministic planning evidence and must remain replayable from retained job artifacts",
+            "missing, ambiguous, or source-system-dependent CAD/CAM/controller features must be encoded as blockers or review-required states rather than silently imputed",
+            "neural, MDP, POMDP, and DES feature scores remain advisory until validation, simulation, setup, quality, operator, and release gates clear"
+        ],
+        "responseSurfaces": [
+            "mdp-request.desMdpSpec",
+            "mdp-request.desPomdpSpec",
+            "pomdpBeliefState.hiddenStates",
+            "releaseProbePlan.probes",
+            "neuralPolicy.featureVector",
+            "neuralTrainingCorpus.featureNames",
+            "neuralTrainingCorpus.examples",
+            "neuralTrainingCorpus.inferenceCandidates",
+            "learningOptimizerResult.candidates",
+            "learningPolicySnapshot"
+        ]
+    })
+}
+
+async fn learning_feature_catalog_http() -> impl IntoResponse {
+    Json(learning_feature_catalog_response())
 }
 
 fn learning_reward_catalog_entries() -> Vec<Value> {
@@ -111677,6 +111907,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/learning/preflight/catalog",
             get(learning_preflight_catalog_http),
+        )
+        .route(
+            "/learning/features/catalog",
+            get(learning_feature_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/features/catalog",
+            get(learning_feature_catalog_http),
         )
         .route(
             "/learning/rewards/catalog",
@@ -122594,6 +122832,43 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
         assert!(result_handoffs.contains(&"POST /fabrication/learning/outcomes"));
+
+        let action_queue = payload
+            .get("workflowActionQueue")
+            .and_then(Value::as_array)
+            .expect("workflow action queue should be present");
+        assert_eq!(
+            payload.get("workflowActionCount").and_then(Value::as_u64),
+            Some(action_queue.len() as u64)
+        );
+        for action in [
+            "generate-or-review-machine-instructions",
+            "analyze-remediate-and-simulate-before-release",
+            "resolve-split-combine-interface-control",
+            "hold-release-and-record-learning-outcome",
+        ] {
+            assert!(
+                action_queue
+                    .iter()
+                    .any(|item| { item.get("action").and_then(Value::as_str) == Some(action) }),
+                "missing workflow action {action}"
+            );
+        }
+        assert!(action_queue
+            .iter()
+            .any(|item| item.get("learningSignal").and_then(Value::as_str)
+                == Some("workflow-action:validation-remediation-simulation")));
+        assert!(action_queue.iter().any(|item| item
+            .get("routeHandoffs")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/improve")
+            }))));
+        assert!(payload
+            .get("workflowPlan")
+            .and_then(|plan| plan.get("actionQueue"))
+            .and_then(Value::as_array)
+            .is_some_and(|queue| queue.len() == action_queue.len()));
     }
 
     #[test]
@@ -134653,6 +134928,64 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("do not certify machine execution")))));
+    }
+
+    #[test]
+    fn learning_feature_catalog_endpoint_exposes_feature_map_for_policy_workers() {
+        let payload = learning_feature_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-feature-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/features/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("preferredPrimitiveSource")
+                .and_then(|source| source.get("crate"))
+                .and_then(Value::as_str),
+            Some("des_engine")
+        );
+        let groups = payload
+            .get("featureGroups")
+            .and_then(Value::as_array)
+            .expect("learning feature groups should be exposed");
+        for group in [
+            "plan-route-and-material-state",
+            "instruction-validation-boundary-state",
+            "split-combine-interface-state",
+            "release-evidence-and-outcome-state",
+            "neural-policy-input-vector",
+        ] {
+            assert!(
+                groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing learning feature group {group}"
+            );
+        }
+        assert!(groups.iter().any(|item| item
+            .get("features")
+            .and_then(Value::as_array)
+            .is_some_and(|features| features
+                .iter()
+                .any(|feature| feature.as_str() == Some("toolpath-token-sequence")))));
+        assert!(groups.iter().any(|item| item
+            .get("surfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("hybridMakePlan.splitCombineDecisions")
+            }))));
+        assert!(payload
+            .get("normalizationPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("advisory until validation")))));
     }
 
     #[test]
