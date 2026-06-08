@@ -62835,6 +62835,8 @@ fn root_response() -> Value {
         "GET /fabrication/molding-casting/catalog",
         "GET /pcb-electronics/catalog",
         "GET /fabrication/pcb-electronics/catalog",
+        "GET /joining/catalog",
+        "GET /fabrication/joining/catalog",
         "GET /bonding-joining/catalog",
         "GET /fabrication/bonding-joining/catalog",
         "GET /fixture-adaptive/catalog",
@@ -62855,8 +62857,12 @@ fn root_response() -> Value {
         "GET /fabrication/lathe/catalog",
         "GET /turning/preflight/catalog",
         "GET /fabrication/turning/preflight/catalog",
+        "GET /cleanliness/catalog",
+        "GET /fabrication/cleanliness/catalog",
         "GET /cleanliness/preflight/catalog",
         "GET /fabrication/cleanliness/preflight/catalog",
+        "GET /interfaces/catalog",
+        "GET /fabrication/interfaces/catalog",
         "GET /interfaces/preflight/catalog",
         "GET /fabrication/interfaces/preflight/catalog",
         "GET /cnc/catalog",
@@ -62981,6 +62987,8 @@ fn root_response() -> Value {
         "POST /fabrication/remediation/result",
         "GET /decomposition/catalog",
         "GET /fabrication/decomposition/catalog",
+        "GET /recomposition/catalog",
+        "GET /fabrication/recomposition/catalog",
         "POST /decomposition/plan",
         "POST /fabrication/decomposition/plan",
         "POST /decomposition/result",
@@ -63726,7 +63734,7 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <li><strong>1. Discover</strong><br><a href="/fabrication/capabilities">Capabilities</a>, <a href="/fabrication/machines/catalog">machines</a>, <a href="/fabrication/materials/catalog">materials</a>, and <a href="/fabrication/templates/catalog">request templates</a>.</li>
         <li><strong>2. Import Or Generate</strong><br><a href="/fabrication/design/import/catalog">Design import</a>, <a href="/fabrication/design/generation/catalog">design generation</a>, <a href="/fabrication/instructions/languages">instruction languages</a>, and <a href="/fabrication/machine-code/catalog">machine-code generation</a>.</li>
         <li><strong>3. Validate And Improve</strong><br><a href="/fabrication/instructions/validation/catalog">Validation</a>, <a href="/fabrication/boundaries/catalog">failure boundaries</a>, <a href="/fabrication/remediation/catalog">remediation</a>, and <a href="/fabrication/improvements/catalog">instruction improvement</a>.</li>
-        <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
+        <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/interfaces/catalog">interfaces</a>, <a href="/fabrication/joining/catalog">joining</a>, <a href="/fabrication/recomposition/catalog">recomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
         <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, <a href="/fabrication/learning/scenarios/catalog">training scenarios</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
         <li><strong>6. Operate</strong><br><a href="/grafana/fabrication">Fabrication Planner Grafana dashboard</a> shows request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity before operators trust generated work.</li>
       </ul>
@@ -66000,6 +66008,106 @@ fn store_decomposition_result_response(state: &AppState, response: &Value) {
 
 async fn decomposition_catalog_http() -> impl IntoResponse {
     Json(decomposition_catalog_response())
+}
+
+fn recomposition_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.recomposition-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /recomposition/catalog", "GET /fabrication/recomposition/catalog"],
+        "relatedDiscoveryRoutes": [
+            "GET /fabrication/decomposition/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/interfaces/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /fabrication/joining/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /fabrication/release/catalog",
+            "GET /fabrication/learning/engines/catalog"
+        ],
+        "recompositionStages": [
+            {
+                "stage": "child-route-package-intake",
+                "requiredEvidence": [
+                    "printed, milled, turned, sheet-cut, EDM, molded, cast, electronics, or special-process child route package IDs",
+                    "child artifact URI, checksum, revision, material, process, disposition, and release status",
+                    "single-piece fallback or split/combine rationale retained from decomposition and manufacturability review"
+                ],
+                "blockedSurfaces": [
+                    "decompositionPlan.targets",
+                    "releasePackagePlan.packages",
+                    "machineRelease.blockers"
+                ]
+            },
+            {
+                "stage": "interface-control-and-datum-transfer",
+                "requiredEvidence": [
+                    "interface-control ID, datum-transfer map, mating orientation, keying, clocking, and anti-rotation proof",
+                    "probe, scan, CMM, dry-fit, fixture repeatability, work-offset, or measured coordinate transfer evidence",
+                    "critical-to-function dimensions, tolerance stack, clearance/interference, and postprocess allowance evidence"
+                ],
+                "blockedSurfaces": [
+                    "interfaceControlPlan.controls",
+                    "qualityPlan.measurementTargets",
+                    "assemblyPlan.joinSteps"
+                ]
+            },
+            {
+                "stage": "joining-and-final-release",
+                "requiredEvidence": [
+                    "joining method selection, recipe, access path, fixture, clamp, torque, weld, adhesive, insert, fastener, or serviceability evidence",
+                    "post-join metrology, functional proof, leak/torque/pull/runout/electrical check, nonconformance disposition, and signoff evidence",
+                    "learning outcome with split/combine decision, recomposition result, reward hint, and retained artifacts"
+                ],
+                "blockedSurfaces": [
+                    "joiningCatalog.joiningFamilies",
+                    "qualityResult.metrologyChecks",
+                    "releaseReadiness.releaseBlockers",
+                    "learningOutcome.observations"
+                ]
+            }
+        ],
+        "boundarySignals": [
+            "recomposition-child-package-boundary",
+            "recomposition-interface-control-boundary",
+            "recomposition-joining-release-boundary",
+            "split-combine-interface-control-boundary",
+            "human-intervention-boundary"
+        ],
+        "responseSurfaces": [
+            "decompositionPlan.recompositionInterfaces",
+            "interfaceControlPlan.releaseGates",
+            "assemblyPlan.joinSteps",
+            "hybridMakePlan.splitCombineDecisions",
+            "releasePackagePlan.packages",
+            "learningOutcome.observations"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/workflow/plan"
+        ],
+        "resultRoutes": [
+            "POST /fabrication/decomposition/result",
+            "POST /fabrication/assembly/result",
+            "POST /fabrication/interfaces/result",
+            "POST /fabrication/joining/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "recomposition catalog entries describe how separately fabricated child parts become one releasable object; they are evidence contracts, not released assembly work instructions",
+            "machine-ready release remains blocked until child route packages, interface-control evidence, datum transfer, fit stackup, joining method, final inspection, retained artifacts, and operator or automation signoff are attached to release surfaces",
+            "recomposition outcomes should feed DES, MDP/POMDP, and neural workers so future plans can compare single-piece fabrication, split/combine routes, joining methods, rework loops, and human-intervention checkpoints"
+        ]
+    })
+}
+
+async fn recomposition_catalog_http() -> impl IntoResponse {
+    Json(recomposition_catalog_response())
 }
 
 fn assembly_catalog_contracts() -> Vec<Value> {
@@ -113198,6 +113306,95 @@ async fn pcb_electronics_catalog_http() -> impl IntoResponse {
     Json(pcb_electronics_catalog_response())
 }
 
+fn joining_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.joining-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /joining/catalog", "GET /fabrication/joining/catalog"],
+        "relatedDiscoveryRoutes": [
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/interfaces/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /fabrication/metal-joining/catalog",
+            "GET /fabrication/bonding-joining/catalog",
+            "GET /fabrication/mechanical-installation/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "joiningFamilies": [
+            {
+                "family": "metal-joining",
+                "methods": ["welding", "brazing", "soldering", "resistance-weld", "laser-weld"],
+                "requiredEvidence": [
+                    "WPS or joining procedure, fit-up, filler/flux/gas lot, purge or shielding state, heat input, distortion control, PPE, and fume-control evidence",
+                    "visual inspection, penetration or fillet size, HAZ review, NDE/leak test, repair disposition, and retained weld inspection record"
+                ],
+                "handoffRoutes": ["GET /fabrication/metal-joining/catalog", "POST /fabrication/assembly/result"]
+            },
+            {
+                "family": "adhesive-and-polymer-joining",
+                "methods": ["adhesive-bond", "solvent-weld", "ultrasonic-weld", "heat-stake", "plastic-rivet"],
+                "requiredEvidence": [
+                    "substrate compatibility, surface prep, adhesive lot, shelf life, mix ratio, bondline target, clamp pressure, cure time, humidity, and handling-strength evidence",
+                    "weld/stake/solvent recipe, energy director or staking geometry, collapse or melt-flow target, cooling/clamp plan, pull/peel/torsion proof, leak or visual inspection, and cosmetic disposition"
+                ],
+                "handoffRoutes": ["GET /fabrication/bonding-joining/catalog", "POST /fabrication/interfaces/result"]
+            },
+            {
+                "family": "mechanical-installation",
+                "methods": ["threaded-fastener", "insert", "rivet", "seal", "bearing", "bushing", "snap-fit"],
+                "requiredEvidence": [
+                    "hole, boss, edge-distance, thread, insert, rivet, seal, bearing, fastener, and mating-part geometry evidence",
+                    "tool access, torque, preload, press force, staking, lubricant, seal compression, retention, rotation/runout, service path, and removal evidence"
+                ],
+                "handoffRoutes": ["GET /fabrication/mechanical-installation/catalog", "POST /fabrication/release/result"]
+            }
+        ],
+        "boundarySignals": [
+            "joining-method-selection-boundary",
+            "joining-procedure-evidence-boundary",
+            "joining-access-and-service-boundary",
+            "interface-fit-stackup-boundary",
+            "human-intervention-boundary"
+        ],
+        "responseSurfaces": [
+            "assemblyPlan.joinSteps",
+            "interfaceControlPlan.releaseGates",
+            "operatorInterventionPlan.requiredOperatorActions",
+            "qualityResult.metrologyChecks",
+            "releasePackagePlan.artifacts",
+            "learningOutcome.observations"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultRoutes": [
+            "POST /fabrication/assembly/result",
+            "POST /fabrication/interfaces/result",
+            "POST /fabrication/joining/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "joining catalog entries describe recomposition method-selection and evidence contracts for hybrid printed, milled, turned, sheet-cut, cast, molded, or electronics assemblies; they are not certified joining procedure approvals",
+            "machine-ready release remains blocked until method selection, interface fit, access, recipe, material compatibility, fixture, inspection, serviceability, operator or automation signoff, and retained artifact evidence are attached to assembly, interface, quality, release, and learning surfaces",
+            "joining outcomes should feed DES, MDP/POMDP, and neural workers so future plans can choose single-piece fabrication, split/combine boundaries, alternate joining methods, rework routes, or human intervention before parts are combined"
+        ]
+    })
+}
+
+async fn joining_catalog_http() -> impl IntoResponse {
+    Json(joining_catalog_response())
+}
+
 fn bonding_joining_catalog_response() -> Value {
     let machine_payload = machine_catalog_response();
     let bonding_cells = machine_payload
@@ -114334,6 +114531,80 @@ async fn turning_preflight_catalog_http() -> impl IntoResponse {
     Json(turning_preflight_catalog_response())
 }
 
+fn cleanliness_catalog_response() -> Value {
+    let preflight_payload = cleanliness_preflight_catalog_response();
+    let preflight_groups = preflight_payload
+        .get("preflightGroups")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.cleanliness-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /cleanliness/catalog",
+            "GET /fabrication/cleanliness/catalog"
+        ],
+        "preflightCatalogRoutes": [
+            "GET /cleanliness/preflight/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog"
+        ],
+        "processFamilies": [
+            "additive residue and powder removal",
+            "resin wash, drip, cure, tack-free, support-removal, and waste-control release",
+            "powder-bed depowder, trapped-powder recovery, sieving, blast media, and respirable-dust control",
+            "machining coolant, oil, abrasive, dielectric, chip, swarf, burr, and FOD removal",
+            "blind-hole, lattice, channel, cavity, pocket, tube, and internal-passage cleaning",
+            "assembly-interface, bondline, weld, seal, bearing, electrical-contact, packout, and release cleanliness"
+        ],
+        "requiredEvidence": [
+            "resin drip, wash bath, IPA or solvent saturation, UV cure, support-removal, tack-free surface, PPE, ventilation, and waste-control evidence",
+            "powder depowder, trapped-powder removal, sieving, recovery lot, blast media, drying, and respirable-dust control evidence",
+            "coolant, oil, cutting fluid, abrasive, dielectric, EDM debris, swarf, chip, burr, and FOD removal evidence",
+            "blind-hole, thread, lattice, channel, cavity, pocket, tube, and internal-passage cleaning evidence",
+            "critical surface, datum, thread, bearing bore, seal land, bondline, weld, paint, plating, electrical contact, swab, particle, blacklight, residue, conductivity, torque-slip, leak, or adhesion proof evidence",
+            "packout cleanliness class, bagging, desiccant, cap/plug, label, traveler, photo, release-owner, and human or automation signoff evidence"
+        ],
+        "releaseBlockers": [
+            "joining, coating, packaging, inspection, or operator handling before resin wash/cure, powder-removal, chip/FOD, or drying evidence is retained",
+            "combining printed and milled parts before interface cleanliness, dryness, bondline, seal, bearing, or electrical-contact evidence is retained",
+            "using cleaning chemistry incompatible with polymer, elastomer, coating, plating, adhesive, additive material, electronics, optics, or medical/food-contact class",
+            "packaging without cleanliness class, protective caps/plugs, desiccant, traveler, or release-owner evidence"
+        ],
+        "preflightGroups": preflight_groups,
+        "planningRoutes": [
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/provenance/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/postprocess/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "boundaryFamilies": [
+            "cleanliness-additive-residue-boundary",
+            "cleanliness-machining-fod-boundary",
+            "cleanliness-assembly-release-boundary",
+            "postprocess-traveler-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "releasePolicy": [
+            "cleanliness catalog entries are residue, FOD, wash/cure, depowder, drying, interface, packout, and release-cleanliness planning profiles, not released cleaning specifications",
+            "machine-ready release remains blocked until residue/FOD, wash/cure, depowder, chip/swarf, internal-passage, critical-surface, packout-cleanliness, drying, compatibility, inspection, and release-owner evidence are retained",
+            "cleanliness outcomes should feed postprocess, quality, provenance, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, clean, reroute, add inspection, or require human intervention"
+        ]
+    })
+}
+
+async fn cleanliness_catalog_http() -> impl IntoResponse {
+    Json(cleanliness_catalog_response())
+}
+
 fn cleanliness_preflight_catalog_response() -> Value {
     json!({
         "ok": true,
@@ -114417,6 +114688,95 @@ fn cleanliness_preflight_catalog_response() -> Value {
 
 async fn cleanliness_preflight_catalog_http() -> impl IntoResponse {
     Json(cleanliness_preflight_catalog_response())
+}
+
+fn interface_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.interface-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /interfaces/catalog", "GET /fabrication/interfaces/catalog"],
+        "relatedRoutes": [
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /fabrication/tolerances/catalog",
+            "GET /fabrication/interventions/catalog",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/interfaces/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "interfaceFamilies": [
+            {
+                "family": "datum-transfer-and-locating-features",
+                "fabricationSources": ["additive", "mill", "lathe", "router", "sheet", "molding-casting"],
+                "requiredEvidence": [
+                    "datum map, locating feature, orientation key, clocking, and anti-rotation evidence",
+                    "probe, scan, CMM, fixture touch-off, or measured offset evidence for process-to-process datum transfer",
+                    "interface-control revision and child-route artifact checksums before recomposition"
+                ],
+                "planningSurfaces": [
+                    "decompositionPlan.interfaceContracts",
+                    "interfaceControlPlan.datumTransfers",
+                    "assemblyPlan.joinSteps"
+                ]
+            },
+            {
+                "family": "fit-stackup-and-functional-interfaces",
+                "fabricationSources": ["additive", "subtractive", "turning", "postprocess", "inspection"],
+                "requiredEvidence": [
+                    "critical dimension, tolerance stack, clearance/interference, bore/shaft/thread, and gauge evidence",
+                    "allowance evidence for shrink, warp, anisotropy, coating, plating, bondline, seal compression, or heat treatment",
+                    "first-article fit, go/no-go, torque, pull, leak, runout, preload, backlash, optical/electrical, or functional proof"
+                ],
+                "planningSurfaces": [
+                    "tolerancePlan.stackups",
+                    "qualityPlan.metrologyTargets",
+                    "machineRelease.blockers"
+                ]
+            },
+            {
+                "family": "joining-service-and-maintenance-access",
+                "fabricationSources": ["bonding", "welding", "fastening", "inserts", "electronics", "mechanical-installation"],
+                "requiredEvidence": [
+                    "fastener, insert, weld, adhesive, gasket, bearing, bushing, connector, and cable-clearance evidence",
+                    "tool access, torque sequence, cure/weld/stake recipe, service/removal path, and replacement-part evidence",
+                    "kit genealogy, mating-part serialization, traveler, nonconformance disposition, operator signoff, and release-owner proof"
+                ],
+                "planningSurfaces": [
+                    "assemblyPlan.joinSteps",
+                    "operatorInterventionPlan.requiredOperatorActions",
+                    "releasePackagePlan.artifacts"
+                ]
+            }
+        ],
+        "boundarySignals": [
+            "interface-datum-transfer-boundary",
+            "interface-fit-stackup-boundary",
+            "interface-joining-service-boundary",
+            "split-combine-interface-control-boundary"
+        ],
+        "responseSurfaces": [
+            "decompositionPlan.interfaceContracts",
+            "interfaceControlPlan.releaseGates",
+            "assemblyPlan.joinSteps",
+            "qualityResult.metrologyChecks",
+            "releaseReadiness.releaseBlockers",
+            "learningOutcome.observations"
+        ],
+        "releasePolicy": [
+            "interface catalog entries describe split/combine recomposition evidence for printed, milled, turned, molded, sheet-cut, or postprocessed child parts; they are not a substitute for released drawings or assembly instructions",
+            "machine-ready release remains blocked until datum transfer, fit stackup, joining/service access, interface revision, and retained artifact evidence are attached to the decomposition, assembly, quality, release, and learning surfaces",
+            "failed interface evidence should feed DES, MDP/POMDP, and neural workers so future plans can split differently, add datums, adjust fits, change joining methods, route rework, or require human intervention before parts are combined"
+        ]
+    })
+}
+
+async fn interface_catalog_http() -> impl IntoResponse {
+    Json(interface_catalog_response())
 }
 
 fn interface_preflight_catalog_response() -> Value {
@@ -115891,6 +116251,8 @@ async fn learning_reward_catalog_http() -> impl IntoResponse {
 }
 
 fn learning_model_catalog_response() -> Value {
+    let neural_network = fabrication_neural_engine_network();
+
     json!({
         "ok": true,
         "service": SERVICE_NAME,
@@ -115975,6 +116337,54 @@ fn learning_model_catalog_response() -> Value {
                 ]
             }
         ],
+        "neuralFeatureContract": {
+            "schemaVersion": "dd.fabrication.neural-feature-contract.v1",
+            "engine": "des_engine::des::general::neural_network::FeedForwardNetwork",
+            "networkKind": "deterministic-single-layer-sigmoid-policy-head",
+            "inputDimension": 9,
+            "outputDimension": 4,
+            "parameterCount": neural_network.num_parameters(),
+            "featureNames": [
+                "objective-embedding",
+                "material-family",
+                "stock-envelope",
+                "machine-envelope",
+                "toolpath-token-sequence",
+                "simulated-force-temperature-vibration",
+                "inspection-error-vector",
+                "automation-requirement-vector",
+                "resolution-step-policy-state"
+            ],
+            "featureSources": [
+                "design and part count normalization",
+                "manufacturing-method diversity",
+                "human-intervention process steps",
+                "validation finding density",
+                "human-boundary count",
+                "instruction-improvement count",
+                "minimum tolerance pressure",
+                "automation requirement count",
+                "resolution-plan step count"
+            ],
+            "outputLabels": [
+                "split-combine",
+                "human-intervention",
+                "machine-failure",
+                "automation-gap"
+            ],
+            "retainedSurfaces": [
+                "learning.neuralPolicy.engineInference",
+                "learning.neuralTrainingCorpus.featureNames",
+                "learning.neuralTrainingCorpus.inferenceCandidates",
+                "learningCorpus.neuralTrainingExamples",
+                "learningModelResult.modelCardCompatibility"
+            ],
+            "releasePolicy": [
+                "feature vectors are bounded 0..1 and must match neuralTrainingCorpus.featureNames before model-card compatibility can pass",
+                "output labels are advisory action-risk scores for planning and replay, not controller approval",
+                "machine-ready release remains blocked by deterministic validation, simulation, setup, quality, telemetry, and human or automation gates"
+            ]
+        },
         "retentionSurfaces": [
             "learningPolicySnapshot",
             "learning.outcomes",
@@ -124102,6 +124512,7 @@ async fn request_schema() -> impl IntoResponse {
             "metalJoiningCatalog": ["GET /metal-joining/catalog", "GET /fabrication/metal-joining/catalog"],
             "moldingCastingCatalog": ["GET /molding-casting/catalog", "GET /fabrication/molding-casting/catalog"],
             "pcbElectronicsCatalog": ["GET /pcb-electronics/catalog", "GET /fabrication/pcb-electronics/catalog"],
+            "joiningCatalog": ["GET /joining/catalog", "GET /fabrication/joining/catalog"],
             "bondingJoiningCatalog": ["GET /bonding-joining/catalog", "GET /fabrication/bonding-joining/catalog"],
             "fixtureAdaptiveCatalog": ["GET /fixture-adaptive/catalog", "GET /fabrication/fixture-adaptive/catalog"],
             "mechanicalInstallationCatalog": ["GET /mechanical-installation/catalog", "GET /fabrication/mechanical-installation/catalog"],
@@ -124112,6 +124523,8 @@ async fn request_schema() -> impl IntoResponse {
             "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "latheCatalog": ["GET /lathe/catalog", "GET /fabrication/lathe/catalog"],
             "turningPreflightCatalog": ["GET /turning/preflight/catalog", "GET /fabrication/turning/preflight/catalog"],
+            "cleanlinessCatalog": ["GET /cleanliness/catalog", "GET /fabrication/cleanliness/catalog"],
+            "interfaceCatalog": ["GET /interfaces/catalog", "GET /fabrication/interfaces/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
             "handoffCatalog": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
             "handoffResult": ["POST /handoff/result", "POST /fabrication/handoff/result"],
@@ -124150,6 +124563,7 @@ async fn request_schema() -> impl IntoResponse {
             "boundaryRemediationPlan": ["POST /remediation/plan", "POST /fabrication/remediation/plan"],
             "boundaryRemediationResult": ["POST /remediation/result", "POST /fabrication/remediation/result"],
             "decompositionCatalog": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
+            "recompositionCatalog": ["GET /recomposition/catalog", "GET /fabrication/recomposition/catalog"],
             "decompositionPlan": ["POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
             "decompositionResult": ["POST /decomposition/result", "POST /fabrication/decomposition/result"],
             "assemblyCatalog": ["GET /assembly/catalog", "GET /fabrication/assembly/catalog"],
@@ -127464,6 +127878,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/pcb-electronics/catalog",
             get(pcb_electronics_catalog_http),
         )
+        .route("/joining/catalog", get(joining_catalog_http))
+        .route("/fabrication/joining/catalog", get(joining_catalog_http))
         .route(
             "/bonding-joining/catalog",
             get(bonding_joining_catalog_http),
@@ -127526,6 +127942,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/turning/preflight/catalog",
             get(turning_preflight_catalog_http),
         )
+        .route("/cleanliness/catalog", get(cleanliness_catalog_http))
+        .route(
+            "/fabrication/cleanliness/catalog",
+            get(cleanliness_catalog_http),
+        )
         .route(
             "/cleanliness/preflight/catalog",
             get(cleanliness_preflight_catalog_http),
@@ -127533,6 +127954,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/cleanliness/preflight/catalog",
             get(cleanliness_preflight_catalog_http),
+        )
+        .route("/interfaces/catalog", get(interface_catalog_http))
+        .route(
+            "/fabrication/interfaces/catalog",
+            get(interface_catalog_http),
         )
         .route(
             "/interfaces/preflight/catalog",
@@ -127867,6 +128293,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/decomposition/catalog",
             get(decomposition_catalog_http),
+        )
+        .route("/recomposition/catalog", get(recomposition_catalog_http))
+        .route(
+            "/fabrication/recomposition/catalog",
+            get(recomposition_catalog_http),
         )
         .route("/decomposition/plan", post(decomposition_plan_http))
         .route(
@@ -128557,6 +128988,9 @@ mod tests {
             "/fabrication/remediation/catalog",
             "/fabrication/improvements/catalog",
             "/fabrication/decomposition/catalog",
+            "/fabrication/interfaces/catalog",
+            "/fabrication/joining/catalog",
+            "/fabrication/recomposition/catalog",
             "/fabrication/assembly/catalog",
             "/fabrication/release/catalog",
             "/fabrication/artifacts/catalog",
@@ -139139,6 +139573,70 @@ mod tests {
                 "missing remediation result artifact {artifact_id}"
             );
         }
+    }
+
+    #[test]
+    fn recomposition_catalog_endpoint_exposes_child_interface_join_and_learning_contract() {
+        let payload = recomposition_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.recomposition-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/recomposition/catalog"))));
+
+        let stages = payload
+            .get("recompositionStages")
+            .and_then(Value::as_array)
+            .expect("recomposition stages should be present");
+        for stage in [
+            "child-route-package-intake",
+            "interface-control-and-datum-transfer",
+            "joining-and-final-release",
+        ] {
+            assert!(
+                stages
+                    .iter()
+                    .any(|item| item.get("stage").and_then(Value::as_str) == Some(stage)),
+                "missing recomposition stage {stage}"
+            );
+        }
+        assert!(stages.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("child route package IDs"))))));
+        assert!(payload
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| {
+                signal.as_str() == Some("recomposition-interface-control-boundary")
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("decompositionPlan.recompositionInterfaces")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("single-piece fabrication")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/recomposition/catalog")
+            })));
     }
 
     #[test]
@@ -156385,6 +156883,70 @@ mod tests {
     }
 
     #[test]
+    fn joining_catalog_endpoint_exposes_method_selection_and_release_contract() {
+        let payload = joining_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.joining-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/joining/catalog"))));
+
+        let families = payload
+            .get("joiningFamilies")
+            .and_then(Value::as_array)
+            .expect("joining families should be present");
+        for family in [
+            "metal-joining",
+            "adhesive-and-polymer-joining",
+            "mechanical-installation",
+        ] {
+            assert!(
+                families
+                    .iter()
+                    .any(|item| item.get("family").and_then(Value::as_str) == Some(family)),
+                "missing joining family {family}"
+            );
+        }
+        assert!(families.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("WPS or joining procedure"))))));
+        assert!(payload
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals
+                .iter()
+                .any(|signal| { signal.as_str() == Some("joining-method-selection-boundary") })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("assemblyPlan.joinSteps") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/joining/catalog"))));
+    }
+
+    #[test]
     fn metal_joining_catalog_endpoint_exposes_wps_fitup_and_inspection_release_contract() {
         let payload = metal_joining_catalog_response();
         assert_eq!(
@@ -157536,6 +158098,167 @@ mod tests {
     }
 
     #[test]
+    fn cleanliness_catalog_endpoint_exposes_residue_fod_and_wash_release_contract() {
+        let payload = cleanliness_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.cleanliness-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/cleanliness/catalog") })));
+        assert!(payload
+            .get("preflightCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/cleanliness/preflight/catalog")
+            })));
+
+        let evidence = payload
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .expect("cleanliness evidence should be present");
+        for expected in [
+            "resin drip",
+            "wash bath",
+            "powder depowder",
+            "coolant, oil",
+            "FOD removal",
+            "internal-passage cleaning",
+            "critical surface",
+            "packout cleanliness class",
+        ] {
+            assert!(
+                evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing cleanliness evidence {expected}"
+            );
+        }
+
+        let preflight_groups = payload
+            .get("preflightGroups")
+            .and_then(Value::as_array)
+            .expect("cleanliness catalog should expose preflight groups");
+        for group in [
+            "additive-residue-and-powder-state",
+            "machining-coolant-chip-and-fod-state",
+            "assembly-interface-and-release-cleanliness",
+        ] {
+            assert!(
+                preflight_groups
+                    .iter()
+                    .any(|item| item.get("group").and_then(Value::as_str) == Some(group)),
+                "missing cleanliness group {group}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("cleanliness boundary families should be present");
+        for boundary in [
+            "cleanliness-additive-residue-boundary",
+            "cleanliness-machining-fod-boundary",
+            "cleanliness-assembly-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing cleanliness boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/cleanliness/catalog") })));
+    }
+
+    #[test]
+    fn interface_catalog_endpoint_exposes_split_combine_and_release_contract() {
+        let payload = interface_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.interface-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/interfaces/catalog"))));
+
+        let families = payload
+            .get("interfaceFamilies")
+            .and_then(Value::as_array)
+            .expect("interface families should be present");
+        for family in [
+            "datum-transfer-and-locating-features",
+            "fit-stackup-and-functional-interfaces",
+            "joining-service-and-maintenance-access",
+        ] {
+            assert!(
+                families
+                    .iter()
+                    .any(|item| item.get("family").and_then(Value::as_str) == Some(family)),
+                "missing interface family {family}"
+            );
+        }
+        assert!(families.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("process-to-process datum transfer"))))));
+        assert!(families.iter().any(|item| item
+            .get("planningSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("interfaceControlPlan"))))));
+        assert!(payload
+            .get("boundarySignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| {
+                signal.as_str() == Some("split-combine-interface-control-boundary")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/interfaces/catalog"))));
+    }
+
+    #[test]
     fn interface_preflight_catalog_endpoint_exposes_datum_stackup_and_join_gates() {
         let payload = interface_preflight_catalog_response();
         assert_eq!(
@@ -158321,6 +159044,46 @@ mod tests {
                         })
                     })
         }));
+        let neural_contract = payload
+            .get("neuralFeatureContract")
+            .and_then(Value::as_object)
+            .expect("learning model catalog should expose neural feature contract");
+        assert_eq!(
+            neural_contract
+                .get("schemaVersion")
+                .and_then(Value::as_str),
+            Some("dd.fabrication.neural-feature-contract.v1")
+        );
+        assert_eq!(
+            neural_contract
+                .get("inputDimension")
+                .and_then(Value::as_u64),
+            Some(9)
+        );
+        assert_eq!(
+            neural_contract
+                .get("outputDimension")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert!(neural_contract
+            .get("featureNames")
+            .and_then(Value::as_array)
+            .is_some_and(|features| features
+                .iter()
+                .any(|feature| feature.as_str() == Some("resolution-step-policy-state"))));
+        assert!(neural_contract
+            .get("outputLabels")
+            .and_then(Value::as_array)
+            .is_some_and(|labels| labels
+                .iter()
+                .any(|label| label.as_str() == Some("machine-failure"))));
+        assert!(neural_contract
+            .get("retainedSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| surface
+                .as_str()
+                .is_some_and(|surface| surface.contains("modelCardCompatibility")))));
         assert!(payload
             .get("retentionSurfaces")
             .and_then(Value::as_array)
