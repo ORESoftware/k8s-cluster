@@ -51308,6 +51308,79 @@ fn learned_parts_for_operation_sequence(
     }
 }
 
+fn learned_methods_from_remediation_action(action: &str) -> Vec<String> {
+    let token = normalize_token(action);
+    let mut methods = Vec::new();
+    if token.contains("print") || token.contains("printed") || token.contains("additive") {
+        methods.push("additive-print".to_string());
+    }
+    if token.contains("horizontal") && token.contains("mill") {
+        methods.push("horizontal-milling".to_string());
+    } else if token.contains("mill") || token.contains("milled") || token.contains("machined") {
+        methods.push("milling".to_string());
+    }
+    if token.contains("turn") || token.contains("turned") || token.contains("lathe") {
+        methods.push("turning".to_string());
+    }
+    if token.contains("plastic-join")
+        || token.contains("plastic-weld")
+        || token.contains("ultrasonic")
+        || token.contains("heat-stake")
+        || token.contains("solvent-weld")
+    {
+        methods.push("plastic-joining".to_string());
+    }
+    if token.contains("fastener") || token.contains("torque") || token.contains("threadlocker") {
+        methods.push("fastener-installation".to_string());
+    }
+    if token.contains("rivet") || token.contains("clinch") || token.contains("swage") {
+        methods.push("rivet-installation".to_string());
+    }
+    if token.contains("seal") || token.contains("gasket") || token.contains("leak-test") {
+        methods.push("seal-installation".to_string());
+    }
+    if token.contains("bearing")
+        || token.contains("interference-fit")
+        || token.contains("press-fit")
+    {
+        methods.push("bearing-installation".to_string());
+    }
+    methods.sort();
+    methods.dedup();
+    methods
+}
+
+fn request_is_single_risky_method(
+    request: &FabricationPlanRequest,
+    risk: &LearningRemediationRisk,
+) -> bool {
+    let Some(parts) = request.parts.as_ref() else {
+        return true;
+    };
+    parts.len() <= 1
+        && requested_policy_methods(request)
+            .into_iter()
+            .all(|method| method == risk.method)
+}
+
+fn learned_parts_for_remediation_split(
+    request: &FabricationPlanRequest,
+    risks: &[LearningRemediationRisk],
+) -> Option<Vec<RequestedPart>> {
+    for risk in risks {
+        if risk.severity != "high" || !request_is_single_risky_method(request, risk) {
+            continue;
+        }
+        for action in &risk.recommended_actions {
+            let methods = learned_methods_from_remediation_action(action);
+            if methods.len() > 1 {
+                return learned_parts_for_method_combination(request, &methods);
+            }
+        }
+    }
+    None
+}
+
 fn apply_learning_policy_to_request(
     mut request: FabricationPlanRequest,
     policy: Option<&LearningPolicySnapshot>,
@@ -51338,6 +51411,13 @@ fn apply_learning_policy_to_request(
         .as_ref()
         .and_then(|constraints| constraints.preferred_methods.as_ref())
         .is_some_and(|methods| !methods.is_empty());
+    if !has_request_preferences {
+        if let Some(parts) =
+            learned_parts_for_remediation_split(&request, &learned_remediation_risks)
+        {
+            request.parts = Some(parts);
+        }
+    }
     if request.parts.is_none() && !has_request_preferences && learned_operation_sequence.len() > 1 {
         request.parts = learned_parts_for_operation_sequence(&request, &learned_operation_sequence);
     }
@@ -62703,6 +62783,8 @@ fn root_response() -> Value {
         "GET /fabrication/printers/catalog",
         "GET /fdm-printer/catalog",
         "GET /fabrication/fdm-printer/catalog",
+        "GET /resin-printer/catalog",
+        "GET /fabrication/resin-printer/catalog",
         "GET /printers/preflight/catalog",
         "GET /fabrication/printers/preflight/catalog",
         "GET /subtractive/catalog",
@@ -109972,7 +110054,7 @@ fn fdm_printer_catalog_response() -> Value {
                         "fdm-printer"
                             | "multi-material-fdm-printer"
                             | "pellet-fgf-printer"
-                            | "paste-clay-extrusion-printer"
+                            | "paste-extrusion-printer"
                             | "bound-metal-fff-printer"
                     )
                 })
@@ -110076,6 +110158,119 @@ fn fdm_printer_catalog_response() -> Value {
 
 async fn fdm_printer_catalog_http() -> impl IntoResponse {
     Json(fdm_printer_catalog_response())
+}
+
+fn resin_printer_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let resin_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_resin_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(resin_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(resin_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(resin_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.resin-printer-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /slicers/catalog",
+            "GET /fabrication/slicers/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "resinPrinterCount": resin_printers.len(),
+        "resinPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "resin lot, expiration, mix/agitation, viscosity, vat level, and refill evidence before exposure",
+            "slicer exposure profile, layer height, anti-aliasing, lift speed, peel/recoat, support, hollowing, drain, and island review evidence",
+            "build plate leveling, build plate adhesion, first-layer exposure, screen/projector calibration, and release film/FEP condition evidence",
+            "wash, drain, UV cure, PPE, waste handling, dimensional inspection, and postprocess traveler evidence before machine-ready release"
+        ],
+        "boundaryFamilies": [
+            "resin-profile-boundary",
+            "resin-island-support-boundary",
+            "resin-layer-manifest-boundary",
+            "resin-vat-capacity-boundary",
+            "resin-postprocess-boundary",
+            "additive-support-orientation-boundary",
+            "additive-build-surface-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/slicers/plan",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/simulation/run"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/slicers/result",
+            "POST /fabrication/materials/result",
+            "POST /fabrication/postprocess/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "resin/SLA catalog entries are photopolymer-printer planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until resin lot, vat, exposure, peel/recoat, support, hollowing/drain, wash/cure, PPE, waste, inspection, and signoff evidence are retained",
+            "resin outcomes should feed slicer, material, postprocess, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to reorient, hollow, split, reroute, or require human intervention"
+        ],
+        "resinPrinters": resin_printers
+    })
+}
+
+async fn resin_printer_catalog_http() -> impl IntoResponse {
+    Json(resin_printer_catalog_response())
 }
 
 fn printer_preflight_catalog_response() -> Value {
@@ -120874,6 +121069,7 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
+            "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
             "horizontalMillCatalog": ["GET /horizontal-mill/catalog", "GET /fabrication/horizontal-mill/catalog"],
@@ -124057,6 +124253,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/fdm-printer/catalog",
             get(fdm_printer_catalog_http),
+        )
+        .route("/resin-printer/catalog", get(resin_printer_catalog_http))
+        .route(
+            "/fabrication/resin-printer/catalog",
+            get(resin_printer_catalog_http),
         )
         .route(
             "/printers/preflight/catalog",
@@ -151205,7 +151406,7 @@ mod tests {
             "fdm-printer",
             "multi-material-fdm-printer",
             "pellet-fgf-printer",
-            "paste-clay-extrusion-printer",
+            "paste-extrusion-printer",
             "bound-metal-fff-printer",
         ] {
             assert!(
@@ -151264,6 +151465,90 @@ mod tests {
             .is_some_and(|routes| routes
                 .iter()
                 .any(|route| route.as_str() == Some("GET /fabrication/fdm-printer/catalog"))));
+    }
+
+    #[test]
+    fn resin_printer_catalog_endpoint_exposes_exposure_wash_cure_release_contract() {
+        let payload = resin_printer_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.resin-printer-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/resin-printer/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/printers/catalog"))));
+        assert_eq!(
+            payload.get("resinPrinterCount").and_then(Value::as_u64),
+            Some(1)
+        );
+
+        let printer_kinds = payload
+            .get("resinPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("resin printer kinds should be present");
+        assert!(printer_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("sla-printer")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("resin setup evidence should be present");
+        for expected in [
+            "resin lot, expiration",
+            "slicer exposure profile",
+            "build plate leveling",
+            "wash, drain, UV cure",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing resin setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("resin boundary families should be present");
+        for boundary in [
+            "resin-profile-boundary",
+            "resin-island-support-boundary",
+            "resin-layer-manifest-boundary",
+            "resin-vat-capacity-boundary",
+            "resin-postprocess-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing resin boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/resin-printer/catalog")
+            })));
     }
 
     #[test]
@@ -174445,16 +174730,28 @@ mod tests {
                 stock: None,
                 tolerance_mm: Some(0.08),
                 quantity: Some(1),
-                machines: Some(vec![MachineProfile {
-                    id: "vmill-1".to_string(),
-                    kind: "vertical-mill".to_string(),
-                    controller: Some("haas-gcode".to_string()),
-                    materials: Some(vec!["petg".to_string()]),
-                    work_envelope_mm: Some(vec![300.0, 180.0, 120.0]),
-                    axes: Some(3),
-                    operations: Some(vec!["face".to_string(), "contour".to_string()]),
-                    profile_evidence: None,
-                }]),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "petg-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["petg".to_string()]),
+                        work_envelope_mm: Some(vec![220.0, 220.0, 220.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "vmill-1".to_string(),
+                        kind: "vertical-mill".to_string(),
+                        controller: Some("haas-gcode".to_string()),
+                        materials: Some(vec!["petg".to_string()]),
+                        work_envelope_mm: Some(vec![300.0, 180.0, 120.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["face".to_string(), "contour".to_string()]),
+                        profile_evidence: None,
+                    },
+                ]),
                 constraints: None,
                 parts: Some(vec![RequestedPart {
                     id: "petg-pocket".to_string(),
@@ -174481,6 +174778,27 @@ mod tests {
             .actions
             .iter()
             .any(|action| action == "avoid-learned-risk-milling-petg"));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-milling-part"
+                && part.machine_kind == "vertical-mill"
+                && part.manufacturing_method == "subtractive-milling"
+        }));
+        assert!(learned
+            .decomposition_plan
+            .route_contracts
+            .iter()
+            .any(|contract| contract.part_id == "learned-additive-print-part"));
+        assert!(learned
+            .decomposition_plan
+            .route_contracts
+            .iter()
+            .any(|contract| contract.part_id == "learned-milling-part"));
+        assert!(learned.assembly.strategy.contains("multi-part"));
         assert!(learned
             .learning
             .training_examples
