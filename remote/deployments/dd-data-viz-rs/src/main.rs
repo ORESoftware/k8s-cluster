@@ -28,6 +28,7 @@ mod infra_diagrams;
 mod notifications;
 mod platform;
 mod query_cache;
+mod question_nl;
 mod rbac;
 mod self_service;
 mod semantic;
@@ -99,6 +100,7 @@ struct Metrics {
     dashboards_saved_total: AtomicU64,
     self_service_requests_total: AtomicU64,
     questions_saved_total: AtomicU64,
+    question_suggestions_total: AtomicU64,
     alert_requests_total: AtomicU64,
     alert_rules_saved_total: AtomicU64,
     alert_evaluations_total: AtomicU64,
@@ -571,6 +573,11 @@ fn app_router(state: AppState) -> Router {
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
         .route("/questions", get(list_questions).post(save_question))
+        .route("/questions/nl", post(question_from_natural_language))
+        .route(
+            "/questions/suggestions/:dataset_id",
+            get(question_suggestions),
+        )
         .route("/questions/:question_id", get(get_question))
         .route("/charts", get(list_charts))
         .route("/alerts/rules", get(list_alert_rules).post(save_alert_rule))
@@ -789,8 +796,9 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "posture": "metadata-only planner; validates bounded transformations against dataset schemas and returns lineage/pushdown hints without executing formulas"
         },
         "selfServiceQuestion": {
-            "surfaces": ["saved questions", "saved chart bindings", "chart catalog"],
+            "surfaces": ["saved questions", "saved chart bindings", "chart catalog", "natural-language question proposals"],
             "queryBuilder": ["fields", "filters", "groupBy", "aggregations", "limit"],
+            "naturalLanguage": question_nl::limits_payload(),
             "posture": "validated against ingested dataset fields; saved questions compile to bounded SQL requests"
         },
         "alertNotifications": {
@@ -954,6 +962,9 @@ dd_data_viz_self_service_requests_total {}
 # HELP dd_data_viz_questions_saved_total Self-service questions saved.
 # TYPE dd_data_viz_questions_saved_total counter
 dd_data_viz_questions_saved_total {}
+# HELP dd_data_viz_question_suggestions_total Natural-language question suggestions generated.
+# TYPE dd_data_viz_question_suggestions_total counter
+dd_data_viz_question_suggestions_total {}
 # HELP dd_data_viz_alert_requests_total Alert rule requests handled.
 # TYPE dd_data_viz_alert_requests_total counter
 dd_data_viz_alert_requests_total {}
@@ -1016,6 +1027,7 @@ dd_data_viz_errors_total {}
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
         metrics.self_service_requests_total.load(Ordering::Relaxed),
         metrics.questions_saved_total.load(Ordering::Relaxed),
+        metrics.question_suggestions_total.load(Ordering::Relaxed),
         metrics.alert_requests_total.load(Ordering::Relaxed),
         metrics.alert_rules_saved_total.load(Ordering::Relaxed),
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
@@ -1929,6 +1941,56 @@ async fn get_question(
         .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("question `{question_id}` not found")))
+}
+
+async fn question_suggestions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(dataset_id): Path<String>,
+) -> Result<Json<question_nl::QuestionProposalResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionSuggest)?;
+    let dataset = get_dataset_snapshot(&state, &dataset_id)?;
+    let field_catalog = dataset_field_catalog(&dataset);
+    let response = question_nl::suggestions_for_dataset(&dataset_id, &field_catalog, None)
+        .map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .question_suggestions_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
+}
+
+async fn question_from_natural_language(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<question_nl::NaturalLanguageQuestionRequest>,
+) -> Result<Json<question_nl::QuestionProposalResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionSuggest)?;
+    let dataset = get_dataset_snapshot(&state, &request.dataset_id)?;
+    let field_catalog = dataset_field_catalog(&dataset);
+    let response =
+        question_nl::propose_from_prompt(request, &field_catalog).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .question_suggestions_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
 }
 
 async fn list_charts(
@@ -4318,6 +4380,18 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "List saved self-service question summaries.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/questions/nl",
+            auth: "question-suggest",
+            description: "Parse bounded natural-language text into deterministic self-service question proposals.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/questions/suggestions/:dataset_id",
+            auth: "question-suggest",
+            description: "Generate dataset-aware natural-language question suggestions from field metadata.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/questions/:question_id",
             auth: "question-read",
@@ -5184,6 +5258,8 @@ mod tests {
         assert!(paths.contains(&"/dashboards"));
         assert!(paths.contains(&"/dashboards/:dashboard_id"));
         assert!(paths.contains(&"/questions"));
+        assert!(paths.contains(&"/questions/nl"));
+        assert!(paths.contains(&"/questions/suggestions/:dataset_id"));
         assert!(paths.contains(&"/questions/:question_id"));
         assert!(paths.contains(&"/charts"));
         assert!(paths.contains(&"/associations/select"));

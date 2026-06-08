@@ -28,6 +28,7 @@ pub(crate) enum Permission {
     DashboardRead,
     DashboardWrite,
     QuestionRead,
+    QuestionSuggest,
     QuestionWrite,
     AssociationRead,
     AlertRead,
@@ -91,6 +92,7 @@ impl Role {
                 Permission::DashboardRead,
                 Permission::DashboardWrite,
                 Permission::QuestionRead,
+                Permission::QuestionSuggest,
                 Permission::QuestionWrite,
                 Permission::AssociationRead,
                 Permission::AlertRead,
@@ -114,6 +116,7 @@ impl Role {
                 Permission::EvolutionRead,
                 Permission::DashboardRead,
                 Permission::QuestionRead,
+                Permission::QuestionSuggest,
                 Permission::QuestionWrite,
                 Permission::AssociationRead,
                 Permission::AlertRead,
@@ -127,6 +130,7 @@ impl Role {
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
                 Permission::QuestionRead,
+                Permission::QuestionSuggest,
                 Permission::AssociationRead,
                 Permission::AlertRead,
                 Permission::SemanticRead,
@@ -140,6 +144,7 @@ impl Role {
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
                 Permission::QuestionRead,
+                Permission::QuestionSuggest,
                 Permission::AlertRead,
                 Permission::SemanticRead,
                 Permission::InfraDiagramGenerate,
@@ -186,6 +191,9 @@ impl Permission {
             Self::DashboardRead => "Read saved dashboard definitions.",
             Self::DashboardWrite => "Create or replace saved dashboard definitions.",
             Self::QuestionRead => "Read saved self-service questions and chart definitions.",
+            Self::QuestionSuggest => {
+                "Generate deterministic natural-language question proposals from dataset schemas."
+            }
             Self::QuestionWrite => "Create or replace self-service questions and chart bindings.",
             Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
             Self::AlertRead => "Read Grafana-style alert rules and notification routing metadata.",
@@ -257,6 +265,7 @@ fn all_permissions() -> Vec<Permission> {
         Permission::DashboardRead,
         Permission::DashboardWrite,
         Permission::QuestionRead,
+        Permission::QuestionSuggest,
         Permission::QuestionWrite,
         Permission::AssociationRead,
         Permission::AlertRead,
@@ -288,6 +297,7 @@ mod tests {
         assert!(Role::Builder.allows(Permission::ConnectionWrite));
         assert!(Role::Builder.allows(Permission::SqlLabWrite));
         assert!(Role::Builder.allows(Permission::QueryCacheRead));
+        assert!(Role::Builder.allows(Permission::QuestionSuggest));
         assert!(Role::Builder.allows(Permission::QuestionWrite));
         assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::SemanticWrite));
@@ -310,11 +320,13 @@ mod tests {
         assert!(Role::Analyst.allows(Permission::SqlLabRead));
         assert!(Role::Analyst.allows(Permission::SqlLabWrite));
         assert!(Role::Analyst.allows(Permission::QueryCacheRead));
+        assert!(Role::Analyst.allows(Permission::QuestionSuggest));
         assert!(Role::Analyst.allows(Permission::QuestionWrite));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(!Role::Analyst.allows(Permission::EtlPlan));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
         assert!(Role::Viewer.allows(Permission::QuestionRead));
+        assert!(Role::Viewer.allows(Permission::QuestionSuggest));
         assert!(!Role::Viewer.allows(Permission::SqlLabRead));
         assert!(!Role::Viewer.allows(Permission::SqlLabWrite));
         assert!(!Role::Viewer.allows(Permission::QueryCacheRead));
