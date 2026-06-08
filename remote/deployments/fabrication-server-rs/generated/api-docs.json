@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 447,
+  "routeCount": 449,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 437,
+    "user-generated": 439,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -3486,6 +3486,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/powder-bed/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "powder_bed_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/printers/catalog",
       "methods": [
         "GET"
@@ -6354,6 +6371,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "postprocess_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/powder-bed/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "powder_bed_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

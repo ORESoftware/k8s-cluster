@@ -37,6 +37,8 @@ outcomes.
 - `GET /fabrication/fdm-printer/catalog`
 - `GET /resin-printer/catalog`
 - `GET /fabrication/resin-printer/catalog`
+- `GET /powder-bed/catalog`
+- `GET /fabrication/powder-bed/catalog`
 - `GET /printers/preflight/catalog`
 - `GET /fabrication/printers/preflight/catalog`
 - `GET /subtractive/catalog`
@@ -979,6 +981,27 @@ boundary families such as profile, island/support, layer-manifest,
 vat-capacity, and postprocess gates. Resin outcomes should feed slicer,
 material, postprocess, quality, telemetry, costing, and learning routes so DES,
 MDP/POMDP, and neural workers can learn when to reorient, hollow, split,
+reroute, or require human intervention.
+
+## `GET /fabrication/powder-bed/catalog`
+
+`GET /powder-bed/catalog` and the gateway-prefixed
+`GET /fabrication/powder-bed/catalog` return the
+`dd.fabrication.powder-bed-catalog.v1` discovery view for SLS/MJF polymer
+powder-bed, metal PBF, and binder-jet additive profiles. It narrows the additive
+printer catalog to powder-bed-style machines and lists the evidence needed
+before machine-ready handoff: powder lot, refresh ratio, material profile,
+nesting, packing density, layer thickness, scan strategy, calibration coupon,
+recoater or spreader clearance, height-map or collision review, thermal spacing,
+cooldown curve, unpack-temperature proof, inert-gas or oxygen evidence,
+stress-relief and plate-removal review for metal PBF, and binder lot,
+saturation, printhead/nozzle checks, green strength, cure/debind/sinter or
+infiltration, shrink-compensation coupon, density, porosity, and dimensional
+inspection evidence for binder jet. The payload names powder-bed profile,
+recoater/thermal, handling, binder-jet process, and binder-jet
+postprocess-shrinkage boundary families. Powder-bed outcomes should feed
+nesting, material, postprocess, quality, telemetry, costing, and learning routes
+so DES, MDP/POMDP, and neural workers can learn when to re-pack, reorient, split,
 reroute, or require human intervention.
 
 ## `GET /fabrication/subtractive/catalog`
