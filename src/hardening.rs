@@ -236,6 +236,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/renderer_packages.rs emits D3, Plotly/Dash, Evidence, and infrastructure graph helper files through /renderers/client-package with static integrity metadata.",
         },
         ControlDescriptor {
+            id: "bounded-renderer-artifact-verification",
+            status: "implemented",
+            description: "Renderer artifact verification is capped by artifact bytes, console errors, text boxes, and required-text expectations, rejects secret-looking content, and checks static output structure without running browser or package-manager code.",
+            evidence: "src/renderer_verification.rs verifies D3 SVG/HTML, Plotly JSON, Evidence Markdown, final-layer JSON, and screenshot metadata through /renderers/artifacts/verify.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed across the expanded renderer bundle.",

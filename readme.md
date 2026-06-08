@@ -77,6 +77,8 @@ concept in `main.rs`:
   SQL validation requests, chart component placeholders, and dataset dependency metadata.
 - `src/renderer_packages.rs` owns generated TypeScript renderer client package blueprints for D3
   final layers, Plotly/Dash figures, Evidence reports, and infrastructure graphs.
+- `src/renderer_verification.rs` owns bounded static verification for D3 SVG/HTML, Plotly JSON,
+  Evidence Markdown, final-layer JSON, and screenshot metadata artifacts.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -117,7 +119,7 @@ Current first-class parity surfaces:
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, infrastructure diagram tool catalog, Markdown-plus-SQL report blueprint, and
   compiled Evidence-style Markdown reports, plus generated TypeScript renderer/report helper
-  package blueprints.
+  package blueprints and static rendered-artifact verification.
 
 ## Endpoints
 
@@ -149,6 +151,8 @@ Current first-class parity surfaces:
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
 - `GET /renderers/client-package` - generated TypeScript client package blueprint for D3 final
   layers, Plotly/Dash figures, Evidence reports, and infrastructure graph helpers.
+- `POST /renderers/artifacts/verify` - authenticated static renderer artifact verification for D3
+  SVG/HTML, Plotly JSON, Evidence Markdown, final-layer JSON, and screenshot metadata.
 - `POST /etl/plans` - authenticated Domo Magic ETL/Power Query-style flow validation with lineage,
   materialization, and connector pushdown hints.
 - `GET /diagrams/tools` - Terraform, AWS, GCP, diagram-as-code, whiteboard, web graph, graph
