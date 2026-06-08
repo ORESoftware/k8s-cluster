@@ -62817,6 +62817,36 @@ fn root_response() -> Value {
         "GET /fabrication/sheet-cutting/catalog",
         "GET /hot-wire-foam/catalog",
         "GET /fabrication/hot-wire-foam/catalog",
+        "GET /sheet-forming/catalog",
+        "GET /fabrication/sheet-forming/catalog",
+        "GET /gear-cutting/catalog",
+        "GET /fabrication/gear-cutting/catalog",
+        "GET /precision-grinding/catalog",
+        "GET /fabrication/precision-grinding/catalog",
+        "GET /dimensional-inspection/catalog",
+        "GET /fabrication/dimensional-inspection/catalog",
+        "GET /thermal-postprocess/catalog",
+        "GET /fabrication/thermal-postprocess/catalog",
+        "GET /surface-finishing/catalog",
+        "GET /fabrication/surface-finishing/catalog",
+        "GET /metal-joining/catalog",
+        "GET /fabrication/metal-joining/catalog",
+        "GET /molding-casting/catalog",
+        "GET /fabrication/molding-casting/catalog",
+        "GET /pcb-electronics/catalog",
+        "GET /fabrication/pcb-electronics/catalog",
+        "GET /bonding-joining/catalog",
+        "GET /fabrication/bonding-joining/catalog",
+        "GET /fixture-adaptive/catalog",
+        "GET /fabrication/fixture-adaptive/catalog",
+        "GET /mechanical-installation/catalog",
+        "GET /fabrication/mechanical-installation/catalog",
+        "GET /balancing-marking/catalog",
+        "GET /fabrication/balancing-marking/catalog",
+        "GET /packaging-labeling/catalog",
+        "GET /fabrication/packaging-labeling/catalog",
+        "GET /part-separation/catalog",
+        "GET /fabrication/part-separation/catalog",
         "GET /edm/catalog",
         "GET /fabrication/edm/catalog",
         "GET /turning/catalog",
@@ -112086,6 +112116,1801 @@ async fn hot_wire_foam_catalog_http() -> impl IntoResponse {
     Json(hot_wire_foam_catalog_response())
 }
 
+fn sheet_forming_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let sheet_forming_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_sheet_forming)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let sheet_forming_cell_kinds =
+        unique_sorted(sheet_forming_cells.iter().filter_map(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }));
+    let controllers = unique_sorted(sheet_forming_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(sheet_forming_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(sheet_forming_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.sheet-forming-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /sheet-forming/catalog", "GET /fabrication/sheet-forming/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /sheet-cutting/catalog",
+            "GET /fabrication/sheet-cutting/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /setup/catalog",
+            "GET /fabrication/setup/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "sheetFormingCellCount": sheet_forming_cells.len(),
+        "sheetFormingCellKinds": sheet_forming_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "released flat blank revision, flat pattern, grain direction, material certificate, thickness, and bend allowance or K-factor evidence",
+            "punch/V-die tooling, die opening, tonnage chart, backgauge program, guarding, operator access, and bend-sequence traveler evidence",
+            "hem/crack risk, flange collision clearance, springback compensation, formed envelope, angle inspection, flange length inspection, and dimensional release evidence"
+        ],
+        "boundaryFamilies": [
+            "press-brake-setup-boundary",
+            "press-brake-release-boundary",
+            "sheet-forming-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/nesting/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/setup/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/tooling/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "sheet-forming catalog entries are press-brake, bend-sequence, hem, flange, and formed-bracket planning profiles, not certified live brake approval",
+            "machine-ready release remains blocked until flat pattern, material/thickness, bend allowance or K-factor, punch/V-die tooling, tonnage, backgauge, bend sequence, springback, guarding, formed envelope, inspection, and signoff evidence are retained",
+            "sheet-forming outcomes should feed material, nesting, process-recipe, tooling, setup, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, compensate springback, reroute, or require human intervention"
+        ],
+        "sheetFormingCells": sheet_forming_cells
+    })
+}
+
+async fn sheet_forming_catalog_http() -> impl IntoResponse {
+    Json(sheet_forming_catalog_response())
+}
+
+fn gear_cutting_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let gear_cutting_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_gear_cutting_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let gear_cutting_cell_kinds = unique_sorted(gear_cutting_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(gear_cutting_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(gear_cutting_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(gear_cutting_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.gear-cutting-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /gear-cutting/catalog", "GET /fabrication/gear-cutting/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "gearCuttingCellCount": gear_cutting_cells.len(),
+        "gearCuttingCellKinds": gear_cutting_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "released gear drawing, blank datum, arbor or fixture, blank runout, material hardness, and stock allowance evidence",
+            "hob, shaper, broach, rack cutter, or spline cutter tooling with module or diametral pitch, pressure angle, helix or lead angle, cutter wear, and indexing evidence",
+            "tooth count, span or over-pins inspection, backlash, runout, burr control, heat-treat distortion review, and retained gear inspection report evidence"
+        ],
+        "boundaryFamilies": [
+            "gear-cutting-setup-boundary",
+            "gear-indexing-boundary",
+            "gear-inspection-boundary",
+            "gear-cutting-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/tooling/result",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "gear-cutting catalog entries are hobbing, shaping, rack-cutting, keyway-broaching, and spline-broaching planning profiles, not certified live gear machine approval",
+            "machine-ready release remains blocked until drawing, blank datum, fixture or arbor, runout, material hardness, cutter geometry, module or diametral pitch, pressure angle, helix or lead angle, indexing, burr control, inspection, and signoff evidence are retained",
+            "gear-cutting outcomes should feed material, tooling, workholding, process-recipe, simulation, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, re-index, or require human intervention"
+        ],
+        "gearCuttingCells": gear_cutting_cells
+    })
+}
+
+async fn gear_cutting_catalog_http() -> impl IntoResponse {
+    Json(gear_cutting_catalog_response())
+}
+
+fn precision_grinding_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let grinding_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_precision_grinding)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let grinding_cell_kinds = unique_sorted(grinding_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(grinding_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(grinding_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(grinding_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.precision-grinding-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /precision-grinding/catalog", "GET /fabrication/precision-grinding/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "precisionGrindingCellCount": grinding_cells.len(),
+        "precisionGrindingCellKinds": grinding_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "wheel specification, wheel dress and balance, guard, coolant filtration, spark-out allowance, and workholding/datum setup evidence",
+            "stock allowance, magnetic chuck or center support, surface speed, feed, depth of cut, burn/chatter review, and thermal control evidence",
+            "flatness, parallelism, roundness, runout, surface finish, final metrology, and retained surface-finish inspection report evidence"
+        ],
+        "boundaryFamilies": [
+            "grinding-wheel-setup-boundary",
+            "grinding-thermal-inspection-boundary",
+            "precision-metrology-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/tooling/result",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "precision-grinding catalog entries are surface, cylindrical, centerless, lapping, and honing planning profiles, not certified live grinder approval",
+            "machine-ready release remains blocked until wheel, guard, dress, balance, coolant, workholding, datum, stock allowance, spark-out, burn/chatter, surface finish, final metrology, and signoff evidence are retained",
+            "precision-grinding outcomes should feed material, tooling, workholding, process-recipe, simulation, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust allowance, or require human intervention"
+        ],
+        "precisionGrindingCells": grinding_cells
+    })
+}
+
+async fn precision_grinding_catalog_http() -> impl IntoResponse {
+    Json(precision_grinding_catalog_response())
+}
+
+fn dimensional_inspection_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let inspection_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_dimensional_inspection)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let inspection_cell_kinds = unique_sorted(inspection_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(inspection_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(inspection_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(inspection_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.dimensional-inspection-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /dimensional-inspection/catalog", "GET /fabrication/dimensional-inspection/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /as-built/catalog",
+            "GET /fabrication/as-built/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /calibration/catalog",
+            "GET /fabrication/calibration/catalog",
+            "GET /tolerances/catalog",
+            "GET /fabrication/tolerances/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "dimensionalInspectionCellCount": inspection_cells.len(),
+        "dimensionalInspectionCellKinds": inspection_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "probe stylus, vision scale or focus, calibration artifact, gauge-block certificate, fixture repeatability, datum scheme, and temperature-soak evidence",
+            "GD&T characteristic plan, tolerance stack, measurement uncertainty, critical feature list, first-article sampling, and operator/program revision evidence",
+            "measured values, deviation map, pass/fail disposition, nonconformance routing, as-built record, and retained inspection report evidence"
+        ],
+        "boundaryFamilies": [
+            "inspection-calibration-boundary",
+            "inspection-disposition-boundary",
+            "precision-metrology-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/calibration/plan",
+            "POST /fabrication/tolerances/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/calibration/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/as-built/result",
+            "POST /fabrication/provenance/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "dimensional-inspection catalog entries are CMM, vision, optical, first-article, and metrology planning profiles, not certified live inspection-cell approval",
+            "machine-ready release remains blocked until calibration, fixture, datum, environment, uncertainty, characteristic plan, measured values, deviation map, pass/fail disposition, nonconformance routing, and signoff evidence are retained",
+            "dimensional-inspection outcomes should feed calibration, quality, tolerance, as-built, provenance, release, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, remeasure, reroute, or require human intervention"
+        ],
+        "dimensionalInspectionCells": inspection_cells
+    })
+}
+
+async fn dimensional_inspection_catalog_http() -> impl IntoResponse {
+    Json(dimensional_inspection_catalog_response())
+}
+
+fn thermal_postprocess_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let thermal_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_thermal_postprocess)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let thermal_cell_kinds = unique_sorted(thermal_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(thermal_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(thermal_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(thermal_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.thermal-postprocess-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /thermal-postprocess/catalog", "GET /fabrication/thermal-postprocess/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "thermalPostprocessCellCount": thermal_cells.len(),
+        "thermalPostprocessCellKinds": thermal_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "material batch, furnace or oven calibration, ramp rate, soak temperature, soak time, thermocouple placement, support fixture or setter, and atmosphere evidence",
+            "thermal profile, load map, quench or controlled-cooldown method, PPE, door/interlock state, and safe handling evidence",
+            "distortion, shrinkage, hardness, cure state, debind or sinter state, release inspection, and retained thermal log evidence"
+        ],
+        "boundaryFamilies": [
+            "thermal-profile-boundary",
+            "thermal-cooldown-inspection-boundary",
+            "thermal-postprocess-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/environment/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/environment/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "thermal-postprocess catalog entries are furnace, oven, heat-treatment, stress-relief, anneal, post-cure, debind, sinter, and kiln-firing planning profiles, not certified live furnace approval",
+            "machine-ready release remains blocked until material batch, furnace calibration, thermal profile, atmosphere, fixture or setter, thermocouple placement, ramp/soak, cooldown or quench, interlock/PPE, distortion, hardness or cure, inspection, and signoff evidence are retained",
+            "thermal-postprocess outcomes should feed material, process-recipe, environment, postprocess, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust thermal profile, or require human intervention"
+        ],
+        "thermalPostprocessCells": thermal_cells
+    })
+}
+
+async fn thermal_postprocess_catalog_http() -> impl IntoResponse {
+    Json(thermal_postprocess_catalog_response())
+}
+
+fn surface_finishing_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let finishing_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_surface_finishing)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let finishing_cell_kinds = unique_sorted(finishing_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(finishing_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(finishing_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(finishing_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.surface-finishing-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /surface-finishing/catalog", "GET /fabrication/surface-finishing/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /cleanliness/preflight/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "surfaceFinishingCellCount": finishing_cells.len(),
+        "surfaceFinishingCellKinds": finishing_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "material compatibility, SDS/media data, masking or plugs, protected threads and fit features, PPE, ventilation, and waste-route evidence",
+            "finishing media or chemistry, coating/plating/anodizing profile, media-blast or tumble settings, dry/cure state, and dimensional-impact evidence",
+            "neutralization or media removal, coating or plating thickness, adhesion, color, surface roughness, finish inspection, and retained surface-finishing record evidence"
+        ],
+        "boundaryFamilies": [
+            "surface-finishing-setup-boundary",
+            "surface-finishing-release-boundary",
+            "surface-finishing-boundary",
+            "cleanliness-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/environment/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/environment/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "surface-finishing catalog entries are vapor smoothing, solvent smoothing, blasting, tumbling, deburring, anodizing, passivation, plating, powder-coating, painting, and finish-inspection planning profiles, not certified live finishing-cell approval",
+            "machine-ready release remains blocked until material compatibility, SDS/media data, masking, protected features, PPE, ventilation, waste controls, finishing media or chemistry, dry/cure state, thickness, adhesion, color, roughness, dimensional impact, inspection, and signoff evidence are retained",
+            "surface-finishing outcomes should feed material, postprocess, process-recipe, environment, cleanliness, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust finish profile, or require human intervention"
+        ],
+        "surfaceFinishingCells": finishing_cells
+    })
+}
+
+async fn surface_finishing_catalog_http() -> impl IntoResponse {
+    Json(surface_finishing_catalog_response())
+}
+
+fn metal_joining_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let joining_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_metal_joining)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let joining_cell_kinds = unique_sorted(joining_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(joining_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(joining_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(joining_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.metal-joining-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /metal-joining/catalog", "GET /fabrication/metal-joining/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "metalJoiningCellCount": joining_cells.len(),
+        "metalJoiningCellKinds": joining_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "WPS or joining procedure, material compatibility, welder or process qualification, filler/flux/gas lot, joint prep, fit-up, fixture/clamps, and fume-control evidence",
+            "shielding gas or purge state, heat input, interpass temperature, distortion control, fire-watch/PPE, and process parameter evidence",
+            "visual inspection, penetration or fillet size, heat-affected-zone review, NDE or leak test, repair disposition, and retained weld inspection record evidence"
+        ],
+        "boundaryFamilies": [
+            "metal-joining-procedure-boundary",
+            "metal-joining-inspection-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "metal-joining catalog entries are welding, TIG, MIG, spot, laser-welding, brazing, soldering, fixture-clamp, purge, and NDE planning profiles, not certified live joining-cell approval",
+            "machine-ready release remains blocked until WPS/procedure, qualification, filler/flux/gas lot, fit-up fixture, heat input, interpass, fume/fire-watch controls, inspection or NDE, repair disposition, and signoff evidence are retained",
+            "metal-joining outcomes should feed material, assembly, workholding, process-recipe, environment, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust joining sequence, or require human intervention"
+        ],
+        "metalJoiningCells": joining_cells
+    })
+}
+
+async fn metal_joining_catalog_http() -> impl IntoResponse {
+    Json(metal_joining_catalog_response())
+}
+
+fn molding_casting_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let molding_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_molding_casting)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let molding_cell_kinds = unique_sorted(molding_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(molding_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(molding_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(molding_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.molding-casting-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /molding-casting/catalog", "GET /fabrication/molding-casting/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "moldingCastingCellCount": molding_cells.len(),
+        "moldingCastingCellKinds": molding_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "master/tool revision, mold material, parting line, vent, sprue, runner, gate, release-agent, and tool-cleanliness evidence",
+            "material batch, mix ratio, pot life, degas or vacuum, pressure, exotherm, cure, and environmental condition evidence",
+            "demold method, shrinkage allowance, void, bubble, flash, surface finish, dimensional inspection, and retained molding/casting traveler evidence"
+        ],
+        "boundaryFamilies": [
+            "mold-tooling-boundary",
+            "mold-cure-demold-boundary",
+            "molding-casting-tooling-boundary",
+            "molding-casting-process-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/materials/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/environment/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/environment/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "molding/casting catalog entries are urethane-casting, silicone-molding, vacuum-casting, injection-molding, mold-prep, degas, cure, demold, trim, and inspection planning profiles, not certified live molding/casting-cell approval",
+            "machine-ready release remains blocked until master/tool revision, mold material, parting line, vent/sprue/runner/gate, release-agent, mix ratio, pot life, batch, degas/vacuum/pressure, cure/exotherm, demold, shrinkage, void/bubble/flash, dimensional inspection, and signoff evidence are retained",
+            "molding/casting outcomes should feed material, process-recipe, environment, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust tooling or cure sequence, or require human intervention"
+        ],
+        "moldingCastingCells": molding_cells
+    })
+}
+
+async fn molding_casting_catalog_http() -> impl IntoResponse {
+    Json(molding_casting_catalog_response())
+}
+
+fn pcb_electronics_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let pcb_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| wants_pcb_fabrication(kind) || wants_pcb_assembly(kind))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let pcb_cell_kinds = unique_sorted(pcb_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(pcb_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(pcb_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(pcb_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.pcb-electronics-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /pcb-electronics/catalog", "GET /fabrication/pcb-electronics/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /design/preflight/catalog",
+            "GET /fabrication/design/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /execution/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog"
+        ],
+        "pcbElectronicsCellCount": pcb_cells.len(),
+        "pcbElectronicsCellKinds": pcb_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "board revision, Gerber/ODB++ or IPC-2581 fabrication package, netlist, stackup, copper thickness, laminate lot, DRC clearance, trace width, impedance, panelization, and fiducial evidence",
+            "Excellon drill package, drill tool list, annular ring, via, slot/rout, layer registration, soldermask, silkscreen, copper finish, AOI, continuity, shorts, impedance coupon, and release-test evidence",
+            "BOM/AVL, centroid, stencil revision, solder-paste lot and expiry, feeder map, nozzle map, fiducials, polarity/orientation, ESD controls, first article, reflow soak/peak/cooling profile, AOI/X-ray, ICT or functional test, rework disposition, and PCBA release evidence"
+        ],
+        "boundaryFamilies": [
+            "pcb-fabrication-stackup-boundary",
+            "pcb-fabrication-drill-registration-boundary",
+            "pcb-fabrication-finish-test-boundary",
+            "pcb-assembly-setup-boundary",
+            "pcb-assembly-reflow-inspection-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/design/import/review",
+            "POST /fabrication/materials/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/design/import/result",
+            "POST /fabrication/materials/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "PCB electronics catalog entries are PCB fabrication, Gerber/ODB++/IPC-2581 review, drilling, routing, finish, SMT assembly, pick-and-place, reflow, AOI/X-ray, ICT, functional-test, and rework planning profiles, not certified live electronics-cell approval",
+            "machine-ready release remains blocked until board revision, released fabrication package, netlist, stackup, laminate, drill, registration, finish, AOI/test, BOM/AVL, centroid, stencil, paste, feeder/nozzle, fiducial, polarity, ESD, first-article, reflow, inspection, test, rework, and signoff evidence are retained",
+            "PCB electronics outcomes should feed design import, material, process-recipe, quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust fabrication or assembly sequence, or require human intervention"
+        ],
+        "pcbElectronicsCells": pcb_cells
+    })
+}
+
+async fn pcb_electronics_catalog_http() -> impl IntoResponse {
+    Json(pcb_electronics_catalog_response())
+}
+
+fn bonding_joining_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let bonding_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| wants_adhesive_bonding(kind) || wants_plastic_joining(kind))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let bonding_cell_kinds = unique_sorted(bonding_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(bonding_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(bonding_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(bonding_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.bonding-joining-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /bonding-joining/catalog", "GET /fabrication/bonding-joining/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /environment/catalog",
+            "GET /fabrication/environment/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "bondingJoiningCellCount": bonding_cells.len(),
+        "bondingJoiningCellKinds": bonding_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "part revisions, substrate materials, adhesive specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion or activation, primer, bondline target, fixture, and release-owner evidence",
+            "clamp pressure, cure time, temperature, humidity, handling strength, void, squeeze-out, lap-shear or peel coupon, dimensional fit, first article, rework limit, and bonded-assembly release evidence",
+            "polymer compatibility, joint design, energy-director or staking-boss geometry, fixture nest, weld/stake/solvent recipe, amplitude/force/time or solvent dwell limits, collapse or melt-flow target, cooling/clamp plan, and stop-criteria evidence",
+            "weld collapse or stake-head measurement, flash, cracks/crazing, pull/peel/torsion proof, leak or visual inspection, dimensional fit, cosmetic disposition, first article, and plastic-join release evidence"
+        ],
+        "boundaryFamilies": [
+            "adhesive-bonding-prep-boundary",
+            "adhesive-bonding-cure-release-boundary",
+            "plastic-joining-setup-boundary",
+            "plastic-joining-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/materials/plan",
+            "POST /fabrication/process-recipes/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/assembly/result",
+            "POST /fabrication/materials/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "bonding/joining catalog entries are adhesive-bonding, structural-adhesive, epoxy-bonding, bondline-control, adhesive-cure, lap-shear/peel-test, plastic-welding, ultrasonic-welding, heat-staking, solvent-welding, hot-plate-welding, and vibration-welding planning profiles, not certified live joining-cell approval",
+            "machine-ready release remains blocked until substrate, adhesive, lot, shelf-life, mix, surface-prep, activation or primer, bondline, fixture, cure, clamp, environment, coupon, fit, first-article, polymer compatibility, joint design, energy-director or boss, weld/stake/solvent recipe, collapse, proof-test, visual/leak, cosmetic, rework, and signoff evidence are retained",
+            "bonding/joining outcomes should feed material, assembly, workholding, process-recipe, environment, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust joining sequence, or require human intervention"
+        ],
+        "bondingJoiningCells": bonding_cells
+    })
+}
+
+async fn bonding_joining_catalog_http() -> impl IntoResponse {
+    Json(bonding_joining_catalog_response())
+}
+
+fn fixture_adaptive_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let fixture_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    wants_fixture_tooling(kind) || wants_adaptive_compensation(kind)
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let fixture_cell_kinds = unique_sorted(fixture_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(fixture_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(fixture_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(fixture_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.fixture-adaptive-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /fixture-adaptive/catalog", "GET /fabrication/fixture-adaptive/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /calibration/catalog",
+            "GET /fabrication/calibration/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /calibration/preflight/catalog",
+            "GET /fabrication/calibration/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "fixtureAdaptiveCellCount": fixture_cells.len(),
+        "fixtureAdaptiveCellKinds": fixture_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "part revision, target operation, stock state, datum scheme, locator strategy, clamp or vacuum plan, soft-jaw or nest profile, fixture material, hardware, clearance model, and release-owner evidence",
+            "dry-run proof, clamp clearance, tool reach, loading and unloading method, vacuum leak or clamp force, datum-transfer measurement, gage repeatability, first article, maintenance limits, and fixture-release evidence",
+            "released program revision, machine warmup, probe or inspection calibration, datum alignment, feature list, nominal values, tolerance band, measurement uncertainty, source measurements, computed delta, and maximum compensation limit evidence",
+            "work-offset or tool-wear update, rollback snapshot, compensated dry run, spring pass or rerun path, first-article result, residual error, drift trend, rollback plan, process-limit impact, and adaptive release-owner evidence"
+        ],
+        "boundaryFamilies": [
+            "fixture-tooling-design-boundary",
+            "fixture-tooling-proof-boundary",
+            "adaptive-compensation-measurement-boundary",
+            "adaptive-compensation-release-boundary",
+            "workholding-release-boundary",
+            "calibration-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/tooling/plan",
+            "POST /fabrication/calibration/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/tooling/result",
+            "POST /fabrication/calibration/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "fixture/adaptive catalog entries are fixture-tooling, soft-jaw, fixture-plate, drill-jig, inspection-fixture, vacuum-fixture, adaptive-compensation, closed-loop machining, in-process probing, inspection-feedback, offset-update, tool-wear-update, and compensated-rerun planning profiles, not certified live fixture or compensation approval",
+            "machine-ready release remains blocked until revision, target operation, stock, datum, locator, clamp/vacuum, profile, material, hardware, clearance, dry-run proof, load/unload, clamp force or vacuum leak, repeatability, program revision, warmup, probe calibration, feature list, uncertainty, compensation limit, rollback, compensated dry run, first article, residual error, drift, and signoff evidence are retained",
+            "fixture/adaptive outcomes should feed workholding, tooling, calibration, quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, update offsets, rerun, or require human intervention"
+        ],
+        "fixtureAdaptiveCells": fixture_cells
+    })
+}
+
+async fn fixture_adaptive_catalog_http() -> impl IntoResponse {
+    Json(fixture_adaptive_catalog_response())
+}
+
+fn mechanical_installation_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let installation_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    wants_insert_installation(kind)
+                        || wants_fastener_installation(kind)
+                        || wants_rivet_installation(kind)
+                        || wants_seal_installation(kind)
+                        || wants_bearing_installation(kind)
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let installation_cell_kinds = unique_sorted(installation_cells.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(installation_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(installation_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(installation_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.mechanical-installation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /mechanical-installation/catalog",
+            "GET /fabrication/mechanical-installation/catalog"
+        ],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /assembly/catalog",
+            "GET /fabrication/assembly/catalog",
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "GET /execution/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog"
+        ],
+        "mechanicalInstallationCellCount": installation_cells.len(),
+        "mechanicalInstallationCellKinds": installation_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "part revision, insert specification, hardware lot, parent material, boss wall or geometry, prepared-hole diameter, hole depth, chamfer, fixture, tool tip, heat or press-force profile, depth stop, and insert owner evidence",
+            "installed height, perpendicularity or orientation, surrounding boss condition, thread go/no-go gage, thread engagement, torque or pullout result, first article, rework limit, and insert release evidence",
+            "part revisions, fastener specification, hardware lot, washer or spacer stack, joint stack thickness, prepared threads or inserts, access, torque-tool calibration, threadlocker, torque sequence, final torque, torque angle or prevailing torque, witness mark, clamp gap, retorque, and fastener release evidence",
+            "rivet specification, material stack, hole diameter and alignment, grip length, access, backing support, buck bar or nosepiece, tool calibration, pull/squeeze/press-force limits, mandrel break or shop-head inspection, head height, clinch/stake/swage deformation, clamp-up, cracks, looseness, pull or shear proof, and rivet release evidence",
+            "seal/gasket/O-ring specification, groove/gland geometry, gland fill, material compatibility, cleanliness, lubricant or sealant, compression target, cure limits, leak-test criteria, compression, pinch/twist/extrusion inspection, leak/pressure/vacuum result, and seal release evidence",
+            "bearing specification, bearing lot, housing bore, shaft journal, fit class, interference or clearance target, temperature delta, press tooling, support mandrel, lubrication, cleanliness, force/displacement limits, seating depth, shoulder contact, preload or endplay, runout, axial/radial play, rotation torque, noise/roughness, and bearing release evidence"
+        ],
+        "boundaryFamilies": [
+            "insert-installation-setup-boundary",
+            "insert-installation-release-boundary",
+            "fastener-installation-setup-boundary",
+            "fastener-installation-release-boundary",
+            "rivet-installation-setup-boundary",
+            "rivet-installation-release-boundary",
+            "seal-installation-setup-boundary",
+            "seal-installation-release-boundary",
+            "bearing-installation-setup-boundary",
+            "bearing-installation-release-boundary",
+            "assembly-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/assembly/result",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "mechanical-installation catalog entries are insert-installation, heat-set insert, press-fit insert, helicoil, dowel-pin, bushing, fastener, screw, bolt, threadlocker, rivet, clinch/stake/swage, seal, gasket, O-ring, bearing-press, interference-fit, shrink-fit, preload, runout, and rotation-torque planning profiles, not certified live installation approval",
+            "machine-ready release remains blocked until revision, hardware lot, parent material, prepared geometry, fixture, tool profile, height/orientation, thread engagement, torque/pullout, torque-tool calibration, washer/spacer stack, threadlocker, witness mark, hole alignment, grip length, mandrel/shop-head, clamp-up, seal/gland fill, leak/pressure/vacuum, bearing fit class, temperature delta, press tooling, preload/endplay, runout, rotation torque, first article, rework, and signoff evidence are retained",
+            "mechanical-installation outcomes should feed assembly, workholding, quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, change installation sequence, add inspection, or require human intervention"
+        ],
+        "mechanicalInstallationCells": installation_cells
+    })
+}
+
+async fn mechanical_installation_catalog_http() -> impl IntoResponse {
+    Json(mechanical_installation_catalog_response())
+}
+
+fn balancing_marking_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let balancing_marking_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| wants_dynamic_balancing(kind) || wants_part_marking(kind))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let balancing_marking_cell_kinds =
+        unique_sorted(balancing_marking_cells.iter().filter_map(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }));
+    let controllers = unique_sorted(balancing_marking_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(balancing_marking_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(balancing_marking_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.balancing-marking-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /balancing-marking/catalog",
+            "GET /fabrication/balancing-marking/catalog"
+        ],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /provenance/catalog",
+            "GET /fabrication/provenance/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /execution/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "balancingMarkingCellCount": balancing_marking_cells.len(),
+        "balancingMarkingCellKinds": balancing_marking_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "part revision, rotor or impeller identity, mass properties, balance grade, target RPM, fixture/arbor runout, guard and interlock status, trial-weight plan, correction planes, speed ramp, vibration sensor calibration, phase reference, and stop-criteria evidence",
+            "residual unbalance, vibration spectrum and limit, phase, correction weights or material removal, correction retention, overspeed/guard status, runout, noise check, first article, and balance-release evidence",
+            "released artwork/text, part revision, serial or UDI/data-matrix payload, duplicate-serial check, datum and fixture, mark location, material finish, contrast zone, and marking recipe evidence",
+            "mark depth or contrast, scanner or vision verification, data-matrix/barcode grade, human-readable check, permanence or durability review, cosmetic disposition, traceability record, and part-marking release evidence"
+        ],
+        "boundaryFamilies": [
+            "dynamic-balancing-setup-boundary",
+            "dynamic-balancing-release-boundary",
+            "part-marking-setup-boundary",
+            "part-marking-readability-boundary",
+            "quality-dimensional-inspection-boundary",
+            "provenance-release-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/provenance/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/quality/result",
+            "POST /fabrication/provenance/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "balancing/marking catalog entries are dynamic-balancing, rotor-balancing, impeller-balancing, fan-balancing, wheel-balancing, spin-balance, vibration-analysis, part-marking, laser-marking, laser-engraving, dot-peen, data-matrix, and UDI marking planning profiles, not certified live balancing or marking approval",
+            "machine-ready release remains blocked until revision, rotor identity, mass properties, balance grade, target speed, fixture/arbor runout, guarding, sensor calibration, correction planes, trial/correction evidence, residual unbalance, vibration spectrum, correction retention, released artwork/text, serial/UDI payload, duplicate check, datum/fixture, mark location, material finish, recipe, scan grade, readability, permanence, cosmetic, traceability, and signoff evidence are retained",
+            "balancing/marking outcomes should feed quality, provenance, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, rebalance, remark, reroute, add inspection, or require human intervention"
+        ],
+        "balancingMarkingCells": balancing_marking_cells
+    })
+}
+
+async fn balancing_marking_catalog_http() -> impl IntoResponse {
+    Json(balancing_marking_catalog_response())
+}
+
+fn packaging_labeling_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let packaging_labeling_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(wants_packaging_labeling)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let packaging_labeling_cell_kinds =
+        unique_sorted(packaging_labeling_cells.iter().filter_map(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }));
+    let controllers = unique_sorted(packaging_labeling_cells.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(packaging_labeling_cells.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(packaging_labeling_cells.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.packaging-labeling-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /packaging-labeling/catalog",
+            "GET /fabrication/packaging-labeling/catalog"
+        ],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /provenance/catalog",
+            "GET /fabrication/provenance/catalog",
+            "GET /release/catalog",
+            "GET /fabrication/release/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /execution/preflight/catalog",
+            "GET /fabrication/execution/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "packagingLabelingCellCount": packaging_labeling_cells.len(),
+        "packagingLabelingCellKinds": packaging_labeling_cell_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "released traveler, part revision, lot/batch genealogy, serial range, UDI/QR/barcode payload, label template, label stock, printer calibration, scan verification, duplicate-serial check, kit traceability, and operator signoff evidence",
+            "verified part count, part condition, ESD or clean packaging state, humidity controls, desiccant or HIC when required, dunnage fit, carton or pallet label, tamper evidence, gross weight, shipping documents, shipment release, and receiving-handoff evidence",
+            "multi-part recomposition, split/combine kit membership, bag-and-tag grouping, serialization map, traveler attachments, photo evidence, and provenance ledger evidence"
+        ],
+        "boundaryFamilies": [
+            "packaging-label-trace-boundary",
+            "packaging-packout-release-boundary",
+            "provenance-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/provenance/plan",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/provenance/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "packaging/labeling catalog entries are packaging-labeling, packout, carton-packout, serialization-label, shipment-release, bag-and-tag, kit traceability, protective-packaging, and traveler release planning profiles, not certified shipment approval",
+            "machine-ready release remains blocked until traveler, revision, lot/batch, serial range, label template, label stock, UDI/QR/barcode payload, printer calibration, scan proof, duplicate-serial check, kit traceability, count, condition, ESD/humidity controls, dunnage, carton or pallet label, tamper evidence, gross weight, shipping documents, and shipment release evidence are retained",
+            "packaging/labeling outcomes should feed quality, provenance, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, relabel, repack, reroute, add inspection, or require human intervention"
+        ],
+        "packagingLabelingCells": packaging_labeling_cells
+    })
+}
+
+async fn packaging_labeling_catalog_http() -> impl IntoResponse {
+    Json(packaging_labeling_catalog_response())
+}
+
+fn part_separation_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.part-separation-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /part-separation/catalog",
+            "GET /fabrication/part-separation/catalog"
+        ],
+        "acceptedInstructionLanguages": [
+            "part-separation-checklist",
+            "operator-checklist",
+            "setup-sheet"
+        ],
+        "appliesTo": [
+            "nested printed parts",
+            "machined subparts held by tabs or bridges",
+            "sprued or runner-attached molded/cast parts",
+            "sheet-cut tabs, microjoints, slugs, and retained bridges",
+            "support-tree or build-plate removal",
+            "manual saw, wire, hot-knife, cutoff-wheel, and deburr release work"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/quality/plan",
+            "POST /fabrication/provenance/plan",
+            "POST /fabrication/release/preview"
+        ],
+        "analysisRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/boundaries/result"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/quality/result",
+            "POST /fabrication/provenance/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "requiredEvidence": [
+            "separation fixture, hold-down or clamp plan, support block, catcher, build-plate or sprue/tree release state, and operator signoff evidence",
+            "cut path, saw path, wire route, cut map, kerf allowance, heat input, blade or wire clearance, coolant, dust extraction, and distortion check evidence",
+            "retained-tab, bridge, microjoint, sprue, runner, or support-tree release evidence",
+            "deburr or edge-break evidence, burr inspection, piece IDs, serial trace, go/no-go metrology, final inspection, and nonconformance routing evidence"
+        ],
+        "structuredChecklistSteps": [
+            "PART_SEPARATION_CHECKLIST",
+            "LOAD_SEPARATION_FIXTURE",
+            "CUT_PATH",
+            "RELEASE_RETAINED_TABS",
+            "DEBURR_EDGES",
+            "TRACE_PARTS",
+            "INSPECT_SEPARATION"
+        ],
+        "boundaryFamilies": [
+            "text-part-separation-boundary",
+            "part-separation-boundary",
+            "part-separation-evidence-boundary",
+            "part-separation-release-boundary",
+            "workholding-release-boundary",
+            "quality-dimensional-inspection-boundary",
+            "provenance-release-boundary",
+            "human-intervention-boundary"
+        ],
+        "releasePolicy": [
+            "part-separation catalog entries are checklist and operator-boundary planning profiles for separating printed, milled, nested, sheet-cut, sprued, tabbed, bridged, or build-plate-held pieces, not certified autonomous cutting approval",
+            "machine-ready release remains blocked until fixture or hold-down, cut path, saw or wire route, kerf/heat allowance, retained-tab or bridge release, deburr/edge-break, piece IDs, serial trace, go/no-go metrology, final inspection, and nonconformance routing evidence are retained",
+            "part-separation outcomes should feed workholding, quality, provenance, telemetry, costing, release, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, resequence, add fixtures, add inspection, or require human intervention"
+        ]
+    })
+}
+
+async fn part_separation_catalog_http() -> impl IntoResponse {
+    Json(part_separation_catalog_response())
+}
+
 fn edm_catalog_response() -> Value {
     let subtractive_payload = subtractive_catalog_response();
     let edm_machines = subtractive_payload
@@ -122268,6 +124093,21 @@ async fn request_schema() -> impl IntoResponse {
             "horizontalMillCatalog": ["GET /horizontal-mill/catalog", "GET /fabrication/horizontal-mill/catalog"],
             "sheetCuttingCatalog": ["GET /sheet-cutting/catalog", "GET /fabrication/sheet-cutting/catalog"],
             "hotWireFoamCatalog": ["GET /hot-wire-foam/catalog", "GET /fabrication/hot-wire-foam/catalog"],
+            "sheetFormingCatalog": ["GET /sheet-forming/catalog", "GET /fabrication/sheet-forming/catalog"],
+            "gearCuttingCatalog": ["GET /gear-cutting/catalog", "GET /fabrication/gear-cutting/catalog"],
+            "precisionGrindingCatalog": ["GET /precision-grinding/catalog", "GET /fabrication/precision-grinding/catalog"],
+            "dimensionalInspectionCatalog": ["GET /dimensional-inspection/catalog", "GET /fabrication/dimensional-inspection/catalog"],
+            "thermalPostprocessCatalog": ["GET /thermal-postprocess/catalog", "GET /fabrication/thermal-postprocess/catalog"],
+            "surfaceFinishingCatalog": ["GET /surface-finishing/catalog", "GET /fabrication/surface-finishing/catalog"],
+            "metalJoiningCatalog": ["GET /metal-joining/catalog", "GET /fabrication/metal-joining/catalog"],
+            "moldingCastingCatalog": ["GET /molding-casting/catalog", "GET /fabrication/molding-casting/catalog"],
+            "pcbElectronicsCatalog": ["GET /pcb-electronics/catalog", "GET /fabrication/pcb-electronics/catalog"],
+            "bondingJoiningCatalog": ["GET /bonding-joining/catalog", "GET /fabrication/bonding-joining/catalog"],
+            "fixtureAdaptiveCatalog": ["GET /fixture-adaptive/catalog", "GET /fabrication/fixture-adaptive/catalog"],
+            "mechanicalInstallationCatalog": ["GET /mechanical-installation/catalog", "GET /fabrication/mechanical-installation/catalog"],
+            "balancingMarkingCatalog": ["GET /balancing-marking/catalog", "GET /fabrication/balancing-marking/catalog"],
+            "packagingLabelingCatalog": ["GET /packaging-labeling/catalog", "GET /fabrication/packaging-labeling/catalog"],
+            "partSeparationCatalog": ["GET /part-separation/catalog", "GET /fabrication/part-separation/catalog"],
             "edmCatalog": ["GET /edm/catalog", "GET /fabrication/edm/catalog"],
             "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "latheCatalog": ["GET /lathe/catalog", "GET /fabrication/lathe/catalog"],
@@ -125560,6 +127400,117 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/hot-wire-foam/catalog",
             get(hot_wire_foam_catalog_http),
+        )
+        .route("/sheet-forming/catalog", get(sheet_forming_catalog_http))
+        .route(
+            "/fabrication/sheet-forming/catalog",
+            get(sheet_forming_catalog_http),
+        )
+        .route("/gear-cutting/catalog", get(gear_cutting_catalog_http))
+        .route(
+            "/fabrication/gear-cutting/catalog",
+            get(gear_cutting_catalog_http),
+        )
+        .route(
+            "/precision-grinding/catalog",
+            get(precision_grinding_catalog_http),
+        )
+        .route(
+            "/fabrication/precision-grinding/catalog",
+            get(precision_grinding_catalog_http),
+        )
+        .route(
+            "/dimensional-inspection/catalog",
+            get(dimensional_inspection_catalog_http),
+        )
+        .route(
+            "/fabrication/dimensional-inspection/catalog",
+            get(dimensional_inspection_catalog_http),
+        )
+        .route(
+            "/thermal-postprocess/catalog",
+            get(thermal_postprocess_catalog_http),
+        )
+        .route(
+            "/fabrication/thermal-postprocess/catalog",
+            get(thermal_postprocess_catalog_http),
+        )
+        .route(
+            "/surface-finishing/catalog",
+            get(surface_finishing_catalog_http),
+        )
+        .route(
+            "/fabrication/surface-finishing/catalog",
+            get(surface_finishing_catalog_http),
+        )
+        .route("/metal-joining/catalog", get(metal_joining_catalog_http))
+        .route(
+            "/fabrication/metal-joining/catalog",
+            get(metal_joining_catalog_http),
+        )
+        .route(
+            "/molding-casting/catalog",
+            get(molding_casting_catalog_http),
+        )
+        .route(
+            "/fabrication/molding-casting/catalog",
+            get(molding_casting_catalog_http),
+        )
+        .route(
+            "/pcb-electronics/catalog",
+            get(pcb_electronics_catalog_http),
+        )
+        .route(
+            "/fabrication/pcb-electronics/catalog",
+            get(pcb_electronics_catalog_http),
+        )
+        .route(
+            "/bonding-joining/catalog",
+            get(bonding_joining_catalog_http),
+        )
+        .route(
+            "/fabrication/bonding-joining/catalog",
+            get(bonding_joining_catalog_http),
+        )
+        .route(
+            "/fixture-adaptive/catalog",
+            get(fixture_adaptive_catalog_http),
+        )
+        .route(
+            "/fabrication/fixture-adaptive/catalog",
+            get(fixture_adaptive_catalog_http),
+        )
+        .route(
+            "/mechanical-installation/catalog",
+            get(mechanical_installation_catalog_http),
+        )
+        .route(
+            "/fabrication/mechanical-installation/catalog",
+            get(mechanical_installation_catalog_http),
+        )
+        .route(
+            "/balancing-marking/catalog",
+            get(balancing_marking_catalog_http),
+        )
+        .route(
+            "/fabrication/balancing-marking/catalog",
+            get(balancing_marking_catalog_http),
+        )
+        .route(
+            "/packaging-labeling/catalog",
+            get(packaging_labeling_catalog_http),
+        )
+        .route(
+            "/fabrication/packaging-labeling/catalog",
+            get(packaging_labeling_catalog_http),
+        )
+        .route(
+            "/part-separation/catalog",
+            get(part_separation_catalog_http),
+        )
+        .route(
+            "/fabrication/part-separation/catalog",
+            get(part_separation_catalog_http),
         )
         .route("/edm/catalog", get(edm_catalog_http))
         .route("/fabrication/edm/catalog", get(edm_catalog_http))
@@ -153926,6 +155877,1342 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|routes| routes.iter().any(|route| {
                 route.as_str() == Some("GET /fabrication/hot-wire-foam/catalog")
+            })));
+    }
+
+    #[test]
+    fn sheet_forming_catalog_endpoint_exposes_bend_tooling_and_release_contract() {
+        let payload = sheet_forming_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.sheet-forming-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/sheet-forming/catalog")
+            })));
+        assert!(payload
+            .get("sheetFormingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("sheetFormingCellKinds")
+            .and_then(Value::as_array)
+            .expect("sheet-forming cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("press-brake-forming-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("sheet-forming setup evidence should be present");
+        for expected in [
+            "flat blank revision",
+            "bend allowance",
+            "punch/V-die tooling",
+            "springback compensation",
+            "angle inspection",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing sheet-forming setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("sheet-forming boundary families should be present");
+        for boundary in [
+            "press-brake-setup-boundary",
+            "press-brake-release-boundary",
+            "sheet-forming-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing sheet-forming boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/sheet-forming/catalog")
+            })));
+    }
+
+    #[test]
+    fn gear_cutting_catalog_endpoint_exposes_indexing_tooling_and_release_contract() {
+        let payload = gear_cutting_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.gear-cutting-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/gear-cutting/catalog") })));
+        assert!(payload
+            .get("gearCuttingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("gearCuttingCellKinds")
+            .and_then(Value::as_array)
+            .expect("gear-cutting cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("gear-cutting-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("gear-cutting setup evidence should be present");
+        for expected in [
+            "gear drawing",
+            "blank datum",
+            "module or diametral pitch",
+            "pressure angle",
+            "span or over-pins inspection",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing gear-cutting setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("gear-cutting boundary families should be present");
+        for boundary in [
+            "gear-cutting-setup-boundary",
+            "gear-indexing-boundary",
+            "gear-inspection-boundary",
+            "gear-cutting-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing gear-cutting boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/gear-cutting/catalog") })));
+    }
+
+    #[test]
+    fn precision_grinding_catalog_endpoint_exposes_wheel_metrology_and_release_contract() {
+        let payload = precision_grinding_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.precision-grinding-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/precision-grinding/catalog")
+            })));
+        assert!(payload
+            .get("precisionGrindingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("precisionGrindingCellKinds")
+            .and_then(Value::as_array)
+            .expect("precision-grinding cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("precision-grinder")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("precision-grinding setup evidence should be present");
+        for expected in [
+            "wheel dress and balance",
+            "coolant filtration",
+            "spark-out allowance",
+            "burn/chatter review",
+            "surface finish",
+            "final metrology",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing precision-grinding setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("precision-grinding boundary families should be present");
+        for boundary in [
+            "grinding-wheel-setup-boundary",
+            "grinding-thermal-inspection-boundary",
+            "precision-metrology-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing precision-grinding boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/precision-grinding/catalog")
+            })));
+    }
+
+    #[test]
+    fn dimensional_inspection_catalog_endpoint_exposes_calibration_metrology_and_release_contract()
+    {
+        let payload = dimensional_inspection_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.dimensional-inspection-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/dimensional-inspection/catalog")
+            })));
+        assert!(payload
+            .get("dimensionalInspectionCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("dimensionalInspectionCellKinds")
+            .and_then(Value::as_array)
+            .expect("dimensional-inspection cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("cmm-inspection-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("dimensional-inspection setup evidence should be present");
+        for expected in [
+            "probe stylus",
+            "calibration artifact",
+            "GD&T characteristic plan",
+            "measurement uncertainty",
+            "deviation map",
+            "nonconformance routing",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing dimensional-inspection setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("dimensional-inspection boundary families should be present");
+        for boundary in [
+            "inspection-calibration-boundary",
+            "inspection-disposition-boundary",
+            "precision-metrology-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing dimensional-inspection boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/dimensional-inspection/catalog")
+            })));
+    }
+
+    #[test]
+    fn thermal_postprocess_catalog_endpoint_exposes_profile_cooldown_and_release_contract() {
+        let payload = thermal_postprocess_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.thermal-postprocess-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/thermal-postprocess/catalog")
+            })));
+        assert!(payload
+            .get("thermalPostprocessCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("thermalPostprocessCellKinds")
+            .and_then(Value::as_array)
+            .expect("thermal-postprocess cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("thermal-postprocess-furnace")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("thermal-postprocess setup evidence should be present");
+        for expected in [
+            "material batch",
+            "furnace or oven calibration",
+            "soak temperature",
+            "controlled-cooldown",
+            "distortion",
+            "retained thermal log",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing thermal-postprocess setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("thermal-postprocess boundary families should be present");
+        for boundary in [
+            "thermal-profile-boundary",
+            "thermal-cooldown-inspection-boundary",
+            "thermal-postprocess-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing thermal-postprocess boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/thermal-postprocess/catalog")
+            })));
+    }
+
+    #[test]
+    fn surface_finishing_catalog_endpoint_exposes_masking_media_and_release_contract() {
+        let payload = surface_finishing_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.surface-finishing-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/surface-finishing/catalog")
+            })));
+        assert!(payload
+            .get("surfaceFinishingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("surfaceFinishingCellKinds")
+            .and_then(Value::as_array)
+            .expect("surface-finishing cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("surface-finishing-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("surface-finishing setup evidence should be present");
+        for expected in [
+            "material compatibility",
+            "SDS/media data",
+            "masking or plugs",
+            "ventilation",
+            "coating or plating thickness",
+            "surface roughness",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing surface-finishing setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("surface-finishing boundary families should be present");
+        for boundary in [
+            "surface-finishing-setup-boundary",
+            "surface-finishing-release-boundary",
+            "surface-finishing-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing surface-finishing boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/surface-finishing/catalog")
+            })));
+    }
+
+    #[test]
+    fn metal_joining_catalog_endpoint_exposes_wps_fitup_and_inspection_release_contract() {
+        let payload = metal_joining_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.metal-joining-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/metal-joining/catalog")
+            })));
+        assert!(payload
+            .get("metalJoiningCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("metalJoiningCellKinds")
+            .and_then(Value::as_array)
+            .expect("metal-joining cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("metal-joining-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("metal-joining setup evidence should be present");
+        for expected in [
+            "WPS or joining procedure",
+            "filler/flux/gas lot",
+            "joint prep",
+            "fit-up",
+            "fume-control evidence",
+            "NDE or leak test",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing metal-joining setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("metal-joining boundary families should be present");
+        for boundary in [
+            "metal-joining-procedure-boundary",
+            "metal-joining-inspection-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing metal-joining boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/metal-joining/catalog")
+            })));
+    }
+
+    #[test]
+    fn molding_casting_catalog_endpoint_exposes_tooling_process_and_release_contract() {
+        let payload = molding_casting_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.molding-casting-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/molding-casting/catalog")
+            })));
+        assert!(payload
+            .get("moldingCastingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("moldingCastingCellKinds")
+            .and_then(Value::as_array)
+            .expect("molding/casting cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("molding-casting-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("molding/casting setup evidence should be present");
+        for expected in [
+            "master/tool revision",
+            "mold material",
+            "parting line",
+            "mix ratio",
+            "pot life",
+            "degas",
+            "demold method",
+            "shrinkage",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing molding/casting setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("molding/casting boundary families should be present");
+        for boundary in [
+            "molding-casting-tooling-boundary",
+            "molding-casting-process-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing molding/casting boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/molding-casting/catalog")
+            })));
+    }
+
+    #[test]
+    fn pcb_electronics_catalog_endpoint_exposes_board_fabrication_and_smt_release_contract() {
+        let payload = pcb_electronics_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.pcb-electronics-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/pcb-electronics/catalog")
+            })));
+        assert!(payload
+            .get("pcbElectronicsCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+
+        let kinds = payload
+            .get("pcbElectronicsCellKinds")
+            .and_then(Value::as_array)
+            .expect("PCB electronics cell kinds should be present");
+        for kind in ["pcb-fabrication-cell", "pcb-assembly-cell"] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing PCB electronics kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("PCB electronics setup evidence should be present");
+        for expected in [
+            "Gerber/ODB++ or IPC-2581",
+            "netlist",
+            "stackup",
+            "Excellon drill",
+            "AOI",
+            "BOM/AVL",
+            "centroid",
+            "stencil revision",
+            "solder-paste lot",
+            "reflow soak/peak/cooling profile",
+            "ICT or functional test",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing PCB electronics setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("PCB electronics boundary families should be present");
+        for boundary in [
+            "pcb-fabrication-stackup-boundary",
+            "pcb-fabrication-drill-registration-boundary",
+            "pcb-fabrication-finish-test-boundary",
+            "pcb-assembly-setup-boundary",
+            "pcb-assembly-reflow-inspection-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing PCB electronics boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/pcb-electronics/catalog")
+            })));
+    }
+
+    #[test]
+    fn bonding_joining_catalog_endpoint_exposes_adhesive_and_plastic_release_contract() {
+        let payload = bonding_joining_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.bonding-joining-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/bonding-joining/catalog")
+            })));
+        assert!(payload
+            .get("bondingJoiningCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+
+        let kinds = payload
+            .get("bondingJoiningCellKinds")
+            .and_then(Value::as_array)
+            .expect("bonding/joining cell kinds should be present");
+        for kind in ["adhesive-bonding-cell", "plastic-joining-cell"] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing bonding/joining kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("bonding/joining setup evidence should be present");
+        for expected in [
+            "adhesive specification",
+            "shelf life",
+            "mix ratio",
+            "bondline target",
+            "lap-shear or peel coupon",
+            "polymer compatibility",
+            "energy-director",
+            "weld/stake/solvent recipe",
+            "pull/peel/torsion proof",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing bonding/joining setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("bonding/joining boundary families should be present");
+        for boundary in [
+            "adhesive-bonding-prep-boundary",
+            "adhesive-bonding-cure-release-boundary",
+            "plastic-joining-setup-boundary",
+            "plastic-joining-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing bonding/joining boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/bonding-joining/catalog")
+            })));
+    }
+
+    #[test]
+    fn fixture_adaptive_catalog_endpoint_exposes_tooling_and_compensation_release_contract() {
+        let payload = fixture_adaptive_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.fixture-adaptive-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/fixture-adaptive/catalog")
+            })));
+        assert!(payload
+            .get("fixtureAdaptiveCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+
+        let kinds = payload
+            .get("fixtureAdaptiveCellKinds")
+            .and_then(Value::as_array)
+            .expect("fixture/adaptive cell kinds should be present");
+        for kind in ["fixture-tooling-cell", "adaptive-compensation-cell"] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing fixture/adaptive kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("fixture/adaptive setup evidence should be present");
+        for expected in [
+            "datum scheme",
+            "locator strategy",
+            "clamp or vacuum plan",
+            "soft-jaw or nest profile",
+            "dry-run proof",
+            "gage repeatability",
+            "probe or inspection calibration",
+            "measurement uncertainty",
+            "maximum compensation limit",
+            "rollback snapshot",
+            "residual error",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing fixture/adaptive setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("fixture/adaptive boundary families should be present");
+        for boundary in [
+            "fixture-tooling-design-boundary",
+            "fixture-tooling-proof-boundary",
+            "adaptive-compensation-measurement-boundary",
+            "adaptive-compensation-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing fixture/adaptive boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/fixture-adaptive/catalog")
+            })));
+    }
+
+    #[test]
+    fn mechanical_installation_catalog_endpoint_exposes_insert_fastener_seal_and_bearing_release_contract(
+    ) {
+        let payload = mechanical_installation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.mechanical-installation-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/mechanical-installation/catalog")
+            })));
+        assert!(payload
+            .get("mechanicalInstallationCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 5));
+
+        let kinds = payload
+            .get("mechanicalInstallationCellKinds")
+            .and_then(Value::as_array)
+            .expect("mechanical installation cell kinds should be present");
+        for kind in [
+            "insert-installation-cell",
+            "fastener-installation-cell",
+            "rivet-installation-cell",
+            "seal-installation-cell",
+            "bearing-installation-cell",
+        ] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing mechanical installation kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("mechanical installation setup evidence should be present");
+        for expected in [
+            "insert specification",
+            "thread go/no-go gage",
+            "fastener specification",
+            "torque-tool calibration",
+            "rivet specification",
+            "mandrel break or shop-head",
+            "seal/gasket/O-ring specification",
+            "leak/pressure/vacuum result",
+            "bearing specification",
+            "rotation torque",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing mechanical installation setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("mechanical installation boundary families should be present");
+        for boundary in [
+            "insert-installation-setup-boundary",
+            "insert-installation-release-boundary",
+            "fastener-installation-setup-boundary",
+            "fastener-installation-release-boundary",
+            "rivet-installation-setup-boundary",
+            "rivet-installation-release-boundary",
+            "seal-installation-setup-boundary",
+            "seal-installation-release-boundary",
+            "bearing-installation-setup-boundary",
+            "bearing-installation-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing mechanical installation boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/mechanical-installation/catalog")
+            })));
+    }
+
+    #[test]
+    fn balancing_marking_catalog_endpoint_exposes_balance_traceability_and_release_contract() {
+        let payload = balancing_marking_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.balancing-marking-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/balancing-marking/catalog")
+            })));
+        assert!(payload
+            .get("balancingMarkingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 2));
+
+        let kinds = payload
+            .get("balancingMarkingCellKinds")
+            .and_then(Value::as_array)
+            .expect("balancing/marking cell kinds should be present");
+        for kind in ["dynamic-balancing-cell", "part-marking-cell"] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing balancing/marking kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("balancing/marking setup evidence should be present");
+        for expected in [
+            "balance grade",
+            "target RPM",
+            "vibration sensor calibration",
+            "residual unbalance",
+            "correction retention",
+            "released artwork/text",
+            "serial or UDI/data-matrix payload",
+            "duplicate-serial check",
+            "data-matrix/barcode grade",
+            "traceability record",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing balancing/marking setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("balancing/marking boundary families should be present");
+        for boundary in [
+            "dynamic-balancing-setup-boundary",
+            "dynamic-balancing-release-boundary",
+            "part-marking-setup-boundary",
+            "part-marking-readability-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing balancing/marking boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/balancing-marking/catalog")
+            })));
+    }
+
+    #[test]
+    fn packaging_labeling_catalog_endpoint_exposes_trace_packout_and_release_contract() {
+        let payload = packaging_labeling_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.packaging-labeling-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/packaging-labeling/catalog")
+            })));
+        assert!(payload
+            .get("packagingLabelingCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("packagingLabelingCellKinds")
+            .and_then(Value::as_array)
+            .expect("packaging/labeling cell kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("packaging-labeling-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("packaging/labeling setup evidence should be present");
+        for expected in [
+            "released traveler",
+            "serial range",
+            "UDI/QR/barcode payload",
+            "printer calibration",
+            "duplicate-serial check",
+            "kit traceability",
+            "ESD or clean packaging state",
+            "dunnage fit",
+            "shipping documents",
+            "multi-part recomposition",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing packaging/labeling setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("packaging/labeling boundary families should be present");
+        for boundary in [
+            "packaging-label-trace-boundary",
+            "packaging-packout-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing packaging/labeling boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/packaging-labeling/catalog")
+            })));
+    }
+
+    #[test]
+    fn part_separation_catalog_endpoint_exposes_fixture_cut_path_and_release_contract() {
+        let payload = part_separation_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.part-separation-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/part-separation/catalog")
+            })));
+
+        let languages = payload
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .expect("part-separation languages should be present");
+        assert!(languages
+            .iter()
+            .any(|item| item.as_str() == Some("part-separation-checklist")));
+
+        let evidence = payload
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .expect("part-separation evidence should be present");
+        for expected in [
+            "separation fixture",
+            "hold-down or clamp plan",
+            "cut path",
+            "kerf allowance",
+            "retained-tab",
+            "deburr or edge-break",
+            "piece IDs",
+            "final inspection",
+        ] {
+            assert!(
+                evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing part-separation evidence {expected}"
+            );
+        }
+
+        let checklist_steps = payload
+            .get("structuredChecklistSteps")
+            .and_then(Value::as_array)
+            .expect("part-separation checklist steps should be present");
+        for step in [
+            "LOAD_SEPARATION_FIXTURE",
+            "CUT_PATH",
+            "RELEASE_RETAINED_TABS",
+            "DEBURR_EDGES",
+            "TRACE_PARTS",
+            "INSPECT_SEPARATION",
+        ] {
+            assert!(
+                checklist_steps
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(step)),
+                "missing part-separation checklist step {step}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("part-separation boundary families should be present");
+        for boundary in [
+            "text-part-separation-boundary",
+            "part-separation-evidence-boundary",
+            "part-separation-release-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing part-separation boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/part-separation/catalog")
             })));
     }
 

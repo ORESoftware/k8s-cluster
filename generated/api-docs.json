@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 467,
+  "routeCount": 497,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 457,
+    "user-generated": 487,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -230,6 +230,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "availability_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/balancing-marking/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "balancing_marking_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/bonding-joining/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "bonding_joining_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -798,6 +832,23 @@
       "notes": ""
     },
     {
+      "path": "/dimensional-inspection/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dimensional_inspection_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/directed-energy-deposition/catalog",
       "methods": [
         "GET"
@@ -1233,6 +1284,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "availability_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/balancing-marking/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "balancing_marking_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/bonding-joining/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "bonding_joining_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -1801,6 +1886,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/dimensional-inspection/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dimensional_inspection_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/directed-energy-deposition/catalog",
       "methods": [
         "GET"
@@ -2107,6 +2209,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/fixture-adaptive/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fixture_adaptive_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/formats/catalog",
       "methods": [
         "GET"
@@ -2117,6 +2236,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "design_import_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/gear-cutting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "gear_cutting_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -3367,6 +3503,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/mechanical-installation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "mechanical_installation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/mesh-repair/catalog",
       "methods": [
         "GET"
@@ -3401,6 +3554,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/metal-joining/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "metal_joining_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/methods/catalog",
       "methods": [
         "GET"
@@ -3428,6 +3598,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "mill_router_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/molding-casting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "molding_casting_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -3571,6 +3758,57 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/packaging-labeling/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "packaging_labeling_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/part-separation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "part_separation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/pcb-electronics/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pcb_electronics_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/pellet-fgf/catalog",
       "methods": [
         "GET"
@@ -3666,6 +3904,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "powder_bed_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/precision-grinding/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "precision_grinding_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -4285,6 +4540,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/sheet-forming/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "sheet_forming_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/sheet-lamination/catalog",
       "methods": [
         "GET"
@@ -4557,6 +4829,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/surface-finishing/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "surface_finishing_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/telemetry/catalog",
       "methods": [
         "GET"
@@ -4601,6 +4890,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "request_templates_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/thermal-postprocess/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "thermal_postprocess_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -5016,6 +5322,23 @@
       "notes": ""
     },
     {
+      "path": "/fixture-adaptive/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fixture_adaptive_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/formats/catalog",
       "methods": [
         "GET"
@@ -5026,6 +5349,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "design_import_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/gear-cutting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "gear_cutting_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -6344,6 +6684,23 @@
       "notes": ""
     },
     {
+      "path": "/mechanical-installation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "mechanical_installation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/mesh-repair/catalog",
       "methods": [
         "GET"
@@ -6371,6 +6728,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "mesh_repair_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metal-joining/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "metal_joining_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -6422,6 +6796,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "mill_router_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/molding-casting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "molding_casting_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -6565,6 +6956,57 @@
       "notes": ""
     },
     {
+      "path": "/packaging-labeling/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "packaging_labeling_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/part-separation/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "part_separation_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pcb-electronics/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pcb_electronics_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/pellet-fgf/catalog",
       "methods": [
         "GET"
@@ -6660,6 +7102,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "powder_bed_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/precision-grinding/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "precision_grinding_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -7296,6 +7755,23 @@
       "notes": ""
     },
     {
+      "path": "/sheet-forming/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "sheet_forming_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/sheet-lamination/catalog",
       "methods": [
         "GET"
@@ -7568,6 +8044,23 @@
       "notes": ""
     },
     {
+      "path": "/surface-finishing/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "surface_finishing_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/telemetry/catalog",
       "methods": [
         "GET"
@@ -7612,6 +8105,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "request_templates_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/thermal-postprocess/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "thermal_postprocess_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

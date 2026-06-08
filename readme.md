@@ -69,6 +69,36 @@ outcomes.
 - `GET /fabrication/sheet-cutting/catalog`
 - `GET /hot-wire-foam/catalog`
 - `GET /fabrication/hot-wire-foam/catalog`
+- `GET /sheet-forming/catalog`
+- `GET /fabrication/sheet-forming/catalog`
+- `GET /gear-cutting/catalog`
+- `GET /fabrication/gear-cutting/catalog`
+- `GET /precision-grinding/catalog`
+- `GET /fabrication/precision-grinding/catalog`
+- `GET /dimensional-inspection/catalog`
+- `GET /fabrication/dimensional-inspection/catalog`
+- `GET /thermal-postprocess/catalog`
+- `GET /fabrication/thermal-postprocess/catalog`
+- `GET /surface-finishing/catalog`
+- `GET /fabrication/surface-finishing/catalog`
+- `GET /metal-joining/catalog`
+- `GET /fabrication/metal-joining/catalog`
+- `GET /molding-casting/catalog`
+- `GET /fabrication/molding-casting/catalog`
+- `GET /pcb-electronics/catalog`
+- `GET /fabrication/pcb-electronics/catalog`
+- `GET /bonding-joining/catalog`
+- `GET /fabrication/bonding-joining/catalog`
+- `GET /fixture-adaptive/catalog`
+- `GET /fabrication/fixture-adaptive/catalog`
+- `GET /mechanical-installation/catalog`
+- `GET /fabrication/mechanical-installation/catalog`
+- `GET /balancing-marking/catalog`
+- `GET /fabrication/balancing-marking/catalog`
+- `GET /packaging-labeling/catalog`
+- `GET /fabrication/packaging-labeling/catalog`
+- `GET /part-separation/catalog`
+- `GET /fabrication/part-separation/catalog`
 - `GET /edm/catalog`
 - `GET /fabrication/edm/catalog`
 - `GET /turning/catalog`
@@ -1322,6 +1352,378 @@ operator or automation signoff evidence are retained. Hot-wire foam outcomes
 should feed material, profile, process-recipe, support-strategy, quality,
 telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers
 can learn when to split, combine, compensate taper, reroute, or require human
+intervention.
+
+## `GET /fabrication/sheet-forming/catalog`
+
+`GET /sheet-forming/catalog` and the gateway-prefixed
+`GET /fabrication/sheet-forming/catalog` return the
+`dd.fabrication.sheet-forming-catalog.v1` discovery view for press-brake,
+bend-sequence, hem, flange, and formed-bracket planning profiles. The catalog
+exposes sheet-forming cell kinds, controllers, sheet materials, operations,
+setup evidence, forming boundary families, and links to machine, cell,
+sheet-cutting, process-recipe, setup, tooling, workholding, quality, release,
+and learning outcome routes.
+
+The catalog is advisory rather than a live-brake approval. Machine-ready
+release remains blocked until the released flat blank revision, flat pattern,
+grain direction, material certificate, thickness, bend allowance or K-factor,
+punch/V-die tooling, tonnage chart, backgauge program, guarding, bend sequence,
+flange collision clearance, hem/crack risk, springback compensation, formed
+envelope, angle/flange inspection, and operator or automation signoff evidence
+are retained. Sheet-forming outcomes should feed material, nesting,
+process-recipe, tooling, setup, quality, telemetry, costing, and learning routes
+so DES, MDP/POMDP, and neural workers can learn when to split, combine,
+compensate springback, reroute, or require human intervention.
+
+## `GET /fabrication/gear-cutting/catalog`
+
+`GET /gear-cutting/catalog` and the gateway-prefixed
+`GET /fabrication/gear-cutting/catalog` return the
+`dd.fabrication.gear-cutting-catalog.v1` discovery view for gear hobbing,
+gear shaping, rack cutting, keyway broaching, and spline broaching planning
+profiles. The catalog exposes gear-cutting cell kinds, controllers, materials,
+operations, setup evidence, indexing boundary families, and links to machine,
+cell, subtractive, tooling, workholding, process-recipe, simulation, quality,
+release, and learning outcome routes.
+
+The catalog is advisory rather than live gear-machine approval. Machine-ready
+release remains blocked until the released gear drawing, blank datum, fixture or
+arbor, runout, material hardness, cutter geometry, module or diametral pitch,
+pressure angle, helix or lead angle, indexing, burr control, span or over-pins
+inspection, backlash, gear runout, and operator or automation signoff evidence
+are retained. Gear-cutting outcomes should feed material, tooling, workholding,
+process-recipe, simulation, quality, telemetry, costing, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute,
+re-index, or require human intervention.
+
+## `GET /fabrication/precision-grinding/catalog`
+
+`GET /precision-grinding/catalog` and the gateway-prefixed
+`GET /fabrication/precision-grinding/catalog` return the
+`dd.fabrication.precision-grinding-catalog.v1` discovery view for surface,
+cylindrical, centerless, lapping, and honing planning profiles. The catalog
+exposes precision-grinding cell kinds, controllers, materials, operations,
+wheel/setup evidence, thermal inspection boundary families, and links to
+machine, cell, subtractive, tooling, workholding, process-recipe, simulation,
+quality, release, and learning outcome routes.
+
+The catalog is advisory rather than live grinder approval. Machine-ready release
+remains blocked until wheel specification, guard, dress, balance, coolant
+filtration, workholding/datum setup, stock allowance, spark-out, thermal
+burn/chatter review, flatness/parallelism/roundness/runout, surface finish,
+final metrology, and operator or automation signoff evidence are retained.
+Precision-grinding outcomes should feed material, tooling, workholding,
+process-recipe, simulation, quality, telemetry, costing, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute,
+adjust stock allowance, or require human intervention.
+
+## `GET /fabrication/dimensional-inspection/catalog`
+
+`GET /dimensional-inspection/catalog` and the gateway-prefixed
+`GET /fabrication/dimensional-inspection/catalog` return the
+`dd.fabrication.dimensional-inspection-catalog.v1` discovery view for CMM,
+vision, optical, first-article, and metrology planning profiles. The catalog
+exposes dimensional-inspection cell kinds, controllers, materials, operations,
+calibration evidence, disposition boundary families, and links to quality,
+calibration, tolerance, as-built, provenance, release, and learning outcome
+routes.
+
+The catalog is advisory rather than live inspection-cell approval. Machine-ready
+release remains blocked until probe stylus, vision scale/focus, calibration
+artifact, gauge-block certificate, fixture repeatability, datum scheme,
+temperature soak, GD&T characteristic plan, tolerance stack, measurement
+uncertainty, measured values, deviation map, pass/fail disposition,
+nonconformance routing, as-built record, and operator or automation signoff
+evidence are retained. Dimensional-inspection outcomes should feed calibration,
+quality, tolerance, as-built, provenance, release, telemetry, costing, and
+learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
+combine, remeasure, reroute, or require human intervention.
+
+## `GET /fabrication/thermal-postprocess/catalog`
+
+`GET /thermal-postprocess/catalog` and the gateway-prefixed
+`GET /fabrication/thermal-postprocess/catalog` return the
+`dd.fabrication.thermal-postprocess-catalog.v1` discovery view for furnace,
+oven, heat-treatment, stress-relief, anneal, post-cure, debind, sinter, and
+kiln-firing planning profiles. The catalog exposes thermal postprocess cell
+kinds, controllers, materials, operations, profile evidence, cooldown boundary
+families, and links to postprocess, process-recipe, environment, quality,
+release, and learning outcome routes.
+
+The catalog is advisory rather than live furnace approval. Machine-ready release
+remains blocked until material batch, furnace or oven calibration, ramp rate,
+soak temperature, soak time, atmosphere, thermocouple placement, support fixture
+or setter, load map, quench or controlled-cooldown method, PPE/interlock state,
+distortion, shrinkage, hardness or cure state, debind/sinter state, release
+inspection, retained thermal log, and operator or automation signoff evidence
+are retained. Thermal-postprocess outcomes should feed material, process-recipe,
+environment, postprocess, quality, telemetry, costing, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute,
+adjust thermal profile, or require human intervention.
+
+## `GET /fabrication/surface-finishing/catalog`
+
+`GET /surface-finishing/catalog` and the gateway-prefixed
+`GET /fabrication/surface-finishing/catalog` return the
+`dd.fabrication.surface-finishing-catalog.v1` discovery view for vapor
+smoothing, solvent smoothing, media blasting, bead blasting, tumbling,
+deburring, anodizing, passivation, plating, powder coating, painting, and finish
+inspection planning profiles. The catalog exposes surface-finishing cell kinds,
+controllers, materials, operations, masking/media evidence, release boundary
+families, and links to postprocess, process-recipe, environment, cleanliness,
+quality, release, and learning outcome routes.
+
+The catalog is advisory rather than live finishing-cell approval. Machine-ready
+release remains blocked until material compatibility, SDS/media data, masking or
+plugs, protected threads and fit features, PPE, ventilation, waste controls,
+finishing media or chemistry, dry/cure state, neutralization or media removal,
+coating/plating thickness, adhesion, color, surface roughness, dimensional
+impact, finish inspection, and operator or automation signoff evidence are
+retained. Surface-finishing outcomes should feed material, postprocess,
+process-recipe, environment, cleanliness, quality, telemetry, costing, and
+learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
+combine, reroute, adjust finish profile, or require human intervention.
+
+## `GET /fabrication/metal-joining/catalog`
+
+`GET /metal-joining/catalog` and the gateway-prefixed
+`GET /fabrication/metal-joining/catalog` return the
+`dd.fabrication.metal-joining-catalog.v1` discovery view for welding, TIG, MIG,
+spot welding, laser welding, brazing, soldering, fixture/clamp, purge, and NDE
+planning profiles. The catalog exposes metal-joining cell kinds, controllers,
+materials, operations, WPS/procedure evidence, inspection boundary families, and
+links to assembly, workholding, process-recipe, environment, quality, release,
+and learning outcome routes.
+
+The catalog is advisory rather than live joining-cell approval. Machine-ready
+release remains blocked until WPS/procedure, material compatibility, welder or
+process qualification, filler/flux/gas lot, joint prep, fit-up fixture, clamps,
+shielding gas or purge state, heat input, interpass temperature, fume/fire-watch
+controls, visual inspection, penetration or fillet size, HAZ review, NDE or leak
+test, repair disposition, and operator or automation signoff evidence are
+retained. Metal-joining outcomes should feed material, assembly, workholding,
+process-recipe, environment, quality, telemetry, costing, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute,
+adjust joining sequence, or require human intervention.
+
+## `GET /fabrication/molding-casting/catalog`
+
+`GET /molding-casting/catalog` and the gateway-prefixed
+`GET /fabrication/molding-casting/catalog` return the
+`dd.fabrication.molding-casting-catalog.v1` discovery view for
+molding/casting, urethane casting, silicone molding, vacuum casting, injection
+molding, mold prep, degas, cure, demold, trim, and inspection planning
+profiles. The catalog exposes molding/casting cell kinds, controllers,
+materials, operations, tooling/process boundary families, and links to
+materials, process-recipe, environment, quality, release, and learning outcome
+routes.
+
+The catalog is advisory rather than live molding/casting-cell approval.
+Machine-ready release remains blocked until master/tool revision, mold
+material, parting line, vent/sprue/runner/gate setup, release agent, material
+batch, mix ratio, pot life, degas/vacuum/pressure evidence, cure/exotherm
+state, demold method, shrinkage allowance, void/bubble/flash disposition,
+dimensional inspection, and operator or automation signoff evidence are
+retained. Molding/casting outcomes should feed material, process-recipe,
+environment, quality, telemetry, costing, and learning routes so DES,
+MDP/POMDP, and neural workers can learn when to split, combine, reroute, adjust
+tooling or cure sequence, or require human intervention.
+
+## `GET /fabrication/pcb-electronics/catalog`
+
+`GET /pcb-electronics/catalog` and the gateway-prefixed
+`GET /fabrication/pcb-electronics/catalog` return the
+`dd.fabrication.pcb-electronics-catalog.v1` discovery view for PCB fabrication,
+Gerber/ODB++/IPC-2581 review, drilling, routing, finish, SMT assembly,
+pick-and-place, reflow, AOI/X-ray, ICT, functional-test, and rework planning
+profiles. The catalog exposes PCB fabrication and PCB assembly cell kinds,
+controllers, materials, operations, fabrication/assembly boundary families, and
+links to design-import, materials, process-recipe, quality, release, and
+learning outcome routes.
+
+The catalog is advisory rather than live electronics-cell approval.
+Machine-ready release remains blocked until board revision, released Gerber,
+ODB++ or IPC-2581 package, netlist, stackup, copper thickness, laminate lot, DRC
+clearance, trace width, impedance, panelization, fiducials, Excellon drill
+package, drill tool list, annular ring, vias, slots, layer registration,
+soldermask, silkscreen, copper finish, AOI, continuity, shorts, impedance
+coupon, BOM/AVL, centroid, stencil revision, solder-paste lot and expiry,
+feeder/nozzle map, polarity/orientation, ESD controls, first article, reflow
+soak/peak/cooling profile, AOI/X-ray, ICT or functional test, rework
+disposition, and operator or automation signoff evidence are retained. PCB
+electronics outcomes should feed design import, material, process-recipe,
+quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP,
+and neural workers can learn when to split, combine, reroute, adjust board
+fabrication or SMT assembly sequence, or require human intervention.
+
+## `GET /fabrication/bonding-joining/catalog`
+
+`GET /bonding-joining/catalog` and the gateway-prefixed
+`GET /fabrication/bonding-joining/catalog` return the
+`dd.fabrication.bonding-joining-catalog.v1` discovery view for adhesive
+bonding, structural adhesive, epoxy bonding, bondline control, adhesive cure,
+lap-shear or peel test, plastic welding, ultrasonic welding, heat staking,
+solvent welding, hot-plate welding, and vibration welding planning profiles.
+The catalog exposes adhesive-bonding and plastic-joining cell kinds,
+controllers, materials, operations, setup/cure/release boundary families, and
+links to assembly, materials, workholding, process-recipe, environment, quality,
+release, and learning outcome routes.
+
+The catalog is advisory rather than live joining-cell approval. Machine-ready
+release remains blocked until part revisions, substrate materials, adhesive
+specification, adhesive lot, shelf life, mix ratio, surface cleaning, abrasion
+or activation, primer, bondline target, fixture, release owner, clamp pressure,
+cure time, temperature/humidity, handling strength, void/squeeze-out
+inspection, lap-shear or peel coupon, dimensional fit, first article, polymer
+compatibility, joint design, energy-director or staking-boss geometry, weld,
+stake, or solvent recipe, amplitude/force/time or solvent dwell limits,
+collapse or melt-flow target, cooling/clamp plan, weld collapse or stake-head
+measurement, flash, cracks/crazing, pull/peel/torsion proof, leak or visual
+inspection, cosmetic disposition, rework limit, and operator or automation
+signoff evidence are retained. Bonding/joining outcomes should feed material,
+assembly, workholding, process-recipe, environment, quality, telemetry,
+costing, and learning routes so DES, MDP/POMDP, and neural workers can learn
+when to split, combine, reroute, adjust joining sequence, or require human
+intervention.
+
+## `GET /fabrication/fixture-adaptive/catalog`
+
+`GET /fixture-adaptive/catalog` and the gateway-prefixed
+`GET /fabrication/fixture-adaptive/catalog` return the
+`dd.fabrication.fixture-adaptive-catalog.v1` discovery view for fixture
+tooling, soft jaws, fixture plates, drill jigs, inspection fixtures, vacuum
+fixtures, adaptive compensation, closed-loop machining, in-process probing,
+inspection feedback, offset updates, tool-wear updates, and compensated rerun
+planning profiles. The catalog exposes fixture-tooling and
+adaptive-compensation cell kinds, controllers, materials, operations,
+design/proof/measurement/release boundary families, and links to workholding,
+tooling, calibration, quality, release, and learning outcome routes.
+
+The catalog is advisory rather than live fixture or compensation approval.
+Machine-ready release remains blocked until released part revision, target
+operation, stock state, datum scheme, locator strategy, clamp or vacuum plan,
+soft-jaw or nest profile, fixture material, hardware, clearance model, dry-run
+proof, clamp clearance, tool reach, load/unload method, vacuum leak or clamp
+force, datum-transfer measurement, gage repeatability, first article,
+maintenance limits, released program revision, machine warmup, probe or
+inspection calibration, feature list, nominal values, tolerance band,
+measurement uncertainty, source measurements, computed delta, maximum
+compensation limit, work-offset or tool-wear update, rollback snapshot,
+compensated dry run, spring pass or rerun path, residual error, drift trend,
+process-limit impact, and operator or automation signoff evidence are retained.
+Fixture/adaptive outcomes should feed workholding, tooling, calibration,
+quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP,
+and neural workers can learn when to split, combine, reroute, update offsets,
+rerun, or require human intervention.
+
+## `GET /fabrication/mechanical-installation/catalog`
+
+`GET /mechanical-installation/catalog` and the gateway-prefixed
+`GET /fabrication/mechanical-installation/catalog` return the
+`dd.fabrication.mechanical-installation-catalog.v1` discovery view for insert
+installation, heat-set inserts, press-fit inserts, helicoils, dowel pins,
+bushings, fasteners, screws, bolts, threadlocker, rivets, clinch/stake/swage
+operations, seals, gaskets, O-rings, bearings, interference fits, shrink fits,
+preload, runout, and rotation-torque planning profiles. The catalog exposes
+mechanical installation cell kinds, controllers, materials, operations,
+setup/release boundary families, and links to assembly, workholding, quality,
+release, and learning outcome routes.
+
+The catalog is advisory rather than live installation approval. Machine-ready
+release remains blocked until part revisions, hardware lots, parent material,
+prepared holes or joint geometry, fixtures, tool tips or press tooling,
+heat/force profiles, installed height, thread go/no-go gage, thread engagement,
+torque or pullout results, fastener specification, washer or spacer stack,
+torque-tool calibration, threadlocker, final torque, torque angle, witness
+mark, grip length, mandrel break or shop-head inspection, clamp-up,
+seal/gasket/O-ring specification, groove or gland geometry, gland fill,
+leak/pressure/vacuum result, bearing specification, bearing lot, housing bore,
+shaft journal, fit class, temperature delta, preload or endplay, runout,
+axial/radial play, rotation torque, first article, rework limit, and operator
+or automation signoff evidence are retained. Mechanical-installation outcomes
+should feed assembly, workholding, quality, telemetry, costing, release, and
+learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
+combine, reroute, change installation sequence, add inspection, or require
+human intervention.
+
+## `GET /fabrication/balancing-marking/catalog`
+
+`GET /balancing-marking/catalog` and the gateway-prefixed
+`GET /fabrication/balancing-marking/catalog` return the
+`dd.fabrication.balancing-marking-catalog.v1` discovery view for dynamic
+balancing, rotor balancing, impeller balancing, fan and wheel balancing,
+spin-balance, vibration analysis, part marking, laser marking, laser
+engraving, dot-peen, data-matrix, barcode, and UDI marking planning profiles.
+The catalog exposes balancing and marking cell kinds, controllers, materials,
+operations, setup/release/readability boundary families, and links to quality,
+provenance, release, and learning outcome routes.
+
+The catalog is advisory rather than live balancing or marking approval.
+Machine-ready release remains blocked until part revisions, rotor or impeller
+identity, mass properties, balance grade, target RPM, fixture or arbor runout,
+guard/interlock status, trial-weight plan, correction planes, speed ramp,
+vibration sensor calibration, phase reference, stop criteria, residual
+unbalance, vibration spectrum and limit, correction weights or material
+removal, correction retention, overspeed/guard status, runout, noise check,
+released artwork/text, serial or UDI/data-matrix payload, duplicate-serial
+check, datum and fixture, mark location, material finish, contrast zone,
+marking recipe, mark depth or contrast, scanner or vision verification,
+data-matrix/barcode grade, human-readable check, permanence or durability
+review, cosmetic disposition, traceability record, first article, and operator
+or automation signoff evidence are retained. Balancing/marking outcomes should
+feed quality, provenance, telemetry, costing, release, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, rebalance,
+remark, reroute, add inspection, or require human intervention.
+
+## `GET /fabrication/packaging-labeling/catalog`
+
+`GET /packaging-labeling/catalog` and the gateway-prefixed
+`GET /fabrication/packaging-labeling/catalog` return the
+`dd.fabrication.packaging-labeling-catalog.v1` discovery view for packaging
+labeling, final packout, carton packout, serialization labels, shipment release,
+bag-and-tag, kit traceability, protective packaging, traveler release, barcode,
+QR, UDI, and shipping-document planning profiles. The catalog exposes packaging
+and labeling cell kinds, controllers, materials, operations, label-trace and
+packout-release boundary families, and links to provenance, quality, release,
+and learning outcome routes.
+
+The catalog is advisory rather than shipment approval. Machine-ready release
+remains blocked until the released traveler, revision, lot/batch genealogy,
+serial range, UDI/QR/barcode payload, label template, label stock, printer
+calibration, scan verification, duplicate-serial check, kit traceability, part
+count, part condition, ESD or clean packaging state, humidity controls,
+desiccant or HIC when required, dunnage fit, carton or pallet label, tamper
+evidence, gross weight, shipping documents, shipment release, multi-part
+recomposition, bag-and-tag grouping, serialization map, traveler attachments,
+photo evidence, provenance ledger, and operator signoff evidence are retained.
+Packaging/labeling outcomes should feed quality, provenance, telemetry,
+costing, release, and learning routes so DES, MDP/POMDP, and neural workers can
+learn when to split, combine, relabel, repack, reroute, add inspection, or
+require human intervention.
+
+## `GET /fabrication/part-separation/catalog`
+
+`GET /part-separation/catalog` and the gateway-prefixed
+`GET /fabrication/part-separation/catalog` return the
+`dd.fabrication.part-separation-catalog.v1` discovery view for separating
+printed, milled, nested, sheet-cut, sprued, tabbed, bridged, support-tree, and
+build-plate-held pieces. The catalog exposes accepted checklist languages such
+as `part-separation-checklist`, applies-to families, structured checklist steps,
+evidence gates, boundary families, and links to workholding, quality,
+provenance, release, boundary, improvement, and learning outcome routes.
+
+The catalog is advisory rather than autonomous cutting approval. Machine-ready
+release remains blocked until separation fixture or hold-down, clamp plan,
+support block, catcher, build-plate or sprue/tree release state, cut path, saw
+path, wire route, cut map, kerf allowance, heat input, blade or wire clearance,
+coolant, dust extraction, distortion check, retained-tab, bridge, microjoint,
+sprue, runner, support-tree release, deburr or edge-break, burr inspection,
+piece IDs, serial trace, go/no-go metrology, final inspection, nonconformance
+routing, and operator signoff evidence are retained. Part-separation outcomes
+should feed workholding, quality, provenance, telemetry, costing, release, and
+learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
+combine, resequence, add fixtures, add inspection, or require human
 intervention.
 
 ## `GET /fabrication/edm/catalog`
