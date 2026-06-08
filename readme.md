@@ -49,6 +49,8 @@ concept in `main.rs`:
 
 - `src/platform.rs` defines parity surfaces for Tableau, Power BI, Qlik Sense, Looker, Sigma,
   Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
+- `src/alerts.rs` owns Grafana-style alert rule validation, catalog metadata, and reducer-based
+  evaluation responses.
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
@@ -68,7 +70,8 @@ Current first-class parity surfaces:
 - Domo / Power Query: connector catalog plus ETL planner primitives.
 - Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, and
   saved dashboard catalog.
-- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, and metrics route.
+- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, and
+  alert rule evaluation.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, and Markdown-plus-SQL report blueprint.
 
@@ -101,6 +104,10 @@ Current first-class parity surfaces:
 - `POST /dashboards` - authenticated saved dashboard create/replace.
 - `GET /dashboards` - authenticated saved dashboard catalog.
 - `GET /dashboards/:dashboard_id` - authenticated saved dashboard definition.
+- `POST /alerts/rules` - authenticated Grafana-style alert rule create/replace.
+- `GET /alerts/rules` - authenticated alert rule catalog.
+- `GET /alerts/rules/:rule_id` - authenticated alert rule definition.
+- `POST /alerts/rules/:rule_id/evaluate` - authenticated alert rule evaluation.
 - `POST /query` - authenticated query translation and execution.
 - `POST /visualizations/suggest` - authenticated visualization spec synthesis.
 - `POST /evolution/run` - authenticated evolutionary visualization search.

@@ -8,10 +8,11 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Current proof points
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
-  `src/platform.rs`, Qlik-style selection state lives in `src/associative.rs`, hardening posture
-  lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard validation lives
-  in `src/dashboard.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
-  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
+  `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, Qlik-style selection state
+  lives in `src/associative.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives
+  in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
+  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
+  server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -29,6 +30,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Qlik-style multi-dataset selection is exposed through `POST /associations/select`, including
   selected, possible, alternative, and excluded categorical values propagated by shared field/value
   relationships.
+- Grafana-style alert rules are validated, stored in memory, and evaluated through
+  `POST /alerts/rules/:rule_id/evaluate` using reducer/threshold conditions over existing query
+  results.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -47,7 +51,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Domo parity still needs a connector SDK, streaming checkpoints, and a visual ETL job runner.
 - Superset and Metabase parity still need saved charts/questions, RBAC-backed ownership, and
   database connection registries beyond the current in-memory dashboard catalog and role policy.
-- Grafana parity still needs alert rules, Loki log frames, and live WebSocket panel streams.
+- Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel
+  streams.
 - D3, Plotly/Dash, and Evidence parity still need generated client packages and rendered artifact
   verification.
 

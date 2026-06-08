@@ -23,6 +23,9 @@ pub(crate) enum Permission {
     DashboardRead,
     DashboardWrite,
     AssociationRead,
+    AlertRead,
+    AlertWrite,
+    AlertEvaluate,
     PresentationExport,
 }
 
@@ -71,6 +74,9 @@ impl Role {
                 Permission::DashboardRead,
                 Permission::DashboardWrite,
                 Permission::AssociationRead,
+                Permission::AlertRead,
+                Permission::AlertWrite,
+                Permission::AlertEvaluate,
                 Permission::PresentationExport,
             ],
             Self::Analyst => vec![
@@ -80,18 +86,22 @@ impl Role {
                 Permission::EvolutionRead,
                 Permission::DashboardRead,
                 Permission::AssociationRead,
+                Permission::AlertRead,
+                Permission::AlertEvaluate,
             ],
             Self::Viewer => vec![
                 Permission::DatasetRead,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
                 Permission::AssociationRead,
+                Permission::AlertRead,
             ],
             Self::Exporter => vec![
                 Permission::DatasetRead,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
+                Permission::AlertRead,
                 Permission::PresentationExport,
             ],
         }
@@ -103,7 +113,7 @@ impl Role {
                 "Full operator access for all analytics, publishing, and hardening surfaces."
             }
             Self::Builder => {
-                "Creates datasets, dashboards, visualizations, evolution runs, and exports."
+                "Creates datasets, dashboards, alert rules, visualizations, evolution runs, and exports."
             }
             Self::Analyst => {
                 "Explores governed datasets and dashboards without mutating source data."
@@ -130,6 +140,9 @@ impl Permission {
             Self::DashboardRead => "Read saved dashboard definitions.",
             Self::DashboardWrite => "Create or replace saved dashboard definitions.",
             Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
+            Self::AlertRead => "Read Grafana-style alert rules.",
+            Self::AlertWrite => "Create or replace Grafana-style alert rules.",
+            Self::AlertEvaluate => "Evaluate alert rules against analytical query results.",
             Self::PresentationExport => "Generate presentation/export layers.",
         }
     }
@@ -180,6 +193,9 @@ fn all_permissions() -> Vec<Permission> {
         Permission::DashboardRead,
         Permission::DashboardWrite,
         Permission::AssociationRead,
+        Permission::AlertRead,
+        Permission::AlertWrite,
+        Permission::AlertEvaluate,
         Permission::PresentationExport,
     ]
 }
@@ -198,7 +214,15 @@ mod tests {
     #[test]
     fn builder_can_publish_dashboards() {
         assert!(Role::Builder.allows(Permission::DashboardWrite));
+        assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::EvolutionRun));
+    }
+
+    #[test]
+    fn analyst_can_evaluate_but_not_write_alerts() {
+        assert!(Role::Analyst.allows(Permission::AlertEvaluate));
+        assert!(!Role::Analyst.allows(Permission::AlertWrite));
+        assert!(!Role::Viewer.allows(Permission::AlertEvaluate));
     }
 
     #[test]

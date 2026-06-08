@@ -134,6 +134,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/associative.rs enforces max dataset, selection, and field-value limits before computing Qlik-style state.",
         },
         ControlDescriptor {
+            id: "bounded-alert-rules",
+            status: "implemented",
+            description: "Grafana-style alert rules are validated, capped, compiled through the query planner, and evaluated through bounded query results.",
+            evidence: "src/alerts.rs validates rule metadata and /alerts/rules/:rule_id/evaluate reuses the existing LogicalPlan executor.",
+        },
+        ControlDescriptor {
             id: "route-derived-docs",
             status: "implemented",
             description: "API documentation is served by the same route catalog used by the router.",
