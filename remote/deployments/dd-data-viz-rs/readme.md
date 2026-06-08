@@ -49,6 +49,7 @@ concept in `main.rs`:
 
 - `src/platform.rs` defines parity surfaces for Tableau, Power BI, Qlik Sense, Looker, Sigma,
   Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
+- `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -61,7 +62,8 @@ Current first-class parity surfaces:
 - Power BI / Looker: governed semantic model descriptors with dimensions, measures, DAX analogs,
   and calculated fields.
 - Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
-  ingested dataset.
+  ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
+  selection state.
 - Sigma: workbook blueprints for live-grid and executive-card workflows.
 - Domo / Power Query: connector catalog plus ETL planner primitives.
 - Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, and
@@ -95,6 +97,7 @@ Current first-class parity surfaces:
 - `GET /datasets/:dataset_id` - authenticated dataset profile.
 - `GET /associations/:dataset_id` - authenticated Qlik-style associative graph over categorical
   fields.
+- `POST /associations/select` - authenticated Qlik-style multi-dataset associative selection state.
 - `POST /dashboards` - authenticated saved dashboard create/replace.
 - `GET /dashboards` - authenticated saved dashboard catalog.
 - `GET /dashboards/:dashboard_id` - authenticated saved dashboard definition.
