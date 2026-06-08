@@ -4105,22 +4105,26 @@ simulators, import validators, or operators after a generated, imported, or
 improved toolpath is checked against likely failure modes.
 
 The request records failure events, recovery actions, human interventions,
-artifacts, split/combine needs, and learning observations. Responses store
-`failure-mode-result`, `failure-mode-events`, `failure-mode-recovery-actions`,
-`failure-mode-interventions`, `failure-mode-artifacts`, and
+artifacts, split/combine needs, and learning observations. Responses include a
+`priorityDispositions` array for machine-failure, human-intervention,
+split/combine or interface review, non-G-code/job-sheet evidence, and learning
+feedback lanes. Responses store `failure-mode-result`, `failure-mode-events`,
+`failure-mode-recovery-actions`, `failure-mode-interventions`,
+`failure-mode-artifacts`, `failure-mode-priority-dispositions`, and
 `failure-mode-learning-observations` artifacts on the retained fabrication job.
 Machine-ready release remains blocked while a failure event, recovery action,
 intervention, artifact, human disposition, or split/combine requirement is still
 unresolved. Learning observations such as `failure-family:*`,
 `failure-mode:*`, `failure-recovery:*`, `failure-intervention:*`,
-`failure-mode:support-failure`, and `failure-mode:split-combine-required` feed
-the bounded MDP/POMDP/neural policy memory so future planners can reroute,
-recover, split, combine, or request human help before release.
+`failure-mode:support-failure`, `failure-mode:split-combine-required`, and
+`failure-mode-priority:<priority>:<disposition>` feed the bounded
+MDP/POMDP/neural policy memory so future planners can reroute, recover, split,
+combine, or request human help before release.
 The `learning.outcomeDraft` uses
 `dd.fabrication.failure-mode-learning-outcome-draft.v1` and carries
 failure-family, failure-mode, recovery-action, intervention, artifact, blocker,
-split/combine, human-intervention, reward, and submit-route hints for
-`POST /fabrication/learning/outcomes`.
+priority-disposition, split/combine, human-intervention, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/safety/catalog`
 
@@ -4933,7 +4937,11 @@ previews from becoming machine-ready without retained evidence. The overview
 also lists supported machine families such as 3D printers, vertical mills,
 horizontal mills, routers, five-axis systems, mill-turn and Swiss machines,
 lathes, sheet cutters, EDM, grinding, inspection, postprocess, assembly cells,
-and hybrid split/combine routes.
+and hybrid split/combine routes. Its `releaseGateMatrix` gives clients the same
+source-provenance, machine-envelope, process-readiness, simulation-evidence,
+human-or-automation-handoff, and learning-disposition gates described on the
+landing page, including the evidence routes and release surfaces each gate can
+block.
 
 The `learningContract` section identifies
 `remote/submodules/discrete-event-system.rs` / `des_engine` as the preferred

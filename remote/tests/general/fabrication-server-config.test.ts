@@ -2777,6 +2777,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /dd\.fabrication\.how-it-works\.v1/);
   assert.match(source, /"GET \/how-it-works"/);
   assert.match(source, /"GET \/fabrication\/how-it-works"/);
+  assert.match(source, /"releaseGateMatrix": \[/);
+  assert.match(source, /"gateId": "source-provenance"/);
+  assert.match(source, /"gateId": "machine-envelope"/);
+  assert.match(source, /"gateId": "process-readiness"/);
+  assert.match(source, /"gateId": "simulation-evidence"/);
+  assert.match(source, /"gateId": "human-or-automation-handoff"/);
+  assert.match(source, /"gateId": "learning-disposition"/);
   assert.match(source, /POST \/fabrication\/machine-code\/generate/);
   assert.match(source, /remote\/submodules\/discrete-event-system\.rs des_engine/);
   assert.match(
@@ -2808,13 +2815,6 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory/,
   );
-  assert.match(source, /Source provenance/);
-  assert.match(source, /Machine envelope/);
-  assert.match(source, /Process readiness/);
-  assert.match(source, /Simulation evidence/);
-  assert.match(source, /Human or automation handoff/);
-  assert.match(source, /Learning disposition/);
-  assert.match(source, /Release Gates/);
   assert.match(source, /Source provenance/);
   assert.match(source, /Machine envelope/);
   assert.match(source, /Process readiness/);
@@ -4673,6 +4673,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"recoveryActionHints"/);
   assert.match(source, /"POST \/fabrication\/failure-modes\/result"/);
   assert.match(source, /failure-mode-result-events-release-blocked/);
+  assert.match(source, /fn failure_mode_priority_dispositions/);
+  assert.match(source, /"failure-mode-priority-dispositions"/);
+  assert.match(source, /failure-mode-priority:machine-failure-boundary-first:blocked/);
   assert.match(
     source,
     /failure_mode_result_endpoint_reviews_recovery_intervention_and_learning/,
@@ -6586,8 +6589,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.failure-mode-learning-outcome-draft\.v1/);
   assert.match(readme, /failure-family, failure-mode, recovery-action/);
   assert.match(readme, /failure-mode-recovery-actions/);
+  assert.match(readme, /failure-mode-priority-dispositions/);
   assert.match(readme, /failure-mode-learning-observations/);
   assert.match(readme, /failure-mode:split-combine-required/);
+  assert.match(readme, /failure-mode-priority:<priority>:<disposition>/);
+  assert.match(readme, /priority-disposition, split\/combine/);
   assert.match(readme, /`GET \/fabrication\/safety\/catalog`/);
   assert.match(readme, /dd\.fabrication\.safety-catalog\.v1/);
   assert.match(readme, /robotic-cell and\s+external-axis interlocks/);
@@ -6705,6 +6711,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /generated machine code, printer instructions, imported\s+CNC\/controller streams/);
   assert.match(readme, /vertical mills,\s+horizontal mills/);
   assert.match(readme, /hybrid split\/combine routes/);
+  assert.match(readme, /`releaseGateMatrix`/);
+  assert.match(readme, /source-provenance, machine-envelope, process-readiness, simulation-evidence/);
+  assert.match(readme, /human-or-automation-handoff, and learning-disposition gates/);
+  assert.match(readme, /evidence routes and release surfaces each gate can\s+block/);
   assert.match(readme, /`remote\/submodules\/discrete-event-system\.rs` \/ `des_engine`/);
   assert.match(readme, /MDP, POMDP, DES, neural-policy evidence/);
   assert.match(readme, /`GET \/intake\/catalog`/);
