@@ -75,6 +75,8 @@ concept in `main.rs`:
   whiteboard, graph analytics, spatial, and presentation-oriented renderer outputs.
 - `src/evidence_reports.rs` owns bounded Evidence.dev-style Markdown report compilation, embedded
   SQL validation requests, chart component placeholders, and dataset dependency metadata.
+- `src/renderer_packages.rs` owns generated TypeScript renderer client package blueprints for D3
+  final layers, Plotly/Dash figures, Evidence reports, and infrastructure graphs.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -114,7 +116,8 @@ Current first-class parity surfaces:
   points, notification policy previews, and bounded notification dispatch outbox records.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, infrastructure diagram tool catalog, Markdown-plus-SQL report blueprint, and
-  compiled Evidence-style Markdown reports.
+  compiled Evidence-style Markdown reports, plus generated TypeScript renderer/report helper
+  package blueprints.
 
 ## Endpoints
 
@@ -144,6 +147,8 @@ Current first-class parity surfaces:
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
+- `GET /renderers/client-package` - generated TypeScript client package blueprint for D3 final
+  layers, Plotly/Dash figures, Evidence reports, and infrastructure graph helpers.
 - `POST /etl/plans` - authenticated Domo Magic ETL/Power Query-style flow validation with lineage,
   materialization, and connector pushdown hints.
 - `GET /diagrams/tools` - Terraform, AWS, GCP, diagram-as-code, whiteboard, web graph, graph
