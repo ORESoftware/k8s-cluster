@@ -79144,6 +79144,200 @@ fn tooling_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn tooling_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "tooling-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn tooling_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    tool_blocker_count: usize,
+    offset_blocker_count: usize,
+    tool_life_blocker_count: usize,
+    support_media_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    tool_checks: &[Value],
+    offset_checks: &[Value],
+    support_media_checks: &[Value],
+) -> Vec<Value> {
+    let split_or_interface_tooling_review = values_contain_review_tokens(
+        tool_checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "fixture",
+            "workholding",
+            "stickout",
+            "holder",
+            "tool-access",
+        ],
+    ) || values_contain_review_tokens(
+        offset_checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "fixture",
+            "workholding",
+            "datum",
+            "offset",
+            "compensation",
+        ],
+    ) || values_contain_review_tokens(
+        support_media_checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "support",
+            "coolant",
+            "chip",
+            "wire",
+            "gas",
+        ],
+    );
+
+    let machine_boundary_blocked = tool_blocker_count > 0
+        || offset_blocker_count > 0
+        || tool_life_blocker_count > 0
+        || support_media_blocker_count > 0;
+
+    vec![
+        tooling_priority_disposition(
+            "machine-failure-boundary-first",
+            if machine_boundary_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("toolBlockerCount:{tool_blocker_count}"),
+                format!("offsetBlockerCount:{offset_blocker_count}"),
+                format!("toolLifeBlockerCount:{tool_life_blocker_count}"),
+                format!("supportMediaBlockerCount:{support_media_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/tooling/result",
+                "POST /fabrication/toolpaths/plan",
+                "POST /fabrication/release/result",
+            ],
+            if machine_boundary_blocked {
+                "machineReady remains blocked by tool, offset, tool-life, or support-media failure boundaries"
+            } else {
+                "tooling result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        tooling_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/tooling/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator tooling, offset, wear, or support-media signoff evidence is retained"
+            } else {
+                "tooling result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        tooling_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_tooling_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceToolingReview:{split_or_interface_tooling_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/tooling/result",
+            ],
+            if split_or_interface_tooling_review {
+                "machineReady remains blocked until split/combine, interface, fixture, workholding, or tool-access evidence is dispositioned"
+            } else {
+                "tooling result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        tooling_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/tooling/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until tooling, offset, wear, support-media, or operator-signoff artifacts retain URI, checksum, and evidence"
+            } else {
+                "tooling result artifacts include release evidence for downstream review"
+            },
+        ),
+        tooling_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked tooling priority lanes before advisory promotion"
+            } else {
+                "tooling result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn tooling_result_review_response(request: ToolingResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "tooling-result");
     let generated_at_ms = now_ms();
@@ -79243,6 +79437,25 @@ fn tooling_result_review_response(request: ToolingResultReviewRequest) -> Result
     if human_intervention_required {
         learning_observations.push("tooling:human-intervention-required".to_string());
     }
+    let priority_dispositions = tooling_priority_dispositions(
+        request.success,
+        release_blocked,
+        tool_blocker_count,
+        offset_blocker_count,
+        tool_life_blocker_count,
+        support_media_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &tool_checks,
+        &offset_checks,
+        &support_media_checks,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(tool_checks.iter().filter_map(|check| {
         check
             .get("toolFamily")
@@ -79303,6 +79516,7 @@ fn tooling_result_review_response(request: ToolingResultReviewRequest) -> Result
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "toolingResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -79380,6 +79594,7 @@ fn tooling_result_review_response(request: ToolingResultReviewRequest) -> Result
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -79390,6 +79605,7 @@ fn tooling_result_review_response(request: ToolingResultReviewRequest) -> Result
             "tooling-tool-life-checks",
             "tooling-support-media-checks",
             "tooling-artifacts",
+            "tooling-priority-dispositions",
             "tooling-learning-observations",
             "mdp-request.artifacts.toolingResult"
         ],
@@ -79463,6 +79679,10 @@ fn stored_tooling_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "tooling-result".to_string(),
@@ -79504,6 +79724,12 @@ fn stored_tooling_result_job(response: &Value) -> StoredFabricationJob {
             "tooling-learning-observations".to_string(),
             "tooling-learning-observations",
             learning_observations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "tooling-priority-dispositions".to_string(),
+            "tooling-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
     ]
@@ -133544,12 +133770,56 @@ mod tests {
             "tooling-tool:6mm-carbide-endmill-long-stickout",
             "tooling-offset:g43-tool-length-and-d-radius-offset",
             "tooling-support-media:mist-coolant-and-chip-evacuation",
+            "tooling-priority:machine-failure-boundary-first:blocked",
+            "tooling-priority:human-intervention-required:blocked",
+            "tooling-priority:split-combine-or-interface-review:blocked",
+            "tooling-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
                     .iter()
                     .any(|item| item.as_str() == Some(observation)),
                 "missing tooling observation {observation}"
+            );
+        }
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("tooling priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "tooling-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "tooling-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "tooling-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "tooling-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing tooling priority disposition {}",
+                expected.0
             );
         }
         let outcome_draft = response
@@ -133581,6 +133851,13 @@ mod tests {
             .is_some_and(|hints| hints.iter().any(|hint| hint
                 .as_str()
                 .is_some_and(|hint| hint == "support-media-blockers:1"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
 
         let stored = stored_tooling_result_job(&response);
         assert!(stored
@@ -133598,6 +133875,7 @@ mod tests {
             "tooling-tool-life-checks",
             "tooling-support-media-checks",
             "tooling-artifacts",
+            "tooling-priority-dispositions",
             "tooling-learning-observations",
         ] {
             assert!(
