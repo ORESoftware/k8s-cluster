@@ -327,6 +327,8 @@ outcomes.
 - `POST /fabrication/environment/result`
 - `GET /provenance/catalog`
 - `GET /fabrication/provenance/catalog`
+- `POST /provenance/plan`
+- `POST /fabrication/provenance/plan`
 - `GET /as-built/catalog`
 - `GET /fabrication/as-built/catalog`
 - `POST /as-built/result`
@@ -4476,6 +4478,30 @@ hashes, conversion logs, lot records, controller program digests, inspection
 dispositions, nonconformance decisions, and learning outcome lineage are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
+
+## `POST /fabrication/provenance/plan`
+
+`POST /provenance/plan` and the gateway-prefixed
+`POST /fabrication/provenance/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.provenance-planning.v1` projection for source CAD/model/slicer
+lineage, generated design exports, imported or generated controller programs,
+material-lot links, inspection targets, release-bundle artifacts, machine
+release blockers, and learning-outcome provenance. The response includes a
+`provenancePlan` with `provenanceContracts`, `designInputReview`,
+`designPackage`, `designExports`, `generatedPrograms`, `instructionPrograms`,
+`materialPlan`, `qualityPlan`, `releasePackagePlan`, and `machineRelease`
+surfaces.
+
+The endpoint keeps `machineReady=false` while CAD/model/slicer conversion
+reviews, export blockers, draft programs, non-ready machine code, release
+bundles, or machine-release blockers remain unresolved. It reports design-input
+review counts, conversion blockers, blocked design exports, generated program
+readiness, required release artifacts, and machine-release blockers. Artifact
+hashes, CAD/source-system metadata, controller program digests, inspection
+dispositions, and learning-outcome lineage are retained for MDP/POMDP/neural
+workers so future hybrid plans can explain why an object was split, combined,
+printed, machined, or blocked.
 
 ## `POST /fabrication/provenance/result`
 
