@@ -1493,7 +1493,8 @@ return generated candidates, accepted candidate IDs, parametric or neutral sourc
 artifact URIs, export formats, manufacturing method hints, manufacturability
 evidence, blockers, notes, and metadata. The response reports
 `designSynthesisResult`, `releaseUpdate`, `releaseBlocked`, `candidateCount`,
-`missingReleaseEvidence`, and MDP/POMDP/neural learning observations. These
+`missingReleaseEvidence`, `manufacturabilityEvidenceMissing`,
+`priorityDispositions`, and MDP/POMDP/neural learning observations. These
 results are draft design evidence rather than certified CAD/CAM/slicer geometry:
 machine-ready release remains false until an accepted candidate, source
 artifacts, export checksums, manufacturability review, simulation, and operator
@@ -1502,9 +1503,12 @@ or automation signoff are retained in `designPackage`, `designExports`,
 The `learning.outcomeDraft` uses
 `dd.fabrication.design-synthesis-learning-outcome-draft.v1` with worker-lane,
 accepted-candidate, candidate, part, export-format, manufacturing-method,
-candidate-review, manufacturability-evidence, blocker, reward, and submit-route
+candidate-review, manufacturability-evidence, blocker, priority-disposition, reward, and submit-route
 hints so split/combine and hybrid manufacturing candidates can be submitted to
-`POST /fabrication/learning/outcomes`.
+`POST /fabrication/learning/outcomes`. `design-synthesis-priority:<priority>:<disposition>`
+observations mirror candidate selection, blocker closure, release evidence,
+manufacturability evidence, and learning-feedback dispositions into the learning
+draft.
 
 ## `GET /fabrication/handoff/catalog`
 
