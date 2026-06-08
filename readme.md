@@ -56,6 +56,8 @@ concept in `main.rs`:
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
   target compilation.
+- `src/dax.rs` owns a bounded Power BI DAX subset parser, field dependency extraction, and SQL
+  preview compilation.
 - `src/etl.rs` owns Domo Magic ETL/Power Query-style metadata flow validation, lineage, and
   connector pushdown hints.
 - `src/connections.rs` owns secretRef-backed data connection metadata and dry-run connection test
@@ -83,8 +85,8 @@ concept in `main.rs`:
 Current first-class parity surfaces:
 
 - Power BI / Looker: governed semantic model descriptors, LookML-like registry ingestion,
-  dataset-backed validation, SQL compile targets, warehouse connection metadata, DAX analogs, and
-  calculated fields.
+  dataset-backed validation, SQL compile targets, warehouse connection metadata, bounded DAX
+  expression compilation, and calculated fields.
 - Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
   selection state.
@@ -117,6 +119,8 @@ Current first-class parity surfaces:
 - `GET /semantic/registry` - authenticated semantic model registry.
 - `GET /semantic/registry/:model_id` - authenticated semantic model definition.
 - `POST /semantic/registry/:model_id/compile` - authenticated semantic model SQL compilation.
+- `POST /expressions/dax/compile` - authenticated bounded Power BI DAX expression parser with AST,
+  dependency extraction, and SQL preview.
 - `GET /workbooks/blueprints` - spreadsheet/workbook and self-service query surfaces.
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
