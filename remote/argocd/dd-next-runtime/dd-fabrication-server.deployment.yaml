@@ -179,6 +179,7 @@ spec:
                 '"path": "/fabrication/subjects/catalog"' \
                 '"path": "/fabrication/workers/catalog"' \
                 '"path": "/fabrication/results/catalog"' \
+                '"path": "/fabrication/instructions/review-pipeline/catalog"' \
                 '"path": "/fabrication/instructions/import/catalog"' \
                 '"path": "/fabrication/instructions/import/preflight/catalog"' \
                 '"path": "/fabrication/instructions/import/review"' \

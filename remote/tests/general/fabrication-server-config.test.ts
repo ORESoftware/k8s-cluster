@@ -3096,6 +3096,20 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"GET \/fabrication\/instructions\/languages"/);
   assert.match(source, /"analysisRoutes"/);
   assert.match(source, /instruction_language_catalog_endpoint_exposes_machine_program_and_review_contract/);
+  assert.match(source, /async fn instruction_review_pipeline_catalog_http/);
+  assert.match(source, /fn instruction_review_pipeline_catalog_response/);
+  assert.match(source, /dd\.fabrication\.instruction-review-pipeline-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/instructions\/review-pipeline\/catalog"/);
+  assert.match(source, /discover-language-and-machine-context/);
+  assert.match(source, /retain-import-or-generated-artifact/);
+  assert.match(source, /validate-and-find-boundaries/);
+  assert.match(source, /improve-or-route-for-human-review/);
+  assert.match(source, /simulate-release-and-learn/);
+  assert.match(source, /never patch the only copy of an imported instruction stream/);
+  assert.match(
+    source,
+    /instruction_review_pipeline_catalog_orders_import_validation_improvement_release_and_learning/,
+  );
   assert.match(source, /fn result_review_catalog_response/);
   assert.match(source, /async fn result_review_catalog_http/);
   assert.match(source, /dd\.fabrication\.result-review-catalog\.v1/);
@@ -6689,6 +6703,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /tool-axis\/contact-point, controller target/);
   assert.match(readme, /analysis route aliases/);
   assert.match(readme, /Machine-ready release remains blocked/);
+  assert.match(readme, /`GET \/instructions\/review-pipeline\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/instructions\/review-pipeline\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.instruction-review-pipeline-catalog\.v1/);
+  assert.match(readme, /stage order for generated\s+or imported instruction streams/);
+  assert.match(readme, /discover language\s+and machine context/);
+  assert.match(readme, /retain the original import or generated artifact/);
+  assert.match(readme, /validate\s+and find machine-failure\/human-intervention\/split-combine boundaries/);
+  assert.match(readme, /`instructionImportReview\.originalPrograms`/);
+  assert.match(readme, /`improvedPrograms\.patchManifest`/);
+  assert.match(readme, /original stream immutable review evidence/);
   assert.match(readme, /`GET \/instructions\/validation\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/instructions\/validation\/catalog`/);
   assert.match(readme, /`GET \/instructions\/validation\/preflight\/catalog`/);
