@@ -166,8 +166,10 @@ impl Permission {
             Self::QuestionRead => "Read saved self-service questions and chart definitions.",
             Self::QuestionWrite => "Create or replace self-service questions and chart bindings.",
             Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
-            Self::AlertRead => "Read Grafana-style alert rules.",
-            Self::AlertWrite => "Create or replace Grafana-style alert rules.",
+            Self::AlertRead => "Read Grafana-style alert rules and notification routing metadata.",
+            Self::AlertWrite => {
+                "Create or replace Grafana-style alert rules, contact points, and notification policies."
+            }
             Self::AlertEvaluate => "Evaluate alert rules against analytical query results.",
             Self::SemanticRead => "Read governed semantic model definitions.",
             Self::SemanticWrite => "Create or replace governed semantic model definitions.",

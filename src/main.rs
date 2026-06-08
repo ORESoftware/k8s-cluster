@@ -24,6 +24,7 @@ mod dashboard;
 mod etl;
 mod hardening;
 mod infra_diagrams;
+mod notifications;
 mod platform;
 mod rbac;
 mod self_service;
@@ -56,6 +57,8 @@ struct AppState {
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
+    alert_contacts: Arc<RwLock<BTreeMap<String, notifications::ContactPoint>>>,
+    notification_policies: Arc<RwLock<BTreeMap<String, notifications::NotificationPolicy>>>,
     semantic_models: Arc<RwLock<BTreeMap<String, semantic::SavedSemanticModel>>>,
     questions: Arc<RwLock<BTreeMap<String, self_service::SavedQuestion>>>,
 }
@@ -86,6 +89,9 @@ struct Metrics {
     alert_requests_total: AtomicU64,
     alert_rules_saved_total: AtomicU64,
     alert_evaluations_total: AtomicU64,
+    notification_requests_total: AtomicU64,
+    contact_points_saved_total: AtomicU64,
+    notification_policies_saved_total: AtomicU64,
     semantic_requests_total: AtomicU64,
     semantic_models_saved_total: AtomicU64,
     etl_plans_total: AtomicU64,
@@ -480,6 +486,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
+        alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
+        notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
         semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
         questions: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -539,6 +547,19 @@ fn app_router(state: AppState) -> Router {
         .route("/alerts/rules", get(list_alert_rules).post(save_alert_rule))
         .route("/alerts/rules/:rule_id", get(get_alert_rule))
         .route("/alerts/rules/:rule_id/evaluate", post(evaluate_alert_rule))
+        .route(
+            "/alerts/contact-points",
+            get(list_contact_points).post(save_contact_point),
+        )
+        .route("/alerts/contact-points/:contact_id", get(get_contact_point))
+        .route(
+            "/alerts/notification-policies",
+            get(list_notification_policies).post(save_notification_policy),
+        )
+        .route(
+            "/alerts/rules/:rule_id/notification-preview",
+            post(preview_alert_notifications),
+        )
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
@@ -726,6 +747,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "queryBuilder": ["fields", "filters", "groupBy", "aggregations", "limit"],
             "posture": "validated against ingested dataset fields; saved questions compile to bounded SQL requests"
         },
+        "alertNotifications": {
+            "surfaces": ["contact points", "notification policies", "rule delivery preview"],
+            "contactKinds": ["email", "slack", "webhook", "pager-duty", "teams", "opsgenie"],
+            "posture": "dry-run delivery blueprints only; webhook tokens and destinations must be referenced through secretRef"
+        },
         "infraDiagram": {
             "sources": ["terraform", "terraform-plan", "aws-inventory", "aws-resource-explorer", "gcp-inventory", "gcp-cloud-asset", "mixed"],
             "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json", "vega-force-json", "networkx-json", "gexf", "markmap-markdown", "markdown-inventory"],
@@ -749,7 +775,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
-            "observabilityPanels": "Grafana-style time-series panel catalog and alert rule evaluator",
+            "observabilityPanels": "Grafana-style time-series panel catalog, alert rule evaluator, and dry-run notification policies",
             "programmaticRenderers": "D3, Plotly/Dash, Evidence, infrastructure diagrams, and Office export contracts"
         }
     }))
@@ -870,6 +896,15 @@ dd_data_viz_alert_rules_saved_total {}
 # HELP dd_data_viz_alert_evaluations_total Alert rule evaluations executed.
 # TYPE dd_data_viz_alert_evaluations_total counter
 dd_data_viz_alert_evaluations_total {}
+# HELP dd_data_viz_notification_requests_total Alert notification registry requests handled.
+# TYPE dd_data_viz_notification_requests_total counter
+dd_data_viz_notification_requests_total {}
+# HELP dd_data_viz_contact_points_saved_total Alert contact points saved.
+# TYPE dd_data_viz_contact_points_saved_total counter
+dd_data_viz_contact_points_saved_total {}
+# HELP dd_data_viz_notification_policies_saved_total Alert notification policies saved.
+# TYPE dd_data_viz_notification_policies_saved_total counter
+dd_data_viz_notification_policies_saved_total {}
 # HELP dd_data_viz_semantic_requests_total Semantic registry requests handled.
 # TYPE dd_data_viz_semantic_requests_total counter
 dd_data_viz_semantic_requests_total {}
@@ -908,6 +943,11 @@ dd_data_viz_errors_total {}
         metrics.alert_requests_total.load(Ordering::Relaxed),
         metrics.alert_rules_saved_total.load(Ordering::Relaxed),
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
+        metrics.notification_requests_total.load(Ordering::Relaxed),
+        metrics.contact_points_saved_total.load(Ordering::Relaxed),
+        metrics
+            .notification_policies_saved_total
+            .load(Ordering::Relaxed),
         metrics.semantic_requests_total.load(Ordering::Relaxed),
         metrics.semantic_models_saved_total.load(Ordering::Relaxed),
         metrics.etl_plans_total.load(Ordering::Relaxed),
@@ -1702,6 +1742,222 @@ async fn evaluate_alert_rule(
         .alert_evaluations_total
         .fetch_add(1, Ordering::Relaxed);
     Ok(Json(alerts::evaluate_rule(&rule, &response.rows)))
+}
+
+async fn save_contact_point(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<notifications::SaveContactPointRequest>,
+) -> Result<Json<notifications::SaveContactPointResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertWrite)?;
+    let mut contact = request
+        .into_contact_point(now_ms())
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut contacts = state
+        .alert_contacts
+        .write()
+        .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?;
+    if let Some(existing) = contacts.get(&contact.contact_id) {
+        contact.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "contact point {} replaced with a new in-memory definition",
+            contact.contact_id
+        ));
+    } else if contacts.len() >= notifications::max_contact_points() {
+        return Err(ApiError::bad_request(format!(
+            "contact point count exceeds max {}",
+            notifications::max_contact_points()
+        )));
+    }
+    contact.updated_at_ms = now_ms();
+    contacts.insert(contact.contact_id.clone(), contact.clone());
+    state
+        .metrics
+        .contact_points_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(notifications::save_contact_response(
+        contact, warnings,
+    )))
+}
+
+async fn list_contact_points(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let contacts = state
+        .alert_contacts
+        .read()
+        .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?;
+    let summaries = contacts
+        .values()
+        .map(notifications::ContactPoint::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(notifications::contact_catalog_payload(summaries)))
+}
+
+async fn get_contact_point(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(contact_id): Path<String>,
+) -> Result<Json<notifications::ContactPoint>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let contacts = state
+        .alert_contacts
+        .read()
+        .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?;
+    contacts
+        .get(&contact_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("contact point `{contact_id}` not found")))
+}
+
+async fn save_notification_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<notifications::SaveNotificationPolicyRequest>,
+) -> Result<Json<notifications::SaveNotificationPolicyResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertWrite)?;
+    let contact_ids = {
+        let contacts = state
+            .alert_contacts
+            .read()
+            .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?;
+        contacts.keys().cloned().collect::<BTreeSet<_>>()
+    };
+    let mut policy = request
+        .into_policy(now_ms(), &contact_ids)
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut policies = state
+        .notification_policies
+        .write()
+        .map_err(|_| ApiError::bad_request("notification policy store lock poisoned"))?;
+    if let Some(existing) = policies.get(&policy.policy_id) {
+        policy.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "notification policy {} replaced with a new in-memory definition",
+            policy.policy_id
+        ));
+    } else if policies.len() >= notifications::max_notification_policies() {
+        return Err(ApiError::bad_request(format!(
+            "notification policy count exceeds max {}",
+            notifications::max_notification_policies()
+        )));
+    }
+    policy.updated_at_ms = now_ms();
+    policies.insert(policy.policy_id.clone(), policy.clone());
+    state
+        .metrics
+        .notification_policies_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(notifications::save_policy_response(policy, warnings)))
+}
+
+async fn list_notification_policies(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertRead)?;
+    let policies = state
+        .notification_policies
+        .read()
+        .map_err(|_| ApiError::bad_request("notification policy store lock poisoned"))?;
+    let summaries = policies
+        .values()
+        .map(notifications::NotificationPolicy::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(notifications::policy_catalog_payload(summaries)))
+}
+
+async fn preview_alert_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(rule_id): Path<String>,
+) -> Result<Json<notifications::NotificationPreviewResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .notification_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AlertEvaluate)?;
+    let rule = {
+        let alert_rules = state
+            .alert_rules
+            .read()
+            .map_err(|_| ApiError::bad_request("alert rule store lock poisoned"))?;
+        alert_rules
+            .get(&rule_id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("alert rule `{rule_id}` not found")))?
+    };
+    let contacts = state
+        .alert_contacts
+        .read()
+        .map_err(|_| ApiError::bad_request("alert contact store lock poisoned"))?
+        .clone();
+    let policies = state
+        .notification_policies
+        .read()
+        .map_err(|_| ApiError::bad_request("notification policy store lock poisoned"))?
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(Json(notifications::preview(
+        notifications::NotificationPreviewInput {
+            rule_id: rule.rule_id,
+            title: rule.title,
+            labels: rule.labels,
+            annotations: rule.annotations,
+        },
+        &policies,
+        &contacts,
+    )))
 }
 
 async fn get_dataset(
@@ -3616,6 +3872,42 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Evaluate a saved alert rule and return normal, alerting, no-data, error, or disabled state.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/alerts/contact-points",
+            auth: "alert-write",
+            description: "Create or replace a Grafana-style contact point using secretRef-backed destinations.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/contact-points",
+            auth: "alert-read",
+            description: "List saved alert contact point summaries without returning raw secrets.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/contact-points/:contact_id",
+            auth: "alert-read",
+            description: "Read a saved alert contact point definition.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/alerts/notification-policies",
+            auth: "alert-write",
+            description: "Create or replace a Grafana-style alert notification policy.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/alerts/notification-policies",
+            auth: "alert-read",
+            description: "List alert notification policy summaries.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/alerts/rules/:rule_id/notification-preview",
+            auth: "alert-evaluate",
+            description: "Preview which contact points would receive an alert rule notification without sending messages.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/docs/api, /api/docs, /api/docs.json",
             auth: "public",
@@ -4249,6 +4541,8 @@ mod tests {
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
+            alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
+            notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
             semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
             questions: Arc::new(RwLock::new(BTreeMap::new())),
         }
@@ -4411,6 +4705,10 @@ mod tests {
         assert!(paths.contains(&"/alerts/rules"));
         assert!(paths.contains(&"/alerts/rules/:rule_id"));
         assert!(paths.contains(&"/alerts/rules/:rule_id/evaluate"));
+        assert!(paths.contains(&"/alerts/contact-points"));
+        assert!(paths.contains(&"/alerts/contact-points/:contact_id"));
+        assert!(paths.contains(&"/alerts/notification-policies"));
+        assert!(paths.contains(&"/alerts/rules/:rule_id/notification-preview"));
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));

@@ -140,6 +140,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/alerts.rs validates rule metadata and /alerts/rules/:rule_id/evaluate reuses the existing LogicalPlan executor.",
         },
         ControlDescriptor {
+            id: "secret-ref-alert-notifications",
+            status: "implemented",
+            description: "Grafana-style contact points and notification policies are capped, validate label matchers, reject secret-looking settings, and return dry-run delivery blueprints instead of sending outbound messages.",
+            evidence: "src/notifications.rs requires secretRef for webhook-like channels and /alerts/rules/:rule_id/notification-preview computes delivery plans without network side effects.",
+        },
+        ControlDescriptor {
             id: "bounded-semantic-models",
             status: "implemented",
             description: "LookML-like semantic models are capped, parsed as a strict subset, and validated against ingested dataset fields before compilation.",
