@@ -55,6 +55,7 @@ concept in `main.rs`:
   dry-run delivery previews.
 - `src/loki_frames.rs` owns bounded Loki-native and structured log stream conversion into redacted
   Grafana-style frame rows with label and level metadata.
+- `src/live_panels.rs` owns bounded Grafana-style WebSocket panel snapshots over ingested datasets.
 - `src/associative.rs` owns Qlik-style multi-dataset selection state, saved selection sessions, and
   relationship indexing.
 - `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
@@ -104,8 +105,9 @@ Current first-class parity surfaces:
   query-builder/self-service contracts, RBAC policy, secretRef-backed database connection registry,
   query result cache, saved dashboard catalog, saved questions, saved chart bindings, and publishing
   approval requests.
-- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, Loki
-  log frame adapter, alert rule evaluation, contact points, and notification policy previews.
+- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route,
+  bounded live panel WebSocket snapshots, Loki log frame adapter, alert rule evaluation, contact
+  points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, infrastructure diagram tool catalog, and Markdown-plus-SQL report blueprint.
 
@@ -132,6 +134,8 @@ Current first-class parity surfaces:
   projection, filters, sorts, lazy offset/limit paging, and formula-column planning.
 - `POST /observability/loki/frame` - authenticated Loki-native or structured log stream conversion
   into redacted Grafana-style frame rows with labels and level counts.
+- `GET /live/panels/:dataset_id` - authenticated WebSocket stream of bounded live panel snapshot
+  frames for an ingested dataset.
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.

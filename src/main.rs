@@ -9,7 +9,10 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        DefaultBodyLimit, Path, Query, State,
+    },
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -26,6 +29,7 @@ mod dax;
 mod etl;
 mod hardening;
 mod infra_diagrams;
+mod live_panels;
 mod loki_frames;
 mod notifications;
 mod platform;
@@ -94,6 +98,8 @@ struct Metrics {
     presentation_exports_total: AtomicU64,
     workbook_grid_pages_total: AtomicU64,
     loki_frames_total: AtomicU64,
+    live_panel_streams_total: AtomicU64,
+    live_panel_frames_total: AtomicU64,
     platform_requests_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
@@ -580,6 +586,7 @@ fn app_router(state: AppState) -> Router {
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/workbooks/grid/page", post(workbook_grid_page))
         .route("/observability/loki/frame", post(loki_frame))
+        .route("/live/panels/:dataset_id", get(live_panel_stream))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
         .route("/diagrams/tools", get(diagram_tool_catalog))
@@ -824,6 +831,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limits": loki_frames::limits_payload(),
             "posture": "offline frame adapter only; does not call Loki, bounds streams/entries/line bytes, and redacts common secret-bearing fragments"
         },
+        "livePanelStream": {
+            "surfaces": ["bounded WebSocket snapshot stream", "panel field schema", "time-series/table hints"],
+            "limits": live_panels::limits_payload(),
+            "posture": "authenticated live stream over ingested in-memory datasets; capped by ticks, interval, rows, and fields until durable live diff streaming lands"
+        },
         "connectionRegistry": {
             "engines": ["postgres", "mysql", "bigquery", "snowflake", "redshift", "prometheus", "loki", "parquet", "csv-json"],
             "modes": ["live-query", "import", "metadata-only"],
@@ -897,7 +909,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
-            "observabilityPanels": "Grafana-style time-series panel catalog, Loki log frames, alert rule evaluator, and dry-run notification policies",
+            "observabilityPanels": "Grafana-style time-series panel catalog, bounded live panel streams, Loki log frames, alert rule evaluator, and dry-run notification policies",
             "programmaticRenderers": "D3, Plotly/Dash, Evidence, infrastructure diagrams, and Office export contracts"
         }
     }))
@@ -994,6 +1006,12 @@ dd_data_viz_workbook_grid_pages_total {}
 # HELP dd_data_viz_loki_frames_total Loki log frames adapted.
 # TYPE dd_data_viz_loki_frames_total counter
 dd_data_viz_loki_frames_total {}
+# HELP dd_data_viz_live_panel_streams_total Live panel WebSocket streams accepted.
+# TYPE dd_data_viz_live_panel_streams_total counter
+dd_data_viz_live_panel_streams_total {}
+# HELP dd_data_viz_live_panel_frames_total Live panel frames sent.
+# TYPE dd_data_viz_live_panel_frames_total counter
+dd_data_viz_live_panel_frames_total {}
 # HELP dd_data_viz_platform_requests_total Platform parity requests handled.
 # TYPE dd_data_viz_platform_requests_total counter
 dd_data_viz_platform_requests_total {}
@@ -1102,6 +1120,8 @@ dd_data_viz_errors_total {}
         metrics.presentation_exports_total.load(Ordering::Relaxed),
         metrics.workbook_grid_pages_total.load(Ordering::Relaxed),
         metrics.loki_frames_total.load(Ordering::Relaxed),
+        metrics.live_panel_streams_total.load(Ordering::Relaxed),
+        metrics.live_panel_frames_total.load(Ordering::Relaxed),
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
@@ -1766,6 +1786,83 @@ async fn loki_frame(
         .loki_frames_total
         .fetch_add(1, Ordering::Relaxed);
     Ok(Json(frame))
+}
+
+async fn live_panel_stream(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(dataset_id): Path<String>,
+    Query(request): Query<live_panels::LivePanelStreamRequest>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryExecute)?;
+    let dataset_id = clean_identifier(&dataset_id).ok_or_else(|| {
+        ApiError::bad_request(
+            "datasetId must contain letters, numbers, dash, underscore, dot, or colon",
+        )
+    })?;
+    let dataset = get_dataset_snapshot(&state, &dataset_id)?;
+    let subscription =
+        live_panels::subscribe(&dataset, dataset_id, request).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .live_panel_streams_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    Ok(ws.on_upgrade(move |socket| live_panel_socket(socket, state, subscription)))
+}
+
+async fn live_panel_socket(
+    mut socket: WebSocket,
+    state: AppState,
+    subscription: live_panels::LivePanelSubscription,
+) {
+    if send_ws_json(&mut socket, live_panels::open_event(&subscription))
+        .await
+        .is_err()
+    {
+        return;
+    }
+
+    let mut sent_frames = 0usize;
+    for sequence in 0..subscription.ticks {
+        let frame = match get_dataset_snapshot(&state, &subscription.dataset_id)
+            .map_err(|error| error.message)
+            .and_then(|dataset| live_panels::frame(&dataset, &subscription, sequence))
+        {
+            Ok(frame) => frame,
+            Err(error) => {
+                let _ = send_ws_json(&mut socket, live_panels::error_event(error)).await;
+                return;
+            }
+        };
+        if send_ws_json(&mut socket, frame).await.is_err() {
+            return;
+        }
+        state
+            .metrics
+            .live_panel_frames_total
+            .fetch_add(1, Ordering::Relaxed);
+        sent_frames += 1;
+        if sequence + 1 < subscription.ticks {
+            tokio::time::sleep(tokio::time::Duration::from_millis(subscription.interval_ms)).await;
+        }
+    }
+
+    let _ = send_ws_json(
+        &mut socket,
+        live_panels::close_event(&subscription, sent_frames),
+    )
+    .await;
+    let _ = socket.close().await;
+}
+
+async fn send_ws_json(socket: &mut WebSocket, value: Value) -> Result<(), axum::Error> {
+    socket.send(Message::Text(value.to_string())).await
 }
 
 async fn dashboard_panels(State(state): State<AppState>) -> Json<Value> {
@@ -4830,6 +4927,12 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "GET",
+            path: "/live/panels/:dataset_id",
+            auth: "query-execute",
+            description: "Open a bounded Grafana-style WebSocket stream of live panel snapshot frames for an ingested dataset.",
+        },
+        RouteDoc {
+            method: "GET",
             path: "/dashboards/panels",
             auth: "public",
             description: "Tableau/Superset/Grafana/D3/Plotly dashboard panel catalog.",
@@ -5872,6 +5975,7 @@ mod tests {
         assert!(paths.contains(&"/expressions/dax/compile"));
         assert!(paths.contains(&"/workbooks/grid/page"));
         assert!(paths.contains(&"/observability/loki/frame"));
+        assert!(paths.contains(&"/live/panels/:dataset_id"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
     }
