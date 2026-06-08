@@ -153,6 +153,7 @@ spec:
                 '"path": "/fabrication/resin-printer/catalog"' \
                 '"path": "/fabrication/material-jetting/catalog"' \
                 '"path": "/fabrication/directed-energy-deposition/catalog"' \
+                '"path": "/fabrication/composite-fiber/catalog"' \
                 '"path": "/fabrication/powder-bed/catalog"' \
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
@@ -342,6 +343,7 @@ spec:
                 '"path": "/fabrication/learning/rewards/catalog"' \
                 '"path": "/fabrication/learning/models/catalog"' \
                 '"path": "/fabrication/learning/replay/catalog"' \
+                '"path": "/fabrication/learning/scenarios/catalog"' \
                 '"path": "/fabrication/learning/beliefs/catalog"' \
                 '"path": "/fabrication/learning/optimizers/catalog"' \
                 '"path": "/fabrication/learning/models/result"' \

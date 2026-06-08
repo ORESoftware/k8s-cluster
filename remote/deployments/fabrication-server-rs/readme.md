@@ -41,6 +41,8 @@ outcomes.
 - `GET /fabrication/material-jetting/catalog`
 - `GET /directed-energy-deposition/catalog`
 - `GET /fabrication/directed-energy-deposition/catalog`
+- `GET /composite-fiber/catalog`
+- `GET /fabrication/composite-fiber/catalog`
 - `GET /powder-bed/catalog`
 - `GET /fabrication/powder-bed/catalog`
 - `GET /printers/preflight/catalog`
@@ -415,6 +417,8 @@ outcomes.
 - `GET /fabrication/learning/models/catalog`
 - `GET /learning/replay/catalog`
 - `GET /fabrication/learning/replay/catalog`
+- `GET /learning/scenarios/catalog`
+- `GET /fabrication/learning/scenarios/catalog`
 - `GET /learning/beliefs/catalog`
 - `GET /fabrication/learning/beliefs/catalog`
 - `GET /learning/optimizers/catalog`
@@ -1030,6 +1034,28 @@ outcomes should feed material, toolpath, monitoring, postprocess, quality,
 telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers
 can learn when to resequence, split, reroute, pause for inspection, or require
 human intervention.
+
+## `GET /fabrication/composite-fiber/catalog`
+
+`GET /composite-fiber/catalog` and the gateway-prefixed
+`GET /fabrication/composite-fiber/catalog` return the
+`dd.fabrication.composite-fiber-catalog.v1` discovery view for continuous-fiber
+composite printer profiles. It narrows the additive printer catalog to
+composite-fiber machines and lists the evidence needed before generated
+composite-fiber job packages or machine-ready handoff: matrix material lot, dry
+box, fiber spool lot, fiber type, cutter calibration, cut test, anchor length,
+fiber tension, nozzle purge, bed adhesion, load direction, fiber orientation,
+reinforcement schedule, anisotropy review, load-case traceability, fiber volume,
+compaction, continuous-fiber slicer evidence, generated `FIBER_LAYUP`,
+`FIBER_CUT_ANCHOR`, and `PRINT_COMPOSITE` records, coupon bend/tensile results,
+fiber continuity, void inspection, delamination review, exposed-fiber trim
+inspection, dimensional inspection, telemetry, and signoff evidence. The payload
+names composite-fiber layup and process/inspection boundary families and keeps
+machine-ready release blocked until fiber orientation, process, coupon, and
+continuity evidence are retained. Composite-fiber outcomes should feed material,
+slicer, recipe, simulation, quality, telemetry, costing, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to reorient fibers, split,
+reroute, change reinforcement schedules, or require human intervention.
 
 ## `GET /fabrication/powder-bed/catalog`
 
@@ -5585,6 +5611,22 @@ identity. Replay cannot override validation, simulation, quality, setup,
 telemetry, release-package, split/combine, or human-intervention gates; accepted
 model and optimizer results remain advisory until replay, simulation, artifacts,
 and promotion blockers clear through their result review routes.
+
+`GET /learning/scenarios/catalog` and
+`GET /fabrication/learning/scenarios/catalog` return the live
+`dd.fabrication.learning-scenario-catalog.v1` training and replay scenario
+coverage contract. The catalog names canonical scenario families for additive
+printer release boundaries, subtractive controller and motion boundaries, hybrid
+split/combine routing, and imported-instruction validation/improvement. Each
+family lists covered machine/process classes, required evidence, expected failure
+labels, and the learning surfaces that should retain the scenario. Scenario
+evidence must include source job identity, machine kind, material, route
+sequence, instruction language, expected blockers, positive/negative outcome
+labels, and artifact URI/checksum references for design, instruction,
+simulation, quality, release, and learning records. Promotion requires at least
+one additive, one subtractive, one imported-instruction, and one hybrid
+split/combine case, and scenarios remain training/replay contracts rather than
+machine instructions or machine-ready release authority.
 
 `GET /learning/beliefs/catalog` and
 `GET /fabrication/learning/beliefs/catalog` return the live
