@@ -328,10 +328,14 @@ outcomes.
 - `POST /fabrication/postprocess/plan`
 - `POST /postprocess/result`
 - `POST /fabrication/postprocess/result`
+- `GET /evidence/catalog`
+- `GET /fabrication/evidence/catalog`
 - `GET /artifacts/catalog`
 - `GET /fabrication/artifacts/catalog`
 - `GET /packages/catalog`
 - `GET /fabrication/packages/catalog`
+- `POST /packages/plan`
+- `POST /fabrication/packages/plan`
 - `GET /learning/capabilities`
 - `GET /fabrication/learning/capabilities`
 - `GET /learning/engines/catalog`
@@ -4423,6 +4427,34 @@ postprocessor, gate, traveler-step, signoff, artifact, blocker,
 human-intervention, reward, and submit-route hints for
 `POST /fabrication/learning/outcomes`.
 
+## `GET /fabrication/evidence/catalog`
+
+`GET /evidence/catalog` and the gateway-prefixed
+`GET /fabrication/evidence/catalog` return the
+`dd.fabrication.evidence-catalog.v1` global evidence taxonomy for intake,
+planning, generated or imported machine-code, setup, execution, release, and
+learning review. It complements the retained artifact catalog by naming the
+evidence families clients should attach before machine-ready release can be
+considered: design-source evidence, machine/process evidence,
+instruction/controller evidence, setup/execution evidence, quality/release
+evidence, and learning-outcome evidence.
+
+Each family names response surfaces such as `designInputReview`,
+`machineSelection`, `controllerPlan`, `validation.failureBoundaries`,
+`executionPlan.stopPoints`, `qualityPlan`, `releasePackagePlan`,
+`machineRelease.blockers`, `learningPolicySnapshot`, and `neuralTrainingCorpus`.
+Examples include native CAD source-system and translator evidence, machine
+profile and material/feedstock state, controller modal-state and postprocessor
+review, datum/probe/workholding records, inspection and traveler signoff,
+reward signals, boundary resolution actions, split/combine results, and
+human-intervention outcomes.
+
+Evidence catalog entries are intake and review requirements, not certified
+shop-floor approval. `machineReady` remains false until required design,
+machine, instruction, setup, quality, release, and signoff evidence clear. DES,
+MDP/POMDP, and neural workers can reprioritize future routes from evidence and
+outcomes, but learned preferences stay advisory until release gates clear.
+
 ## `GET /fabrication/artifacts/catalog`
 
 `GET /artifacts/catalog` and the gateway-prefixed
@@ -4481,6 +4513,33 @@ approval. `machineReady` remains false until design, machine, process,
 instruction, simulation, quality, operator, interface, release, and learning
 feedback blockers are retained and cleared. MDP/POMDP/neural feedback can
 reprioritize future packages, but it cannot bypass package release gates.
+
+## `POST /fabrication/packages/plan`
+
+`POST /packages/plan` and the gateway-prefixed
+`POST /fabrication/packages/plan` accept the same `FabricationPlanRequest`
+payload as `POST /fabrication/plan`, run the normal learned fabrication planner,
+retain the job evidence, publish the same plan outputs, and return
+`dd.fabrication.package-planning.v1`. The response projects the generated
+fabrication plan into a `dd.fabrication.package-plan.v1` package plan with
+design/source, machine/process, instruction/controller, hybrid boundary/release,
+and learning-feedback phases.
+
+Each phase carries required artifacts, response surfaces, next routes, and
+blockers so a client can see whether design export, machine selection,
+`process-graph`, `machine-code-result`, `instruction-validation-result`,
+`interface-control-plan`, `release-package-plan`, `mdp-request`, or
+`learning-outcome-memory` evidence is still missing before release review.
+Package planning also returns counts for generated programs, machine-ready
+programs, design exports, process nodes, split/combine decisions, human
+interventions, validation boundaries, simulation boundaries, release blockers,
+and neural/MDP/POMDP learning feedback.
+
+Package plans are orchestration evidence, not certified manufacturing release.
+Generated and improved instruction packages must preserve original program,
+patch, validation, simulation, and boundary-review artifacts; learned
+MDP/POMDP/neural feedback can reprioritize future package plans but cannot
+bypass release gates.
 
 ## `GET /fabrication/jobs/catalog`
 

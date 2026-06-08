@@ -209,10 +209,12 @@ spec:
                 '"path": "/fabrication/release/preflight/catalog"' \
                 '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/release/result"' \
+                '"path": "/fabrication/evidence/catalog"' \
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/methods/catalog"' \
                 '"path": "/fabrication/process/catalog"' \
                 '"path": "/fabrication/packages/catalog"' \
+                '"path": "/fabrication/packages/plan"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/strategy/result"' \
                 '"path": "/fabrication/schedule/catalog"' \
