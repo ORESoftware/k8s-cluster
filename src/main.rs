@@ -96936,6 +96936,102 @@ async fn instruction_generation_preflight_catalog_http() -> impl IntoResponse {
     Json(instruction_generation_preflight_catalog_response())
 }
 
+fn machine_code_target_selection_matrix() -> Vec<Value> {
+    vec![
+        json!({
+            "targetFamily": "additive-printer-firmware",
+            "machineKinds": ["fdm-printer", "multi-material-fdm-toolchanger", "pellet-fgf-printer"],
+            "generatedLanguages": ["marlin-gcode", "reprap-gcode", "klipper-gcode"],
+            "postprocessorStrategy": "select slicer or firmware profile, then retain nozzle/bed/material, extrusion, purge/prime, first-layer, and thermal evidence",
+            "preferredRoutes": [
+                "GET /fabrication/slicers/catalog",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/instructions/analyze"
+            ],
+            "releaseEvidence": [
+                "slicer profile and firmware dialect",
+                "nozzle and bed temperature wait evidence",
+                "extrusion mode, purge/prime, material/tool selection, and homing state",
+                "simulation or preview of generated toolpath"
+            ],
+            "fallback": "route to manual printer instruction review when firmware, slicer profile, or thermal state is unknown"
+        }),
+        json!({
+            "targetFamily": "subtractive-mill-router-controller",
+            "machineKinds": ["vertical-mill", "horizontal-mill", "cnc-router", "indexed-mill", "five-axis-mill"],
+            "generatedLanguages": ["fanuc-gcode", "haas-gcode", "siemens-sinumerik", "heidenhain"],
+            "postprocessorStrategy": "select controller-specific CAM postprocessor and retain workholding, work offset, tool table, spindle/feed, coolant/chip, arc plane, compensation, and dry-run evidence",
+            "preferredRoutes": [
+                "GET /fabrication/controllers/catalog",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/controllers/result",
+                "POST /fabrication/simulation/run"
+            ],
+            "releaseEvidence": [
+                "controller dialect and postprocessor version",
+                "tool length/cutter compensation and work-offset evidence",
+                "feeds/speeds, spindle start-stop, coolant/chip evacuation, and tool-change evidence",
+                "dry-run or simulation linked to retained output checksum"
+            ],
+            "fallback": "block machine-ready release and route to manual controller review when postprocessor or modal-state evidence is missing"
+        }),
+        json!({
+            "targetFamily": "turning-and-mill-turn-controller",
+            "machineKinds": ["lathe", "mill-turn", "swiss-turning", "sliding-head-lathe"],
+            "generatedLanguages": ["fanuc-gcode", "okuma-osp", "siemens-sinumerik", "linuxcnc-gcode"],
+            "postprocessorStrategy": "select turning or mill-turn postprocessor and retain chuck/collet, turret/tool nose, spindle limit, threading/feed-per-rev, part-off support, live-tooling, and transfer evidence",
+            "preferredRoutes": [
+                "GET /fabrication/turning/preflight/catalog",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/controllers/result",
+                "POST /fabrication/instructions/validate"
+            ],
+            "releaseEvidence": [
+                "lathe workholding, stick-out, tailstock/subspindle, and runout evidence",
+                "tool-nose compensation, spindle-speed cap, feed-per-rev/thread pitch, and part-off support evidence",
+                "turret/tool-change stop state and live-tooling C/Y-axis or transfer evidence when applicable"
+            ],
+            "fallback": "require turning preflight or operator review when tool nose, spindle, threading, transfer, or part-off support evidence is missing"
+        }),
+        json!({
+            "targetFamily": "sheet-cutting-edm-and-special-process",
+            "machineKinds": ["laser-cutter", "waterjet-cutter", "plasma-cutter", "wire-edm", "sinker-edm", "hot-wire-foam-cutter"],
+            "generatedLanguages": ["laser-cut-gcode", "waterjet-gcode", "plasma-gcode", "wire-edm-job", "sinker-edm-job"],
+            "postprocessorStrategy": "select process-specific postprocessor and retain material thickness, kerf/beam/jet/wire/electrode, support media, slug retention, start-hole, nesting, and cut-chart evidence",
+            "preferredRoutes": [
+                "GET /fabrication/nesting/catalog",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/toolpaths/plan",
+                "POST /fabrication/simulation/run"
+            ],
+            "releaseEvidence": [
+                "material/thickness/cut-chart or recipe evidence",
+                "assist gas, abrasive, water table, fume extraction, dielectric/flushing, or support-media evidence",
+                "slug/drop retention, start-hole/threading, kerf compensation, nesting, and dry-run evidence"
+            ],
+            "fallback": "block release and request sheet/process support-media review when cut-chart, support, or slug/drop evidence is incomplete"
+        }),
+        json!({
+            "targetFamily": "hybrid-assembly-and-human-reviewed-instructions",
+            "machineKinds": ["assembly-cell", "manual-review", "hybrid-cell"],
+            "generatedLanguages": ["setup-sheet", "assembly-cell-job", "operator-checklist", "postprocess-traveler"],
+            "postprocessorStrategy": "emit human-readable traveler or setup/checklist packages tied to split/combine interface control, release probes, and learning outcomes",
+            "preferredRoutes": [
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/instructions/generate",
+                "POST /fabrication/learning/outcomes"
+            ],
+            "releaseEvidence": [
+                "interface-control and datum-transfer evidence",
+                "operator or automation checkpoint ownership",
+                "quality, postprocess, release-bundle, and learning-outcome evidence"
+            ],
+            "fallback": "keep machineReady=false and insert operator checkpoints when split/combine, interface, or automation evidence is missing"
+        }),
+    ]
+}
+
 fn machine_code_catalog_response() -> Value {
     let program_contracts = instruction_generation_catalog_program_contracts();
     let controller_targets = controller_catalog_targets();
@@ -97076,6 +97172,7 @@ fn machine_code_catalog_response() -> Value {
             "generated controller or printer programs remain draft=true and machineReady=false until validation, simulation or dry-run evidence, controller/postprocessor compatibility, setup, quality, release package, and signoff gates clear",
             "machine-code generation observations feed MDP/POMDP/neural workers so future plans can regenerate programs, choose alternate machines, split parts, combine assemblies, or add human checkpoints"
         ],
+        "targetSelectionMatrix": machine_code_target_selection_matrix(),
         "programContracts": program_contracts,
         "controllerTargets": controller_targets
     })
@@ -118181,6 +118278,41 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("draft=true")))));
+        let target_matrix = payload
+            .get("targetSelectionMatrix")
+            .and_then(Value::as_array)
+            .expect("machine-code target selection matrix should be present");
+        for family in [
+            "additive-printer-firmware",
+            "subtractive-mill-router-controller",
+            "turning-and-mill-turn-controller",
+            "sheet-cutting-edm-and-special-process",
+            "hybrid-assembly-and-human-reviewed-instructions",
+        ] {
+            assert!(
+                target_matrix.iter().any(|entry| {
+                    entry.get("targetFamily").and_then(Value::as_str) == Some(family)
+                }),
+                "missing machine-code target family {family}"
+            );
+        }
+        assert!(target_matrix.iter().any(|entry| entry
+            .get("machineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("horizontal-mill")))));
+        assert!(target_matrix.iter().any(|entry| entry
+            .get("releaseEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| {
+                item.as_str()
+                    .is_some_and(|item| item.contains("part-off support"))
+            }))));
+        assert!(target_matrix.iter().any(|entry| entry
+            .get("fallback")
+            .and_then(Value::as_str)
+            .is_some_and(|fallback| fallback.contains("machineReady=false"))));
     }
 
     #[test]

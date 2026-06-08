@@ -1963,6 +1963,17 @@ release-probe, neural-corpus, and learning-outcome observations remain available
 for MDP/POMDP/neural workers to learn when to regenerate code, reroute machines,
 split parts, combine assemblies, or add human checkpoints.
 
+The payload also includes a `targetSelectionMatrix` that maps machine families to
+generated languages, postprocessor strategy, preferred handoff routes, release
+evidence, and fallback review paths. Matrix entries cover additive printer
+firmware, subtractive mill/router controllers including vertical and horizontal
+mills, turning and mill-turn controllers including lathes, sheet-cutting/EDM and
+special-process outputs, and hybrid assembly or human-reviewed travelers. The
+matrix keeps unknown firmware, controller, slicer profile, postprocessor, thermal
+state, modal state, part-off support, cut-chart/support-media, or split/combine
+interface evidence as release blockers rather than treating generated code as
+machine-ready.
+
 ## `GET /fabrication/machine-code/preflight/catalog`
 
 `GET /machine-code/preflight/catalog` and the gateway-prefixed
