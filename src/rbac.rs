@@ -29,6 +29,7 @@ pub(crate) enum Permission {
     SemanticRead,
     SemanticWrite,
     SemanticCompile,
+    EtlPlan,
     InfraDiagramGenerate,
     PresentationExport,
 }
@@ -84,6 +85,7 @@ impl Role {
                 Permission::SemanticRead,
                 Permission::SemanticWrite,
                 Permission::SemanticCompile,
+                Permission::EtlPlan,
                 Permission::InfraDiagramGenerate,
                 Permission::PresentationExport,
             ],
@@ -162,6 +164,9 @@ impl Permission {
             Self::SemanticCompile => {
                 "Compile governed semantic model selections into query targets."
             }
+            Self::EtlPlan => {
+                "Compile Domo/Power Query-style ETL flow plans from dataset metadata."
+            }
             Self::InfraDiagramGenerate => {
                 "Generate Terraform, AWS, and GCP infrastructure diagram render targets."
             }
@@ -221,6 +226,7 @@ fn all_permissions() -> Vec<Permission> {
         Permission::SemanticRead,
         Permission::SemanticWrite,
         Permission::SemanticCompile,
+        Permission::EtlPlan,
         Permission::InfraDiagramGenerate,
         Permission::PresentationExport,
     ]
@@ -243,6 +249,7 @@ mod tests {
         assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::SemanticWrite));
         assert!(Role::Builder.allows(Permission::EvolutionRun));
+        assert!(Role::Builder.allows(Permission::EtlPlan));
     }
 
     #[test]
@@ -256,6 +263,7 @@ mod tests {
     fn analyst_can_compile_but_not_write_semantic_models() {
         assert!(Role::Analyst.allows(Permission::SemanticCompile));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
+        assert!(!Role::Analyst.allows(Permission::EtlPlan));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
         assert!(!Role::Viewer.allows(Permission::SemanticCompile));
     }

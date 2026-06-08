@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 mod alerts;
 mod associative;
 mod dashboard;
+mod etl;
 mod hardening;
 mod infra_diagrams;
 mod platform;
@@ -83,6 +84,7 @@ struct Metrics {
     alert_evaluations_total: AtomicU64,
     semantic_requests_total: AtomicU64,
     semantic_models_saved_total: AtomicU64,
+    etl_plans_total: AtomicU64,
     infra_diagrams_total: AtomicU64,
     rbac_denials_total: AtomicU64,
     auth_failures_total: AtomicU64,
@@ -504,6 +506,7 @@ fn app_router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/capabilities/parity", get(platform_capabilities))
         .route("/connectors/catalog", get(connector_catalog))
+        .route("/etl/plans", post(plan_etl))
         .route("/semantic/models", get(semantic_models))
         .route(
             "/semantic/registry",
@@ -590,6 +593,7 @@ async fn home(State(state): State<AppState>) -> Html<String> {
   <ul>
     <li><code>POST /datasets</code> ingests records into a columnar in-memory store.</li>
     <li><code>POST /query</code> translates SQL, GraphQL, PromQL, Flux, InfluxQL, LogQL, Cypher, Gremlin, Mongo, JMESPath, Lucene, and SPL into one logical plan.</li>
+    <li><code>POST /etl/plans</code> validates Domo/Power Query-style ETL flows and returns lineage plus pushdown hints.</li>
     <li><code>POST /visualizations/suggest</code> creates 2D, 3D, 4D, 5D, and XD visual specs.</li>
     <li><code>POST /evolution/run</code> mutates and scores visualization genomes with optional AI evaluator feedback.</li>
     <li><code>POST /presentations/export</code> emits PowerPoint OpenXML package layers, Google Slides batch operations, Reveal markdown, and final JSON layers.</li>
@@ -702,6 +706,12 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         },
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
+        },
+        "etlPlan": {
+            "steps": ["select-columns", "rename-columns", "filter-rows", "derive-column", "join", "union", "group-aggregate", "sort-rows", "limit-rows"],
+            "maxSteps": etl::max_etl_steps(),
+            "maxOutputFields": etl::max_etl_fields(),
+            "posture": "metadata-only planner; validates bounded transformations against dataset schemas and returns lineage/pushdown hints without executing formulas"
         },
         "infraDiagram": {
             "sources": ["terraform", "terraform-plan", "aws-inventory", "aws-resource-explorer", "gcp-inventory", "gcp-cloud-asset", "mixed"],
@@ -847,6 +857,9 @@ dd_data_viz_semantic_requests_total {}
 # HELP dd_data_viz_semantic_models_saved_total Semantic models saved.
 # TYPE dd_data_viz_semantic_models_saved_total counter
 dd_data_viz_semantic_models_saved_total {}
+# HELP dd_data_viz_etl_plans_total ETL plans compiled.
+# TYPE dd_data_viz_etl_plans_total counter
+dd_data_viz_etl_plans_total {}
 # HELP dd_data_viz_infra_diagrams_total Infrastructure diagrams generated.
 # TYPE dd_data_viz_infra_diagrams_total counter
 dd_data_viz_infra_diagrams_total {}
@@ -876,6 +889,7 @@ dd_data_viz_errors_total {}
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
         metrics.semantic_requests_total.load(Ordering::Relaxed),
         metrics.semantic_models_saved_total.load(Ordering::Relaxed),
+        metrics.etl_plans_total.load(Ordering::Relaxed),
         metrics.infra_diagrams_total.load(Ordering::Relaxed),
         metrics.rbac_denials_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
@@ -979,6 +993,29 @@ async fn connector_catalog(State(state): State<AppState>) -> Json<Value> {
         "connectors": platform::connector_catalog(),
         "etl": platform::etl_primitives()
     }))
+}
+
+async fn plan_etl(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<etl::EtlPlanRequest>,
+) -> Result<Json<etl::EtlPlanResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::EtlPlan)?;
+    let shapes = dataset_shapes(&state)?;
+    let response = etl::plan(request, &shapes).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .etl_plans_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
 }
 
 async fn semantic_models(State(state): State<AppState>) -> Json<Value> {
@@ -3283,6 +3320,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Domo/Power Query-style connector and ETL planner catalog.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/etl/plans",
+            auth: "etl-plan",
+            description: "Validate a bounded Domo Magic ETL/Power Query-style flow against dataset schemas and return lineage, materialization, and connector pushdown hints.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/semantic/models",
             auth: "public",
@@ -3473,6 +3516,27 @@ fn get_dataset_snapshot(state: &AppState, dataset_id: &str) -> Result<Dataset, A
         .get(dataset_id)
         .cloned()
         .ok_or_else(|| ApiError::not_found(format!("dataset `{dataset_id}` not found")))
+}
+
+fn dataset_shapes(state: &AppState) -> Result<Vec<etl::DatasetShape>, ApiError> {
+    let datasets = state
+        .datasets
+        .read()
+        .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+    Ok(datasets
+        .values()
+        .map(|dataset| etl::DatasetShape {
+            dataset_id: dataset.dataset_id.clone(),
+            fields: dataset
+                .columns
+                .iter()
+                .map(|(name, column)| etl::FieldShape {
+                    name: name.clone(),
+                    data_type: column.data_type(),
+                })
+                .collect(),
+        })
+        .collect())
 }
 
 fn dataset_association_graph(dataset: &Dataset) -> Value {
@@ -4160,6 +4224,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(paths.contains(&"/capabilities/parity"));
+        assert!(paths.contains(&"/etl/plans"));
         assert!(paths.contains(&"/semantic/models"));
         assert!(paths.contains(&"/associations/:dataset_id"));
         assert!(paths.contains(&"/security/policy"));
