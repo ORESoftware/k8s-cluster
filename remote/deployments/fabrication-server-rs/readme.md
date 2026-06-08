@@ -37,6 +37,8 @@ outcomes.
 - `GET /fabrication/fdm-printer/catalog`
 - `GET /resin-printer/catalog`
 - `GET /fabrication/resin-printer/catalog`
+- `GET /material-jetting/catalog`
+- `GET /fabrication/material-jetting/catalog`
 - `GET /powder-bed/catalog`
 - `GET /fabrication/powder-bed/catalog`
 - `GET /printers/preflight/catalog`
@@ -982,6 +984,27 @@ vat-capacity, and postprocess gates. Resin outcomes should feed slicer,
 material, postprocess, quality, telemetry, costing, and learning routes so DES,
 MDP/POMDP, and neural workers can learn when to reorient, hollow, split,
 reroute, or require human intervention.
+
+## `GET /fabrication/material-jetting/catalog`
+
+`GET /material-jetting/catalog` and the gateway-prefixed
+`GET /fabrication/material-jetting/catalog` return the
+`dd.fabrication.material-jetting-catalog.v1` discovery view for PolyJet/MJP
+material-jetting printer profiles. It narrows the additive printer catalog to
+material-jetting machines and lists the evidence needed before generated
+material-jetting job packages or machine-ready handoff: material cartridge,
+material lot, color/material channel map, printhead health, nozzle status, tray
+or build platform, packing and purge evidence, support material, support
+strategy, soluble/support-removal plan, drain/rinse, UV or thermal post-cure,
+waste handling, color target, material mix, flexible/rigid interface, part
+orientation, finish allowance, dimensional inspection, first-article, telemetry,
+and signoff evidence. The payload names material-jetting material-channel and
+support/UV/inspection boundary families and links the generated `PACK_TRAY`,
+`JET_MATERIALS`, `REMOVE_SUPPORT`, and `UV_CURE_INLINE` records back to
+release gates. Material-jetting outcomes should feed material, postprocess,
+quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural
+workers can learn when to reorient, split, reroute, change support strategy, or
+require human intervention.
 
 ## `GET /fabrication/powder-bed/catalog`
 

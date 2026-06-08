@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 449,
+  "routeCount": 451,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 439,
+    "user-generated": 441,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -3163,6 +3163,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/material-jetting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "material_jetting_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/materials/catalog",
       "methods": [
         "GET"
@@ -6031,6 +6048,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "manufacturability_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/material-jetting/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "material_jetting_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
