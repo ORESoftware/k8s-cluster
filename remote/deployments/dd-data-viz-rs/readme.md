@@ -52,6 +52,8 @@ concept in `main.rs`:
 - `src/alerts.rs` owns Grafana-style alert rule validation, catalog metadata, and reducer-based
   evaluation responses.
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
+- `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
+  target compilation.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -61,8 +63,8 @@ concept in `main.rs`:
 
 Current first-class parity surfaces:
 
-- Power BI / Looker: governed semantic model descriptors with dimensions, measures, DAX analogs,
-  and calculated fields.
+- Power BI / Looker: governed semantic model descriptors, LookML-like registry ingestion,
+  dataset-backed validation, SQL compile targets, DAX analogs, and calculated fields.
 - Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
   selection state.
@@ -83,6 +85,10 @@ Current first-class parity surfaces:
 - `GET /capabilities/parity` - BI and visualization tool parity matrix.
 - `GET /connectors/catalog` - connector catalog and ETL planner primitives.
 - `GET /semantic/models` - governed semantic models, dimensions, measures, and calculations.
+- `POST /semantic/registry` - authenticated LookML-like semantic model create/replace.
+- `GET /semantic/registry` - authenticated semantic model registry.
+- `GET /semantic/registry/:model_id` - authenticated semantic model definition.
+- `POST /semantic/registry/:model_id/compile` - authenticated semantic model SQL compilation.
 - `GET /workbooks/blueprints` - spreadsheet/workbook and self-service query surfaces.
 - `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
   visualizations.
