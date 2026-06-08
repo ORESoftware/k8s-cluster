@@ -19,6 +19,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod hardening;
+mod platform;
+
 const SERVICE_NAME: &str = "dd-data-viz-rs";
 const SCHEMA_VERSION: &str = "data-viz.analytics.v1";
 const DEFAULT_HOST: &str = "0.0.0.0";
@@ -55,6 +58,9 @@ struct Metrics {
     visualizations_total: AtomicU64,
     evolution_runs_total: AtomicU64,
     presentation_exports_total: AtomicU64,
+    platform_requests_total: AtomicU64,
+    hardening_requests_total: AtomicU64,
+    association_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -469,6 +475,15 @@ fn app_router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
+        .route("/capabilities/parity", get(platform_capabilities))
+        .route("/connectors/catalog", get(connector_catalog))
+        .route("/semantic/models", get(semantic_models))
+        .route("/workbooks/blueprints", get(workbook_blueprints))
+        .route("/dashboards/panels", get(dashboard_panels))
+        .route("/renderers/contracts", get(renderer_contracts))
+        .route("/reports/evidence", get(evidence_report_blueprint))
+        .route("/security/policy", get(security_policy))
+        .route("/associations/:dataset_id", get(association_graph))
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
@@ -571,7 +586,26 @@ async fn descriptor(State(state): State<AppState>) -> Json<Value> {
             "encodings": ["x", "y", "z", "color", "size", "shape", "time", "facet", "hyperSlice"],
             "evolution": ["mutation", "crossover-style channel rotation", "fitness scoring", "optional AI evaluator feedback"]
         },
+        "platformParity": {
+            "products": platform::parity_matrix(),
+            "semanticModels": platform::semantic_models(),
+            "connectors": platform::connector_catalog(),
+            "workbooks": platform::workbook_blueprints(),
+            "etl": platform::etl_primitives(),
+            "dashboardPanels": platform::dashboard_panel_catalog(),
+            "rendererContracts": platform::renderer_contracts(),
+            "selfService": platform::self_service_surfaces()
+        },
         "presentationLayers": ["powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"],
+        "hardening": hardening::hardening_payload(
+            MAX_DATASETS,
+            MAX_RECORDS,
+            MAX_COLUMNS,
+            MAX_QUERY_ROWS,
+            MAX_HTTP_BODY_BYTES,
+            state.config.server_auth_secret.is_some(),
+            state.config.allow_unauthenticated,
+        ),
         "auth": {
             "operatorHeaders": ["X-Server-Auth", "Auth", "Authorization: Bearer ..."],
             "allowUnauthenticated": state.config.allow_unauthenticated,
@@ -622,6 +656,15 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         },
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
+        },
+        "paritySurfaces": {
+            "semanticLayer": "LookML/Power BI inspired dimensions, measures, and calculations",
+            "associativeEngine": "Qlik-style categorical co-occurrence graph over ingested datasets",
+            "workbooks": "Sigma-style live-grid and executive-card blueprints",
+            "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
+            "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
+            "observabilityPanels": "Grafana-style time-series panel catalog",
+            "programmaticRenderers": "D3, Plotly/Dash, Evidence, and Office export contracts"
         }
     }))
 }
@@ -711,6 +754,15 @@ dd_data_viz_evolution_runs_total {}
 # HELP dd_data_viz_presentation_exports_total Presentation export requests handled.
 # TYPE dd_data_viz_presentation_exports_total counter
 dd_data_viz_presentation_exports_total {}
+# HELP dd_data_viz_platform_requests_total Platform parity requests handled.
+# TYPE dd_data_viz_platform_requests_total counter
+dd_data_viz_platform_requests_total {}
+# HELP dd_data_viz_hardening_requests_total Hardening policy requests handled.
+# TYPE dd_data_viz_hardening_requests_total counter
+dd_data_viz_hardening_requests_total {}
+# HELP dd_data_viz_association_requests_total Associative graph requests handled.
+# TYPE dd_data_viz_association_requests_total counter
+dd_data_viz_association_requests_total {}
 # HELP dd_data_viz_auth_failures_total Failed operator auth checks.
 # TYPE dd_data_viz_auth_failures_total counter
 dd_data_viz_auth_failures_total {}
@@ -724,6 +776,9 @@ dd_data_viz_errors_total {}
         metrics.visualizations_total.load(Ordering::Relaxed),
         metrics.evolution_runs_total.load(Ordering::Relaxed),
         metrics.presentation_exports_total.load(Ordering::Relaxed),
+        metrics.platform_requests_total.load(Ordering::Relaxed),
+        metrics.hardening_requests_total.load(Ordering::Relaxed),
+        metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.errors_total.load(Ordering::Relaxed),
     );
@@ -797,6 +852,172 @@ async fn list_datasets(
         "ok": true,
         "datasets": items
     })))
+}
+
+async fn platform_capabilities(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(platform::platform_capabilities_payload())
+}
+
+async fn connector_catalog(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "connectors": platform::connector_catalog(),
+        "etl": platform::etl_primitives()
+    }))
+}
+
+async fn semantic_models(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "semanticModels": platform::semantic_models()
+    }))
+}
+
+async fn workbook_blueprints(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "workbooks": platform::workbook_blueprints(),
+        "selfService": platform::self_service_surfaces()
+    }))
+}
+
+async fn dashboard_panels(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "dashboardPanels": platform::dashboard_panel_catalog()
+    }))
+}
+
+async fn renderer_contracts(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "rendererContracts": platform::renderer_contracts(),
+        "presentationTargets": platform::presentation_targets()
+    }))
+}
+
+async fn evidence_report_blueprint(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "schemaVersion": "data-viz.evidence-report.v1",
+        "analog": "Evidence.dev",
+        "blueprint": {
+            "frontmatter": {
+                "title": "Data Viz Report",
+                "source": "dd-data-viz-rs"
+            },
+            "sections": [
+                {
+                    "type": "sql",
+                    "name": "regional_revenue",
+                    "query": "SELECT region, SUM(revenue) AS totalRevenue FROM sales-lab GROUP BY region"
+                },
+                {
+                    "type": "chart",
+                    "renderer": "final-layer-json",
+                    "visualizationSpecRef": "candidate-0"
+                },
+                {
+                    "type": "narrative",
+                    "body": "Explain the observed trend, confidence, and decision implication."
+                }
+            ]
+        }
+    }))
+}
+
+async fn security_policy(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .hardening_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(hardening::hardening_payload(
+        MAX_DATASETS,
+        MAX_RECORDS,
+        MAX_COLUMNS,
+        MAX_QUERY_ROWS,
+        MAX_HTTP_BODY_BYTES,
+        state.config.server_auth_secret.is_some(),
+        state.config.allow_unauthenticated,
+    ))
+}
+
+async fn association_graph(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(dataset_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    require_operator_auth(&state, &headers)?;
+    let dataset = get_dataset_snapshot(&state, &dataset_id)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(dataset_association_graph(&dataset)))
 }
 
 async fn get_dataset(
@@ -1104,7 +1325,9 @@ async fn docs_json(State(state): State<AppState>) -> Json<Value> {
         "service": SERVICE_NAME,
         "schemaVersion": SCHEMA_VERSION,
         "routes": route_docs(),
-        "dialects": dialect_catalog()
+        "dialects": dialect_catalog(),
+        "platformParity": platform::parity_matrix(),
+        "hardening": hardening::control_catalog()
     }))
 }
 
@@ -2538,6 +2761,60 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "GET",
+            path: "/capabilities/parity",
+            auth: "public",
+            description: "BI and visualization-tool parity matrix with implemented surfaces and next engine work.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/connectors/catalog",
+            auth: "public",
+            description: "Domo/Power Query-style connector and ETL planner catalog.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/semantic/models",
+            auth: "public",
+            description: "Looker/Power BI-inspired semantic model, dimensions, measures, and calculations.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/workbooks/blueprints",
+            auth: "public",
+            description: "Sigma/Metabase-style workbook and self-service query-builder blueprints.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/dashboards/panels",
+            auth: "public",
+            description: "Tableau/Superset/Grafana/D3/Plotly dashboard panel catalog.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/renderers/contracts",
+            auth: "public",
+            description: "D3, Plotly/Dash, Evidence, and Office renderer/export contracts.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/reports/evidence",
+            auth: "public",
+            description: "Evidence.dev-style Markdown plus SQL report blueprint.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/security/policy",
+            auth: "public",
+            description: "Hardening, limit, control, and residual-risk report.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/associations/:dataset_id",
+            auth: "operator",
+            description: "Qlik-style associative graph over categorical fields in an ingested dataset.",
+        },
+        RouteDoc {
+            method: "GET",
             path: "/docs/api, /api/docs, /api/docs.json",
             auth: "public",
             description: "Generated-from-route API documentation.",
@@ -2598,6 +2875,111 @@ fn get_dataset_snapshot(state: &AppState, dataset_id: &str) -> Result<Dataset, A
         .get(dataset_id)
         .cloned()
         .ok_or_else(|| ApiError::not_found(format!("dataset `{dataset_id}` not found")))
+}
+
+fn dataset_association_graph(dataset: &Dataset) -> Value {
+    let categorical_fields = dataset
+        .columns
+        .iter()
+        .filter_map(|(field, column)| match column {
+            Column::Dictionary { .. } | Column::Boolean(_) => Some(field.clone()),
+            Column::Number(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let nodes = categorical_fields
+        .iter()
+        .filter_map(|field| {
+            dataset.columns.get(field).map(|column| {
+                let profile = column.profile(field);
+                json!({
+                    "field": field,
+                    "dataType": profile.data_type,
+                    "missingCount": profile.missing_count,
+                    "cardinality": profile.categorical.map(|item| item.cardinality).unwrap_or(0)
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut edge_counts = BTreeMap::<(String, String, String, String), usize>::new();
+    let mut left_counts = BTreeMap::<(String, String), usize>::new();
+
+    for row in 0..dataset.row_count {
+        for left_index in 0..categorical_fields.len() {
+            for right_index in left_index + 1..categorical_fields.len() {
+                let left_field = &categorical_fields[left_index];
+                let right_field = &categorical_fields[right_index];
+                let left_value = dataset.value(left_field, row);
+                let right_value = dataset.value(right_field, row);
+                if left_value.is_null() || right_value.is_null() {
+                    continue;
+                }
+                let left_label = scalar_to_label(&left_value);
+                let right_label = scalar_to_label(&right_value);
+                *left_counts
+                    .entry((left_field.clone(), left_label.clone()))
+                    .or_default() += 1;
+                *edge_counts
+                    .entry((
+                        left_field.clone(),
+                        left_label,
+                        right_field.clone(),
+                        right_label,
+                    ))
+                    .or_default() += 1;
+            }
+        }
+    }
+
+    let mut edges = edge_counts
+        .into_iter()
+        .map(
+            |((left_field, left_value, right_field, right_value), support)| {
+                let denominator = left_counts
+                    .get(&(left_field.clone(), left_value.clone()))
+                    .copied()
+                    .unwrap_or(support)
+                    .max(1);
+                json!({
+                    "from": {
+                        "field": left_field,
+                        "value": left_value
+                    },
+                    "to": {
+                        "field": right_field,
+                        "value": right_value
+                    },
+                    "support": support,
+                    "confidence": round4(support as f64 / denominator as f64)
+                })
+            },
+        )
+        .collect::<Vec<_>>();
+    edges.sort_by(|left, right| {
+        right["support"]
+            .as_u64()
+            .cmp(&left["support"].as_u64())
+            .then_with(|| {
+                right["confidence"]
+                    .as_f64()
+                    .unwrap_or(0.0)
+                    .total_cmp(&left["confidence"].as_f64().unwrap_or(0.0))
+            })
+    });
+    edges.truncate(256);
+
+    json!({
+        "ok": true,
+        "schemaVersion": "data-viz.associative-graph.v1",
+        "datasetId": dataset.dataset_id,
+        "rowCount": dataset.row_count,
+        "categoricalFieldCount": categorical_fields.len(),
+        "nodes": nodes,
+        "edges": edges,
+        "selectionModel": {
+            "analog": "Qlik green/white/gray state",
+            "currentStatus": "co-occurrence graph now; persistent selection-state engine planned"
+        }
+    })
 }
 
 fn require_operator_auth(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -3184,5 +3566,34 @@ mod tests {
             google["requests"].as_array().unwrap().len(),
             slides.len() * 2
         );
+    }
+
+    #[test]
+    fn associative_graph_links_categorical_values() {
+        let dataset = sample_dataset();
+        let graph = dataset_association_graph(&dataset);
+        let edges = graph["edges"].as_array().expect("edges array");
+
+        assert_eq!(graph["ok"], true);
+        assert_eq!(graph["categoricalFieldCount"], 2);
+        assert!(edges.iter().any(|edge| {
+            edge["from"]["field"] == "region"
+                && edge["from"]["value"] == "north"
+                && edge["to"]["field"] == "segment"
+                && edge["to"]["value"] == "enterprise"
+        }));
+    }
+
+    #[test]
+    fn route_docs_cover_platform_and_hardening_surfaces() {
+        let paths = route_docs()
+            .into_iter()
+            .map(|route| route.path)
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&"/capabilities/parity"));
+        assert!(paths.contains(&"/semantic/models"));
+        assert!(paths.contains(&"/associations/:dataset_id"));
+        assert!(paths.contains(&"/security/policy"));
     }
 }
