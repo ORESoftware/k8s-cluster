@@ -55,19 +55,15 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              source_src="/opt/dd-next-1/remote/submodules/live-mutex-mills.rs"
-              if [ -n "${LMX_MILLS_GIT_URL:-}" ]; then
-                rm -rf /tmp/mills-source
-                if git clone --depth 1 --branch "${LMX_MILLS_GIT_REF:-main}" "${LMX_MILLS_GIT_URL}" /tmp/mills-source; then
-                  source_src=/tmp/mills-source
-                  echo "[mills] cloned ${LMX_MILLS_GIT_URL}@${LMX_MILLS_GIT_REF:-main} ($(git -C /tmp/mills-source rev-parse --short HEAD))"
-                else
-                  echo "[mills] source clone failed; using mounted source at ${source_src}" >&2
-                fi
-              fi
+              # Source comes only from the git clone (no hostPath fallback, so
+              # the pod satisfies the PodSecurity "restricted" profile).
+              : "${LMX_MILLS_GIT_URL:?LMX_MILLS_GIT_URL is required}"
               rm -rf /tmp/mills-build
-              mkdir -p /tmp/mills-build
-              cp -a "${source_src}/." /tmp/mills-build/
+              if ! git clone --depth 1 --branch "${LMX_MILLS_GIT_REF:-main}" "${LMX_MILLS_GIT_URL}" /tmp/mills-build; then
+                echo "[mills] source clone failed for ${LMX_MILLS_GIT_URL}@${LMX_MILLS_GIT_REF:-main}" >&2
+                exit 1
+              fi
+              echo "[mills] cloned ${LMX_MILLS_GIT_URL}@${LMX_MILLS_GIT_REF:-main} ($(git -C /tmp/mills-build rev-parse --short HEAD))"
               rm -rf /tmp/mills-build/target
               cd /tmp/mills-build
               ord="${POD_NAME##*-}"
@@ -142,15 +138,8 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: tmp
           emptyDir: {}
