@@ -148,8 +148,8 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
         ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
-            description: "Terraform, AWS, and GCP diagram requests are bounded by file bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
-            evidence: "src/infra_diagrams.rs extracts topology references into neutral graph nodes, edges, and renderer blueprints without returning request secrets.",
+            description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
+            evidence: "src/infra_diagrams.rs extracts topology references into neutral graph nodes, edges, and renderer blueprints while enforcing source-size limits before returning derived diagrams.",
         },
         ControlDescriptor {
             id: "route-derived-docs",
