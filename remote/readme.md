@@ -30,6 +30,11 @@ Today there are several key runtime services:
   blends public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
   reports, and transparent theory priors from accepted macro, asset-pricing, commodity, FX, bond, and
   stochastic-process equations.
+- [`deployments/dd-data-viz-rs/`](./deployments/dd-data-viz-rs/) — Rust columnar analytics and evolutionary data
+  visualization server. It ingests JSON records into an in-memory column store, translates SQL, GraphQL, PromQL,
+  Flux, InfluxQL, LogQL, Cypher, Gremlin, Mongo, JMESPath, Lucene, and SPL subsets into a unified logical plan,
+  synthesizes 2D/3D/4D/5D/XD visualization specs, runs mutation/scoring loops with optional AI evaluator feedback,
+  and emits PowerPoint/OpenXML, Google Slides, Reveal, and final JSON presentation layers.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
   source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
   current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
