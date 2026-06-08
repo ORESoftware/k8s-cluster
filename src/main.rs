@@ -50428,6 +50428,9 @@ fn learned_part_description(method: &str) -> &'static str {
         "rivet-installation" => {
             "learned rivet installation, clinch, swage, mandrel-break, or shop-head release inferred from successful hybrid outcomes"
         }
+        "seal-installation" => {
+            "learned seal, gasket, O-ring, RTV, leak-test, or pressure-test release inferred from successful hybrid outcomes"
+        }
         _ => "learned special-process component inferred from successful hybrid outcomes",
     }
 }
@@ -167203,6 +167206,146 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-rivet-installation"
+        }));
+    }
+
+    #[test]
+    fn learned_seal_installation_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("seal-installation-methods-1".to_string()),
+            job_id: Some("plan-seal-installation-1".to_string()),
+            objective: Some("printed ABS manifold closed with retained gasket seal".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "gasket-installation".to_string(),
+            ]),
+            machine_kind: Some("seal-installation-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed manifold plus retained seal leak-test lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.4),
+            observations: Some(vec![
+                "gland fill retained".to_string(),
+                "leak rate passed".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus seal-installation process".to_string()
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned seal installation outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("seal-installation-methods-2".to_string()),
+            job_id: Some("plan-seal-installation-2".to_string()),
+            objective: Some("printed ABS cover with O-ring and pressure proof".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "seal-installation".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: Some("seal-installation-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed manifold plus retained seal leak-test lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.1),
+            observations: Some(vec![
+                "compression target recorded".to_string(),
+                "pressure test passed".to_string(),
+            ]),
+            notes: Some(vec!["same seal lane worked again".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned seal installation outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+seal-installation"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-seal-installation-combination".to_string()),
+                objective: "ABS assembly that can use learned printed and sealed process"
+                    .to_string(),
+                material: Some(material("abs", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "abs-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![250.0, 210.0, 210.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "seal-cell".to_string(),
+                        kind: "seal-installation-cell".to_string(),
+                        controller: Some("seal-installation-job".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![500.0, 300.0, 160.0]),
+                        axes: Some(3),
+                        operations: Some(vec![
+                            "seal-installation".to_string(),
+                            "gasket-installation".to_string(),
+                            "pressure-test".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned seal installation plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-seal-installation-part"
+                && part.machine_kind == "seal-installation-cell"
+                && part.manufacturing_method == "seal-installation"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-seal-installation-part"
+                && program.machine_id == "seal-cell"
+                && program.language == "seal-installation-job"
+                && program.instructions.iter().any(|instruction| {
+                    instruction.contains("VERIFY_SEAL_SETUP")
+                        || instruction.contains("VERIFY_SEAL_RELEASE")
+                })
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed manifold plus retained seal leak-test lane"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-seal-installation"
         }));
     }
 
