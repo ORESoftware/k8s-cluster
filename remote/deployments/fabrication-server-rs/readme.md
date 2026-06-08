@@ -663,6 +663,8 @@ is supplied.
   printer G2/G3 arc-support evidence,
   high-speed input-shaper/acceleration/volumetric-flow evidence,
   chamber/enclosure/thermal-soak evidence for warp-prone filament,
+  thermal-runaway/heater-watchdog, nozzle-clog/underextrusion, camera, smoke,
+  alerting, and emergency-stop evidence for unattended or long printer streams,
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
   resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence,
   including generated `EXPOSE`/`PEEL` image-stack records and peel/lift/recoat evidence, resin
@@ -5466,6 +5468,10 @@ integration path: discover capabilities, machines, materials, and request
 templates; import or generate design and machine-code evidence; validate,
 remediate, and improve instructions; decide whether to decompose, assemble, or
 release; then submit retained outcomes to the DES/MDP/POMDP learning surfaces.
+It also links `/grafana/fabrication`, the `dd-fabrication-planner` Grafana
+dashboard, so operators can inspect request intake, release blockers, NATS
+fanout, learning feedback, artifact ledgers, and runtime capacity before
+trusting generated or imported machine work.
 
 ## `GET /fabrication/how-it-works`
 
@@ -6034,7 +6040,7 @@ build-surface Z without measured Z-offset/probe evidence, positive extrusion aft
 `M420 S0` or bed-leveling/mesh-compensation disable without `M420 S1`, `G29`, or
 equivalent bed-mesh/Z-offset verification, first-layer adhesion setup, early
 part-cooling fan timing, additive material/color/tool-change stops such as `M600`
-or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, printer `G2`/`G3` arcs without firmware/slicer arc-support evidence, `M200` volumetric extrusion before filament-diameter/slicer volumetric E-unit evidence, high-speed FDM extrusion without input-shaper/acceleration/volumetric-flow evidence, mill/router rapid/feed negative-Z plunges after tool selection without
+or multi-tool selection, post-change extrusion without purge/prime/resume evidence, printer pauses before renewed position/extrusion resume evidence, selected-tool extrusion without `M104`/`M109` or hotend temperature evidence, unattended or long printer streams before thermal-runaway/heater-watchdog, nozzle-clog/underextrusion, camera, smoke, alerting, and emergency-stop evidence, printer `G2`/`G3` arcs without firmware/slicer arc-support evidence, `M200` volumetric extrusion before filament-diameter/slicer volumetric E-unit evidence, high-speed FDM extrusion without input-shaper/acceleration/volumetric-flow evidence, mill/router rapid/feed negative-Z plunges after tool selection without
 explicit `G43`/probe/tool-length state or later `M6` tool changes before `G49` cancellation, `G41`/`G42` cutter compensation without
 `D` offset or tool radius/diameter evidence or without `G40` cancellation before program end, `M6` tool changes before ATC/magazine/
 carousel/operator-loaded evidence or while spindle/process remains active without `M5`/`M05` stop evidence, mill/router/lathe cutting feeds and mill/router rapid negative-Z plunges before probed

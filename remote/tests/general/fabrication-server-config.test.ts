@@ -2025,6 +2025,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /additive-pause-resume-not-verified/);
   assert.match(source, /printer-pause-resume-boundary/);
   assert.match(source, /additive_analysis_requires_resume_state_after_pause/);
+  assert.match(source, /fn has_additive_thermal_clog_monitoring_evidence/);
+  assert.match(source, /additive-thermal-clog-monitoring-missing/);
+  assert.match(source, /printer-thermal-clog-monitoring-boundary/);
+  assert.match(source, /additive_analysis_requires_thermal_clog_monitoring_for_unattended_prints/);
   assert.match(source, /fn add_additive_design_boundaries/);
   assert.match(source, /additive-support-orientation-boundary/);
   assert.match(source, /additive-support-boundary/);
@@ -7282,8 +7286,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /validate,\s+remediate, and improve instructions/);
   assert.match(readme, /decompose, assemble, or\s+release/);
   assert.match(readme, /DES\/MDP\/POMDP learning surfaces/);
+  assert.match(readme, /`dd-fabrication-planner` Grafana\s+dashboard/);
+  assert.match(readme, /request intake, release blockers, NATS\s+fanout, learning feedback, artifact ledgers, and runtime capacity/);
   assert.match(source, /<h2>Start Here<\/h2>/);
   assert.match(source, /Most integrations follow the same evidence path/);
+  assert.match(source, /<strong>6\. Operate<\/strong>/);
+  assert.match(source, /\/grafana\/fabrication/);
+  assert.match(source, /Fabrication Planner Grafana dashboard/);
+  assert.match(source, /request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity/);
   assert.match(source, /\/fabrication\/design\/import\/catalog/);
   assert.match(source, /\/fabrication\/machine-code\/catalog/);
   assert.match(source, /\/fabrication\/learning\/outcomes/);
@@ -9149,9 +9159,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
     /slicer high-speed input-shaper\/acceleration\/volumetric-flow evidence/,
   );
   assert.match(readme, /chamber\/enclosure\/thermal-soak evidence for warp-prone filament/);
+  assert.match(readme, /thermal-runaway\/heater-watchdog, nozzle-clog\/underextrusion,\s+camera, smoke,\s+alerting, and emergency-stop evidence/);
   assert.match(
     readme,
-    /printer\s+async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown\/\s+reheat state, bed-cooldown\/re-wait state, stepper-idle\/re-home state,\s+mid-print homing\/resume-position state, additive inch-units\/slicer conversion state,\s+printer coordinate\/home-offset state,\s+extrusion-mode\/reset state, post-mode-switch extrusion reset state,\s+negative-Z extrusion\/Z-offset probe state, bed-leveling\/mesh restore state,\s+filament lot\/dry-storage\s+conditioning evidence, material-capacity\/runout evidence,\s+extrusion calibration\/flow\/pressure-advance evidence,\s+volumetric-extrusion\/M200 state,\s+firmware retraction\/recover settings evidence,\s+printer G2\/G3 arc-support evidence,\s+high-speed input-shaper\/acceleration\/volumetric-flow evidence,\s+chamber\/enclosure\/thermal-soak evidence for warp-prone filament,\s+bed-adhesion, first-layer, fan-timing/,
+    /printer\s+async-nozzle-wait state, async-bed-target re-wait state, nozzle-cooldown\/\s+reheat state, bed-cooldown\/re-wait state, stepper-idle\/re-home state,\s+mid-print homing\/resume-position state, additive inch-units\/slicer conversion state,\s+printer coordinate\/home-offset state,\s+extrusion-mode\/reset state, post-mode-switch extrusion reset state,\s+negative-Z extrusion\/Z-offset probe state, bed-leveling\/mesh restore state,\s+filament lot\/dry-storage\s+conditioning evidence, material-capacity\/runout evidence,\s+extrusion calibration\/flow\/pressure-advance evidence,\s+volumetric-extrusion\/M200 state,\s+firmware retraction\/recover settings evidence,\s+printer G2\/G3 arc-support evidence,\s+high-speed input-shaper\/acceleration\/volumetric-flow evidence,\s+chamber\/enclosure\/thermal-soak evidence for warp-prone filament,\s+thermal-runaway\/heater-watchdog, nozzle-clog\/underextrusion,\s+camera, smoke,\s+alerting, and emergency-stop evidence for unattended or long printer streams,\s+bed-adhesion, first-layer, fan-timing/,
   );
   assert.match(
     readme,
@@ -9227,6 +9238,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
     readme,
     /printer pauses before renewed position\/extrusion resume evidence/,
   );
+  assert.match(readme, /unattended or long printer streams before thermal-runaway\/heater-watchdog/);
   assert.match(
     readme,
     /selected-tool extrusion without `M104`\/`M109` or hotend temperature evidence/,
