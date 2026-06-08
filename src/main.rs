@@ -62196,6 +62196,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/provenance/plan",
         "GET /as-built/catalog",
         "GET /fabrication/as-built/catalog",
+        "POST /as-built/plan",
+        "POST /fabrication/as-built/plan",
         "POST /as-built/result",
         "POST /fabrication/as-built/result",
         "POST /provenance/result",
@@ -95014,6 +95016,180 @@ async fn as_built_catalog_http() -> impl IntoResponse {
     Json(as_built_catalog_response())
 }
 
+fn as_built_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let as_built_blocked = !response.simulation.failure_boundaries.is_empty()
+        || !response.validation.failure_boundaries.is_empty()
+        || response.quality_plan.status != "quality-plan-ready"
+        || response.interface_control_plan.machine_release_blocked
+        || response.decomposition_plan.release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || response.boundary_summary.human_intervention_required > 0;
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.as-built-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /as-built/plan", "POST /fabrication/as-built/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /as-built/catalog",
+            "GET /fabrication/as-built/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog",
+            "GET /provenance/catalog",
+            "GET /fabrication/provenance/catalog",
+            "GET /packages/catalog",
+            "GET /fabrication/packages/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /as-built/result",
+            "POST /fabrication/as-built/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /provenance/result",
+            "POST /fabrication/provenance/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!as_built_blocked));
+    object.insert("machineReleaseBlocked".to_string(), json!(as_built_blocked));
+    object.insert(
+        "inspectionPointCount".to_string(),
+        json!(response.quality_plan.inspection_points.len()),
+    );
+    object.insert(
+        "measurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "simulationFindingCount".to_string(),
+        json!(response.simulation.findings.len()),
+    );
+    object.insert(
+        "simulationFailureBoundaryCount".to_string(),
+        json!(response.simulation.failure_boundaries.len()),
+    );
+    object.insert(
+        "interfaceControlCount".to_string(),
+        json!(response.interface_control_plan.controls.len()),
+    );
+    object.insert(
+        "decompositionTargetCount".to_string(),
+        json!(response.decomposition_plan.decomposition_target_count),
+    );
+    object.insert(
+        "releasePackageRequiredArtifactCount".to_string(),
+        json!(response.release_package_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "asBuiltPlan.asBuiltContracts",
+            "qualityPlan.inspectionPoints",
+            "qualityPlan.measurementTargets",
+            "simulation.riskProfile",
+            "simulation.failureBoundaries",
+            "decompositionPlan.targets",
+            "interfaceControlPlan.controls",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.blockers",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "as-built-plan",
+            "as-built-catalog",
+            "as-built-deviation-map",
+            "as-built-scan-mesh",
+            "as-built-cmm-report",
+            "as-built-interface-fit-record",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.asBuilt"
+        ]),
+    );
+    object.insert(
+        "asBuiltPolicy".to_string(),
+        json!([
+            "as-built planning returns a draft actual-geometry evidence plan for scan/CMM/probe results, deviation maps, interface-fit records, release artifacts, and learning observations",
+            "machineReady=false while simulation or validation boundaries, missing inspection targets, unresolved split/combine interfaces, release packages, or machine-release blockers remain open",
+            "deviation-map, scan, measurement, and interface-fit outcomes are retained for MDP/POMDP/neural workers so future plans can add inspections, split or combine parts differently, reroute features, or require human signoff"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "asBuiltPlan".to_string(),
+        json!({
+            "asBuiltContracts": as_built_catalog_entries(),
+            "qualityPlan": &response.quality_plan,
+            "simulation": &response.simulation,
+            "decompositionPlan": &response.decomposition_plan,
+            "interfaceControlPlan": &response.interface_control_plan,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
+}
+
 fn validate_optional_non_negative_f64(
     value: Option<f64>,
     label: &str,
@@ -117245,6 +117421,7 @@ async fn request_schema() -> impl IntoResponse {
             "provenanceCatalog": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
             "provenancePlan": ["POST /provenance/plan", "POST /fabrication/provenance/plan"],
             "asBuiltCatalog": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
+            "asBuiltPlan": ["POST /as-built/plan", "POST /fabrication/as-built/plan"],
             "asBuiltResult": ["POST /as-built/result", "POST /fabrication/as-built/result"],
             "setupPlan": ["POST /setup/plan", "POST /fabrication/setup/plan"],
             "setupResult": ["POST /setup/result", "POST /fabrication/setup/result"],
@@ -118626,6 +118803,50 @@ async fn provenance_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn as_built_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.as_built.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(as_built_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -120785,6 +121006,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/provenance/plan", post(provenance_plan_http))
         .route("/as-built/catalog", get(as_built_catalog_http))
         .route("/fabrication/as-built/catalog", get(as_built_catalog_http))
+        .route("/as-built/plan", post(as_built_plan_http))
+        .route("/fabrication/as-built/plan", post(as_built_plan_http))
         .route("/as-built/result", post(as_built_result_http))
         .route("/fabrication/as-built/result", post(as_built_result_http))
         .route("/provenance/result", post(provenance_result_http))
@@ -141880,6 +142103,143 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("split/combine")))));
+    }
+
+    #[test]
+    fn as_built_planning_endpoint_returns_deviation_interface_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 3,
+            successes: 1,
+            failures: 2,
+            average_reward: -0.2,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "neural-example job=as-built-interface-bracket deviation-map-required".to_string(),
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-as-built-plan".to_string()),
+                objective:
+                    "make a split hybrid printer fixture that needs scan-to-design deviation maps, interface fit inspection, CMM evidence, and release package retention"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![180.0, 120.0, 18.0]),
+                }),
+                tolerance_mm: Some(0.04),
+                quantity: Some(1),
+                machines: Some(vec![MachineProfile {
+                    id: "hybrid-vmc-cmm-01".to_string(),
+                    kind: "vertical-mill".to_string(),
+                    controller: Some("fanuc".to_string()),
+                    materials: Some(vec!["6061 aluminum".to_string()]),
+                    work_envelope_mm: Some(vec![400.0, 300.0, 250.0]),
+                    axes: Some(3),
+                    operations: Some(vec!["milling".to_string()]),
+                    profile_evidence: Some(MachineProfileEvidence {
+                        calibration: Some(vec!["probe calibration current".to_string()]),
+                        tools: Some(vec!["tool length table draft".to_string()]),
+                        fixtures: Some(vec!["fixture proof pending".to_string()]),
+                        materials: Some(vec!["material cert pending".to_string()]),
+                        process: Some(vec!["dry-run and CMM release required".to_string()]),
+                        maintenance: None,
+                        release: None,
+                        blockers: Some(vec![
+                            "as-built scan alignment missing".to_string(),
+                            "interface fit disposition missing".to_string(),
+                        ]),
+                    }),
+                }]),
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["milling".to_string()]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: Some(vec![
+                    RequestedPart {
+                        id: "left-ear".to_string(),
+                        description: "split bracket half with dowel interface to right-ear"
+                            .to_string(),
+                        material: Some(material("6061 aluminum", "metal")),
+                        preferred_method: Some("milling".to_string()),
+                        tolerance_mm: Some(0.04),
+                    },
+                    RequestedPart {
+                        id: "right-ear".to_string(),
+                        description: "split bracket half with dowel interface to left-ear"
+                            .to_string(),
+                        material: Some(material("6061 aluminum", "metal")),
+                        preferred_method: Some("milling".to_string()),
+                        tolerance_mm: Some(0.04),
+                    },
+                ]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("as-built planning should return release blockers");
+
+        let payload = as_built_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.as-built-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/as-built/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("asBuiltPlan")
+            .and_then(|plan| plan.get("asBuiltContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("asBuiltFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-split-combine-as-built-interface-evidence"))));
+        assert!(payload
+            .get("inspectionPointCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("measurementTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("interfaceControlCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("simulation.failureBoundaries") })));
+        assert!(payload
+            .get("asBuiltPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
     }
 
     #[test]

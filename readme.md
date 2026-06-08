@@ -331,6 +331,8 @@ outcomes.
 - `POST /fabrication/provenance/plan`
 - `GET /as-built/catalog`
 - `GET /fabrication/as-built/catalog`
+- `POST /as-built/plan`
+- `POST /fabrication/as-built/plan`
 - `POST /as-built/result`
 - `POST /fabrication/as-built/result`
 - `POST /provenance/result`
@@ -4556,6 +4558,26 @@ deviation-map artifacts, datum alignment, interface-fit proof, or as-built
 lineage is missing or unresolved. Actual geometry and split/combine interface
 observations are retained as MDP/POMDP/neural learning signals so future
 planning can learn when to add inspection, split parts, change machines,
+reroute features, or require human signoff.
+
+## `POST /fabrication/as-built/plan`
+
+`POST /as-built/plan` and the gateway-prefixed
+`POST /fabrication/as-built/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.as-built-planning.v1` projection for actual-geometry evidence
+before machine-ready release. The response includes an `asBuiltPlan` with
+`asBuiltContracts`, `qualityPlan`, `simulation`, `decompositionPlan`,
+`interfaceControlPlan`, `releasePackagePlan`, and `machineRelease` surfaces.
+
+The endpoint keeps `machineReady=false` while simulation or validation
+boundaries, missing inspection targets, unresolved split/combine interfaces,
+release packages, or machine-release blockers remain open. It reports
+inspection-point counts, measurement-target counts, simulation findings,
+simulation failure boundaries, interface-control records, decomposition targets,
+required release artifacts, and machine-release blockers. Deviation-map, scan,
+measurement, and interface-fit outcomes are retained for MDP/POMDP/neural
+workers so future plans can add inspections, split or combine parts differently,
 reroute features, or require human signoff.
 
 ## `POST /fabrication/as-built/result`
