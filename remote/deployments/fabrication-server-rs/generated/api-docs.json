@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 457,
+  "routeCount": 459,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 447,
+    "user-generated": 449,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -3520,6 +3520,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/pellet-fgf/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pellet_fgf_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/plan",
       "methods": [
         "POST"
@@ -6439,6 +6456,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "fabrication_package_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pellet-fgf/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pellet_fgf_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

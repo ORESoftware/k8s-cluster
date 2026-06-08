@@ -152,6 +152,7 @@ spec:
                 '"path": "/fabrication/fdm-printer/catalog"' \
                 '"path": "/fabrication/resin-printer/catalog"' \
                 '"path": "/fabrication/material-jetting/catalog"' \
+                '"path": "/fabrication/pellet-fgf/catalog"' \
                 '"path": "/fabrication/directed-energy-deposition/catalog"' \
                 '"path": "/fabrication/composite-fiber/catalog"' \
                 '"path": "/fabrication/powder-bed/catalog"' \

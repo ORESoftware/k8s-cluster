@@ -100,7 +100,7 @@ Gateway path map:
   `/fabrication/docs/api`, `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
   `/fabrication/fdm-printer/catalog`, `/fabrication/resin-printer/catalog`,
-  `/fabrication/material-jetting/catalog`,
+  `/fabrication/material-jetting/catalog`, `/fabrication/pellet-fgf/catalog`,
   `/fabrication/directed-energy-deposition/catalog`,
   `/fabrication/composite-fiber/catalog`, `/fabrication/powder-bed/catalog`,
   `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
