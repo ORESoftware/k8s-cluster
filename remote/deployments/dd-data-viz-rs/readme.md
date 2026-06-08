@@ -40,11 +40,43 @@ Each frontend currently implements a useful analytics subset: source selection, 
 grouping, and `count`/`sum`/`avg`/`min`/`max` aggregations where the dialect naturally supports
 them.
 
+## Platform parity map
+
+The codebase now has dedicated platform and hardening modules instead of putting every product
+concept in `main.rs`:
+
+- `src/platform.rs` defines parity surfaces for Tableau, Power BI, Qlik Sense, Looker, Sigma,
+  Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
+- `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
+  residual risks.
+
+Current first-class parity surfaces:
+
+- Power BI / Looker: governed semantic model descriptors with dimensions, measures, DAX analogs,
+  and calculated fields.
+- Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
+  ingested dataset.
+- Sigma: workbook blueprints for live-grid and executive-card workflows.
+- Domo / Power Query: connector catalog plus ETL planner primitives.
+- Superset / Metabase: SQL lab and visual query-builder/self-service contracts.
+- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, and metrics route.
+- D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
+  blueprint posture, and Markdown-plus-SQL report blueprint.
+
 ## Endpoints
 
 - `GET /` - HTML operator home.
 - `GET /descriptor` - service descriptor, storage model, dialect catalog, and route map.
 - `GET /dialects` - query dialect catalog.
+- `GET /capabilities/parity` - BI and visualization tool parity matrix.
+- `GET /connectors/catalog` - connector catalog and ETL planner primitives.
+- `GET /semantic/models` - governed semantic models, dimensions, measures, and calculations.
+- `GET /workbooks/blueprints` - spreadsheet/workbook and self-service query surfaces.
+- `GET /dashboards/panels` - dashboard panel catalog for business, observability, and programmatic
+  visualizations.
+- `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
+- `GET /reports/evidence` - Evidence.dev-style Markdown plus SQL report blueprint.
+- `GET /security/policy` - hardening controls, limits, and residual-risk report.
 - `GET /schema` - request/response contract summary.
 - `GET /example` - sample dataset, query, visualization, and evolution payloads.
 - `GET /healthz` - liveness probe.
@@ -53,6 +85,8 @@ them.
 - `POST /datasets` - authenticated dataset ingest.
 - `GET /datasets` - authenticated dataset catalog.
 - `GET /datasets/:dataset_id` - authenticated dataset profile.
+- `GET /associations/:dataset_id` - authenticated Qlik-style associative graph over categorical
+  fields.
 - `POST /query` - authenticated query translation and execution.
 - `POST /visualizations/suggest` - authenticated visualization spec synthesis.
 - `POST /evolution/run` - authenticated evolutionary visualization search.
