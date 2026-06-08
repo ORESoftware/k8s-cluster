@@ -119278,6 +119278,95 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "assembly-result-feedback",
+            "label": "Review split/combine recomposition, join, and interface outcomes",
+            "route": "POST /fabrication/assembly/result",
+            "machineKind": "hybrid-fleet",
+            "preferredMethods": ["assembly-result", "split-combine-review", "interface-control", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["child part route status", "join operation disposition", "split/combine decision review", "interface metrology", "retained assembly artifact checksum"],
+            "releaseGateHints": ["assemblyPlanningResult.partRoutes", "assemblyPlanningResult.joinOperations", "assemblyPlanningResult.splitCombineDecisions", "assemblyPlanningResult.interfaceChecks", "assemblyLearningOutcomeDraft", "machineRelease.blockers"],
+            "request": {
+                "templateId": "assembly-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "assembly-result-001",
+                "planRequestId": "hybrid-assembly-plan-001",
+                "jobId": "assembly-job-001",
+                "workerId": "assembly-planner-01",
+                "planner": "hybrid-recomposition-planner",
+                "plannerVersion": "2026.06-assembly",
+                "success": true,
+                "machineReady": false,
+                "partRoutes": [
+                    {
+                        "routeId": "route-printed-fixture-body",
+                        "partId": "printed-fixture-body",
+                        "machineId": "fdm-printer-1",
+                        "machineKind": "fdm-printer",
+                        "processKind": "additive-print",
+                        "status": "released-for-recomposition",
+                        "evidence": ["support removal and datum witness marks retained"]
+                    },
+                    {
+                        "routeId": "route-milled-datum-pad",
+                        "partId": "milled-datum-pad",
+                        "machineId": "vmc-01",
+                        "machineKind": "vertical-mill",
+                        "processKind": "milling",
+                        "status": "released-with-metrology-hold",
+                        "evidence": ["CMM datum-pad report retained"]
+                    }
+                ],
+                "joinOperations": [
+                    {
+                        "joinId": "datum-pad-bond",
+                        "sourcePartIds": ["printed-fixture-body", "milled-datum-pad"],
+                        "targetPartId": "fixture-assembly",
+                        "joinKind": "adhesive-and-fastener",
+                        "status": "pending-operator-fit-check",
+                        "humanInterventionRequired": true,
+                        "evidence": ["adhesive lot, torque plan, and dry-fit report retained"]
+                    }
+                ],
+                "splitCombineDecisions": [
+                    {
+                        "decisionId": "combine-printed-body-and-datum-pad",
+                        "decisionKind": "combine-after-child-route-release",
+                        "status": "blocked",
+                        "sourcePartIds": ["printed-fixture-body", "milled-datum-pad"],
+                        "targetPartIds": ["fixture-assembly"],
+                        "requiresRedesign": false,
+                        "humanInterventionRequired": true,
+                        "message": "operator fit check and interface metrology remain open before recomposition release",
+                        "evidence": ["split/combine route is retained but release gate remains open"]
+                    }
+                ],
+                "interfaceChecks": [
+                    {
+                        "checkId": "datum-pad-interface-fit",
+                        "interfaceId": "printed-body-to-milled-pad",
+                        "checkKind": "datum-transfer-fit",
+                        "status": "needs-review",
+                        "toleranceMm": 0.04,
+                        "message": "datum transfer needs operator signoff before lock-in",
+                        "evidence": ["dry-fit metrology report retained"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "assembly-result-bundle",
+                        "artifactKind": "assembly-result-bundle",
+                        "sourceRefId": "assembly-job-001",
+                        "uri": "s3://fabrication-assembly/assembly-job-001/result.json",
+                        "sha256": "3434343434343434343434343434343434343434343434343434343434343434",
+                        "format": "json",
+                        "evidence": ["checksum verified"]
+                    }
+                ],
+                "warnings": ["assembly result remains blocked until operator fit check clears"],
+                "reviewMetadata": { "assemblyCell": "hybrid-cell-01", "shift": "day" }
+            }
+        },
+        {
             "id": "hybrid-route-costing-result",
             "label": "Review hybrid route cost, yield, and split/combine economics",
             "route": "POST /fabrication/costing/result",
@@ -124454,6 +124543,7 @@ mod tests {
             "hybrid-printed-milled-turned-assembly",
             "hybrid-decomposition-plan",
             "hybrid-assembly-plan",
+            "assembly-result-feedback",
             "hybrid-route-costing-result",
             "operator-intervention-result-feedback",
             "runtime-monitoring-result-feedback",
@@ -124476,6 +124566,7 @@ mod tests {
             "POST /fabrication/instructions/improvement/result",
             "POST /fabrication/decomposition/plan",
             "POST /fabrication/assembly/plan",
+            "POST /fabrication/assembly/result",
             "POST /fabrication/costing/result",
             "POST /fabrication/interventions/result",
             "POST /fabrication/monitoring/result",
@@ -124493,6 +124584,7 @@ mod tests {
             "postprocessor-handoff",
             "decomposition-planning",
             "assembly-planning",
+            "assembly-result",
             "interface-control",
             "costing-result",
             "split-combine-route-economics",
@@ -124533,6 +124625,8 @@ mod tests {
             "workholdingPlan.releaseGates",
             "decompositionPlan.routeContracts",
             "assemblyPlan.splitCombineDecisions",
+            "assemblyPlanningResult.joinOperations",
+            "assemblyLearningOutcomeDraft",
             "costingResult.routeComparisons",
             "costingLearningOutcomeDraft",
             "interventionResult.operatorActions",
@@ -125318,6 +125412,68 @@ mod tests {
                 "POST /fabrication/assembly/plan".to_string(),
                 "POST /fabrication/decomposition/plan".to_string(),
             ])
+        );
+    }
+
+    #[test]
+    fn request_template_assembly_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str) == Some("assembly-result-feedback")
+            })
+            .expect("assembly result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/assembly/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("assembly result template should include request body");
+        let parsed: AssemblyPlanningResultReviewRequest = serde_json::from_value(request)
+            .expect("assembly result template should match review schema");
+        assert_eq!(parsed.worker_id, "assembly-planner-01");
+        assert!(!parsed.machine_ready);
+        assert!(
+            parsed
+                .join_operations
+                .as_ref()
+                .is_some_and(|joins| joins.iter().any(|join| {
+                    join.human_intervention_required == Some(true)
+                        && join.status.contains("pending")
+                })),
+            "assembly result template should retain pending join proof"
+        );
+        assert!(
+            parsed
+                .split_combine_decisions
+                .as_ref()
+                .is_some_and(|decisions| decisions.iter().any(|decision| {
+                    decision.human_intervention_required == Some(true)
+                        && decision.status == "blocked"
+                })),
+            "assembly result template should retain split/combine blockers"
+        );
+        assert!(
+            parsed.interface_checks.as_ref().is_some_and(|checks| checks
+                .iter()
+                .any(|check| { check.status.contains("review") && check.tolerance_mm.is_some() })),
+            "assembly result template should retain interface metrology review"
+        );
+        let payload = assembly_planning_result_review_response(parsed)
+            .expect("assembly result template should normalize");
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.assembly-planning-result-review.v1")
         );
     }
 
