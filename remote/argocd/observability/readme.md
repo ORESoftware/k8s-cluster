@@ -288,7 +288,7 @@ Currently opted-in:
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`,
   `/fabrication/learning/capabilities`, `/fabrication/learning/engines/catalog`,
   `/fabrication/learning/preflight/catalog`, `/fabrication/learning/rewards/catalog`,
-  `/fabrication/learning/models/catalog`,
+  `/fabrication/learning/models/catalog`, `/fabrication/learning/replay/catalog`,
   `/fabrication/learning/optimizers/catalog`, `/fabrication/learning/models/result`,
   `/fabrication/learning/optimizers/result`,
   `/fabrication/learning/policy`, `/fabrication/learning/corpus`,

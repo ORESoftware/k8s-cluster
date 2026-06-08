@@ -300,6 +300,7 @@ spec:
                 '"path": "/fabrication/learning/preflight/catalog"' \
                 '"path": "/fabrication/learning/rewards/catalog"' \
                 '"path": "/fabrication/learning/models/catalog"' \
+                '"path": "/fabrication/learning/replay/catalog"' \
                 '"path": "/fabrication/learning/beliefs/catalog"' \
                 '"path": "/fabrication/learning/optimizers/catalog"' \
                 '"path": "/fabrication/learning/models/result"' \

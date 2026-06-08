@@ -201,7 +201,7 @@ Gateway path map:
   `/fabrication/artifacts/catalog`, `/fabrication/jobs/catalog`,
   `/fabrication/learning/capabilities`, `/fabrication/learning/engines/catalog`,
   `/fabrication/learning/preflight/catalog`, `/fabrication/learning/rewards/catalog`,
-  `/fabrication/learning/models/catalog`,
+  `/fabrication/learning/models/catalog`, `/fabrication/learning/replay/catalog`,
   `/fabrication/learning/optimizers/catalog`, `POST /fabrication/learning/models/result`,
   `POST /fabrication/learning/optimizers/result`,
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,

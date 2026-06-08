@@ -3035,9 +3035,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn material_catalog_response/);
   assert.match(source, /fn material_catalog_targets/);
   assert.match(source, /fn material_catalog_conditioning/);
+  assert.match(source, /fn material_readiness_checklist/);
   assert.match(source, /dd\.fabrication\.material-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/materials\/catalog"/);
   assert.match(source, /"materialPlan\.routeRequirements"/);
+  assert.match(source, /"materialReadinessChecklist"/);
+  assert.match(source, /lot-certificate-and-traceability/);
+  assert.match(source, /conditioning-and-shelf-life-state/);
+  assert.match(source, /quantity-scrap-and-runout-capacity/);
+  assert.match(source, /machine-material-process-compatibility/);
   assert.match(source, /material-machine-boundary:aluminum/);
   assert.match(source, /material_catalog_endpoint_exposes_feedstock_compatibility_and_release_contract/);
   assert.match(source, /async fn material_plan_http/);
@@ -4795,6 +4801,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /learning_model_catalog_endpoint_exposes_retained_policy_artifact_contracts/,
+  );
+  assert.match(source, /async fn learning_replay_catalog_http/);
+  assert.match(source, /fn learning_replay_catalog_response/);
+  assert.match(source, /dd\.fabrication\.learning-replay-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/learning\/replay\/catalog"/);
+  assert.match(source, /"failure-boundary-and-human-intervention-regression"/);
+  assert.match(source, /"machine-route-and-controller-regression"/);
+  assert.match(source, /"outcome-quality-and-reward-counterfactual"/);
+  assert.match(
+    source,
+    /learning_replay_catalog_endpoint_exposes_policy_promotion_replay_contract/,
   );
   assert.match(source, /async fn learning_belief_catalog_http/);
   assert.match(source, /fn learning_belief_catalog_response/);
@@ -7186,6 +7203,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.learning-model-result-review\.v1/);
   assert.match(readme, /`learning\.outcomeDraft`/);
   assert.match(readme, /promotion for future advisory\s+planning requires retained artifacts/);
+  assert.match(readme, /`GET \/learning\/replay\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/learning\/replay\/catalog`/);
+  assert.match(readme, /baseline and candidate actions/);
   assert.match(readme, /`POST \/learning\/optimizers\/result`/);
   assert.match(readme, /`POST \/fabrication\/learning\/optimizers\/result`/);
   assert.match(readme, /dd\.fabrication\.learning-optimizer-result-review\.v1/);
@@ -8437,6 +8457,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /material families, family counts/);
   assert.match(readme, /feedstock or stock forms/);
   assert.match(readme, /materialPlan\.routeRequirements/);
+  assert.match(readme, /`materialReadinessChecklist`/);
+  assert.match(readme, /lot\/certificate\s+traceability/);
+  assert.match(readme, /conditioning and shelf-life state/);
+  assert.match(readme, /quantity\/scrap\/runout capacity/);
+  assert.match(readme, /`runout-risk:\*`/);
   assert.match(readme, /default planning labels, not certified inventory/);
   assert.match(readme, /material-machine-boundary/);
   assert.match(readme, /POST \/materials\/plan/);
@@ -8639,6 +8664,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.learning-model-catalog\.v1/);
   assert.match(readme, /retained model-artifact catalog/);
   assert.match(readme, /queue surrogates, and neural action scores/);
+  assert.match(readme, /dd\.fabrication\.learning-replay-catalog\.v1/);
+  assert.match(readme, /policy-promotion replay contract/);
+  assert.match(readme, /failure-boundary and human-intervention regression/);
   assert.match(readme, /dd\.fabrication\.learning-belief-catalog\.v1/);
   assert.match(readme, /POMDP belief and release-probe\s+contract/);
   assert.match(readme, /hidden\s+machine-failure, human-intervention, split\/combine/);
@@ -8946,6 +8974,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/learning\/capabilities"/);
   assert.match(docs, /"path": "\/learning\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/learning\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/learning\/replay\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/learning\/replay\/catalog"/);
   assert.match(docs, /"path": "\/schema"/);
   assert.match(docs, /"path": "\/fabrication\/schema"/);
   assert.match(docs, /"path": "\/examples"/);
@@ -9093,6 +9123,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/remediation\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/remediation\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/models\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/learning\/replay\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/beliefs\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/optimizers\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/learning\/preflight\/catalog"/);
@@ -9536,6 +9567,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /learning reward catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/models\/catalog/);
   assert.match(grafanaDashboards, /learning model catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/learning\/replay\/catalog/);
+  assert.match(grafanaDashboards, /learning replay catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/beliefs\/catalog/);
   assert.match(grafanaDashboards, /learning POMDP belief catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/learning\/optimizers\/catalog/);
@@ -9703,6 +9736,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/learning\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/models\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/learning\/replay\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/learning\/optimizers\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/learning\/models\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/learning\/optimizers\/result/);
@@ -9921,6 +9955,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/learning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/rewards\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/models\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/learning\/replay\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/optimizers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/models\/result/);
   assert.match(observabilityReadme, /\/fabrication\/learning\/optimizers\/result/);
