@@ -4258,6 +4258,16 @@ struct InstructionAnalysisRequest {
     learning: Option<LearningHints>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionImportReviewRequest {
+    request_id: Option<String>,
+    programs: Vec<InstructionProgram>,
+    machines: Option<Vec<MachineProfile>>,
+    material: Option<MaterialSpec>,
+    learning: Option<LearningHints>,
+}
+
 enum FabricationNatsRequest {
     Plan(FabricationPlanRequest),
     InstructionAnalysis(InstructionAnalysisRequest),
@@ -58467,6 +58477,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/instructions/import/catalog",
         "GET /instructions/import/preflight/catalog",
         "GET /fabrication/instructions/import/preflight/catalog",
+        "POST /instructions/import/review",
+        "POST /fabrication/instructions/import/review",
         "GET /instructions/validation/catalog",
         "GET /fabrication/instructions/validation/catalog",
         "GET /instructions/validation/preflight/catalog",
@@ -94874,6 +94886,8 @@ fn instruction_import_catalog_response() -> Value {
             "GET /fabrication/instructions/import/catalog"
         ],
         "submitRoutes": [
+            "POST /instructions/import/review",
+            "POST /fabrication/instructions/import/review",
             "POST /instructions/analyze",
             "POST /fabrication/instructions/analyze",
             "POST /instructions/validate",
@@ -95121,6 +95135,214 @@ async fn instruction_import_catalog_http() -> impl IntoResponse {
 
 async fn instruction_import_preflight_catalog_http() -> impl IntoResponse {
     Json(instruction_import_preflight_catalog_response())
+}
+
+async fn instruction_import_review_http(
+    Json(request): Json<InstructionImportReviewRequest>,
+) -> Response {
+    match instruction_import_review_response(request) {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+fn instruction_import_review_response(
+    request: InstructionImportReviewRequest,
+) -> Result<Value, String> {
+    let analysis = analyze_instruction_request(InstructionAnalysisRequest {
+        request_id: request.request_id,
+        programs: request.programs,
+        machines: request.machines,
+        material: request.material,
+        learning: request.learning,
+    })?;
+    let program_count = analysis.programs.len();
+    let imported_language_families = unique_sorted(
+        analysis
+            .programs
+            .iter()
+            .map(|program| program.language.clone()),
+    );
+    let imported_machine_kinds = unique_sorted(
+        analysis
+            .programs
+            .iter()
+            .map(|program| program.machine_kind.clone()),
+    );
+    let validation_finding_count = analysis.validation.findings.len();
+    let validation_boundary_count = analysis.validation.failure_boundaries.len();
+    let simulation_boundary_count = analysis.simulation.failure_boundaries.len();
+    let machine_failure_boundary_count = analysis.boundary_summary.machine_failure_risks;
+    let human_intervention_count = analysis.boundary_summary.human_intervention_required
+        + analysis
+            .operator_intervention_plan
+            .required_operator_actions
+            .len()
+        + analysis.execution_plan.stop_points.len();
+    let split_or_combine_count =
+        analysis.boundary_summary.split_recommended + analysis.boundary_summary.combine_recommended;
+    let changed_program_count = analysis
+        .improved_programs
+        .iter()
+        .filter(|program| program.changed)
+        .count();
+    let machine_ready_program_count = analysis
+        .improved_programs
+        .iter()
+        .filter(|program| program.machine_ready)
+        .count();
+    let import_release_blocked = analysis.machine_release.machine_release_blocked
+        || validation_finding_count > 0
+        || validation_boundary_count > 0
+        || simulation_boundary_count > 0
+        || human_intervention_count > 0
+        || machine_ready_program_count < program_count;
+    let status = if program_count == 0 {
+        "no-imported-instructions-supplied"
+    } else if validation_boundary_count > 0 || simulation_boundary_count > 0 {
+        "imported-instructions-boundary-review-required"
+    } else if validation_finding_count > 0 {
+        "imported-instructions-validation-review-required"
+    } else if changed_program_count > 0 {
+        "imported-instructions-patch-review-required"
+    } else if import_release_blocked {
+        "imported-instructions-release-evidence-required"
+    } else {
+        "imported-instructions-ready-for-release-review"
+    };
+
+    Ok(json!({
+        "ok": analysis.ok,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.instruction-import-review.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "requestId": &analysis.request_id,
+        "jobId": &analysis.job_id,
+        "routes": [
+            "POST /instructions/import/review",
+            "POST /fabrication/instructions/import/review"
+        ],
+        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "catalogRoutes": [
+            "GET /instructions/import/catalog",
+            "GET /fabrication/instructions/import/catalog",
+            "GET /instructions/import/preflight/catalog",
+            "GET /fabrication/instructions/import/preflight/catalog"
+        ],
+        "status": status,
+        "machineReady": false,
+        "importReleaseBlocked": import_release_blocked,
+        "programCount": program_count,
+        "importedLanguageFamilies": imported_language_families,
+        "importedMachineKinds": imported_machine_kinds,
+        "validationFindingCount": validation_finding_count,
+        "validationBoundaryCount": validation_boundary_count,
+        "simulationBoundaryCount": simulation_boundary_count,
+        "machineFailureBoundaryCount": machine_failure_boundary_count,
+        "humanInterventionCount": human_intervention_count,
+        "splitOrCombineCount": split_or_combine_count,
+        "improvementCount": analysis.improvements.len(),
+        "changedProgramCount": changed_program_count,
+        "machineReadyProgramCount": machine_ready_program_count,
+        "packageActions": [
+            {
+                "action": "retain-original-instruction-artifacts",
+                "status": "required-before-machine-ready",
+                "targetSurfaces": ["programs", "analysis-mdp-request", "releasePackagePlan.requiredArtifacts"]
+            },
+            {
+                "action": "run-validation-and-boundary-review",
+                "status": if validation_finding_count > 0 || validation_boundary_count > 0 { "blocked-by-current-findings" } else { "ready-for-worker-result-evidence" },
+                "targetSurfaces": ["validation.findings", "validation.failureBoundaries", "boundarySummary", "resolutionPlan.steps"]
+            },
+            {
+                "action": "review-generated-patches-and-controller-fit",
+                "status": if changed_program_count > 0 { "patch-review-required" } else { "no-patch-draft-produced" },
+                "targetSurfaces": ["improvements", "improvedPrograms", "improvedPrograms.patchManifest", "machineRelease.blockers"]
+            },
+            {
+                "action": "submit-learning-outcome-after-release-decision",
+                "status": "recommended",
+                "targetSurfaces": ["learning.outcomeDraft", "learning.boundaryMemory", "neuralTrainingCorpus.examples"]
+            }
+        ],
+        "nextRoutes": [
+            "POST /fabrication/instructions/validate",
+            "POST /fabrication/instructions/improve",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "responseSurfaces": [
+            "programs",
+            "validation",
+            "boundarySummary",
+            "resolutionPlan",
+            "interventionMap",
+            "operatorInterventionPlan",
+            "machineRelease",
+            "executionPlan",
+            "postprocessPlan",
+            "simulation",
+            "improvements",
+            "improvedPrograms",
+            "learning"
+        ],
+        "artifactSurfaces": [
+            "imported-instruction-artifact",
+            "analysis-validation-report",
+            "analysis-boundary-summary",
+            "analysis-machine-release",
+            "improved-program-*",
+            "analysis-mdp-request"
+        ],
+        "learning": {
+            "engineTargets": ["MDP", "POMDP", "neural"],
+            "observations": &analysis.learning.pomdp_observations,
+            "outcomeRoute": "POST /fabrication/learning/outcomes",
+            "outcomeDraft": {
+                "schemaVersion": "dd.fabrication.instruction-import-learning-outcome-draft.v1",
+                "sourceKind": "instruction-import-review",
+                "sourceJobId": &analysis.job_id,
+                "sourceRequestId": &analysis.request_id,
+                "success": !import_release_blocked,
+                "rewardHint": if import_release_blocked { -0.55 } else { 0.35 },
+                "featureHints": [
+                    format!("import-programs:{program_count}"),
+                    format!("validation-findings:{validation_finding_count}"),
+                    format!("validation-boundaries:{validation_boundary_count}"),
+                    format!("simulation-boundaries:{simulation_boundary_count}"),
+                    format!("human-interventions:{human_intervention_count}"),
+                    format!("changed-programs:{changed_program_count}")
+                ],
+                "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
+            }
+        },
+        "releasePolicy": [
+            "instruction import review accepts submitted streams as retained evidence, not certified controller output",
+            "machineReady remains false until provenance, validation, simulation or dry-run, controller, setup, quality, release-package, and operator or automation signoff evidence clear",
+            "import decisions and patch outcomes should be submitted to MDP/POMDP/neural learning before similar future streams are promoted"
+        ],
+        "analysis": {
+            "programs": &analysis.programs,
+            "validation": &analysis.validation,
+            "boundarySummary": &analysis.boundary_summary,
+            "resolutionPlan": &analysis.resolution_plan,
+            "interventionMap": &analysis.intervention_map,
+            "operatorInterventionPlan": &analysis.operator_intervention_plan,
+            "machineRelease": &analysis.machine_release,
+            "executionPlan": &analysis.execution_plan,
+            "postprocessPlan": &analysis.postprocess_plan,
+            "simulation": &analysis.simulation,
+            "improvements": &analysis.improvements,
+            "improvedPrograms": &analysis.improved_programs,
+            "learning": &analysis.learning
+        }
+    }))
 }
 
 fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
@@ -110395,6 +110617,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/instructions/import/preflight/catalog",
             get(instruction_import_preflight_catalog_http),
         )
+        .route(
+            "/instructions/import/review",
+            post(instruction_import_review_http),
+        )
+        .route(
+            "/fabrication/instructions/import/review",
+            post(instruction_import_review_http),
+        )
         .route("/cnc/catalog", get(cnc_catalog_http))
         .route("/fabrication/cnc/catalog", get(cnc_catalog_http))
         .route(
@@ -115398,6 +115628,76 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machineReady remains false")))));
+    }
+
+    #[test]
+    fn instruction_import_review_endpoint_packages_submitted_streams_for_validation() {
+        let response = instruction_import_review_response(InstructionImportReviewRequest {
+            request_id: Some("import-review-1".to_string()),
+            programs: vec![program(
+                "legacy-mill-program",
+                "mill",
+                &["G90", "G0 X0 Y0", "G1 X220.0 F1200", "M30"],
+            )],
+            machines: None,
+            material: Some(material("6061 aluminum", "aluminum")),
+            learning: Some(LearningHints {
+                policy_hint: Some("reject-unbounded-imports".to_string()),
+                model_family: Some("pomdp-boundary-review".to_string()),
+                reward_weights: None,
+                observations: Some(vec!["legacy-import".to_string()]),
+                prior_successes: None,
+            }),
+        })
+        .expect("instruction import review should accept submitted programs");
+
+        assert_eq!(
+            response.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.instruction-import-review.v1")
+        );
+        assert!(response
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("POST /fabrication/instructions/import/review")
+            })));
+        assert_eq!(
+            response.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            response
+                .get("importReleaseBlocked")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert!(response
+            .get("packageActions")
+            .and_then(Value::as_array)
+            .is_some_and(|actions| actions.iter().any(|action| {
+                action.get("action").and_then(Value::as_str)
+                    == Some("run-validation-and-boundary-review")
+            })));
+        assert!(response
+            .get("nextRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/release/preview") })));
+        assert!(
+            response
+                .get("learning")
+                .and_then(|learning| learning.get("outcomeDraft"))
+                .and_then(|draft| draft.get("recommendedSubmitRoute"))
+                .and_then(Value::as_str)
+                == Some("POST /fabrication/learning/outcomes")
+        );
+        assert!(response
+            .get("analysis")
+            .and_then(|analysis| analysis.get("machineRelease"))
+            .and_then(|release| release.get("blockers"))
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| !blockers.is_empty()));
     }
 
     #[test]
