@@ -64,6 +64,7 @@ struct AppState {
     sql_lab_history: Arc<RwLock<BTreeMap<String, sql_lab::SqlLabHistoryEntry>>>,
     query_cache: Arc<RwLock<BTreeMap<String, query_cache::QueryCacheEntry>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
+    association_sessions: Arc<RwLock<BTreeMap<String, associative::SelectionSessionRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     publishing_requests: Arc<RwLock<BTreeMap<String, publishing::PublishRequestRecord>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
@@ -99,6 +100,7 @@ struct Metrics {
     query_cache_entries_saved_total: AtomicU64,
     query_cache_hits_total: AtomicU64,
     association_requests_total: AtomicU64,
+    association_sessions_saved_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
     publishing_requests_total: AtomicU64,
@@ -511,6 +513,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
         query_cache: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
+        association_sessions: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         publishing_requests: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -578,8 +581,16 @@ fn app_router(state: AppState) -> Router {
         .route("/reports/evidence", get(evidence_report_blueprint))
         .route("/security/policy", get(security_policy))
         .route("/security/rbac", get(rbac_policy))
-        .route("/associations/:dataset_id", get(association_graph))
+        .route(
+            "/associations/sessions",
+            get(list_association_sessions).post(save_association_session),
+        )
+        .route(
+            "/associations/sessions/:session_id",
+            get(get_association_session),
+        )
         .route("/associations/select", post(association_selection))
+        .route("/associations/:dataset_id", get(association_graph))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
         .route(
@@ -808,6 +819,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limits": query_cache::limits_payload(),
             "posture": "bounded TTL cache keyed by request hash; cache summaries do not include raw query text"
         },
+        "associativeSelection": {
+            "surfaces": ["co-occurrence graph", "multi-dataset selection state", "saved selection sessions"],
+            "limits": associative::selection_limits_payload(),
+            "posture": "Qlik-style in-memory session registry; selection details are recomputed against current dataset snapshots"
+        },
         "etlPlan": {
             "steps": ["select-columns", "rename-columns", "filter-rows", "derive-column", "join", "union", "group-aggregate", "sort-rows", "limit-rows"],
             "maxSteps": etl::max_etl_steps(),
@@ -982,6 +998,9 @@ dd_data_viz_query_cache_hits_total {}
 # HELP dd_data_viz_association_requests_total Associative graph requests handled.
 # TYPE dd_data_viz_association_requests_total counter
 dd_data_viz_association_requests_total {}
+# HELP dd_data_viz_association_sessions_saved_total Associative selection sessions saved.
+# TYPE dd_data_viz_association_sessions_saved_total counter
+dd_data_viz_association_sessions_saved_total {}
 # HELP dd_data_viz_dashboard_requests_total Dashboard requests handled.
 # TYPE dd_data_viz_dashboard_requests_total counter
 dd_data_viz_dashboard_requests_total {}
@@ -1067,6 +1086,9 @@ dd_data_viz_errors_total {}
             .load(Ordering::Relaxed),
         metrics.query_cache_hits_total.load(Ordering::Relaxed),
         metrics.association_requests_total.load(Ordering::Relaxed),
+        metrics
+            .association_sessions_saved_total
+            .load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
         metrics.publishing_requests_total.load(Ordering::Relaxed),
@@ -1850,6 +1872,122 @@ async fn association_selection(
     associative::selection_payload(&datasets, request)
         .map(Json)
         .map_err(ApiError::bad_request)
+}
+
+async fn save_association_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<associative::SaveSelectionSessionRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AssociationWrite)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let mut session = request
+        .into_record(now_ms())
+        .map_err(ApiError::bad_request)?;
+    let selection_state = {
+        let datasets = state
+            .datasets
+            .read()
+            .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+        associative::selection_payload(&datasets, session.selection_request())
+            .map_err(ApiError::bad_request)?
+    };
+    let mut warnings = Vec::new();
+    let mut sessions = state
+        .association_sessions
+        .write()
+        .map_err(|_| ApiError::bad_request("association session store lock poisoned"))?;
+    if let Some(existing) = sessions.get(&session.session_id) {
+        session.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "association session {} replaced",
+            session.session_id
+        ));
+    } else if sessions.len() >= associative::max_selection_sessions() {
+        return Err(ApiError::bad_request(format!(
+            "association session count exceeds max {}",
+            associative::max_selection_sessions()
+        )));
+    }
+    session.updated_at_ms = now_ms();
+    sessions.insert(session.session_id.clone(), session.clone());
+    state
+        .metrics
+        .association_sessions_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(associative::save_session_response(
+        session,
+        selection_state,
+        warnings,
+    )))
+}
+
+async fn list_association_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AssociationRead)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let sessions = state
+        .association_sessions
+        .read()
+        .map_err(|_| ApiError::bad_request("association session store lock poisoned"))?;
+    let summaries = sessions
+        .values()
+        .map(associative::SelectionSessionRecord::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(associative::session_catalog_payload(summaries)))
+}
+
+async fn get_association_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(session_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AssociationRead)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let session = {
+        let sessions = state
+            .association_sessions
+            .read()
+            .map_err(|_| ApiError::bad_request("association session store lock poisoned"))?;
+        sessions.get(&session_id).cloned().ok_or_else(|| {
+            ApiError::not_found(format!("association session `{session_id}` not found"))
+        })?
+    };
+    let selection_state = {
+        let datasets = state
+            .datasets
+            .read()
+            .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+        associative::selection_payload(&datasets, session.selection_request())
+            .map_err(ApiError::bad_request)?
+    };
+    Ok(Json(associative::session_detail_payload(
+        session,
+        selection_state,
+    )))
 }
 
 async fn save_dashboard(
@@ -4641,6 +4779,24 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/associations/sessions",
+            auth: "association-write",
+            description: "Create or replace a persisted Qlik-style associative selection session.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/associations/sessions",
+            auth: "association-read",
+            description: "List saved associative selection session summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/associations/sessions/:session_id",
+            auth: "association-read",
+            description: "Read a saved associative selection session and recompute its current selection state.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/dashboards",
             auth: "dashboard-write",
             description: "Create or replace a saved dashboard definition backed by visualization specs.",
@@ -4973,7 +5129,7 @@ fn dataset_association_graph(dataset: &Dataset) -> Value {
         "edges": edges,
         "selectionModel": {
             "analog": "Qlik green/white/gray state",
-            "currentStatus": "co-occurrence graph now; persistent selection-state engine planned"
+            "currentStatus": "co-occurrence graph, multi-dataset selection state, and in-memory saved selection sessions"
         }
     })
 }
@@ -5412,6 +5568,7 @@ mod tests {
             sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
             query_cache: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
+            association_sessions: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             publishing_requests: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -5581,6 +5738,8 @@ mod tests {
         assert!(paths.contains(&"/questions/:question_id"));
         assert!(paths.contains(&"/charts"));
         assert!(paths.contains(&"/associations/select"));
+        assert!(paths.contains(&"/associations/sessions"));
+        assert!(paths.contains(&"/associations/sessions/:session_id"));
         assert!(paths.contains(&"/alerts/rules"));
         assert!(paths.contains(&"/alerts/rules/:rule_id"));
         assert!(paths.contains(&"/alerts/rules/:rule_id/evaluate"));
