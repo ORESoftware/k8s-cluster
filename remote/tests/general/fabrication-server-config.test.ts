@@ -3807,6 +3807,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"GET \/fabrication\/release\/catalog"/);
   assert.match(source, /"machineRelease\.blockers"/);
   assert.match(source, /"split-combine-interface-release"/);
+  assert.match(source, /async fn release_gate_catalog_http/);
+  assert.match(source, /fn release_gate_catalog_response/);
+  assert.match(source, /dd\.fabrication\.release-gate-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/release\/gates\/catalog"/);
+  assert.match(source, /"releaseReadinessResult\.learning\.outcomeDraft"/);
+  assert.match(source, /release_gate_catalog_endpoint_exposes_machine_ready_gate_matrix/);
   assert.match(source, /async fn release_preflight_catalog_http/);
   assert.match(source, /fn release_preflight_catalog_response/);
   assert.match(source, /dd\.fabrication\.release-preflight-catalog\.v1/);
@@ -3941,11 +3947,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"execution-machine-stops"/);
   assert.match(source, /"execution-operator-interventions"/);
   assert.match(source, /"execution-split-combine-decisions"/);
+  assert.match(source, /fn execution_priority_dispositions/);
+  assert.match(source, /"execution-priority"/);
+  assert.match(source, /"execution-priority-dispositions"/);
   assert.match(source, /"execution-learning-observations"/);
   assert.match(source, /execution-stop:/);
   assert.match(source, /execution-operator-action:/);
   assert.match(source, /execution-split-combine:/);
   assert.match(source, /execution-artifact:/);
+  assert.match(source, /execution-priority:machine-stop-recovery:blocked/);
   assert.match(
     source,
     /execution_result_endpoint_reviews_machine_stops_interventions_and_learning/,
@@ -5973,6 +5983,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(source, /\.route\("\/release\/catalog", get\(release_catalog_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/release\/catalog", get\(release_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/release\/gates\/catalog", get\(release_gate_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/release\/gates\/catalog",\s*get\(release_gate_catalog_http\),\s*\)/,
+  );
   assert.match(
     source,
     /\.route\(\s*"\/release\/preflight\/catalog",\s*get\(release_preflight_catalog_http\),\s*\)/,
@@ -7374,6 +7389,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /release package kinds, package\s+states, gate types, blocker sources/);
   assert.match(readme, /`machineRelease\.blockers`/);
   assert.match(readme, /`releasePackagePlan\.releaseGates`/);
+  assert.match(readme, /`GET \/release\/gates\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/release\/gates\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.release-gate-catalog\.v1/);
+  assert.match(readme, /machine-ready gate matrix/);
+  assert.match(readme, /`releaseReadinessResult\.learning\.outcomeDraft`/);
+  assert.match(readme, /learned policy never bypasses release gates/);
   assert.match(readme, /`GET \/release\/preflight\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/release\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.release-preflight-catalog\.v1/);
@@ -7410,7 +7431,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.remote\.fabrication\.execution\.telemetry\.results/);
   assert.match(readme, /`executionResult`/);
   assert.match(readme, /`executionResultJobId`/);
-  assert.match(readme, /stop, operator-action, split\/combine, artifact, reward/);
+  assert.match(readme, /stop, operator-action, split\/combine, artifact, priority, reward/);
   assert.match(readme, /`POST \/fabrication\/learning\/outcomes`/);
   assert.match(readme, /`blockingMachineStopCount`/);
   assert.match(readme, /`restartBlockingOperatorInterventionCount`/);
@@ -7418,11 +7439,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`execution-machine-stops`/);
   assert.match(readme, /`execution-operator-interventions`/);
   assert.match(readme, /`execution-split-combine-decisions`/);
+  assert.match(readme, /`execution-priority-dispositions`/);
   assert.match(readme, /`execution-learning-observations`/);
+  assert.match(readme, /`priorityDispositions`/);
   assert.match(readme, /`execution-stop:\*`/);
   assert.match(readme, /`execution-operator-action:\*`/);
   assert.match(readme, /`execution-split-combine:\*`/);
   assert.match(readme, /`execution-artifact:\*`/);
+  assert.match(readme, /`execution-priority:\*`/);
   assert.match(readme, /`GET \/schedule\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/schedule\/catalog`/);
   assert.match(readme, /dd\.fabrication\.schedule-catalog\.v1/);
@@ -9197,6 +9221,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /child route\s+packages, datum transfer, dry-fit or metrology/);
   assert.match(readme, /Assembly, interface, quality, release, and outcome observations/);
   assert.match(readme, /dd\.fabrication\.release-catalog\.v1/);
+  assert.match(readme, /dd\.fabrication\.release-gate-catalog\.v1/);
   assert.match(readme, /controller\/postprocessor checks, simulation or dry-run evidence/);
   assert.match(readme, /which evidence cleared or blocked printed, milled, turned/);
   assert.match(readme, /POST \/release\/preview/);
@@ -9702,6 +9727,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/jobs\/:job_id"/);
   assert.match(docs, /"path": "\/jobs\/:job_id\/release-bundle"/);
   assert.match(docs, /"path": "\/fabrication\/jobs\/:job_id\/release-bundle"/);
+  assert.match(docs, /"path": "\/release\/gates\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/release\/gates\/catalog"/);
   assert.match(docs, /"path": "\/jobs\/:job_id\/artifacts\/:artifact_id"/);
   assert.match(docs, /"path": "\/fabrication\/jobs\/:job_id\/artifacts\/:artifact_id"/);
   assert.match(docs, /"path": "\/learning\/policy"/);
@@ -10112,6 +10139,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/plan/);
   assert.match(grafanaDashboards, /\/fabrication\/postprocess\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/release\/preview/);
+  assert.match(grafanaDashboards, /\/fabrication\/release\/gates\/catalog/);
+  assert.match(grafanaDashboards, /release gates catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/release\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/methods\/catalog/);
   assert.match(grafanaDashboards, /method catalog/);
