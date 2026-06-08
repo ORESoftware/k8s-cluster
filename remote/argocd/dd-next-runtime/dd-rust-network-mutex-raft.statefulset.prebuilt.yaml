@@ -43,6 +43,18 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      # Spread voters across nodes when more than one is available. SOFT
+      # (preferred) so all five still schedule on a single-node cluster today;
+      # becomes real node-failure tolerance the moment a second node is added.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: dd-rust-network-mutex-raft
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch

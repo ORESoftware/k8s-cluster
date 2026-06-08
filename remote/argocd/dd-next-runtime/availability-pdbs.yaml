@@ -195,3 +195,19 @@ spec:
   selector:
     matchLabels:
       app: dd-rust-vapi-phone
+---
+# Five-voter Raft cluster: quorum is 3. Keep at least 3 pods available so a
+# voluntary disruption (drain, rolling update) can never drop the cluster below
+# quorum. With 5 replicas this allows at most 2 concurrent voluntary evictions.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-rust-network-mutex-raft
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-raft
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex-raft
