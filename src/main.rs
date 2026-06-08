@@ -4358,6 +4358,7 @@ struct FabricationPlanResponse {
     postprocess_plan: PostprocessPlan,
     controller_plan: ControllerPlan,
     simulation: SimulationReport,
+    instruction_intent_map: InstructionIntentMap,
     improvements: Vec<InstructionImprovement>,
     improved_programs: Vec<ImprovedInstructionProgram>,
     assembly: AssemblyPlan,
@@ -6451,10 +6452,23 @@ struct InstructionIntentMap {
     language_counts: BTreeMap<String, usize>,
     process_intents: Vec<String>,
     risk_intents: Vec<String>,
+    review_priorities: Vec<InstructionReviewPriority>,
     release_handoff_routes: Vec<String>,
     learning_observations: Vec<String>,
     programs: Vec<ProgramInstructionIntent>,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstructionReviewPriority {
+    priority_id: String,
+    priority: String,
+    applies_to_programs: Vec<String>,
+    triggers: Vec<String>,
+    review_order: Vec<String>,
+    response_surfaces: Vec<String>,
+    release_policy: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -14794,6 +14808,234 @@ fn review_finding_blocks_machine_ready(finding: &Value) -> bool {
         || impact.contains("operator")
 }
 
+fn values_contain_review_tokens(values: &[Value], tokens: &[&str]) -> bool {
+    values.iter().any(|value| {
+        let text = normalize_token(&value.to_string());
+        tokens.iter().any(|token| text.contains(token))
+    })
+}
+
+fn instruction_review_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "instruction-review-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn instruction_validation_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "instruction-validation-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn instruction_priority_disposition(
+    observation_prefix: &str,
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    json!({
+        "priorityId": priority_id,
+        "disposition": disposition,
+        "evidence": evidence,
+        "nextRoutes": next_routes,
+        "releaseImpact": release_impact,
+        "learningObservation": format!("{observation_prefix}:{priority_id}:{}", normalize_token(disposition))
+    })
+}
+
+fn instruction_review_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    blocking_finding_count: usize,
+    human_intervention_boundary_count: usize,
+    human_approval_draft_count: usize,
+    findings: &[Value],
+    failure_boundaries: &[Value],
+    improvement_drafts: &[Value],
+    warnings: &[String],
+) -> Vec<Value> {
+    let split_or_interface_review = values_contain_review_tokens(
+        failure_boundaries,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    ) || values_contain_review_tokens(
+        improvement_drafts,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    );
+    let non_gcode_evidence_review = values_contain_review_tokens(
+        findings,
+        &[
+            "job-sheet",
+            "setup-sheet",
+            "operator",
+            "slicer",
+            "postprocess",
+            "prose",
+            "text",
+        ],
+    ) || values_contain_review_tokens(
+        failure_boundaries,
+        &[
+            "job-sheet",
+            "setup-sheet",
+            "operator",
+            "slicer",
+            "postprocess",
+            "prose",
+            "text",
+        ],
+    );
+    let warning_count = warnings.len();
+
+    vec![
+        instruction_review_priority_disposition(
+            "machine-failure-boundary-first",
+            if blocking_finding_count > 0 || !failure_boundaries.is_empty() {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("blockingFindingCount:{blocking_finding_count}"),
+                format!("failureBoundaryCount:{}", failure_boundaries.len()),
+            ],
+            vec![
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/simulation/run",
+                "POST /fabrication/release/result",
+            ],
+            if blocking_finding_count > 0 || !failure_boundaries.is_empty() {
+                "machineReady remains blocked by machine-failure review priority"
+            } else {
+                "machine-failure review priority has no open blocker in this result"
+            },
+        ),
+        instruction_review_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_boundary_count > 0 || human_approval_draft_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionBoundaryCount:{human_intervention_boundary_count}"),
+                format!("humanApprovalDraftCount:{human_approval_draft_count}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_boundary_count > 0 || human_approval_draft_count > 0 {
+                "machineReady remains blocked until operator or automation signoff is retained"
+            } else {
+                "human-intervention review priority has no open blocker in this result"
+            },
+        ),
+        instruction_review_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("splitOrInterfaceEvidence:{split_or_interface_review}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/release/result",
+            ],
+            if split_or_interface_review {
+                "machineReady remains blocked until split/combine or interface evidence is retained"
+            } else {
+                "no split/combine or interface priority evidence was reported by this review"
+            },
+        ),
+        instruction_review_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if non_gcode_evidence_review && release_blocked {
+                "partially-reviewed"
+            } else if non_gcode_evidence_review {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("nonGcodeEvidence:{non_gcode_evidence_review}"),
+                format!("warningCount:{warning_count}"),
+            ],
+            vec![
+                "POST /fabrication/instructions/import/review",
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/release/result",
+            ],
+            if non_gcode_evidence_review && release_blocked {
+                "text or controller-external evidence still needs retained scope, owner, or release proof"
+            } else {
+                "no open non-G-code evidence blocker was reported by this review"
+            },
+        ),
+        instruction_review_priority_disposition(
+            "learning-feedback-after-disposition",
+            "ready-to-submit",
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("reviewSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/replay/catalog",
+                "GET /fabrication/learning/features/catalog",
+            ],
+            "review disposition is ready for advisory learning, but learning cannot promote machine-ready release without retained validation and release evidence",
+        ),
+    ]
+}
+
 fn instruction_review_result_review_response(
     request: InstructionReviewResultReviewRequest,
 ) -> Result<Value, String> {
@@ -14840,6 +15082,17 @@ fn instruction_review_result_review_response(
         || blocking_finding_count > 0
         || !failure_boundaries.is_empty()
         || human_approval_draft_count > 0;
+    let priority_dispositions = instruction_review_priority_dispositions(
+        request.success,
+        release_blocked,
+        blocking_finding_count,
+        human_intervention_boundary_count,
+        human_approval_draft_count,
+        &findings,
+        &failure_boundaries,
+        &improvement_drafts,
+        &warnings,
+    );
     let review_status = if !request.success {
         "instruction-review-worker-failed-release-blocked"
     } else if blocking_finding_count > 0 {
@@ -14908,6 +15161,12 @@ fn instruction_review_result_review_response(
             .and_then(Value::as_str)
             .map(|kind| format!("instruction-review-improvement:{}", normalize_token(kind)))
     }));
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.sort();
     learning_observations.dedup();
 
@@ -14952,6 +15211,7 @@ fn instruction_review_result_review_response(
         "improvementDraftCount": improvement_drafts.len(),
         "humanApprovalDraftCount": human_approval_draft_count,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "instructionReviewResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -14980,6 +15240,7 @@ fn instruction_review_result_review_response(
                 "boundarySummary",
                 "resolutionPlan.steps",
                 "interventionMap",
+                "instructionIntentMap.reviewPriorities",
                 "improvedPrograms",
                 "machineRelease.blockers"
             ]
@@ -15016,8 +15277,10 @@ fn instruction_review_result_review_response(
                     format!("blocking-findings:{blocking_finding_count}"),
                     format!("failure-boundaries:{}", failure_boundaries.len()),
                     format!("human-intervention-boundaries:{human_intervention_boundary_count}"),
-                    format!("human-approval-drafts:{human_approval_draft_count}")
+                    format!("human-approval-drafts:{human_approval_draft_count}"),
+                    format!("priority-dispositions:{}", priority_dispositions.len())
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -15083,6 +15346,10 @@ fn stored_instruction_review_result_job(response: &Value) -> StoredFabricationJo
         .cloned()
         .unwrap_or_else(|| json!([]));
     let warnings = result.get("warnings").cloned().unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let release_update = response
         .get("releaseUpdate")
         .cloned()
@@ -15121,6 +15388,12 @@ fn stored_instruction_review_result_job(response: &Value) -> StoredFabricationJo
             "instruction-review-warnings".to_string(),
             "instruction-review-warnings",
             warnings,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-review-priority-dispositions".to_string(),
+            "instruction-review-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -15379,6 +15652,139 @@ fn instruction_validation_result_artifact_missing_release_evidence(artifact: &Va
             .is_none_or(Vec::is_empty)
 }
 
+fn instruction_validation_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    blocking_finding_count: usize,
+    boundary_blocker_count: usize,
+    human_intervention_required: bool,
+    split_or_combine_required: bool,
+    artifact_evidence_missing: bool,
+    language: &str,
+) -> Vec<Value> {
+    let non_gcode_or_text = {
+        let token = normalize_token(language);
+        !token.contains("gcode")
+            || token.contains("sheet")
+            || token.contains("text")
+            || token.contains("operator")
+            || token.contains("slicer")
+    };
+
+    vec![
+        instruction_validation_priority_disposition(
+            "machine-failure-boundary-first",
+            if blocking_finding_count > 0 || boundary_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("blockingFindingCount:{blocking_finding_count}"),
+                format!("boundaryBlockerCount:{boundary_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/simulation/run",
+                "POST /fabrication/release/result",
+            ],
+            if blocking_finding_count > 0 || boundary_blocker_count > 0 {
+                "machineReady remains blocked by validation findings or machine-failure boundaries"
+            } else {
+                "validation did not report an open machine-failure priority blocker"
+            },
+        ),
+        instruction_validation_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator or automation signoff is retained"
+            } else {
+                "validation did not report an open human-intervention priority blocker"
+            },
+        ),
+        instruction_validation_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_combine_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("splitOrCombineRequired:{split_or_combine_required}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/release/result",
+            ],
+            if split_or_combine_required {
+                "machineReady remains blocked until split/combine or interface evidence is retained"
+            } else {
+                "validation did not report split/combine priority evidence"
+            },
+        ),
+        instruction_validation_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing && non_gcode_or_text {
+                "blocked"
+            } else if artifact_evidence_missing {
+                "partially-reviewed"
+            } else if non_gcode_or_text {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("language:{}", normalize_token(language)),
+                format!("artifactEvidenceMissing:{artifact_evidence_missing}"),
+            ],
+            vec![
+                "POST /fabrication/instructions/import/review",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/release/result",
+            ],
+            if artifact_evidence_missing {
+                "validation evidence remains blocked until retained URI, checksum, and evidence labels are attached"
+            } else {
+                "validation artifact evidence is retained for this instruction stream"
+            },
+        ),
+        instruction_validation_priority_disposition(
+            "learning-feedback-after-disposition",
+            "ready-to-submit",
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("validationSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/replay/catalog",
+                "GET /fabrication/learning/features/catalog",
+            ],
+            "validation disposition is ready for advisory learning, but learning cannot promote machine-ready release without retained validation and release evidence",
+        ),
+    ]
+}
+
 fn instruction_validation_result_review_response(
     request: InstructionValidationResultReviewRequest,
 ) -> Result<Value, String> {
@@ -15484,6 +15890,16 @@ fn instruction_validation_result_review_response(
         || boundary_blocker_count > 0
         || improvement_blocker_count > 0
         || artifact_evidence_missing;
+    let priority_dispositions = instruction_validation_priority_dispositions(
+        request.success,
+        release_blocked,
+        blocking_finding_count,
+        boundary_blocker_count,
+        human_intervention_required,
+        split_or_combine_required,
+        artifact_evidence_missing,
+        &language,
+    );
     let review_status = if !request.success {
         "instruction-validation-worker-failed-release-blocked"
     } else if blocking_finding_count > 0 {
@@ -15613,6 +16029,12 @@ fn instruction_validation_result_review_response(
             .and_then(Value::as_str)
             .map(|kind| format!("instruction-validation-artifact:{}", normalize_token(kind)))
     }));
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.sort();
     learning_observations.dedup();
 
@@ -15673,6 +16095,7 @@ fn instruction_validation_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "instructionValidationResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -15705,6 +16128,7 @@ fn instruction_validation_result_review_response(
             "targetSurfaces": [
                 "validation.findings",
                 "validation.failureBoundaries",
+                "instructionIntentMap.reviewPriorities",
                 "improvements",
                 "improvedPrograms.patchManifest",
                 "simulation.failureBoundaries",
@@ -15746,8 +16170,10 @@ fn instruction_validation_result_review_response(
                     format!("improvement-blockers:{improvement_blocker_count}"),
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("split-or-combine-required:{split_or_combine_required}"),
-                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}"),
+                    format!("priority-dispositions:{}", priority_dispositions.len())
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedActions": failure_boundaries
                     .iter()
                     .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
@@ -15761,6 +16187,7 @@ fn instruction_validation_result_review_response(
             "instruction-validation-boundaries",
             "instruction-validation-improvements",
             "instruction-validation-artifacts",
+            "instruction-validation-priority-dispositions",
             "instruction-validation-learning-observations",
             "analysis-validation-report",
             "analysis-boundary-summary",
@@ -15828,6 +16255,10 @@ fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricati
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -15862,6 +16293,12 @@ fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricati
             "instruction-validation-artifacts".to_string(),
             "instruction-validation-artifacts",
             validation_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-validation-priority-dispositions".to_string(),
+            "instruction-validation-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -41550,12 +41987,17 @@ fn instruction_intent_map(
         });
     }
 
+    let process_intents = unique_sorted(process_intents.into_iter());
+    let risk_intents = unique_sorted(risk_intents.into_iter());
+    let review_priorities = instruction_review_priorities(&mapped_programs, &risk_intents);
+
     InstructionIntentMap {
         schema_version: "dd.fabrication.instruction-intent-map.v1",
         program_count: mapped_programs.len(),
         language_counts,
-        process_intents: unique_sorted(process_intents.into_iter()),
-        risk_intents: unique_sorted(risk_intents.into_iter()),
+        process_intents,
+        risk_intents,
+        review_priorities,
         release_handoff_routes: release_handoff_routes.into_iter().collect(),
         learning_observations: unique_sorted(learning_observations.into_iter()),
         programs: mapped_programs,
@@ -41564,6 +42006,205 @@ fn instruction_intent_map(
             "Detected intents are routing evidence only; machine-ready release still requires validation, simulation or dry-run, provenance, and operator or automation signoff".to_string(),
         ],
     }
+}
+
+fn instruction_review_priority(
+    priority_id: &str,
+    priority: &str,
+    applies_to_programs: Vec<String>,
+    triggers: Vec<&str>,
+    review_order: Vec<&str>,
+    response_surfaces: Vec<&str>,
+    release_policy: &str,
+) -> InstructionReviewPriority {
+    InstructionReviewPriority {
+        priority_id: priority_id.to_string(),
+        priority: priority.to_string(),
+        applies_to_programs: unique_sorted(applies_to_programs.into_iter()),
+        triggers: triggers.into_iter().map(str::to_string).collect(),
+        review_order: review_order.into_iter().map(str::to_string).collect(),
+        response_surfaces: response_surfaces.into_iter().map(str::to_string).collect(),
+        release_policy: release_policy.to_string(),
+    }
+}
+
+fn instruction_review_priorities(
+    mapped_programs: &[ProgramInstructionIntent],
+    risk_intents: &[String],
+) -> Vec<InstructionReviewPriority> {
+    let machine_failure_programs = mapped_programs
+        .iter()
+        .filter(|program| !program.machine_failure_watchpoints.is_empty())
+        .map(|program| program.program_id.clone())
+        .collect::<Vec<_>>();
+    let human_intervention_programs = mapped_programs
+        .iter()
+        .filter(|program| !program.human_intervention_watchpoints.is_empty())
+        .map(|program| program.program_id.clone())
+        .collect::<Vec<_>>();
+    let split_combine_programs = mapped_programs
+        .iter()
+        .filter(|program| !program.split_combine_hints.is_empty())
+        .map(|program| program.program_id.clone())
+        .collect::<Vec<_>>();
+    let non_gcode_programs = mapped_programs
+        .iter()
+        .filter(|program| {
+            let language = normalize_token(&program.language);
+            let process = normalize_token(&program.primary_process);
+            !language.contains("gcode")
+                || process == "general-instruction"
+                || process == "joining"
+                || process == "inspection"
+        })
+        .map(|program| program.program_id.clone())
+        .collect::<Vec<_>>();
+    let learning_programs = mapped_programs
+        .iter()
+        .map(|program| program.program_id.clone())
+        .collect::<Vec<_>>();
+
+    let mut priorities = vec![
+        instruction_review_priority(
+            "machine-failure-boundary-first",
+            "critical",
+            machine_failure_programs,
+            vec![
+                "machineFailureWatchpoints present",
+                "riskIntents include missing modal, setup, process-energy, or shutdown evidence",
+            ],
+            vec![
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/simulation/run",
+                "POST /fabrication/machine-release/result",
+                "POST /fabrication/release/result",
+            ],
+            vec![
+                "instructionIntentMap.programs.machineFailureWatchpoints",
+                "validation.failureBoundaries",
+                "simulation.failureBoundaries",
+                "machineRelease.blockers",
+                "releasePackagePlan.packages",
+            ],
+            "Keep machineReady=false until validation, simulation or dry-run, controller/setup evidence, and release blockers clear.",
+        ),
+        instruction_review_priority(
+            "human-intervention-required",
+            "high",
+            human_intervention_programs,
+            vec![
+                "humanInterventionWatchpoints present",
+                "pause, stop, fixture, home, work-offset, or shutdown state needs operator proof",
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/release/result",
+            ],
+            vec![
+                "instructionIntentMap.programs.humanInterventionWatchpoints",
+                "operatorInterventionPlan.requiredOperatorActions",
+                "executionPlan.stopPoints",
+                "machineRelease.checklist",
+            ],
+            "Keep unattended release blocked until a named operator checkpoint or verified automation substitute is retained.",
+        ),
+        instruction_review_priority(
+            "split-combine-or-interface-review",
+            "high",
+            split_combine_programs,
+            vec![
+                "splitCombineHints present",
+                "instruction text references split, combine, join, assembly, or interface work",
+            ],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/release/result",
+            ],
+            vec![
+                "instructionIntentMap.programs.splitCombineHints",
+                "decompositionPlan.splitTargets",
+                "interfaceControlPlan.interfaces",
+                "assembly.assemblyGraph",
+                "machineRelease.blockers",
+            ],
+            "Keep recomposition and machine-ready release blocked until datum transfer, mating-surface, and acceptance evidence is retained.",
+        ),
+        instruction_review_priority(
+            "non-gcode-job-sheet-evidence",
+            "medium",
+            non_gcode_programs,
+            vec![
+                "language is not G-code-like or primaryProcess is general instruction, joining, or inspection",
+                "text job sheet, setup sheet, slicer note, postprocess note, or operator checklist needs evidence extraction",
+            ],
+            vec![
+                "POST /fabrication/instructions/import/review",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/release/result",
+            ],
+            vec![
+                "instructionIntentMap.languageCounts",
+                "instructionImportReview.releaseBlockers",
+                "validation.findings",
+                "improvedPrograms.patchManifest",
+                "releasePackagePlan.packages",
+            ],
+            "Treat prose or controller-external instructions as retained evidence only after source, scope, owner, and release gate extraction.",
+        ),
+        instruction_review_priority(
+            "learning-feedback-after-disposition",
+            "medium",
+            learning_programs,
+            vec![
+                "analysis has instruction-intent observations",
+                "job outcome, validation result, or operator disposition can update future route preferences",
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/replay/catalog",
+                "GET /fabrication/learning/features/catalog",
+                "GET /fabrication/learning/models/catalog",
+            ],
+            vec![
+                "instructionIntentMap.learningObservations",
+                "learning.outcomeDraft",
+                "learning.policySnapshot",
+                "learning.neuralTrainingCorpus",
+            ],
+            "Learning updates remain advisory and cannot promote a route without retained validation, simulation, and release evidence.",
+        ),
+    ];
+
+    if !risk_intents.is_empty() {
+        priorities.push(instruction_review_priority(
+            "risk-intent-normalization",
+            "high",
+            mapped_programs
+                .iter()
+                .map(|program| program.program_id.clone())
+                .collect(),
+            vec!["riskIntents are present in the batch"],
+            vec![
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/simulation/run",
+            ],
+            vec![
+                "instructionIntentMap.riskIntents",
+                "resolutionPlan.steps",
+                "improvements",
+                "simulation.riskProfile",
+            ],
+            "Normalize modal/setup/process risks before downstream workers spend capacity on lower-risk review lanes.",
+        ));
+    }
+
+    priorities
 }
 
 fn improve_instruction_programs(
@@ -43321,6 +43962,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             "simulation-report".to_string(),
             "simulation-report",
             json!(response.simulation),
+            response.generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-intent-map".to_string(),
+            "instruction-intent-map",
+            json!(response.instruction_intent_map),
             response.generated_at_ms,
         ),
         json_artifact(
@@ -47955,7 +48602,9 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         })
         .chain(existing_programs.clone())
         .collect::<Vec<_>>();
-    let (_, mut validation, improvements) = analyze_instruction_programs(&generated_as_input);
+    let (analyzed_programs, mut validation, improvements) =
+        analyze_instruction_programs(&generated_as_input);
+    let instruction_intent_map = instruction_intent_map(&generated_as_input, &analyzed_programs);
     let simulation = simulate_instruction_programs(&generated_as_input, &machines);
     let (material_findings, material_boundaries) =
         analyze_instruction_material_compatibility(&existing_programs, &machines, &material);
@@ -48199,6 +48848,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         postprocess_plan,
         controller_plan,
         simulation,
+        instruction_intent_map,
         improvements,
         improved_programs,
         assembly,
@@ -58062,6 +58712,12 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
     observations.extend(response.decomposition_plan.learning_observations.clone());
     observations.extend(response.controller_plan.learning_observations.clone());
     observations.extend(response.release_package_plan.learning_observations.clone());
+    observations.extend(
+        response
+            .instruction_intent_map
+            .learning_observations
+            .clone(),
+    );
     observations.sort();
     observations.dedup();
     let des_mdp_spec = des_learning_mdp_spec(&states, &actions);
@@ -58135,6 +58791,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "controllerPlan": response.controller_plan,
         "releasePackagePlan": response.release_package_plan,
         "simulation": response.simulation,
+        "instructionIntentMap": response.instruction_intent_map,
         "strategyCandidates": response.learning.strategy_candidates,
         "interventionSignals": response.learning.intervention_signals,
         "neuralTrainingCorpus": response.learning.neural_training_corpus,
@@ -90755,12 +91412,14 @@ fn workflow_catalog_stages() -> Vec<Value> {
             vec![
                 "generatedPrograms",
                 "generatedPrograms.instructions",
+                "instructionIntentMap",
                 "controllerPlan",
                 "postprocessPlan",
                 "executionPlan.programRuns",
             ],
             vec![
                 "generated-machine-program",
+                "instruction-intent-map",
                 "controller-plan",
                 "postprocess-plan",
                 "toolpath-result",
@@ -90795,6 +91454,7 @@ fn workflow_catalog_stages() -> Vec<Value> {
                 "boundarySummary",
                 "resolutionPlan",
                 "interventionMap",
+                "instructionIntentMap",
                 "improvedPrograms",
                 "simulation",
             ],
@@ -90802,6 +91462,7 @@ fn workflow_catalog_stages() -> Vec<Value> {
                 "analysis-validation-report",
                 "analysis-boundary-summary",
                 "analysis-resolution-plan",
+                "instruction-intent-map",
                 "improved-program-*",
                 "simulation-report",
             ],
@@ -90975,6 +91636,7 @@ fn workflow_catalog_response() -> Value {
             "machineSchedule",
             "hybridMakePlan",
             "generatedPrograms",
+            "instructionIntentMap",
             "validation",
             "resolutionPlan",
             "simulation",
@@ -90990,6 +91652,7 @@ fn workflow_catalog_response() -> Value {
             "machine-schedule",
             "hybrid-make-plan",
             "generated-machine-program",
+            "instruction-intent-map",
             "analysis-validation-report",
             "simulation-report",
             "postprocess-plan",
@@ -91172,12 +91835,14 @@ fn workflow_planning_response(
             vec![
                 "generatedPrograms",
                 "generatedPrograms.instructions",
+                "instructionIntentMap",
                 "controllerPlan",
                 "postprocessPlan",
                 "executionPlan.programRuns",
             ],
             vec![
                 "generated-machine-program",
+                "instruction-intent-map",
                 "controller-plan",
                 "postprocess-plan",
                 "toolpath-result",
@@ -91364,6 +92029,7 @@ fn workflow_planning_response(
             "decompositionPlan",
             "interfaceControlPlan",
             "generatedPrograms",
+            "instructionIntentMap",
             "validation",
             "boundarySummary",
             "resolutionPlan",
@@ -91386,6 +92052,7 @@ fn workflow_planning_response(
             "decomposition-plan",
             "interface-control-plan",
             "generated-machine-program",
+            "instruction-intent-map",
             "analysis-validation-report",
             "analysis-boundary-summary",
             "simulation-report",
@@ -91409,6 +92076,7 @@ fn workflow_planning_response(
         "decompositionPlan": &response.decomposition_plan,
         "interfaceControlPlan": &response.interface_control_plan,
         "generatedPrograms": &response.generated_programs,
+        "instructionIntentMap": &response.instruction_intent_map,
         "validation": &response.validation,
         "boundarySummary": &response.boundary_summary,
         "resolutionPlan": &response.resolution_plan,
@@ -118150,6 +118818,37 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(1)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("priority dispositions should be returned");
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("nextRoutes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|routes| {
+                        routes
+                            .iter()
+                            .any(|route| route.as_str() == Some("POST /fabrication/simulation/run"))
+                    })
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("human-intervention-required")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("releaseImpact")
+                    .and_then(Value::as_str)
+                    .is_some_and(|impact| impact.contains("operator or automation signoff"))
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("ready-to-submit")
+        }));
         assert!(payload
             .get("instructionReviewResult")
             .and_then(|result| result.get("failureBoundaries"))
@@ -118186,6 +118885,10 @@ mod tests {
         }));
         assert!(observations.iter().any(|observation| {
             observation.as_str() == Some("instruction-review-improvement:add-modal-reset")
+        }));
+        assert!(observations.iter().any(|observation| {
+            observation.as_str()
+                == Some("instruction-review-priority:machine-failure-boundary-first:blocked")
         }));
         let outcome_draft = payload
             .pointer("/learning/outcomeDraft")
@@ -118237,6 +118940,19 @@ mod tests {
                 .iter()
                 .any(|hint| hint.as_str() == Some("human-approval-drafts:1"))));
         assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("priority-dispositions:5"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+            })));
+        assert!(outcome_draft
             .get("recommendedActions")
             .and_then(Value::as_array)
             .is_some_and(|actions| actions
@@ -118252,6 +118968,9 @@ mod tests {
         assert!(job
             .artifacts
             .contains_key("instruction-review-improvement-drafts"));
+        assert!(job
+            .artifacts
+            .contains_key("instruction-review-priority-dispositions"));
         assert!(job
             .artifacts
             .contains_key("instruction-review-release-update"));
@@ -118393,6 +119112,33 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(0)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("validation result priority dispositions should be returned");
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("nextRoutes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|routes| {
+                        routes
+                            .iter()
+                            .any(|route| route.as_str() == Some("POST /fabrication/simulation/run"))
+                    })
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("split-combine-or-interface-review")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("ready-to-submit")
+        }));
         assert!(payload
             .get("instructionValidationResult")
             .and_then(|result| result.get("findings"))
@@ -118431,6 +119177,7 @@ mod tests {
             "instruction-validation:human-intervention-required",
             "instruction-validation:split-combine-required",
             "instruction-validation:release-blocked",
+            "instruction-validation-priority:machine-failure-boundary-first:blocked",
         ] {
             assert!(
                 observations
@@ -118493,6 +119240,19 @@ mod tests {
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-or-combine-required:true"))));
         assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("priority-dispositions:5"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+            })));
+        assert!(outcome_draft
             .get("recommendedActions")
             .and_then(Value::as_array)
             .is_some_and(|actions| actions
@@ -118520,6 +119280,7 @@ mod tests {
             "instruction-validation-boundaries",
             "instruction-validation-improvements",
             "instruction-validation-artifacts",
+            "instruction-validation-priority-dispositions",
             "instruction-validation-learning-observations",
         ] {
             assert!(
@@ -123480,11 +124241,13 @@ mod tests {
             .get("artifactSurfaces")
             .and_then(Value::as_array)
             .is_some_and(|surfaces| {
-                ["workflow-plan", "mdp-request"].iter().all(|expected| {
-                    surfaces
-                        .iter()
-                        .any(|surface| surface.as_str() == Some(*expected))
-                })
+                ["workflow-plan", "instruction-intent-map", "mdp-request"]
+                    .iter()
+                    .all(|expected| {
+                        surfaces
+                            .iter()
+                            .any(|surface| surface.as_str() == Some(*expected))
+                    })
             }));
         assert!(payload
             .get("workflowPolicy")
@@ -123716,6 +124479,30 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
         assert!(result_handoffs.contains(&"POST /fabrication/learning/outcomes"));
+        assert!(payload
+            .get("instructionIntentMap")
+            .and_then(|map| map.get("reviewPriorities"))
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| !priorities.is_empty()));
+        assert!(stages.iter().any(|stage| {
+            stage.get("stageId").and_then(Value::as_str) == Some("instruction-machine-code")
+                && stage
+                    .get("responseSurfaces")
+                    .and_then(Value::as_array)
+                    .is_some_and(|surfaces| {
+                        surfaces
+                            .iter()
+                            .any(|surface| surface.as_str() == Some("instructionIntentMap"))
+                    })
+                && stage
+                    .get("evidenceSurfaces")
+                    .and_then(Value::as_array)
+                    .is_some_and(|surfaces| {
+                        surfaces
+                            .iter()
+                            .any(|surface| surface.as_str() == Some("instruction-intent-map"))
+                    })
+        }));
 
         let action_queue = payload
             .get("workflowActionQueue")
@@ -158452,6 +159239,7 @@ mod tests {
         assert!(job.artifacts.contains_key("design-export-bundle"));
         assert!(job.artifacts.contains_key("mdp-request"));
         assert!(job.artifacts.contains_key("simulation-report"));
+        assert!(job.artifacts.contains_key("instruction-intent-map"));
         assert!(job.artifacts.contains_key("plan-improvements"));
         assert!(job.artifacts.contains_key("boundary-summary"));
         assert!(job.artifacts.contains_key("resolution-plan"));
@@ -158477,6 +159265,16 @@ mod tests {
         assert!(job.artifacts.contains_key("pomdp-belief-state"));
         assert!(job.artifacts.contains_key("release-probe-plan"));
         assert!(job.artifacts.contains_key("neural-training-corpus"));
+        assert!(response
+            .instruction_intent_map
+            .process_intents
+            .iter()
+            .any(|intent| intent == "additive-print"));
+        assert!(response
+            .instruction_intent_map
+            .review_priorities
+            .iter()
+            .any(|priority| priority.priority_id == "learning-feedback-after-disposition"));
         assert_eq!(response.learning.engine.crate_name, "des_engine");
         assert_eq!(
             response
@@ -158525,6 +159323,24 @@ mod tests {
                 .and_then(Value::as_str),
             Some("solved")
         );
+        assert!(mdp_request
+            .content
+            .get("instructionIntentMap")
+            .and_then(|map| map.get("reviewPriorities"))
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| priority
+                .get("priorityId")
+                .and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition"))));
+        assert!(mdp_request
+            .content
+            .get("observations")
+            .and_then(Value::as_array)
+            .is_some_and(
+                |observations| observations.iter().any(|observation| observation
+                    .as_str()
+                    .is_some_and(|observation| observation.starts_with("instruction-intent:")))
+            ));
         assert_eq!(
             mdp_request
                 .content
@@ -159521,9 +160337,64 @@ mod tests {
             .any(|route| route == "POST /fabrication/interventions/result"));
         assert!(response
             .instruction_intent_map
+            .review_priorities
+            .iter()
+            .any(
+                |priority| priority.priority_id == "machine-failure-boundary-first"
+                    && priority.response_surfaces.iter().any(|surface| surface
+                        == "instructionIntentMap.programs.machineFailureWatchpoints")
+                    && priority
+                        .review_order
+                        .iter()
+                        .any(|route| route == "POST /fabrication/simulation/run")
+            ));
+        assert!(response
+            .instruction_intent_map
+            .review_priorities
+            .iter()
+            .any(
+                |priority| priority.priority_id == "human-intervention-required"
+                    && priority.response_surfaces.iter().any(
+                        |surface| surface == "operatorInterventionPlan.requiredOperatorActions"
+                    )
+            ));
+        assert!(response
+            .instruction_intent_map
+            .review_priorities
+            .iter()
+            .any(
+                |priority| priority.priority_id == "split-combine-or-interface-review"
+                    && priority
+                        .review_order
+                        .iter()
+                        .any(|route| route == "POST /fabrication/decomposition/plan")
+            ));
+        assert!(response
+            .instruction_intent_map
+            .review_priorities
+            .iter()
+            .any(
+                |priority| priority.priority_id == "learning-feedback-after-disposition"
+                    && priority
+                        .review_order
+                        .iter()
+                        .any(|route| route == "POST /fabrication/learning/outcomes")
+            ));
+        assert!(response
+            .instruction_intent_map
             .learning_observations
             .iter()
             .any(|observation| observation.starts_with("instruction-intent:legacy-print:")));
+        let intent_map_artifact = job
+            .artifacts
+            .get("analysis-instruction-intent-map")
+            .expect("instruction intent map artifact should be retained");
+        assert!(intent_map_artifact.content["reviewPriorities"]
+            .as_array()
+            .is_some_and(|priorities| priorities.iter().any(|priority| priority
+                .get("releasePolicy")
+                .and_then(Value::as_str)
+                .is_some_and(|policy| policy.contains("machineReady=false")))));
         assert!(job.artifacts.contains_key("analysis-learning-plan"));
         assert!(job.artifacts.contains_key("analysis-pomdp-belief-state"));
         assert!(job.artifacts.contains_key("analysis-release-probe-plan"));
