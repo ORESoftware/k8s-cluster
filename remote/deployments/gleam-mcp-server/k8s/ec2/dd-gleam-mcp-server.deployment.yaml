@@ -109,7 +109,6 @@ spec:
                 exit 1
               fi
               cd "$PROJ"
-              gleam clean || true
               gleam build
               if [ ! -f "$PROJ/build/dev/erlang/gleam_mcp_server/ebin/gleam_mcp_server@@main.beam" ]; then
                 echo "build: build/dev is missing the generated MCP entry module after gleam build"
