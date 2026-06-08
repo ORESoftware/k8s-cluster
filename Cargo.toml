@@ -1,0 +1,21 @@
+[package]
+name = "usacc-rest-api-backend-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Rust REST API backend for the US Anti-Corruption Court project."
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+des_engine = { path = "../../submodules/discrete-event-system.rs" }
+dd-pg-defs = { path = "../../libs/pg-defs/generated/rust", features = ["sqlx"] }
+hex = "0.4"
+reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "json", "derive"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
