@@ -62785,6 +62785,8 @@ fn root_response() -> Value {
         "GET /fabrication/fdm-printer/catalog",
         "GET /resin-printer/catalog",
         "GET /fabrication/resin-printer/catalog",
+        "GET /powder-bed/catalog",
+        "GET /fabrication/powder-bed/catalog",
         "GET /printers/preflight/catalog",
         "GET /fabrication/printers/preflight/catalog",
         "GET /subtractive/catalog",
@@ -110273,6 +110275,123 @@ async fn resin_printer_catalog_http() -> impl IntoResponse {
     Json(resin_printer_catalog_response())
 }
 
+fn powder_bed_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let powder_bed_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    is_powder_bed_printer_kind(kind) || is_binder_jet_printer_kind(kind)
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(powder_bed_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(powder_bed_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(powder_bed_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.powder-bed-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /nesting/catalog",
+            "GET /fabrication/nesting/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "powderBedPrinterCount": powder_bed_printers.len(),
+        "powderBedPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "powder lot, refresh ratio, material profile, nesting, packing density, layer thickness, scan strategy, calibration coupon, and build-file evidence",
+            "recoater, roller, or spreader clearance; height-map or collision review; thermal spacing; cooldown curve; and unpack-temperature evidence",
+            "metal PBF alloy lot, oxygen/inert gas purge, build plate, recoater clearance, stress-relief, plate-removal, powder handling, and inspection evidence",
+            "binder-jet binder lot, saturation, printhead/nozzle checks, green strength, cure/debind/sinter or infiltration, shrink-compensation coupon, density, porosity, and dimensional inspection evidence"
+        ],
+        "boundaryFamilies": [
+            "powder-bed-build-profile-boundary",
+            "powder-bed-recoater-thermal-boundary",
+            "powder-bed-handling-boundary",
+            "binder-jet-process-boundary",
+            "binder-jet-postprocess-shrinkage-boundary",
+            "metal-pbf-profile-boundary",
+            "metal-pbf-thermal-stress-relief-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/slicers/plan",
+            "POST /fabrication/nesting/result",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/simulation/run"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/nesting/result",
+            "POST /fabrication/postprocess/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "powder-bed catalog entries are SLS/MJF, metal-PBF, and binder-jet planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until powder, nesting, recoater, thermal-pack, atmosphere, postprocess, depowder, inspection, and signoff evidence are retained",
+            "powder-bed outcomes should feed nesting, material, postprocess, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to re-pack, reorient, split, reroute, or require human intervention"
+        ],
+        "powderBedPrinters": powder_bed_printers
+    })
+}
+
+async fn powder_bed_catalog_http() -> impl IntoResponse {
+    Json(powder_bed_catalog_response())
+}
+
 fn printer_preflight_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let printers = printer_payload
@@ -121070,6 +121189,7 @@ async fn request_schema() -> impl IntoResponse {
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
+            "powderBedCatalog": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
             "horizontalMillCatalog": ["GET /horizontal-mill/catalog", "GET /fabrication/horizontal-mill/catalog"],
@@ -124258,6 +124378,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/resin-printer/catalog",
             get(resin_printer_catalog_http),
+        )
+        .route("/powder-bed/catalog", get(powder_bed_catalog_http))
+        .route(
+            "/fabrication/powder-bed/catalog",
+            get(powder_bed_catalog_http),
         )
         .route(
             "/printers/preflight/catalog",
@@ -151549,6 +151674,93 @@ mod tests {
             .is_some_and(|routes| routes.iter().any(|route| {
                 route.as_str() == Some("GET /fabrication/resin-printer/catalog")
             })));
+    }
+
+    #[test]
+    fn powder_bed_catalog_endpoint_exposes_pack_recoater_and_postprocess_release_contract() {
+        let payload = powder_bed_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.powder-bed-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/powder-bed/catalog") })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/printers/catalog"))));
+        assert!(payload
+            .get("powderBedPrinterCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 3));
+
+        let printer_kinds = payload
+            .get("powderBedPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("powder-bed printer kinds should be present");
+        for kind in ["sls-printer", "metal-pbf-printer", "binder-jet-printer"] {
+            assert!(
+                printer_kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing powder-bed printer kind {kind}"
+            );
+        }
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("powder-bed setup evidence should be present");
+        for expected in [
+            "powder lot, refresh ratio",
+            "recoater, roller, or spreader clearance",
+            "metal PBF alloy lot",
+            "binder-jet binder lot",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing powder-bed setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("powder-bed boundary families should be present");
+        for boundary in [
+            "powder-bed-build-profile-boundary",
+            "powder-bed-recoater-thermal-boundary",
+            "powder-bed-handling-boundary",
+            "binder-jet-process-boundary",
+            "binder-jet-postprocess-shrinkage-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing powder-bed boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/powder-bed/catalog") })));
     }
 
     #[test]
