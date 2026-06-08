@@ -4581,6 +4581,19 @@ source routes including `POST /fabrication/design/generate`,
 `POST /fabrication/decomposition/plan`, and
 `POST /fabrication/release/preview`.
 
+The catalog also exposes a `releaseHandoffMatrix` so release workers can inspect
+the exact evidence boundary for generated design exports, generated machine code,
+imported instruction streams, improved instruction patch manifests, hybrid
+recomposition packages, and learning feedback. Matrix rows require immutable
+original instruction retention, neutral export and program checksums,
+controller/postprocessor and exact-program dry-run or simulation evidence,
+post-patch validation, child-route artifacts for printed, milled, turned, cut,
+or manual operations, interface controls, quality proof, MDP/POMDP/DES/neural
+primitive provenance, and promotion blockers. Rows explicitly block release for
+ambiguous CAD sources, unreviewed imported programs, unreviewed instruction
+patches, unresolved interface controls, missing outcome artifact links, and
+attempted release-gate bypasses.
+
 Package catalog entries are evidence requirements, not certified manufacturing
 approval. `machineReady` remains false until design, machine, process,
 instruction, simulation, quality, operator, interface, release, and learning
@@ -5248,6 +5261,14 @@ for downstream MDP/POMDP/neural workers. It also includes a
 changed-program, patch-operation, human-review, improvement-action, boundary,
 patch-action, reward, and submit-route hints for
 `POST /fabrication/learning/outcomes`.
+
+Each `improvedPrograms.patchManifest` includes a `reviewSummary` that classifies
+draft patch operations as modal/controller-state, process-evidence,
+split-combine/interface, human-review, or general-review work. The summary keeps
+`linePatchCount`, `humanReviewCount`, `machineCodePatch`, `releasePosture`, and
+route hints for validation, simulation, boundary review, intervention, assembly,
+decomposition, and release-result lanes so generated patches remain review
+evidence rather than machine-ready edits.
 
 ## `POST /instructions/boundaries/review`
 

@@ -4557,6 +4557,7 @@ struct InstructionPatchManifest {
     improved_line_count: usize,
     operation_count: usize,
     operations: Vec<InstructionPatchOperation>,
+    review_summary: Value,
     learning_observations: Vec<String>,
     notes: Vec<String>,
 }
@@ -40923,6 +40924,101 @@ fn instruction_patch_operation(
     }
 }
 
+fn instruction_patch_review_category(operation: &InstructionPatchOperation) -> &'static str {
+    let token = normalize_token(&format!(
+        "{} {} {}",
+        operation.operation, operation.action, operation.reason
+    ));
+    if token.contains("split") || token.contains("combine") || token.contains("interface") {
+        "split-combine-or-interface"
+    } else if token.contains("human")
+        || token.contains("operator")
+        || operation.operation == "review-line"
+    {
+        "human-review"
+    } else if token.contains("unit")
+        || token.contains("position")
+        || token.contains("coordinate")
+        || token.contains("modal")
+        || token.contains("program-end")
+        || token.contains("home")
+    {
+        "modal-controller-state"
+    } else if token.contains("setup")
+        || token.contains("evidence")
+        || token.contains("profile")
+        || token.contains("heat")
+        || token.contains("temperature")
+        || token.contains("support")
+        || token.contains("fixture")
+        || token.contains("release")
+    {
+        "process-evidence"
+    } else {
+        "general-review"
+    }
+}
+
+fn instruction_patch_review_summary(
+    operations: &[InstructionPatchOperation],
+    machine_code: bool,
+) -> Value {
+    let mut category_counts = BTreeMap::<String, usize>::new();
+    let mut route_hints = BTreeSet::<String>::new();
+    let mut human_review_count = 0_usize;
+    let mut line_patch_count = 0_usize;
+    for operation in operations {
+        let category = instruction_patch_review_category(operation);
+        *category_counts.entry(category.to_string()).or_default() += 1;
+        if operation.requires_human_review {
+            human_review_count += 1;
+        }
+        if operation.line.is_some() {
+            line_patch_count += 1;
+        }
+        match category {
+            "split-combine-or-interface" => {
+                route_hints.insert("POST /fabrication/decomposition/plan".to_string());
+                route_hints.insert("POST /fabrication/assembly/plan".to_string());
+                route_hints.insert("POST /fabrication/instructions/boundaries/review".to_string());
+            }
+            "modal-controller-state" => {
+                route_hints.insert("POST /fabrication/instructions/validate".to_string());
+                route_hints.insert("POST /fabrication/simulation/run".to_string());
+            }
+            "process-evidence" => {
+                route_hints.insert("POST /fabrication/instructions/analyze".to_string());
+                route_hints.insert("POST /fabrication/release/result".to_string());
+            }
+            "human-review" => {
+                route_hints.insert("POST /fabrication/interventions/result".to_string());
+                route_hints.insert("POST /fabrication/release/result".to_string());
+            }
+            _ => {
+                route_hints.insert("POST /fabrication/instructions/review/result".to_string());
+            }
+        }
+    }
+    let release_posture = if operations.is_empty() {
+        "no-patch-required"
+    } else if human_review_count > 0 {
+        "blocked-pending-human-review"
+    } else if machine_code {
+        "blocked-pending-simulation"
+    } else {
+        "blocked-pending-review"
+    };
+    json!({
+        "categoryCounts": category_counts,
+        "linePatchCount": line_patch_count,
+        "humanReviewCount": human_review_count,
+        "machineCodePatch": machine_code,
+        "releasePosture": release_posture,
+        "routeHints": route_hints.into_iter().collect::<Vec<_>>(),
+        "reviewPolicy": "patch summaries classify draft repair intent only; validation, simulation or dry-run, source provenance, and operator or automation signoff remain required before machine-ready release"
+    })
+}
+
 fn instruction_patch_content_for_improvement(
     action: &str,
     machine_code: bool,
@@ -41241,6 +41337,7 @@ fn instruction_patch_manifest(
             )
         })
         .collect::<Vec<_>>();
+    let review_summary = instruction_patch_review_summary(&operations, machine_code);
     let status = if operation_count == 0 {
         "no-patch-required"
     } else {
@@ -41256,6 +41353,7 @@ fn instruction_patch_manifest(
         improved_line_count,
         operation_count,
         operations,
+        review_summary,
         learning_observations,
         notes: if operation_count == 0 {
             vec!["No line-level repair operation was derived from validation".to_string()]
@@ -107536,6 +107634,86 @@ fn fabrication_package_catalog_response() -> Value {
                 "blocks": ["learning.promotionBlockers", "policyImpactPreview", "release-gate-bypass"]
             }
         ],
+        "releaseHandoffMatrix": [
+            {
+                "handoff": "generated-design-export-release",
+                "artifactFamilies": ["design-package", "design-export-bundle", "generated-design-export"],
+                "sourceRoutes": ["POST /fabrication/design/generate", "POST /fabrication/design/convert/result"],
+                "requiredEvidence": [
+                    "source design identity and translator/rebuild provenance",
+                    "neutral export checksum and media type",
+                    "units, scale, topology, and manufacturability review",
+                    "machine/profile compatibility blockers reviewed into machineRelease"
+                ],
+                "releaseSurfaces": ["designExports.reviewGates", "releasePackagePlan.requiredArtifacts", "machineRelease.blockers"],
+                "blocks": ["ambiguous CAD source", "missing export checksum", "unresolved topology or scale review"]
+            },
+            {
+                "handoff": "generated-machine-code-release",
+                "artifactFamilies": ["machine-code-result", "program-*", "controller-postprocessor-result"],
+                "sourceRoutes": ["POST /fabrication/machine-code/generate", "POST /fabrication/machine-code/result"],
+                "requiredEvidence": [
+                    "target machine, controller, postprocessor, and dialect",
+                    "program checksum and retained generated source",
+                    "controller checks and exact-program dry-run or simulation",
+                    "setup, workholding, tooling, material, and signoff evidence"
+                ],
+                "releaseSurfaces": ["generatedPrograms", "controllerPlan.releaseGates", "simulation.failureBoundaries", "releasePackagePlan.packages"],
+                "blocks": ["postprocessor unknown", "controller review missing", "simulation or dry-run missing"]
+            },
+            {
+                "handoff": "imported-instruction-release",
+                "artifactFamilies": ["instruction-analysis", "instruction-validation-result", "original-program-*"],
+                "sourceRoutes": ["POST /fabrication/instructions/analyze", "POST /fabrication/instructions/validate", "POST /fabrication/instructions/validation/result"],
+                "requiredEvidence": [
+                    "immutable original instruction stream",
+                    "language, machine, controller, material, and setup context",
+                    "validation findings and boundary disposition",
+                    "human-intervention or automation disposition for every blocker"
+                ],
+                "releaseSurfaces": ["validation.findings", "boundarySummary", "operatorInterventionPlan.requiredOperatorActions", "machineRelease.blockers"],
+                "blocks": ["unreviewed imported program", "open machine-failure boundary", "human intervention required without signoff"]
+            },
+            {
+                "handoff": "improved-instruction-patch-release",
+                "artifactFamilies": ["improved-program-*", "instruction-patch-manifest", "instruction-improvement-review"],
+                "sourceRoutes": ["POST /fabrication/instructions/improve", "POST /fabrication/instructions/review/result"],
+                "requiredEvidence": [
+                    "original program retained separately from improved draft",
+                    "patch manifest with review operation, target span, and rationale",
+                    "post-patch validation and simulation or dry-run evidence",
+                    "operator or automation approval before replacing shop-floor instructions"
+                ],
+                "releaseSurfaces": ["improvedPrograms.patchManifest", "validation.failureBoundaries", "releasePackagePlan.requiredArtifacts"],
+                "blocks": ["patch not reviewed", "original stream not retained", "post-patch validation missing"]
+            },
+            {
+                "handoff": "hybrid-recomposition-release",
+                "artifactFamilies": ["decomposition-plan", "interface-control-plan", "assembly-plan", "release-package-plan"],
+                "sourceRoutes": ["POST /fabrication/decomposition/plan", "POST /fabrication/assembly/plan", "POST /fabrication/interfaces/result"],
+                "requiredEvidence": [
+                    "child part route artifacts for printed, milled, turned, cut, or manual operations",
+                    "interface control, datum transfer, join method, and fit evidence",
+                    "assembly, postprocess, inspection, and quality proof",
+                    "split/combine learning outcome hooks for future route selection"
+                ],
+                "releaseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.controls", "assemblyPlan.requiredEvidence", "learning.outcomes"],
+                "blocks": ["child route incomplete", "interface control unresolved", "combined-part quality proof missing"]
+            },
+            {
+                "handoff": "learning-feedback-release",
+                "artifactFamilies": ["mdp-request", "learning-policy-snapshot", "learning-outcome-memory", "learning-corpus"],
+                "sourceRoutes": ["POST /fabrication/learning/observe", "POST /fabrication/learning/outcomes"],
+                "requiredEvidence": [
+                    "reward, state/action features, observations, and artifact links",
+                    "MDP/POMDP/DES/neural primitive provenance",
+                    "promotion blockers and replay or counterfactual review",
+                    "explicit note that learned preferences are advisory"
+                ],
+                "releaseSurfaces": ["learningPolicySnapshot", "learning.outcomes", "learningOptimizerResult.candidates", "releasePackagePlan.releaseGates"],
+                "blocks": ["learning promotion blocker", "missing outcome artifact link", "attempted release-gate bypass"]
+            }
+        ],
         "releasePolicy": [
             "package catalog entries describe retained evidence requirements, not certified manufacturing approval",
             "machineReady remains false until design, machine, process, instruction, simulation, quality, operator, interface, release, and learning-feedback blockers are retained and cleared",
@@ -119507,6 +119685,32 @@ mod tests {
                     .and_then(Value::as_array)
                     .is_some_and(|operations| !operations.is_empty())
             })));
+        let review_summary = payload
+            .get("improvedPrograms")
+            .and_then(Value::as_array)
+            .and_then(|programs| programs.first())
+            .and_then(|program| program.get("patchManifest"))
+            .and_then(|manifest| manifest.get("reviewSummary"))
+            .expect("patch manifest should expose review summary");
+        assert_eq!(
+            review_summary.get("releasePosture").and_then(Value::as_str),
+            Some("blocked-pending-human-review")
+        );
+        assert!(review_summary
+            .get("humanReviewCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(review_summary
+            .get("categoryCounts")
+            .and_then(|counts| counts.get("process-evidence"))
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(review_summary
+            .get("routeHints")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/release/result") })));
         let outcome_draft = payload
             .pointer("/learning/outcomeDraft")
             .expect("instruction improvement learning outcome draft");
@@ -133950,6 +134154,39 @@ mod tests {
             .is_some_and(|blocks| blocks
                 .iter()
                 .any(|block| block.as_str() == Some("interventionMap.splitCombineDecisions")))));
+        let handoffs = payload
+            .get("releaseHandoffMatrix")
+            .and_then(Value::as_array)
+            .expect("release handoff matrix should be present");
+        for handoff in [
+            "generated-design-export-release",
+            "generated-machine-code-release",
+            "imported-instruction-release",
+            "improved-instruction-patch-release",
+            "hybrid-recomposition-release",
+            "learning-feedback-release",
+        ] {
+            assert!(
+                handoffs
+                    .iter()
+                    .any(|entry| entry.get("handoff").and_then(Value::as_str) == Some(handoff)),
+                "missing release handoff {handoff}"
+            );
+        }
+        let handoff_text =
+            serde_json::to_string(handoffs).expect("release handoff matrix should serialize");
+        for expected in [
+            "immutable original instruction stream",
+            "original program retained separately from improved draft",
+            "printed, milled, turned, cut, or manual operations",
+            "MDP/POMDP/DES/neural primitive provenance",
+            "attempted release-gate bypass",
+        ] {
+            assert!(
+                handoff_text.contains(expected),
+                "release handoff matrix should include {expected}"
+            );
+        }
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
