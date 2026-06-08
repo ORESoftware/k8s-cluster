@@ -70,6 +70,8 @@ concept in `main.rs`:
 - `src/dashboard.rs` owns saved dashboard request validation and in-memory dashboard metadata.
 - `src/self_service.rs` owns Metabase/Superset-style saved question validation, chart bindings, and
   compiled SQL request metadata.
+- `src/sql_lab.rs` owns Superset-style bounded SQL Lab history validation, summaries, and dry-run
+  external connection records.
 - `src/sql_frontend.rs` owns parser-backed SQL-to-`LogicalPlan` compilation.
 - `src/util.rs` owns shared identifier, escaping, timestamp, header, and scalar-label helpers.
 
@@ -85,9 +87,9 @@ Current first-class parity surfaces:
   metadata for live-query planning.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
-- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy,
-  secretRef-backed database connection registry, saved dashboard catalog, saved questions, and
-  saved chart bindings.
+- Superset / Metabase: bounded SQL Lab history, visual query-builder/self-service contracts, RBAC
+  policy, secretRef-backed database connection registry, saved dashboard catalog, saved questions,
+  and saved chart bindings.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
   rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
@@ -153,6 +155,10 @@ Current first-class parity surfaces:
 - `POST /alerts/rules/:rule_id/notification-preview` - authenticated dry-run notification delivery
   preview.
 - `POST /query` - authenticated query translation and execution.
+- `POST /sql-lab/history` - authenticated bounded SQL Lab history create with local execution or
+  external dry-run planning.
+- `GET /sql-lab/history` - authenticated SQL Lab history summaries without raw query text.
+- `GET /sql-lab/history/:history_id` - authenticated SQL Lab history detail.
 - `POST /visualizations/suggest` - authenticated visualization spec synthesis.
 - `POST /evolution/run` - authenticated evolutionary visualization search.
 - `GET /evolution/runs` - authenticated in-memory evolution run ledger.

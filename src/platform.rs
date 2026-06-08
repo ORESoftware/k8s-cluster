@@ -234,9 +234,10 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "enforced RBAC policy surface",
                 "saved question and chart registry",
                 "database connection registry",
+                "bounded SQL Lab history",
             ],
             next_engine_work: vec![
-                "SQL Lab history",
+                "query result cache",
                 "dataset-level chart publishing approvals",
             ],
         },
@@ -251,6 +252,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "raw SQL fallback",
                 "dataset profile summaries",
                 "database connection registry metadata",
+                "SQL Lab history summaries",
             ],
             next_engine_work: vec![
                 "visual query builder execution against live warehouses",
@@ -580,7 +582,8 @@ pub fn self_service_surfaces() -> Vec<SelfServiceSurface> {
             audience: "analysts and data engineers",
             capabilities: vec![
                 "raw SQL",
-                "saved query plan",
+                "bounded SQL history",
+                "external connection dry-run records",
                 "saved chart catalog",
                 "chart from result",
             ],
