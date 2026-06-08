@@ -58390,6 +58390,8 @@ async fn root() -> impl IntoResponse {
         "GET /",
         "GET /landing",
         "GET /fabrication/landing",
+        "GET /how-it-works",
+        "GET /fabrication/how-it-works",
         "GET /healthz",
         "GET /readyz",
         "GET /metrics",
@@ -58794,6 +58796,7 @@ async fn root() -> impl IntoResponse {
         },
         "startHere": {
             "humanOverview": "/fabrication/landing",
+            "workflowOverview": "/fabrication/how-it-works",
             "capabilities": "/fabrication/capabilities",
             "requestSchema": "/fabrication/schema",
             "examples": "/fabrication/examples",
@@ -58823,6 +58826,104 @@ async fn root() -> impl IntoResponse {
             "MDP/POMDP/DES/neural policy feature contract"
         ]
     }))
+}
+
+fn how_it_works_response() -> Value {
+    json!({
+        "schemaVersion": "dd.fabrication.how-it-works.v1",
+        "routes": ["GET /how-it-works", "GET /fabrication/how-it-works"],
+        "purpose": "machine-readable overview of the fabrication server intake-to-release workflow",
+        "audiences": ["operators", "integration authors", "CAD/CAM workers", "slicer workers", "learning workers"],
+        "flow": [
+            {
+                "step": "discover",
+                "summary": "Find supported machines, CAD/model/slicer formats, instruction languages, templates, capabilities, and schemas.",
+                "routes": [
+                    "GET /fabrication/capabilities",
+                    "GET /fabrication/formats/catalog",
+                    "GET /fabrication/instructions/languages",
+                    "GET /fabrication/templates/catalog",
+                    "GET /fabrication/schema"
+                ],
+                "releaseGate": "discovery data is advisory and does not certify machine readiness"
+            },
+            {
+                "step": "intake",
+                "summary": "Attach fabrication intent, CAD or mesh sources, slicer/CAM/controller programs, text job sheets, machine profiles, materials, and evidence.",
+                "routes": [
+                    "POST /fabrication/design/import/review",
+                    "POST /fabrication/instructions/import/review",
+                    "POST /fabrication/plan"
+                ],
+                "releaseGate": "native CAD, ambiguous formats, imported programs, and text instructions stay blocked until translator, controller, setup, and source-system evidence is retained"
+            },
+            {
+                "step": "generate",
+                "summary": "Draft design packages, machine-code or printer instructions, toolpaths, setup sheets, schedules, decomposition plans, and assembly/interface plans.",
+                "routes": [
+                    "POST /fabrication/design/generate",
+                    "POST /fabrication/machine-code/generate",
+                    "POST /fabrication/instructions/generate",
+                    "POST /fabrication/decomposition/plan",
+                    "POST /fabrication/assembly/plan",
+                    "POST /fabrication/schedule/plan"
+                ],
+                "releaseGate": "generated outputs are deterministic draft evidence, not certified controller, slicer, CAD, or fixture output"
+            },
+            {
+                "step": "validate",
+                "summary": "Analyze imported or generated instructions for machine-failure, human-intervention, automation, split/combine, simulation, quality, and postprocess boundaries.",
+                "routes": [
+                    "POST /fabrication/instructions/analyze",
+                    "POST /fabrication/instructions/validate",
+                    "POST /fabrication/instructions/improve",
+                    "POST /fabrication/simulation/run",
+                    "GET /fabrication/boundaries/catalog"
+                ],
+                "releaseGate": "machineReady remains false while failure boundaries, human intervention, simulation, setup, controller, postprocess, or split/combine blockers remain unresolved"
+            },
+            {
+                "step": "release",
+                "summary": "Assemble retained artifacts, release probes, quality evidence, operator or automation signoff, and bundle manifests for review.",
+                "routes": [
+                    "POST /fabrication/release/preview",
+                    "GET /fabrication/release/catalog",
+                    "GET /fabrication/jobs",
+                    "GET /fabrication/jobs/:job_id/release-bundle"
+                ],
+                "releaseGate": "release previews are compact review packets and do not by themselves approve a real machine run"
+            },
+            {
+                "step": "learn",
+                "summary": "Record outcomes, rewards, remediation decisions, replay evidence, and policy snapshots so future MDP/POMDP/DES/neural recommendations can improve.",
+                "routes": [
+                    "POST /fabrication/learning/outcomes",
+                    "GET /fabrication/learning/outcomes",
+                    "GET /fabrication/learning/replay/catalog",
+                    "GET /fabrication/learning/optimizers/catalog",
+                    "GET /fabrication/learning/policy"
+                ],
+                "releaseGate": "learned preferences remain advisory until replay, simulation, retained evidence, and release blockers clear"
+            }
+        ],
+        "machineFamilies": [
+            "3D printers and slicer-driven additive systems",
+            "vertical mills, horizontal mills, routers, five-axis, mill-turn, Swiss, and lathe systems",
+            "laser, waterjet, plasma, wire EDM, sinker EDM, grinding, inspection, postprocess, and assembly cells",
+            "hybrid split/combine routes that join printed, milled, turned, cut, inspected, or postprocessed parts"
+        ],
+        "learningContract": {
+            "preferredPrimitiveSource": "remote/submodules/discrete-event-system.rs des_engine",
+            "methods": ["MDP", "POMDP", "DES", "neural policy evidence", "reward replay"],
+            "promotionRule": "policy recommendations cannot promote to machine-ready release without retained evidence and cleared blockers"
+        },
+        "humanPage": "/fabrication/landing",
+        "docs": "/api/docs"
+    })
+}
+
+async fn how_it_works_http() -> impl IntoResponse {
+    Json(how_it_works_response())
 }
 
 async fn landing_page() -> axum::response::Html<&'static str> {
@@ -59242,6 +59343,111 @@ fn boundary_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> 
     counts
 }
 
+fn boundary_decision_matrix() -> Vec<Value> {
+    vec![
+        json!({
+            "decision": "machine-failure-stop-or-regenerate",
+            "when": ["machine-release", "machine-envelope", "material-route"],
+            "requires": [
+                "source program line/range or generated operation node",
+                "machine profile, controller modal state, material/process state, and simulation or dry-run evidence",
+                "release owner review before any machine-ready flag can clear"
+            ],
+            "primaryHandoffs": [
+                "POST /fabrication/instructions/improve",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/simulation/run"
+            ],
+            "blockedSurfaces": [
+                "validation.failureBoundaries",
+                "machineRelease.blockers",
+                "releaseProbePlan.requiredBeforeRelease"
+            ],
+            "learningSignals": ["boundary-decision:machine-failure", "machine-ready:false"]
+        }),
+        json!({
+            "decision": "human-intervention-or-automation-proof",
+            "when": ["intervention-readiness"],
+            "requires": [
+                "operator checkpoint, owner, stop point, safe-resume criteria, and automation fallback evidence",
+                "explicit executionPlan stop point or operatorInterventionPlan action before unattended release",
+                "monitoring or recovery evidence when the intervention is deferred to runtime"
+            ],
+            "primaryHandoffs": [
+                "GET /fabrication/interventions/catalog",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/monitoring/plan"
+            ],
+            "blockedSurfaces": [
+                "interventionMap.requiredActions",
+                "operatorInterventionPlan.requiredOperatorActions",
+                "executionPlan.stopPoints"
+            ],
+            "learningSignals": ["boundary-decision:human-intervention", "automation-gap:*"]
+        }),
+        json!({
+            "decision": "split-combine-or-interface-control",
+            "when": ["split-combine"],
+            "requires": [
+                "decomposition target, recomposition interface, datum-transfer plan, and quality evidence",
+                "assembly or combine route review when a single-piece route exceeds machine/process limits",
+                "interface-control release gate before child parts are treated as one released object"
+            ],
+            "primaryHandoffs": [
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/assembly/plan",
+                "GET /fabrication/interfaces/preflight/catalog"
+            ],
+            "blockedSurfaces": [
+                "decompositionPlan.targets",
+                "interfaceControlPlan.releaseGates",
+                "interventionMap.splitCombineDecisions"
+            ],
+            "learningSignals": ["boundary-decision:split-combine", "split-combine:*"]
+        }),
+        json!({
+            "decision": "quality-postprocess-or-release-hold",
+            "when": ["quality-release", "postprocess-release"],
+            "requires": [
+                "inspection target, postprocess traveler, nonconformance disposition, and final signoff evidence",
+                "retained release package artifacts and bundle manifest before downstream handoff",
+                "human or automation signoff for any waived, reworked, or deferred quality gate"
+            ],
+            "primaryHandoffs": [
+                "POST /fabrication/quality/plan",
+                "POST /fabrication/postprocess/plan",
+                "POST /fabrication/release/preview"
+            ],
+            "blockedSurfaces": [
+                "qualityPlan.releaseGates",
+                "postprocessPlan.blockers",
+                "releasePackagePlan.blockers"
+            ],
+            "learningSignals": ["boundary-decision:quality-release", "release-readiness:*"]
+        }),
+        json!({
+            "decision": "record-outcome-before-policy-promotion",
+            "when": ["any release-blocking boundary resolved or rejected"],
+            "requires": [
+                "resolution action, retained artifact checksum, reward hint, and final release decision",
+                "boundary kind, severity, human-intervention outcome, and split/combine outcome when applicable",
+                "replay evidence before learned preference promotion"
+            ],
+            "primaryHandoffs": [
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/replay/catalog",
+                "GET /fabrication/learning/optimizers/catalog"
+            ],
+            "blockedSurfaces": [
+                "learningPolicySnapshot.promotionBlockers",
+                "learningOptimizerResult.promotionBlockers",
+                "future machineRelease.blockers"
+            ],
+            "learningSignals": ["boundary-decision:learning-feedback", "boundary-kind:*", "reward:*"]
+        }),
+    ]
+}
+
 fn boundary_catalog_response() -> Value {
     let catalog = boundary_catalog();
     let families = unique_sorted(catalog.iter().filter_map(|item| {
@@ -59271,6 +59477,7 @@ fn boundary_catalog_response() -> Value {
             "decompositionPlan",
             "releasePackagePlan"
         ],
+        "decisionMatrix": boundary_decision_matrix(),
         "releasePolicy": [
             "boundary catalog entries describe analyzer coverage and release evidence, not controller-certified safety",
             "machine-ready release remains blocked while any cataloged machine-failure, human-intervention, split/combine, automation, postprocess, inspection, profile, or material boundary is unresolved",
@@ -107300,6 +107507,34 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "imported-controller-stream-boundary-review",
+            "label": "Retain imported controller streams for validation and release review",
+            "route": "POST /fabrication/instructions/import/review",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["instruction-import-review", "program-validation", "boundary-review", "machine-code-improvement"],
+            "requiredEvidence": ["machine profile attached", "controller dialect known", "work offset reviewed", "tooling/workholding evidence attached", "retained import review before release preview"],
+            "releaseGateHints": ["instructionImportReview.packageActions", "instructionImportReview.importReleaseBlocked", "analysis.machineRelease.blockers", "validation.boundaries", "learning.outcomeDraft", "releasePreview.retainedEvidence"],
+            "request": {
+                "templateId": "imported-controller-stream-boundary-review",
+                "templateVersion": "v1",
+                "requestId": "import-review-controller-stream-001",
+                "material": { "name": "6061 aluminum", "family": "metal" },
+                "learning": {
+                    "policyHint": "retain-import-before-machine-release",
+                    "modelFamily": "pomdp-boundary-review",
+                    "observations": ["legacy-controller-stream", "operator-review-required-before-release-preview"]
+                },
+                "programs": [
+                    {
+                        "id": "legacy-controller-stream",
+                        "machineKind": "vertical-mill",
+                        "language": "fanuc-gcode",
+                        "instructions": ["G21 G90 G54", "T1 M6", "S8000 M3", "G0 X0 Y0 Z10", "G1 X220.0 Y12.0 F250", "M30"]
+                    }
+                ]
+            }
+        },
+        {
             "id": "imported-cnc-improvement-review",
             "label": "Generate conservative improvement patches for imported CNC",
             "route": "POST /fabrication/instructions/improve",
@@ -110690,6 +110925,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/", get(root))
         .route("/landing", get(landing_page))
         .route("/fabrication/landing", get(landing_page))
+        .route("/how-it-works", get(how_it_works_http))
+        .route("/fabrication/how-it-works", get(how_it_works_http))
         .route("/healthz", get(healthz))
         .route("/readyz", get(healthz))
         .route("/capabilities", get(capabilities))
@@ -111666,6 +111903,57 @@ mod tests {
     }
 
     #[test]
+    fn how_it_works_endpoint_exposes_intake_generation_validation_release_and_learning_flow() {
+        let payload = how_it_works_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.how-it-works.v1")
+        );
+        let routes = payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .expect("how-it-works overview should include route aliases");
+        assert!(routes
+            .iter()
+            .any(|route| route.as_str() == Some("GET /fabrication/how-it-works")));
+
+        let flow = payload
+            .get("flow")
+            .and_then(Value::as_array)
+            .expect("how-it-works overview should include workflow steps");
+        for expected in [
+            "discover", "intake", "generate", "validate", "release", "learn",
+        ] {
+            assert!(
+                flow.iter()
+                    .any(|step| step.get("step").and_then(Value::as_str) == Some(expected)),
+                "missing workflow step {expected}"
+            );
+        }
+        let payload_text = payload.to_string();
+        for expected in [
+            "POST /fabrication/design/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/instructions/analyze",
+            "GET /fabrication/boundaries/catalog",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/learning/outcomes",
+            "vertical mills, horizontal mills",
+            "hybrid split/combine routes",
+            "remote/submodules/discrete-event-system.rs des_engine",
+            "machineReady remains false",
+        ] {
+            assert!(
+                payload_text.contains(expected),
+                "how-it-works overview should include {expected}"
+            );
+        }
+    }
+
+    #[test]
     fn intake_guide_exposes_release_gated_fabrication_flow() {
         let guide = intake_guide();
         let steps: Vec<&str> = guide
@@ -111763,6 +112051,7 @@ mod tests {
             "generated-cnc-instruction-handoff",
             "imported-cnc-dry-run-simulation",
             "imported-cnc-program-review",
+            "imported-controller-stream-boundary-review",
             "imported-cnc-improvement-review",
             "imported-printer-gcode-review",
             "imported-resin-job-review",
@@ -111786,6 +112075,7 @@ mod tests {
             "POST /fabrication/instructions/generate",
             "POST /fabrication/simulation/run",
             "POST /fabrication/instructions/analyze",
+            "POST /fabrication/instructions/import/review",
             "POST /fabrication/instructions/improve",
             "POST /fabrication/decomposition/plan",
             "POST /fabrication/assembly/plan",
@@ -111820,6 +112110,8 @@ mod tests {
             "machine-release-review",
             "release-manifest-review",
             "instruction-improvement",
+            "instruction-import-review",
+            "boundary-review",
             "controller-patch-review",
             "instruction-generation",
             "instructionGeneration.generatedPrograms",
@@ -112187,6 +112479,55 @@ mod tests {
                 .iter()
                 .any(|line| line.starts_with("G2")),
             "instruction improvement template should include arc geometry needing review"
+        );
+    }
+
+    #[test]
+    fn request_template_import_review_body_matches_retained_boundary_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("imported-controller-stream-boundary-review")
+            })
+            .expect("imported controller stream review starter should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/instructions/import/review")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("instruction import review template should include request body");
+        let parsed: InstructionImportReviewRequest = serde_json::from_value(request)
+            .expect("instruction import review template should match import review schema");
+        assert_eq!(
+            parsed.request_id.as_deref(),
+            Some("import-review-controller-stream-001")
+        );
+        assert!(
+            parsed
+                .learning
+                .and_then(|learning| learning.model_family)
+                .as_deref()
+                == Some("pomdp-boundary-review"),
+            "instruction import review template should carry retained learning hints"
+        );
+        let program = parsed
+            .programs
+            .first()
+            .expect("instruction import review template should include a program");
+        assert_eq!(program.language.as_deref(), Some("fanuc-gcode"));
+        assert!(
+            program
+                .instructions
+                .iter()
+                .any(|line| line.contains("X220.0")),
+            "instruction import review template should include an out-of-envelope boundary probe"
         );
     }
 
@@ -119685,6 +120026,35 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        let decision_matrix = payload
+            .get("decisionMatrix")
+            .and_then(Value::as_array)
+            .expect("decision matrix should be present");
+        for decision in [
+            "machine-failure-stop-or-regenerate",
+            "human-intervention-or-automation-proof",
+            "split-combine-or-interface-control",
+            "record-outcome-before-policy-promotion",
+        ] {
+            assert!(
+                decision_matrix
+                    .iter()
+                    .any(|item| { item.get("decision").and_then(Value::as_str) == Some(decision) }),
+                "missing boundary decision {decision}"
+            );
+        }
+        assert!(decision_matrix.iter().any(|item| item
+            .get("blockedSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("interventionMap.splitCombineDecisions")
+            }))));
+        assert!(decision_matrix.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|signal| {
+                signal.as_str() == Some("boundary-decision:learning-feedback")
+            }))));
 
         let boundaries = payload
             .get("boundaries")

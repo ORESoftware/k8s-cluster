@@ -7,9 +7,10 @@ mill-turn/swiss-turning, and hybrid machine workflows.
 It exposes:
 
 `GET /` returns the machine-readable service inventory with a `landingPage`
-block for the human fabrication overview and a compact `startHere` map to
-`/fabrication/landing`, capabilities, schema, examples, and generated API docs.
-The landing page explains how the service turns fabrication goals into
+block for the human fabrication overview, a compact `startHere` map to
+`/fabrication/landing`, `/fabrication/how-it-works`, capabilities, schema,
+examples, and generated API docs. The landing page and JSON how-it-works
+overview explain how the service turns fabrication goals into
 design/import decisions, machine/material route choices, split/combine plans,
 instruction generation or review, validation, release gates, and learned
 outcomes.
@@ -17,6 +18,8 @@ outcomes.
 - `GET /`
 - `GET /landing`
 - `GET /fabrication/landing`
+- `GET /how-it-works`
+- `GET /fabrication/how-it-works`
 - `GET /healthz`
 - `GET /readyz`
 - `GET /metrics`
@@ -2145,6 +2148,20 @@ unresolved, and boundary kinds are emitted as MDP/POMDP/neural learning signals
 for regeneration, split/combine, automation-proof, or human-intervention policy
 updates.
 
+The payload also includes a `decisionMatrix` that maps boundary families to the
+next review lane. Machine-failure boundaries route to instruction improvement,
+remediation planning, and simulation/dry-run review; human-intervention and
+automation gaps route to intervention, execution, and monitoring planning;
+split/combine boundaries route to decomposition, assembly, and interface-control
+review; quality/postprocess holds route to quality, postprocess, and release
+preview; and resolved or rejected boundaries route to learning-outcome and replay
+review before any policy promotion. Matrix entries name blocked surfaces such as
+`machineRelease.blockers`, `releaseProbePlan.requiredBeforeRelease`,
+`interventionMap.splitCombineDecisions`, `interfaceControlPlan.releaseGates`,
+and `learningPolicySnapshot.promotionBlockers`, plus learning signals such as
+`boundary-decision:machine-failure`, `boundary-decision:human-intervention`,
+`boundary-decision:split-combine`, and `boundary-decision:learning-feedback`.
+
 ## `GET /fabrication/boundaries/preflight/catalog`
 
 `GET /boundaries/preflight/catalog` and the gateway-prefixed
@@ -2499,13 +2516,11 @@ envelope. The response focuses on `machineRelease.status`,
 `postprocessPlan.blockers`, `controllerPlan.compatibilityTargets`,
 `simulation.riskProfile`, operator intervention requirements,
 split/combine decisions, release-probe learning surfaces, and
-`manufacturingHandoff`. Release previews are retained as compact
-`release-preview` jobs with machine-release, package, execution, simulation,
-operator-intervention, and policy-summary artifacts for later release-bundle
-inspection. They do not publish controller code or certify machine-ready
-artifacts; they keep `machineReady=false` while machine-release, controller,
-postprocess, simulation, setup, intervention, split/combine, schedule, or package
-gates remain blocked.
+`manufacturingHandoff`. Release previews do not retain full plan jobs; they are
+retained as compact `release-preview` jobs with machine-release, package, execution, simulation,
+operator-intervention, and policy-summary artifacts for later release-bundle inspection. They do not publish controller code or certify machine-ready
+artifacts; they keep `machineReady=false` while machine-release, controller, postprocess, simulation,
+setup, intervention, split/combine, schedule, or package gates remain blocked.
 
 ## `POST /fabrication/release/result`
 
@@ -2692,8 +2707,8 @@ intervention signals, and `machineRelease.blockers`. `learningOutcomeQuality`
 summarizes learned success/failure rates, reward average, remediation-risk count,
 and a `releasePolicy` such as `positive-learned-route-evidence` or
 `review-learned-route-quality-before-release` so clients can require route review
-when prior failures or negative rewards are present. Recommendation responses do
-not retain full plan jobs, publish generated controller code, or certify
+when prior failures or negative rewards are present. Recommendation responses
+do not retain full plan jobs, publish generated controller code, or certify
 machine-ready release; they keep `machineReady=false` while validation, setup,
 simulation, quality, postprocess, schedule, intervention, or release blockers
 remain.
@@ -4746,6 +4761,27 @@ Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, Parasolid,
 STL, 3MF, OBJ, AMF, PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio, while
 calling out ambiguous `.prt`/`.asm` extensions as source-system or translator
 evidence gates.
+
+## `GET /fabrication/how-it-works`
+
+`GET /how-it-works` and the gateway-prefixed `GET /fabrication/how-it-works`
+return the machine-readable companion to the landing page. The
+`dd.fabrication.how-it-works.v1` payload gives clients a six-step
+intake-to-release flow for discovery, intake, generation, validation, release,
+and learning. Each step names the primary routes and the release gate that keeps
+draft design packages, generated machine code, printer instructions, imported
+CNC/controller streams, text job sheets, split/combine routes, and release
+previews from becoming machine-ready without retained evidence. The overview
+also lists supported machine families such as 3D printers, vertical mills,
+horizontal mills, routers, five-axis systems, mill-turn and Swiss machines,
+lathes, sheet cutters, EDM, grinding, inspection, postprocess, assembly cells,
+and hybrid split/combine routes.
+
+The `learningContract` section identifies
+`remote/submodules/discrete-event-system.rs` / `des_engine` as the preferred
+local DES primitive source and keeps MDP, POMDP, DES, neural-policy evidence,
+reward replay, and policy promotion advisory until replay, simulation, retained
+evidence, and release blockers clear.
 
 ## `GET /fabrication/intake/catalog`
 
