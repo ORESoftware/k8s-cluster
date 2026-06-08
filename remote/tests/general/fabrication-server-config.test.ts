@@ -4938,16 +4938,6 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /as_built_planning_endpoint_returns_deviation_interface_and_release_contract/,
   );
-  assert.match(source, /async fn as_built_plan_http/);
-  assert.match(source, /fn as_built_planning_response/);
-  assert.match(source, /dd\.fabrication\.as-built-planning\.v1/);
-  assert.match(source, /"POST \/fabrication\/as-built\/plan"/);
-  assert.match(source, /"asBuiltPlan"/);
-  assert.match(source, /fabrication\.as_built\.planned/);
-  assert.match(
-    source,
-    /as_built_planning_endpoint_returns_deviation_interface_and_release_contract/,
-  );
   assert.match(source, /struct AsBuiltResultReviewRequest/);
   assert.match(source, /struct AsBuiltResultMeasurementCheck/);
   assert.match(source, /struct AsBuiltResultDeviationMap/);
@@ -6953,11 +6943,6 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`as-built-deviation-map`/);
   assert.match(readme, /split\/combine as-built interface evidence/);
   assert.match(readme, /not certified metrology\s+acceptance/);
-  assert.match(readme, /`POST \/fabrication\/as-built\/plan`/);
-  assert.match(readme, /dd\.fabrication\.as-built-planning\.v1/);
-  assert.match(readme, /`asBuiltPlan` with\s+`asBuiltContracts`/);
-  assert.match(readme, /The endpoint keeps `machineReady=false`/);
-  assert.match(readme, /split or combine parts differently/);
   assert.match(readme, /`POST \/fabrication\/as-built\/plan`/);
   assert.match(readme, /dd\.fabrication\.as-built-planning\.v1/);
   assert.match(readme, /`asBuiltPlan` with\s+`asBuiltContracts`/);
