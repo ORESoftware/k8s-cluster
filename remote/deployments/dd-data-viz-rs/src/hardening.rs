@@ -158,6 +158,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/etl.rs validates requested fields against dataset shapes, returns lineage and pushdown hints, and does not inspect raw row values.",
         },
         ControlDescriptor {
+            id: "secret-ref-connections",
+            status: "implemented",
+            description: "Warehouse and BI connection definitions are capped, require secretRef for network and cloud engines, reject secret-looking inline settings, and expose only dry-run test plans.",
+            evidence: "src/connections.rs validates endpoints and settings; /connections/:connection_id/test-plan returns planner checks without opening sockets or cloud APIs.",
+        },
+        ControlDescriptor {
             id: "bounded-self-service-questions",
             status: "implemented",
             description: "Metabase/Superset-style saved questions and chart bindings are capped by field, filter, aggregation, tag, and encoding counts, then validated against ingested dataset fields before storage.",

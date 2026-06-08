@@ -20,6 +20,7 @@ use serde_json::{json, Value};
 
 mod alerts;
 mod associative;
+mod connections;
 mod dashboard;
 mod etl;
 mod hardening;
@@ -54,6 +55,7 @@ struct AppState {
     config: Arc<Config>,
     metrics: Arc<Metrics>,
     datasets: Arc<RwLock<BTreeMap<String, Dataset>>>,
+    connections: Arc<RwLock<BTreeMap<String, connections::DataConnection>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
@@ -81,6 +83,8 @@ struct Metrics {
     presentation_exports_total: AtomicU64,
     platform_requests_total: AtomicU64,
     hardening_requests_total: AtomicU64,
+    connection_requests_total: AtomicU64,
+    connections_saved_total: AtomicU64,
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
@@ -483,6 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: Arc::new(config),
         metrics: Arc::new(Metrics::default()),
         datasets: Arc::new(RwLock::new(BTreeMap::new())),
+        connections: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -519,6 +524,12 @@ fn app_router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .route("/capabilities/parity", get(platform_capabilities))
         .route("/connectors/catalog", get(connector_catalog))
+        .route("/connections", get(list_connections).post(save_connection))
+        .route("/connections/:connection_id", get(get_connection))
+        .route(
+            "/connections/:connection_id/test-plan",
+            post(connection_test_plan),
+        )
         .route("/etl/plans", post(plan_etl))
         .route("/semantic/models", get(semantic_models))
         .route(
@@ -736,6 +747,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
+        "connectionRegistry": {
+            "engines": ["postgres", "mysql", "bigquery", "snowflake", "redshift", "prometheus", "loki", "parquet", "csv-json"],
+            "modes": ["live-query", "import", "metadata-only"],
+            "posture": "metadata and secretRef registry only; test plans are dry-run and do not open sockets or call cloud APIs"
+        },
         "etlPlan": {
             "steps": ["select-columns", "rename-columns", "filter-rows", "derive-column", "join", "union", "group-aggregate", "sort-rows", "limit-rows"],
             "maxSteps": etl::max_etl_steps(),
@@ -872,6 +888,12 @@ dd_data_viz_platform_requests_total {}
 # HELP dd_data_viz_hardening_requests_total Hardening policy requests handled.
 # TYPE dd_data_viz_hardening_requests_total counter
 dd_data_viz_hardening_requests_total {}
+# HELP dd_data_viz_connection_requests_total Connection registry requests handled.
+# TYPE dd_data_viz_connection_requests_total counter
+dd_data_viz_connection_requests_total {}
+# HELP dd_data_viz_connections_saved_total Data connections saved.
+# TYPE dd_data_viz_connections_saved_total counter
+dd_data_viz_connections_saved_total {}
 # HELP dd_data_viz_association_requests_total Associative graph requests handled.
 # TYPE dd_data_viz_association_requests_total counter
 dd_data_viz_association_requests_total {}
@@ -935,6 +957,8 @@ dd_data_viz_errors_total {}
         metrics.presentation_exports_total.load(Ordering::Relaxed),
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
+        metrics.connection_requests_total.load(Ordering::Relaxed),
+        metrics.connections_saved_total.load(Ordering::Relaxed),
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
@@ -1054,6 +1078,125 @@ async fn connector_catalog(State(state): State<AppState>) -> Json<Value> {
         "connectors": platform::connector_catalog(),
         "etl": platform::etl_primitives()
     }))
+}
+
+async fn save_connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<connections::SaveConnectionRequest>,
+) -> Result<Json<connections::SaveConnectionResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .connection_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::ConnectionWrite)?;
+    let mut connection = request
+        .into_connection(now_ms())
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut connections = state
+        .connections
+        .write()
+        .map_err(|_| ApiError::bad_request("connection store lock poisoned"))?;
+    if let Some(existing) = connections.get(&connection.connection_id) {
+        connection.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "connection {} replaced with a new in-memory definition",
+            connection.connection_id
+        ));
+    } else if connections.len() >= connections::max_connections() {
+        return Err(ApiError::bad_request(format!(
+            "connection count exceeds max {}",
+            connections::max_connections()
+        )));
+    }
+    connection.updated_at_ms = now_ms();
+    connections.insert(connection.connection_id.clone(), connection.clone());
+    state
+        .metrics
+        .connections_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(connections::save_response(connection, warnings)))
+}
+
+async fn list_connections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .connection_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::ConnectionRead)?;
+    let connections = state
+        .connections
+        .read()
+        .map_err(|_| ApiError::bad_request("connection store lock poisoned"))?;
+    let summaries = connections
+        .values()
+        .map(connections::DataConnection::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(connections::catalog_payload(summaries)))
+}
+
+async fn get_connection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(connection_id): Path<String>,
+) -> Result<Json<connections::DataConnection>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .connection_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::ConnectionRead)?;
+    let connections = state
+        .connections
+        .read()
+        .map_err(|_| ApiError::bad_request("connection store lock poisoned"))?;
+    connections
+        .get(&connection_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("connection `{connection_id}` not found")))
+}
+
+async fn connection_test_plan(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(connection_id): Path<String>,
+) -> Result<Json<connections::ConnectionTestPlanResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .connection_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::ConnectionRead)?;
+    let connection = {
+        let connections = state
+            .connections
+            .read()
+            .map_err(|_| ApiError::bad_request("connection store lock poisoned"))?;
+        connections
+            .get(&connection_id)
+            .cloned()
+            .ok_or_else(|| ApiError::not_found(format!("connection `{connection_id}` not found")))?
+    };
+    Ok(Json(connections::test_plan(&connection)))
 }
 
 async fn plan_etl(
@@ -3717,6 +3860,30 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/connections",
+            auth: "connection-write",
+            description: "Create or replace secretRef-backed data connection metadata for warehouse and BI planners.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/connections",
+            auth: "connection-read",
+            description: "List secretRef-backed data connection summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/connections/:connection_id",
+            auth: "connection-read",
+            description: "Read a saved data connection definition.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/connections/:connection_id/test-plan",
+            auth: "connection-read",
+            description: "Generate a dry-run connection test plan without opening sockets or calling cloud APIs.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/etl/plans",
             auth: "etl-plan",
             description: "Validate a bounded Domo Magic ETL/Power Query-style flow against dataset schemas and return lineage, materialization, and connector pushdown hints.",
@@ -4538,6 +4705,7 @@ mod tests {
             }),
             metrics: Arc::new(Metrics::default()),
             datasets: Arc::new(RwLock::new(BTreeMap::new())),
+            connections: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -4709,6 +4877,9 @@ mod tests {
         assert!(paths.contains(&"/alerts/contact-points/:contact_id"));
         assert!(paths.contains(&"/alerts/notification-policies"));
         assert!(paths.contains(&"/alerts/rules/:rule_id/notification-preview"));
+        assert!(paths.contains(&"/connections"));
+        assert!(paths.contains(&"/connections/:connection_id"));
+        assert!(paths.contains(&"/connections/:connection_id/test-plan"));
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));

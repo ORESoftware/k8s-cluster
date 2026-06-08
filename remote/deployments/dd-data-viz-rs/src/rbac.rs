@@ -16,6 +16,8 @@ pub(crate) enum Role {
 pub(crate) enum Permission {
     DatasetRead,
     DatasetWrite,
+    ConnectionRead,
+    ConnectionWrite,
     QueryExecute,
     VisualizationSuggest,
     EvolutionRead,
@@ -74,6 +76,8 @@ impl Role {
             Self::Builder => vec![
                 Permission::DatasetRead,
                 Permission::DatasetWrite,
+                Permission::ConnectionRead,
+                Permission::ConnectionWrite,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::EvolutionRead,
@@ -95,6 +99,7 @@ impl Role {
             ],
             Self::Analyst => vec![
                 Permission::DatasetRead,
+                Permission::ConnectionRead,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::EvolutionRead,
@@ -119,6 +124,7 @@ impl Role {
             ],
             Self::Exporter => vec![
                 Permission::DatasetRead,
+                Permission::ConnectionRead,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
@@ -157,6 +163,8 @@ impl Permission {
         match self {
             Self::DatasetRead => "Read dataset profiles and in-memory catalogs.",
             Self::DatasetWrite => "Ingest or replace in-memory datasets.",
+            Self::ConnectionRead => "Read secretRef-backed data connection metadata.",
+            Self::ConnectionWrite => "Create or replace data connection metadata.",
             Self::QueryExecute => "Execute query dialects against datasets.",
             Self::VisualizationSuggest => "Generate visualization candidates.",
             Self::EvolutionRead => "Read evolution run summaries.",
@@ -223,6 +231,8 @@ fn all_permissions() -> Vec<Permission> {
     vec![
         Permission::DatasetRead,
         Permission::DatasetWrite,
+        Permission::ConnectionRead,
+        Permission::ConnectionWrite,
         Permission::QueryExecute,
         Permission::VisualizationSuggest,
         Permission::EvolutionRead,
@@ -258,6 +268,7 @@ mod tests {
     #[test]
     fn builder_can_publish_dashboards() {
         assert!(Role::Builder.allows(Permission::DashboardWrite));
+        assert!(Role::Builder.allows(Permission::ConnectionWrite));
         assert!(Role::Builder.allows(Permission::QuestionWrite));
         assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::SemanticWrite));
@@ -275,6 +286,8 @@ mod tests {
     #[test]
     fn analyst_can_compile_but_not_write_semantic_models() {
         assert!(Role::Analyst.allows(Permission::SemanticCompile));
+        assert!(Role::Analyst.allows(Permission::ConnectionRead));
+        assert!(!Role::Analyst.allows(Permission::ConnectionWrite));
         assert!(Role::Analyst.allows(Permission::QuestionWrite));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(!Role::Analyst.allows(Permission::EtlPlan));
