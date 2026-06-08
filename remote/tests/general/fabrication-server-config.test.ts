@@ -3152,6 +3152,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /instruction_import_catalog_endpoint_exposes_external_instruction_intake_contract/,
   );
+  assert.match(source, /struct InstructionImportReviewRequest/);
+  assert.match(source, /async fn instruction_import_review_http/);
+  assert.match(source, /fn instruction_import_review_response/);
+  assert.match(source, /dd\.fabrication\.instruction-import-review\.v1/);
+  assert.match(source, /dd\.fabrication\.instruction-import-learning-outcome-draft\.v1/);
+  assert.match(source, /"POST \/fabrication\/instructions\/import\/review"/);
+  assert.match(source, /"importReleaseBlocked"/);
+  assert.match(source, /"packageActions"/);
+  assert.match(source, /instruction_import_review_endpoint_packages_submitted_streams_for_validation/);
   assert.match(
     source,
     /\.route\(\s*"\/instructions\/generation\/preflight\/catalog",\s*get\(instruction_generation_preflight_catalog_http\),\s*\)/,
@@ -3591,6 +3600,19 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /analysis-validation-simulation-improvement-and-learning-state/);
   assert.match(source, /machineReady remains false/);
   assert.match(source, /instruction_import_preflight_catalog_endpoint_exposes_evidence_gates/);
+  assert.match(source, /struct InstructionImportReviewRequest/);
+  assert.match(source, /async fn instruction_import_review_http/);
+  assert.match(source, /fn instruction_import_review_response/);
+  assert.match(source, /dd\.fabrication\.instruction-import-review\.v1/);
+  assert.match(source, /"POST \/fabrication\/instructions\/import\/review"/);
+  assert.match(source, /"importReleaseBlocked"/);
+  assert.match(source, /"retain-original-instruction-artifacts"/);
+  assert.match(source, /"run-validation-and-boundary-review"/);
+  assert.match(source, /dd\.fabrication\.instruction-import-learning-outcome-draft\.v1/);
+  assert.match(
+    source,
+    /instruction_import_review_endpoint_packages_submitted_streams_for_validation/,
+  );
   assert.match(source, /async fn release_catalog_http/);
   assert.match(source, /fn release_catalog_response/);
   assert.match(source, /fn release_catalog_gate_contracts/);
@@ -5461,6 +5483,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/instructions\/import\/catalog",\s*get\(instruction_import_catalog_http\),\s*\)/,
   );
+  assert.match(
+    source,
+    /\.route\(\s*"\/instructions\/import\/review",\s*post\(instruction_import_review_http\),\s*\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/instructions\/import\/review",\s*post\(instruction_import_review_http\),\s*\)/,
+  );
   assert.match(source, /\.route\("\/instructions\/generate", post\(instruction_generate_http\)\)/);
   assert.match(
     source,
@@ -6640,6 +6670,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.instruction-import-catalog\.v1/);
   assert.match(readme, /controller\/CAM machine\s+code/);
   assert.match(readme, /Imported instructions are accepted as review inputs/);
+  assert.match(readme, /`POST \/fabrication\/instructions\/import\/review`/);
+  assert.match(readme, /dd\.fabrication\.instruction-import-review\.v1/);
+  assert.match(readme, /validation and boundary analyzer/);
+  assert.match(readme, /validation, simulation, machine-failure, human-intervention/);
+  assert.match(readme, /`packageActions`/);
+  assert.match(readme, /instruction-import-learning-outcome-draft\.v1/);
   assert.match(readme, /`POST \/instructions\/generate`/);
   assert.match(readme, /`POST \/fabrication\/instructions\/generate`/);
   assert.match(readme, /dd\.fabrication\.instruction-generation\.v1/);
@@ -8878,6 +8914,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/workers\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/languages"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/languages"/);
+  assert.match(docs, /"path": "\/instructions\/import\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/import\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/validation\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/generation\/catalog"/);
@@ -8894,6 +8932,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/instructions\/validation\/result"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/validation\/result"/);
+  assert.match(docs, /"path": "\/instructions\/import\/review"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/import\/review"/);
   assert.match(docs, /"path": "\/machine-code\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/machine-code\/catalog"/);
   assert.match(docs, /"path": "\/machine-code\/generate"/);
@@ -8948,6 +8988,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/interfaces\/result"/);
   assert.match(docs, /"path": "\/instructions\/import\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/instructions\/import\/preflight\/catalog"/);
+  assert.match(docs, /"path": "\/instructions\/import\/review"/);
+  assert.match(docs, /"path": "\/fabrication\/instructions\/import\/review"/);
   assert.match(docs, /"path": "\/release\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/release\/catalog"/);
   assert.match(docs, /"path": "\/release\/preflight\/catalog"/);
@@ -9267,6 +9309,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/assembly\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/interfaces\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/instructions\/import\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/instructions\/import\/review"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/preview"/);
   assert.match(deployment, /"path": "\/fabrication\/release\/result"/);

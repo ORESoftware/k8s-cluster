@@ -104,6 +104,8 @@ outcomes.
 - `GET /fabrication/instructions/import/catalog`
 - `GET /instructions/import/preflight/catalog`
 - `GET /fabrication/instructions/import/preflight/catalog`
+- `POST /instructions/import/review`
+- `POST /fabrication/instructions/import/review`
 - `GET /instructions/validation/catalog`
 - `GET /fabrication/instructions/validation/catalog`
 - `GET /instructions/validation/preflight/catalog`
@@ -1648,6 +1650,7 @@ and release evidence, and release blockers.
 
 Imported instructions are accepted as review inputs, not trusted machine-ready
 code. The import contract points callers to `POST /fabrication/instructions/analyze`,
+`POST /fabrication/instructions/import/review`,
 `POST /fabrication/instructions/validate`, and
 `POST /fabrication/instructions/improve`, and names response surfaces including
 `validation.failureBoundaries`, `improvements`,
@@ -1656,6 +1659,20 @@ release-package, and learning surfaces. Machine-ready release remains blocked
 until provenance, checksum, dialect, machine profile, validation, simulation or
 dry-run, setup, quality, release-package, and operator or automation signoff
 evidence clear.
+
+`POST /instructions/import/review` and the gateway-prefixed
+`POST /fabrication/instructions/import/review` wrap submitted instruction streams
+into the `dd.fabrication.instruction-import-review.v1` review packet. The response
+retains original programs, runs the same validation and boundary analyzer used by
+`POST /fabrication/instructions/analyze`, counts imported language and machine
+families, surfaces validation, simulation, machine-failure, human-intervention,
+and split/combine blockers, and keeps `machineReady=false` until release evidence
+clears. The packet includes `packageActions` for retaining original instruction
+artifacts, running validation/boundary review, reviewing generated patch drafts,
+and submitting a learning outcome. It also carries an
+`instruction-import-learning-outcome-draft.v1` draft for
+`POST /fabrication/learning/outcomes` so MDP/POMDP/neural workers can learn from
+imported controller streams, patch decisions, and rejected release attempts.
 
 ## `GET /fabrication/instructions/import/preflight/catalog`
 
