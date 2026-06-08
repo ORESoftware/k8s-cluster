@@ -23982,15 +23982,17 @@ fn choose_machine<'a>(
             .iter()
             .any(|value| wants_directed_energy_deposition(value));
     let wants_composite_layup_cell = preferred.as_deref().is_some_and(wants_composite_layup)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_composite_layup(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_composite_layup(value)));
     let wants_hot_wire_foam_cutter = preferred
         .as_deref()
         .is_some_and(wants_hot_wire_foam_cutting)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_hot_wire_foam_cutting(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_hot_wire_foam_cutting(value)));
     let wants_composite_fiber_printer = !wants_composite_layup_cell
         && (preferred
             .as_deref()
@@ -50442,6 +50444,9 @@ fn learned_part_description(method: &str) -> &'static str {
         "dynamic-balancing" => {
             "learned rotor, impeller, fan, wheel, spin-balance, or vibration release inferred from successful hybrid outcomes"
         }
+        "composite-layup" => {
+            "learned composite layup, ply schedule, vacuum bag, autoclave cure, or coupon release inferred from successful hybrid outcomes"
+        }
         _ => "learned special-process component inferred from successful hybrid outcomes",
     }
 }
@@ -62157,10 +62162,14 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/tolerances/result",
         "GET /process-capabilities/catalog",
         "GET /fabrication/process-capabilities/catalog",
+        "POST /process-capabilities/plan",
+        "POST /fabrication/process-capabilities/plan",
         "POST /process-capabilities/result",
         "POST /fabrication/process-capabilities/result",
         "GET /manufacturability/catalog",
         "GET /fabrication/manufacturability/catalog",
+        "POST /manufacturability/plan",
+        "POST /fabrication/manufacturability/plan",
         "POST /manufacturability/result",
         "POST /fabrication/manufacturability/result",
         "GET /failure-modes/catalog",
@@ -88546,6 +88555,8 @@ fn process_capability_catalog_response() -> Value {
         "machineKinds": machine_kinds,
         "capabilityScopes": capability_scopes,
         "planningRoutes": [
+            "POST /process-capabilities/plan",
+            "POST /fabrication/process-capabilities/plan",
             "POST /design/import/review",
             "POST /fabrication/design/import/review",
             "POST /machine-code/generate",
@@ -88592,6 +88603,205 @@ fn process_capability_catalog_response() -> Value {
 
 async fn process_capability_catalog_http() -> impl IntoResponse {
     Json(process_capability_catalog_response())
+}
+
+fn process_capability_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let capability_blocked = response
+        .validation
+        .failure_boundaries
+        .iter()
+        .any(|boundary| {
+            boundary.kind.contains("capability")
+                || boundary.kind.contains("machine-envelope")
+                || boundary.kind.contains("support")
+                || boundary.kind.contains("workholding")
+                || boundary.kind.contains("tool")
+                || boundary.kind.contains("kerf")
+                || boundary.kind.contains("split")
+        })
+        || response.decomposition_plan.release_blocked
+        || response.interface_control_plan.machine_release_blocked
+        || response.quality_plan.status != "quality-plan-ready"
+        || response.machine_release.machine_release_blocked
+        || response.release_package_plan.machine_release_blocked;
+    let process_step_count = response.process_plan.len();
+    let generated_program_count = response.generated_programs.len();
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.process-capability-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /process-capabilities/plan",
+            "POST /fabrication/process-capabilities/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /process-capabilities/catalog",
+            "GET /fabrication/process-capabilities/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /process-capabilities/result",
+            "POST /fabrication/process-capabilities/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result",
+            "POST /manufacturability/result",
+            "POST /fabrication/manufacturability/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!capability_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(capability_blocked),
+    );
+    object.insert("processStepCount".to_string(), json!(process_step_count));
+    object.insert(
+        "generatedProgramCount".to_string(),
+        json!(generated_program_count),
+    );
+    object.insert(
+        "selectedMachineCount".to_string(),
+        json!(response.machine_selection.len()),
+    );
+    object.insert(
+        "toolingRequirementCount".to_string(),
+        json!(response.tooling_plan.requirements.len()),
+    );
+    object.insert(
+        "fixtureSetupCount".to_string(),
+        json!(response.fixture_plan.setups.len()),
+    );
+    object.insert(
+        "qualityMeasurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "failureBoundaryCount".to_string(),
+        json!(response.validation.failure_boundaries.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "machineSelection",
+            "materialPlan",
+            "processPlan",
+            "toolingPlan.requirements",
+            "fixturePlan.setups",
+            "generatedPrograms",
+            "validation.failureBoundaries",
+            "simulation.riskProfile",
+            "qualityPlan.measurementTargets",
+            "decompositionPlan.targets",
+            "interfaceControlPlan.controls",
+            "machineRelease.blockers"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "process-capability-plan",
+            "process-capability-catalog",
+            "material-plan",
+            "tooling-plan",
+            "fixture-plan",
+            "simulation-report",
+            "quality-plan",
+            "decomposition-plan",
+            "machine-release",
+            "mdp-request.artifacts.processCapabilityEvidence"
+        ]),
+    );
+    object.insert(
+        "processCapabilityPolicy".to_string(),
+        json!([
+            "process-capability planning returns draft printability, tool-access, workholding, turning, sheet-cut, and hybrid split/combine evidence, not certified machine capability studies",
+            "machineReady=false while requested geometry, material, machine envelope, tool access, workholding, support media, simulation, quality, split/combine, or human-intervention evidence remains unresolved",
+            "capability failures, alternate routes, measured process outcomes, and split/combine choices are retained for MDP/POMDP/neural workers so future requests learn which process route can actually make the part"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "processCapabilityPlan".to_string(),
+        json!({
+            "processCapabilityContracts": process_capability_catalog_entries(),
+            "machineSelection": &response.machine_selection,
+            "materialPlan": &response.material_plan,
+            "processPlan": &response.process_plan,
+            "toolingPlan": &response.tooling_plan,
+            "fixturePlan": &response.fixture_plan,
+            "simulation": &response.simulation,
+            "qualityPlan": &response.quality_plan,
+            "decompositionPlan": &response.decomposition_plan,
+            "interfaceControlPlan": &response.interface_control_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "machineSelection".to_string(),
+        json!(&response.machine_selection),
+    );
+    object.insert("materialPlan".to_string(), json!(&response.material_plan));
+    object.insert("processPlan".to_string(), json!(&response.process_plan));
+    object.insert("toolingPlan".to_string(), json!(&response.tooling_plan));
+    object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "strategyCandidates": &response.learning.strategy_candidates,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn validate_process_capability_result_findings(
@@ -89644,6 +89854,198 @@ fn manufacturability_catalog_response() -> Value {
 
 async fn manufacturability_catalog_http() -> impl IntoResponse {
     Json(manufacturability_catalog_response())
+}
+
+fn manufacturability_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let manufacturability_blocked = response.design_input_review.unsupported_count > 0
+        || response.design_input_review.review_required_count > 0
+        || response.decomposition_plan.release_blocked
+        || response.interface_control_plan.machine_release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked;
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.manufacturability-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /manufacturability/plan",
+            "POST /fabrication/manufacturability/plan"
+        ]),
+    );
+    object.insert(
+        "planningRoutes".to_string(),
+        json!(["POST /plan", "POST /fabrication/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /manufacturability/catalog",
+            "GET /fabrication/manufacturability/catalog",
+            "GET /process-capabilities/catalog",
+            "GET /fabrication/process-capabilities/catalog",
+            "GET /decomposition/catalog",
+            "GET /fabrication/decomposition/catalog",
+            "GET /release/gates/catalog",
+            "GET /fabrication/release/gates/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /manufacturability/result",
+            "POST /fabrication/manufacturability/result",
+            "POST /process-capabilities/result",
+            "POST /fabrication/process-capabilities/result",
+            "POST /decomposition/result",
+            "POST /fabrication/decomposition/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert(
+        "machineReady".to_string(),
+        json!(!manufacturability_blocked),
+    );
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(manufacturability_blocked),
+    );
+    object.insert(
+        "designInputCount".to_string(),
+        json!(response.design_input_review.input_count),
+    );
+    object.insert(
+        "reviewRequiredInputCount".to_string(),
+        json!(response.design_input_review.review_required_count),
+    );
+    object.insert(
+        "unsupportedInputCount".to_string(),
+        json!(response.design_input_review.unsupported_count),
+    );
+    object.insert(
+        "conversionStepCount".to_string(),
+        json!(response.design_input_review.conversion_plan.len()),
+    );
+    object.insert(
+        "decompositionTargetCount".to_string(),
+        json!(response.decomposition_plan.targets.len()),
+    );
+    object.insert(
+        "interfaceControlCount".to_string(),
+        json!(response.interface_control_plan.controls.len()),
+    );
+    object.insert(
+        "qualityMeasurementTargetCount".to_string(),
+        json!(response.quality_plan.measurement_targets.len()),
+    );
+    object.insert(
+        "machineReleaseBlockerCount".to_string(),
+        json!(response.machine_release.blockers.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "designInputReview.inputs",
+            "designInputReview.conversionPlan",
+            "manufacturabilityContracts",
+            "decompositionPlan.targets",
+            "decompositionPlan.routeContracts",
+            "interfaceControlPlan.controls",
+            "hybridMakePlan.splitCombineDecisions",
+            "qualityPlan.measurementTargets",
+            "releasePackagePlan.packages",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "manufacturability-plan",
+            "manufacturability-catalog",
+            "design-input-review",
+            "decomposition-plan",
+            "interface-control-plan",
+            "hybrid-make-plan",
+            "quality-plan",
+            "release-package-plan",
+            "machine-release",
+            "mdp-request.artifacts.manufacturabilityEvidence"
+        ]),
+    );
+    object.insert(
+        "manufacturabilityPolicy".to_string(),
+        json!([
+            "manufacturability planning returns draft DFM, DfAM, tool-access, sheet-flat-pattern, and split/combine review evidence, not certified CAD, CAM, slicer, or controller approval",
+            "machineReady=false while source geometry, native CAD imports, decomposition, interface controls, process capability, inspection, release package, or human-intervention evidence remains unresolved",
+            "DFM, DfAM, split/combine, redesign, and route feasibility signals are retained for MDP/POMDP/neural workers so future plans can learn when to print, mill, turn, cut, split, or recombine parts"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "manufacturabilityPlan".to_string(),
+        json!({
+            "designInputReview": &response.design_input_review,
+            "manufacturabilityContracts": manufacturability_catalog_entries(),
+            "decompositionPlan": &response.decomposition_plan,
+            "interfaceControlPlan": &response.interface_control_plan,
+            "hybridMakePlan": &response.hybrid_make_plan,
+            "qualityPlan": &response.quality_plan,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "designInputReview".to_string(),
+        json!(&response.design_input_review),
+    );
+    object.insert(
+        "decompositionPlan".to_string(),
+        json!(&response.decomposition_plan),
+    );
+    object.insert(
+        "interfaceControlPlan".to_string(),
+        json!(&response.interface_control_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "strategyCandidates": &response.learning.strategy_candidates,
+            "interventionSignals": &response.learning.intervention_signals,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 fn validate_manufacturability_result_findings(
@@ -116014,7 +116416,9 @@ async fn request_schema() -> impl IntoResponse {
         "kinematicsResult": ["POST /kinematics/result", "POST /fabrication/kinematics/result"],
         "toleranceCatalog": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
         "processCapabilityCatalog": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
+        "processCapabilityPlan": ["POST /process-capabilities/plan", "POST /fabrication/process-capabilities/plan"],
         "manufacturabilityCatalog": ["GET /manufacturability/catalog", "GET /fabrication/manufacturability/catalog"],
+        "manufacturabilityPlan": ["POST /manufacturability/plan", "POST /fabrication/manufacturability/plan"],
         "manufacturabilityResult": ["POST /manufacturability/result", "POST /fabrication/manufacturability/result"],
         "failureModeCatalog": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
         "failureModeResult": ["POST /failure-modes/result", "POST /fabrication/failure-modes/result"],
@@ -116987,6 +117391,54 @@ async fn decomposition_result_http(
     }
 }
 
+async fn manufacturability_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.manufacturability.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(manufacturability_planning_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn manufacturability_result_http(
     State(state): State<AppState>,
     Json(request): Json<ManufacturabilityResultReviewRequest>,
@@ -117107,6 +117559,54 @@ async fn tolerance_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn process_capability_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.process_capability.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(process_capability_planning_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -119212,6 +119712,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(process_capability_catalog_http),
         )
         .route(
+            "/process-capabilities/plan",
+            post(process_capability_plan_http),
+        )
+        .route(
+            "/fabrication/process-capabilities/plan",
+            post(process_capability_plan_http),
+        )
+        .route(
             "/process-capabilities/result",
             post(process_capability_result_http),
         )
@@ -119226,6 +119734,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/manufacturability/catalog",
             get(manufacturability_catalog_http),
+        )
+        .route("/manufacturability/plan", post(manufacturability_plan_http))
+        .route(
+            "/fabrication/manufacturability/plan",
+            post(manufacturability_plan_http),
         )
         .route(
             "/manufacturability/result",
@@ -140502,6 +141015,116 @@ mod tests {
     }
 
     #[test]
+    fn process_capability_planning_endpoint_returns_route_capability_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-process-capability-plan".to_string()),
+                objective:
+                    "plan a hybrid aluminum bracket that needs tool access, workholding, kerf, and split/combine capability evidence"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![260.0, 180.0, 18.0]),
+                }),
+                tolerance_mm: Some(0.05),
+                quantity: Some(2),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "milling".to_string(),
+                        "sheet-cutting".to_string(),
+                        "assembly".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("process capability planning should succeed");
+
+        let payload = process_capability_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.process-capability-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(
+                |route| route.as_str() == Some("POST /fabrication/process-capabilities/plan")
+            )));
+        assert!(payload
+            .get("processStepCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("processCapabilityPlan")
+            .and_then(|plan| plan.get("processCapabilityContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("capabilityFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-split-combine-and-rework-envelope"))));
+        assert!(payload
+            .get("processCapabilityPlan")
+            .and_then(|plan| plan.get("toolingPlan"))
+            .is_some());
+        assert!(payload
+            .get("processCapabilityPlan")
+            .and_then(|plan| plan.get("fixturePlan"))
+            .is_some());
+        assert!(payload
+            .get("processCapabilityPlan")
+            .and_then(|plan| plan.get("simulation"))
+            .is_some());
+        assert!(payload
+            .get("machineRelease")
+            .and_then(|release| release.get("blockers"))
+            .and_then(Value::as_array)
+            .is_some());
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("validation.failureBoundaries") })));
+        assert!(payload
+            .get("processCapabilityPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("neuralTrainingCorpus"))
+            .is_some());
+    }
+
+    #[test]
     fn process_capability_result_endpoint_reviews_routes_measurements_and_learning() {
         let response =
             process_capability_result_review_response(ProcessCapabilityResultReviewRequest {
@@ -140812,6 +141435,115 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified design approval")))));
+    }
+
+    #[test]
+    fn manufacturability_planning_endpoint_returns_dfm_split_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-manufacturability-plan".to_string()),
+                objective:
+                    "review a hybrid enclosure that may need printed shell, milled datum inserts, sheet-cut bracket, and split/combine assembly evidence"
+                        .to_string(),
+                material: Some(material("nylon and aluminum", "hybrid")),
+                stock: None,
+                tolerance_mm: Some(0.08),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(3),
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "additive-print".to_string(),
+                        "milling".to_string(),
+                        "sheet-cutting".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("manufacturability planning should succeed");
+
+        let payload = manufacturability_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.manufacturability-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/manufacturability/plan"))));
+        assert!(payload
+            .get("machineReady")
+            .and_then(Value::as_bool)
+            .is_some_and(|ready| !ready));
+        assert!(payload
+            .get("manufacturabilityPlan")
+            .and_then(|plan| plan.get("designInputReview"))
+            .is_some());
+        assert!(payload
+            .get("manufacturabilityPlan")
+            .and_then(|plan| plan.get("manufacturabilityContracts"))
+            .and_then(Value::as_array)
+            .is_some_and(|contracts| contracts.iter().any(|contract| contract
+                .get("reviewFamily")
+                .and_then(Value::as_str)
+                == Some("hybrid-assembly-dfm-and-interface-review"))));
+        assert!(payload
+            .get("decompositionPlan")
+            .and_then(|plan| plan.get("targets"))
+            .and_then(Value::as_array)
+            .is_some());
+        assert!(payload
+            .get("interfaceControlPlan")
+            .and_then(|plan| plan.get("controls"))
+            .and_then(Value::as_array)
+            .is_some());
+        assert!(payload
+            .get("machineRelease")
+            .and_then(|release| release.get("blockers"))
+            .and_then(Value::as_array)
+            .is_some());
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("hybridMakePlan.splitCombineDecisions")
+            })));
+        assert!(payload
+            .get("manufacturabilityPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("neuralTrainingCorpus"))
+            .is_some());
     }
 
     #[test]
@@ -167640,6 +168372,149 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-dynamic-balancing"
+        }));
+    }
+
+    #[test]
+    fn learned_composite_layup_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("composite-layup-methods-1".to_string()),
+            job_id: Some("plan-composite-layup-1".to_string()),
+            objective: Some(
+                "printed ABS mandrel with carbon prepreg composite layup release".to_string(),
+            ),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "prepreg-layup".to_string(),
+            ]),
+            machine_kind: Some("composite-layup-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed mandrel plus retained composite layup and coupon release lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.6),
+            observations: Some(vec![
+                "ply schedule retained".to_string(),
+                "vacuum trace passed".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus composite-layup process".to_string()
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned composite layup outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("composite-layup-methods-2".to_string()),
+            job_id: Some("plan-composite-layup-2".to_string()),
+            objective: Some("printed ABS tool with wet-layup coupon and NDI proof".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "composite-layup".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: Some("composite-layup-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some(
+                "printed mandrel plus retained composite layup and coupon release lane".to_string(),
+            ),
+            source_kind: None,
+            success: true,
+            reward: Some(2.3),
+            observations: Some(vec![
+                "coupon release recorded".to_string(),
+                "void inspection passed".to_string(),
+            ]),
+            notes: Some(vec!["same composite layup lane worked again".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned composite layup outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+composite-layup"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-composite-layup-combination".to_string()),
+                objective:
+                    "ABS assembly that can use learned printed tooling and composite layup process"
+                        .to_string(),
+                material: Some(material("abs", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "abs-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![250.0, 210.0, 210.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "layup-cell".to_string(),
+                        kind: "composite-layup-cell".to_string(),
+                        controller: Some("composite-layup-job".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![500.0, 300.0, 160.0]),
+                        axes: Some(3),
+                        operations: Some(vec![
+                            "composite-layup".to_string(),
+                            "prepreg-layup".to_string(),
+                            "vacuum-bag".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned composite layup plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-composite-layup-part"
+                && part.machine_kind == "composite-layup-cell"
+                && part.manufacturing_method == "composite-layup"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-composite-layup-part"
+                && program.machine_id == "layup-cell"
+                && program.language == "composite-layup-job"
+                && program.instructions.iter().any(|instruction| {
+                    instruction.contains("composite-layup-tooling-boundary")
+                        || instruction.contains("composite-layup-bag-cure-boundary")
+                })
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed mandrel plus retained composite layup and coupon release lane"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-composite-layup"
         }));
     }
 

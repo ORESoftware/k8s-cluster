@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 400,
+  "routeCount": 404,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 390,
+    "user-generated": 394,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -2857,6 +2857,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/manufacturability/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "manufacturability_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/manufacturability/result",
       "methods": [
         "POST"
@@ -3224,6 +3241,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "process_capability_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/process-capabilities/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "process_capability_plan_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -5392,6 +5426,23 @@
       "notes": ""
     },
     {
+      "path": "/manufacturability/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "manufacturability_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/manufacturability/result",
       "methods": [
         "POST"
@@ -5776,6 +5827,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "process_capability_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/process-capabilities/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "process_capability_plan_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

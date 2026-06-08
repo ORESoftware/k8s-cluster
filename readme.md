@@ -297,10 +297,14 @@ outcomes.
 - `POST /fabrication/tolerances/result`
 - `GET /process-capabilities/catalog`
 - `GET /fabrication/process-capabilities/catalog`
+- `POST /process-capabilities/plan`
+- `POST /fabrication/process-capabilities/plan`
 - `POST /process-capabilities/result`
 - `POST /fabrication/process-capabilities/result`
 - `GET /manufacturability/catalog`
 - `GET /fabrication/manufacturability/catalog`
+- `POST /manufacturability/plan`
+- `POST /fabrication/manufacturability/plan`
 - `POST /manufacturability/result`
 - `POST /fabrication/manufacturability/result`
 - `GET /failure-modes/catalog`
@@ -4094,6 +4098,26 @@ plan, or human-intervention evidence is present. Capability failures, alternate
 routes, split boundaries, and measured process outcomes are retained as
 MDP/POMDP/neural learning signals for future planning and instruction repair.
 
+## `POST /fabrication/process-capabilities/plan`
+
+`POST /process-capabilities/plan` and the gateway-prefixed
+`POST /fabrication/process-capabilities/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.process-capability-planning.v1` projection for printability,
+tool access, workholding, turning, sheet-cut kerf/pierce/support, simulation,
+quality, and hybrid split/combine capability review. The response includes
+`processCapabilityContracts`, `machineSelection`, `materialPlan`,
+`processPlan`, `toolingPlan`, `fixturePlan`, `simulation`, `qualityPlan`,
+`decompositionPlan`, `interfaceControlPlan`, and `machineRelease` so operators
+can see which process route evidence still blocks release.
+
+The endpoint keeps `machineReady=false` while requested geometry, material,
+machine envelope, tool access, workholding, support media, simulation, quality,
+split/combine, or human-intervention evidence remains unresolved. Capability
+failures, alternate routes, measured process outcomes, and split/combine choices
+are retained for the MDP/POMDP/neural lanes so future requests can learn which
+printer, mill, lathe, sheet-cut, or hybrid route can actually make the part.
+
 ## `POST /fabrication/process-capabilities/result`
 
 `POST /process-capabilities/result` and the gateway-prefixed
@@ -4148,6 +4172,27 @@ geometry needs redesign, repair, alternate routing, split/combine planning, or
 human-intervention evidence. Manufacturability failures, redesign actions,
 split/combine decisions, and successful route outcomes are retained as
 MDP/POMDP/neural learning signals for future planning and instruction repair.
+
+## `POST /fabrication/manufacturability/plan`
+
+`POST /manufacturability/plan` and the gateway-prefixed
+`POST /fabrication/manufacturability/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.manufacturability-planning.v1` projection for DFM/DfAM,
+tool-access, flat-pattern, CAD/import, process-capability, and hybrid
+split/combine review before machine-code release. The response carries
+`designInputReview`, `manufacturabilityContracts`, `decompositionPlan`,
+`interfaceControlPlan`, `hybridMakePlan`, `qualityPlan`,
+`releasePackagePlan`, `machineRelease`, and learning surfaces so operators and
+workers can see which evidence is still needed.
+
+The endpoint keeps `machineReady=false` while source geometry, native CAD
+imports, unsupported formats, decomposition, interface controls, process
+capability, inspection, release packages, or human-intervention evidence remain
+unresolved. DFM, DfAM, split/combine, redesign, and route-feasibility signals
+are retained for the MDP/POMDP/neural lanes so later plans can learn when to
+print, mill, turn, sheet-cut, split, or recombine parts instead of forcing an
+unreleasable single-process route.
 
 ## `POST /fabrication/manufacturability/result`
 
