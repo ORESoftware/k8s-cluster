@@ -255,13 +255,34 @@ test("benchmark websocket services do not reserve whole idle cores", async () =>
       path: "remote/deployments/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.deployment.yaml",
       cpu: "100m",
     },
+    {
+      path: "remote/deployments/gleamlang-ws-loadtest/k8s/gcs/dd-gleamlang-ws-loadtest-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
+    {
+      path: "remote/deployments/gleamlang-ws-loadtest/k8s/gcs-node/dd-nodejs-ws-loadtest-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
+    {
+      path: "remote/deployments/ws-loadtest-rs/k8s/gcs/dd-ws-loadtest-rs-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
   ];
   const offenders: string[] = [];
 
-  for (const { path, cpu } of requestBudgets) {
+  for (const { path, cpu, memoryLimit } of requestBudgets) {
     const text = await readRepoFile(path);
     if (!new RegExp(`requests:\\s*\\n\\s*cpu:\\s*${cpu}`).test(text)) {
       offenders.push(`${path}: expected CPU request ${cpu}`);
+    }
+    if (
+      memoryLimit &&
+      !new RegExp(`limits:\\s*\\n\\s*cpu:\\s*"6"\\s*\\n\\s*memory:\\s*${memoryLimit}`).test(text)
+    ) {
+      offenders.push(`${path}: expected memory limit ${memoryLimit}`);
     }
   }
 

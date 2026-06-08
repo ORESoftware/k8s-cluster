@@ -72,11 +72,11 @@ spec:
               value: "10"
           resources:
             requests:
-              cpu: 100m
+              cpu: 1m
               memory: 512Mi
             limits:
               cpu: "6"
-              memory: 12Gi
+              memory: 8Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
