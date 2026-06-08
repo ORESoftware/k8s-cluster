@@ -152,6 +152,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/etl.rs validates requested fields against dataset shapes, returns lineage and pushdown hints, and does not inspect raw row values.",
         },
         ControlDescriptor {
+            id: "bounded-self-service-questions",
+            status: "implemented",
+            description: "Metabase/Superset-style saved questions and chart bindings are capped by field, filter, aggregation, tag, and encoding counts, then validated against ingested dataset fields before storage.",
+            evidence: "src/self_service.rs compiles question-builder payloads into bounded SQL request metadata and rejects missing fields or invalid chart encodings.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed.",

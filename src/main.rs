@@ -26,6 +26,7 @@ mod hardening;
 mod infra_diagrams;
 mod platform;
 mod rbac;
+mod self_service;
 mod semantic;
 mod sql_frontend;
 mod util;
@@ -56,6 +57,7 @@ struct AppState {
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
     semantic_models: Arc<RwLock<BTreeMap<String, semantic::SavedSemanticModel>>>,
+    questions: Arc<RwLock<BTreeMap<String, self_service::SavedQuestion>>>,
 }
 
 #[derive(Clone)]
@@ -79,6 +81,8 @@ struct Metrics {
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
+    self_service_requests_total: AtomicU64,
+    questions_saved_total: AtomicU64,
     alert_requests_total: AtomicU64,
     alert_rules_saved_total: AtomicU64,
     alert_evaluations_total: AtomicU64,
@@ -477,6 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
         semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
+        questions: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let app = app_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
@@ -528,6 +533,9 @@ fn app_router(state: AppState) -> Router {
         .route("/associations/select", post(association_selection))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
+        .route("/questions", get(list_questions).post(save_question))
+        .route("/questions/:question_id", get(get_question))
+        .route("/charts", get(list_charts))
         .route("/alerts/rules", get(list_alert_rules).post(save_alert_rule))
         .route("/alerts/rules/:rule_id", get(get_alert_rule))
         .route("/alerts/rules/:rule_id/evaluate", post(evaluate_alert_rule))
@@ -713,6 +721,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "maxOutputFields": etl::max_etl_fields(),
             "posture": "metadata-only planner; validates bounded transformations against dataset schemas and returns lineage/pushdown hints without executing formulas"
         },
+        "selfServiceQuestion": {
+            "surfaces": ["saved questions", "saved chart bindings", "chart catalog"],
+            "queryBuilder": ["fields", "filters", "groupBy", "aggregations", "limit"],
+            "posture": "validated against ingested dataset fields; saved questions compile to bounded SQL requests"
+        },
         "infraDiagram": {
             "sources": ["terraform", "terraform-plan", "aws-inventory", "aws-resource-explorer", "gcp-inventory", "gcp-cloud-asset", "mixed"],
             "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json", "vega-force-json", "networkx-json", "gexf", "markmap-markdown", "markdown-inventory"],
@@ -842,6 +855,12 @@ dd_data_viz_dashboard_requests_total {}
 # HELP dd_data_viz_dashboards_saved_total Dashboards saved.
 # TYPE dd_data_viz_dashboards_saved_total counter
 dd_data_viz_dashboards_saved_total {}
+# HELP dd_data_viz_self_service_requests_total Self-service question and chart requests handled.
+# TYPE dd_data_viz_self_service_requests_total counter
+dd_data_viz_self_service_requests_total {}
+# HELP dd_data_viz_questions_saved_total Self-service questions saved.
+# TYPE dd_data_viz_questions_saved_total counter
+dd_data_viz_questions_saved_total {}
 # HELP dd_data_viz_alert_requests_total Alert rule requests handled.
 # TYPE dd_data_viz_alert_requests_total counter
 dd_data_viz_alert_requests_total {}
@@ -884,6 +903,8 @@ dd_data_viz_errors_total {}
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
+        metrics.self_service_requests_total.load(Ordering::Relaxed),
+        metrics.questions_saved_total.load(Ordering::Relaxed),
         metrics.alert_requests_total.load(Ordering::Relaxed),
         metrics.alert_rules_saved_total.load(Ordering::Relaxed),
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
@@ -1434,6 +1455,125 @@ async fn get_dashboard(
         .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("dashboard `{dashboard_id}` not found")))
+}
+
+async fn save_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<self_service::SaveQuestionRequest>,
+) -> Result<Json<self_service::SaveQuestionResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionWrite)?;
+
+    let dataset = get_dataset_snapshot(&state, &request.dataset_id)?;
+    let field_catalog = dataset_field_catalog(&dataset);
+    let mut question = request
+        .into_saved(now_ms(), &field_catalog)
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut questions = state
+        .questions
+        .write()
+        .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+    if let Some(existing) = questions.get(&question.question_id) {
+        question.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "question {} replaced with a new in-memory definition",
+            question.question_id
+        ));
+    } else if questions.len() >= self_service::max_questions() {
+        return Err(ApiError::bad_request(format!(
+            "question count exceeds max {}",
+            self_service::max_questions()
+        )));
+    }
+    question.updated_at_ms = now_ms();
+    questions.insert(question.question_id.clone(), question.clone());
+    state
+        .metrics
+        .questions_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(self_service::save_response(question, warnings)))
+}
+
+async fn list_questions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionRead)?;
+    let questions = state
+        .questions
+        .read()
+        .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+    let summaries = questions
+        .values()
+        .map(self_service::SavedQuestion::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(self_service::question_catalog_payload(summaries)))
+}
+
+async fn get_question(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(question_id): Path<String>,
+) -> Result<Json<self_service::SavedQuestion>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionRead)?;
+    let questions = state
+        .questions
+        .read()
+        .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+    questions
+        .get(&question_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("question `{question_id}` not found")))
+}
+
+async fn list_charts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .self_service_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QuestionRead)?;
+    let questions = state
+        .questions
+        .read()
+        .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+    let charts = questions
+        .values()
+        .filter_map(self_service::SavedQuestion::chart_summary)
+        .collect::<Vec<_>>();
+    Ok(Json(self_service::chart_catalog_payload(charts)))
 }
 
 async fn save_alert_rule(
@@ -3429,6 +3569,30 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/questions",
+            auth: "question-write",
+            description: "Create or replace a Metabase-style saved question with a validated query-builder plan and optional chart binding.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/questions",
+            auth: "question-read",
+            description: "List saved self-service question summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/questions/:question_id",
+            auth: "question-read",
+            description: "Read a saved self-service question, compiled SQL, and optional chart binding.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/charts",
+            auth: "question-read",
+            description: "List saved chart summaries derived from self-service questions.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/alerts/rules",
             auth: "alert-write",
             description: "Create or replace a Grafana-style alert rule over an analytical query.",
@@ -3537,6 +3701,14 @@ fn dataset_shapes(state: &AppState) -> Result<Vec<etl::DatasetShape>, ApiError> 
                 .collect(),
         })
         .collect())
+}
+
+fn dataset_field_catalog(dataset: &Dataset) -> BTreeMap<String, String> {
+    dataset
+        .columns
+        .iter()
+        .map(|(name, column)| (name.clone(), column.data_type()))
+        .collect()
 }
 
 fn dataset_association_graph(dataset: &Dataset) -> Value {
@@ -4078,6 +4250,7 @@ mod tests {
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
             semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
+            questions: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -4231,6 +4404,9 @@ mod tests {
         assert!(paths.contains(&"/security/rbac"));
         assert!(paths.contains(&"/dashboards"));
         assert!(paths.contains(&"/dashboards/:dashboard_id"));
+        assert!(paths.contains(&"/questions"));
+        assert!(paths.contains(&"/questions/:question_id"));
+        assert!(paths.contains(&"/charts"));
         assert!(paths.contains(&"/associations/select"));
         assert!(paths.contains(&"/alerts/rules"));
         assert!(paths.contains(&"/alerts/rules/:rule_id"));
