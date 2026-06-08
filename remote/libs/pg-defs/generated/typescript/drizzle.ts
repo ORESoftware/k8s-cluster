@@ -6392,3 +6392,828 @@ export const benefactorMarketingCallInsightsUpdateSchema = benefactorMarketingCa
 export type BenefactorMarketingCallInsightsRow = z.infer<typeof benefactorMarketingCallInsightsRowSchema>;
 export type BenefactorMarketingCallInsightsInsert = z.infer<typeof benefactorMarketingCallInsightsInsertSchema>;
 export type BenefactorMarketingCallInsightsUpdate = z.infer<typeof benefactorMarketingCallInsightsUpdateSchema>;
+
+export const usaccUsersUserKindValues = ["natural_person","legal_entity","service_account","sim_agent"] as const;
+export const usaccUsersUserKindSchema = z.enum(usaccUsersUserKindValues);
+export type UsaccUsersUserKind = z.infer<typeof usaccUsersUserKindSchema>;
+
+export const usaccUsersStatusValues = ["active","pending","suspended","banned","alumni","archived"] as const;
+export const usaccUsersStatusSchema = z.enum(usaccUsersStatusValues);
+export type UsaccUsersStatus = z.infer<typeof usaccUsersStatusSchema>;
+
+export const usaccUsersKycLevelValues = ["none","light","medium","high"] as const;
+export const usaccUsersKycLevelSchema = z.enum(usaccUsersKycLevelValues);
+export type UsaccUsersKycLevel = z.infer<typeof usaccUsersKycLevelSchema>;
+
+export const usaccUsers = pgTable(
+  "usacc_users",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    externalSubject: varchar("external_subject", { length: 240 }),
+    emailHash: varchar("email_hash", { length: 64 }),
+    displayName: varchar("display_name", { length: 200 }).notNull(),
+    userKind: varchar("user_kind", { length: 48 }).default(sql`'natural_person'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    kycLevel: varchar("kyc_level", { length: 32 }).default(sql`'none'`).notNull(),
+    roles: jsonb("roles").default(sql`'{}'::jsonb`).notNull(),
+    isLegalEntity: boolean("is_legal_entity").default(sql`false`).notNull(),
+    legalRegion: varchar("legal_region", { length: 64 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccUsersExternalSubjectSizeChk: check("usacc_users_external_subject_size_chk", sql.raw("external_subject is null or octet_length(external_subject) between 1 and 240")),
+    usaccUsersEmailHashChk: check("usacc_users_email_hash_chk", sql.raw("email_hash is null or email_hash ~ '^[a-f0-9]{64}$'")),
+    usaccUsersDisplayNameSizeChk: check("usacc_users_display_name_size_chk", sql.raw("octet_length(display_name) between 1 and 200")),
+    usaccUsersKindChk: check("usacc_users_kind_chk", sql.raw("user_kind in ('natural_person', 'legal_entity', 'service_account', 'sim_agent')")),
+    usaccUsersStatusChk: check("usacc_users_status_chk", sql.raw("status in ('active', 'pending', 'suspended', 'banned', 'alumni', 'archived')")),
+    usaccUsersKycLevelChk: check("usacc_users_kyc_level_chk", sql.raw("kyc_level in ('none', 'light', 'medium', 'high')")),
+    usaccUsersLegalRegionFormatChk: check("usacc_users_legal_region_format_chk", sql.raw("legal_region is null or legal_region ~ '^[A-Za-z0-9._:/-]{1,64}$'")),
+    usaccUsersRolesObjectChk: check("usacc_users_roles_object_chk", sql.raw("jsonb_typeof(roles) = 'object'")),
+    usaccUsersMetaObjectChk: check("usacc_users_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccUsersExternalSubjectUq: uniqueIndex("usacc_users_external_subject_uq").on(table.externalSubject).where(sql.raw("external_subject is not null")),
+    usaccUsersEmailHashUq: uniqueIndex("usacc_users_email_hash_uq").on(table.emailHash).where(sql.raw("email_hash is not null")),
+    usaccUsersStatusUpdatedAtIdx: index("usacc_users_status_updated_at_idx").on(table.status, table.updatedAt.desc()),
+    usaccUsersRolesGinIdx: index("usacc_users_roles_gin_idx").using("gin", table.roles),
+  }),
+);
+
+export const usaccUsersRowSchema = z.object({
+  id: z.string().uuid(),
+  externalSubject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  emailHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable(),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  userKind: usaccUsersUserKindSchema,
+  status: usaccUsersStatusSchema,
+  kycLevel: usaccUsersKycLevelSchema,
+  roles: jsonObjectSchema,
+  isLegalEntity: z.boolean(),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccUsersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  externalSubject: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  emailHash: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")).nullable().optional(),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  userKind: usaccUsersUserKindSchema.optional().default("natural_person"),
+  status: usaccUsersStatusSchema.optional().default("active"),
+  kycLevel: usaccUsersKycLevelSchema.optional().default("none"),
+  roles: jsonObjectSchema.optional().default({}),
+  isLegalEntity: z.boolean().optional().default(false),
+  legalRegion: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")).nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccUsersUpdateSchema = usaccUsersInsertSchema.partial();
+export type UsaccUsersRow = z.infer<typeof usaccUsersRowSchema>;
+export type UsaccUsersInsert = z.infer<typeof usaccUsersInsertSchema>;
+export type UsaccUsersUpdate = z.infer<typeof usaccUsersUpdateSchema>;
+
+export const usaccCasesStatusValues = ["draft","signature_collection","screening","inquiry","admission_review","trial","appeal","resolved","canceled","archived"] as const;
+export const usaccCasesStatusSchema = z.enum(usaccCasesStatusValues);
+export type UsaccCasesStatus = z.infer<typeof usaccCasesStatusSchema>;
+
+export const usaccCasesFilingTierValues = ["screen","inquiry","trial_1","trial_2","trial_3","trial_5","trial_10"] as const;
+export const usaccCasesFilingTierSchema = z.enum(usaccCasesFilingTierValues);
+export type UsaccCasesFilingTier = z.infer<typeof usaccCasesFilingTierSchema>;
+
+export const usaccCases = pgTable(
+  "usacc_cases",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseNumber: varchar("case_number", { length: 80 }).notNull(),
+    title: varchar("title", { length: 240 }).notNull(),
+    status: varchar("status", { length: 40 }).default(sql`'draft'`).notNull(),
+    filingTier: varchar("filing_tier", { length: 40 }).default(sql`'screen'`).notNull(),
+    plaintiffUserId: uuid("plaintiff_user_id"),
+    defendantSummary: text("defendant_summary").notNull(),
+    conductSummary: text("conduct_summary").notNull(),
+    conductFingerprint: varchar("conduct_fingerprint", { length: 128 }),
+    conductWindowStart: varchar("conduct_window_start", { length: 10 }),
+    conductWindowEnd: varchar("conduct_window_end", { length: 10 }),
+    priorityScoreMicros: integer("priority_score_micros").default(sql`0`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true, mode: "string" }),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccCasesCaseNumberFormatChk: check("usacc_cases_case_number_format_chk", sql.raw("case_number ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    usaccCasesTitleSizeChk: check("usacc_cases_title_size_chk", sql.raw("octet_length(title) between 1 and 240")),
+    usaccCasesStatusChk: check("usacc_cases_status_chk", sql.raw("status in ('draft', 'signature_collection', 'screening', 'inquiry', 'admission_review', 'trial', 'appeal', 'resolved', 'canceled', 'archived')")),
+    usaccCasesFilingTierChk: check("usacc_cases_filing_tier_chk", sql.raw("filing_tier in ('screen', 'inquiry', 'trial_1', 'trial_2', 'trial_3', 'trial_5', 'trial_10')")),
+    usaccCasesDefendantSummarySizeChk: check("usacc_cases_defendant_summary_size_chk", sql.raw("octet_length(defendant_summary) between 1 and 4000")),
+    usaccCasesConductSummarySizeChk: check("usacc_cases_conduct_summary_size_chk", sql.raw("octet_length(conduct_summary) between 1 and 12000")),
+    usaccCasesConductFingerprintChk: check("usacc_cases_conduct_fingerprint_chk", sql.raw("conduct_fingerprint is null or conduct_fingerprint ~ '^[A-Za-z0-9._:/-]{1,128}$'")),
+    usaccCasesConductWindowStartChk: check("usacc_cases_conduct_window_start_chk", sql.raw("conduct_window_start is null or conduct_window_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    usaccCasesConductWindowEndChk: check("usacc_cases_conduct_window_end_chk", sql.raw("conduct_window_end is null or conduct_window_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    usaccCasesPriorityScoreChk: check("usacc_cases_priority_score_chk", sql.raw("priority_score_micros between 0 and 1000000")),
+    usaccCasesMetaObjectChk: check("usacc_cases_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccCasesCaseNumberUq: uniqueIndex("usacc_cases_case_number_uq").on(table.caseNumber),
+    usaccCasesStatusUpdatedAtIdx: index("usacc_cases_status_updated_at_idx").on(table.status, table.updatedAt.desc()),
+    usaccCasesPlaintiffIdx: index("usacc_cases_plaintiff_idx").on(table.plaintiffUserId, table.createdAt.desc()).where(sql.raw("plaintiff_user_id is not null")),
+  }),
+);
+
+export const usaccCasesRowSchema = z.object({
+  id: z.string().uuid(),
+  caseNumber: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  status: usaccCasesStatusSchema,
+  filingTier: usaccCasesFilingTierSchema,
+  plaintiffUserId: z.string().uuid().nullable(),
+  defendantSummary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes"),
+  conductSummary: z.string().refine((value) => byteLength(value) <= 12000, "Must be at most 12000 bytes"),
+  conductFingerprint: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")).nullable(),
+  conductWindowStart: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable(),
+  conductWindowEnd: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable(),
+  priorityScoreMicros: z.number().int().min(0).max(1000000),
+  metaData: jsonObjectSchema,
+  openedAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccCasesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseNumber: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  status: usaccCasesStatusSchema.optional().default("draft"),
+  filingTier: usaccCasesFilingTierSchema.optional().default("screen"),
+  plaintiffUserId: z.string().uuid().nullable().optional(),
+  defendantSummary: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes"),
+  conductSummary: z.string().refine((value) => byteLength(value) <= 12000, "Must be at most 12000 bytes"),
+  conductFingerprint: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")).nullable().optional(),
+  conductWindowStart: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable().optional(),
+  conductWindowEnd: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable().optional(),
+  priorityScoreMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  metaData: jsonObjectSchema.optional().default({}),
+  openedAt: z.string().datetime().nullable().optional(),
+  closedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccCasesUpdateSchema = usaccCasesInsertSchema.partial();
+export type UsaccCasesRow = z.infer<typeof usaccCasesRowSchema>;
+export type UsaccCasesInsert = z.infer<typeof usaccCasesInsertSchema>;
+export type UsaccCasesUpdate = z.infer<typeof usaccCasesUpdateSchema>;
+
+export const usaccCaseParticipantsRoleValues = ["plaintiff","defendant","sponsor","witness","judge","panel_juror","appeal_judge","presiding_juror","paralegal","investigator","intake_reviewer","clerk_of_court","compliance_monitor","counsel","oversight_board","auditor","ombuds"] as const;
+export const usaccCaseParticipantsRoleSchema = z.enum(usaccCaseParticipantsRoleValues);
+export type UsaccCaseParticipantsRole = z.infer<typeof usaccCaseParticipantsRoleSchema>;
+
+export const usaccCaseParticipantsStatusValues = ["active","pending","declined","suspended","ended","banned"] as const;
+export const usaccCaseParticipantsStatusSchema = z.enum(usaccCaseParticipantsStatusValues);
+export type UsaccCaseParticipantsStatus = z.infer<typeof usaccCaseParticipantsStatusSchema>;
+
+export const usaccCaseParticipants = pgTable(
+  "usacc_case_participants",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    role: varchar("role", { length: 48 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    grantedBy: uuid("granted_by"),
+    grantedByPolicyVersion: varchar("granted_by_policy_version", { length: 120 }),
+    endedAt: timestamp("ended_at", { withTimezone: true, mode: "string" }),
+    endedReason: varchar("ended_reason", { length: 240 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccCaseParticipantsRoleChk: check("usacc_case_participants_role_chk", sql.raw("role in ('plaintiff', 'defendant', 'sponsor', 'witness', 'judge', 'panel_juror', 'appeal_judge', 'presiding_juror', 'paralegal', 'investigator', 'intake_reviewer', 'clerk_of_court', 'compliance_monitor', 'counsel', 'oversight_board', 'auditor', 'ombuds')")),
+    usaccCaseParticipantsStatusChk: check("usacc_case_participants_status_chk", sql.raw("status in ('active', 'pending', 'declined', 'suspended', 'ended', 'banned')")),
+    usaccCaseParticipantsPolicyVersionChk: check("usacc_case_participants_policy_version_chk", sql.raw("granted_by_policy_version is null or granted_by_policy_version ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    usaccCaseParticipantsEndedReasonSizeChk: check("usacc_case_participants_ended_reason_size_chk", sql.raw("ended_reason is null or octet_length(ended_reason) <= 240")),
+    usaccCaseParticipantsMetaObjectChk: check("usacc_case_participants_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccCaseParticipantsCaseUserRoleUq: uniqueIndex("usacc_case_participants_case_user_role_uq").on(table.caseId, table.userId, table.role),
+    usaccCaseParticipantsUserIdx: index("usacc_case_participants_user_idx").on(table.userId, table.status, table.updatedAt.desc()),
+    usaccCaseParticipantsCaseRoleIdx: index("usacc_case_participants_case_role_idx").on(table.caseId, table.role, table.status),
+  }),
+);
+
+export const usaccCaseParticipantsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: usaccCaseParticipantsRoleSchema,
+  status: usaccCaseParticipantsStatusSchema,
+  grantedBy: z.string().uuid().nullable(),
+  grantedByPolicyVersion: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")).nullable(),
+  endedAt: z.string().datetime().nullable(),
+  endedReason: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccCaseParticipantsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: usaccCaseParticipantsRoleSchema,
+  status: usaccCaseParticipantsStatusSchema.optional().default("active"),
+  grantedBy: z.string().uuid().nullable().optional(),
+  grantedByPolicyVersion: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")).nullable().optional(),
+  endedAt: z.string().datetime().nullable().optional(),
+  endedReason: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccCaseParticipantsUpdateSchema = usaccCaseParticipantsInsertSchema.partial();
+export type UsaccCaseParticipantsRow = z.infer<typeof usaccCaseParticipantsRowSchema>;
+export type UsaccCaseParticipantsInsert = z.infer<typeof usaccCaseParticipantsInsertSchema>;
+export type UsaccCaseParticipantsUpdate = z.infer<typeof usaccCaseParticipantsUpdateSchema>;
+
+export const usaccCaseStagesStatusValues = ["pending","open","blocked","complete","skipped","canceled"] as const;
+export const usaccCaseStagesStatusSchema = z.enum(usaccCaseStagesStatusValues);
+export type UsaccCaseStagesStatus = z.infer<typeof usaccCaseStagesStatusSchema>;
+
+export const usaccCaseStages = pgTable(
+  "usacc_case_stages",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id").notNull(),
+    stageKey: varchar("stage_key", { length: 64 }).notNull(),
+    stageOrder: integer("stage_order").notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    assignedUserId: uuid("assigned_user_id"),
+    openedAt: timestamp("opened_at", { withTimezone: true, mode: "string" }),
+    dueAt: timestamp("due_at", { withTimezone: true, mode: "string" }),
+    closedAt: timestamp("closed_at", { withTimezone: true, mode: "string" }),
+    decisionSummary: text("decision_summary"),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccCaseStagesStageKeyFormatChk: check("usacc_case_stages_stage_key_format_chk", sql.raw("stage_key ~ '^[A-Za-z0-9._:/-]{1,64}$'")),
+    usaccCaseStagesStageOrderChk: check("usacc_case_stages_stage_order_chk", sql.raw("stage_order between 0 and 1000")),
+    usaccCaseStagesTitleSizeChk: check("usacc_case_stages_title_size_chk", sql.raw("octet_length(title) between 1 and 200")),
+    usaccCaseStagesStatusChk: check("usacc_case_stages_status_chk", sql.raw("status in ('pending', 'open', 'blocked', 'complete', 'skipped', 'canceled')")),
+    usaccCaseStagesDecisionSummarySizeChk: check("usacc_case_stages_decision_summary_size_chk", sql.raw("decision_summary is null or octet_length(decision_summary) <= 12000")),
+    usaccCaseStagesMetaObjectChk: check("usacc_case_stages_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccCaseStagesCaseStageKeyUq: uniqueIndex("usacc_case_stages_case_stage_key_uq").on(table.caseId, table.stageKey),
+    usaccCaseStagesCaseOrderIdx: index("usacc_case_stages_case_order_idx").on(table.caseId, table.stageOrder),
+  }),
+);
+
+export const usaccCaseStagesRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  stageKey: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")),
+  stageOrder: z.number().int().min(0).max(1000),
+  title: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  status: usaccCaseStagesStatusSchema,
+  assignedUserId: z.string().uuid().nullable(),
+  openedAt: z.string().datetime().nullable(),
+  dueAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  decisionSummary: z.string().refine((value) => byteLength(value) <= 12000, "Must be at most 12000 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccCaseStagesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid(),
+  stageKey: z.string().max(64).regex(new RegExp("^[A-Za-z0-9._:/-]{1,64}$")),
+  stageOrder: z.number().int().min(0).max(1000),
+  title: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  status: usaccCaseStagesStatusSchema.optional().default("pending"),
+  assignedUserId: z.string().uuid().nullable().optional(),
+  openedAt: z.string().datetime().nullable().optional(),
+  dueAt: z.string().datetime().nullable().optional(),
+  closedAt: z.string().datetime().nullable().optional(),
+  decisionSummary: z.string().refine((value) => byteLength(value) <= 12000, "Must be at most 12000 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccCaseStagesUpdateSchema = usaccCaseStagesInsertSchema.partial();
+export type UsaccCaseStagesRow = z.infer<typeof usaccCaseStagesRowSchema>;
+export type UsaccCaseStagesInsert = z.infer<typeof usaccCaseStagesInsertSchema>;
+export type UsaccCaseStagesUpdate = z.infer<typeof usaccCaseStagesUpdateSchema>;
+
+export const usaccElectionsElectionKindValues = ["priority","admission","panel_verdict","appeal","oversight","policy","assignment_acceptance"] as const;
+export const usaccElectionsElectionKindSchema = z.enum(usaccElectionsElectionKindValues);
+export type UsaccElectionsElectionKind = z.infer<typeof usaccElectionsElectionKindSchema>;
+
+export const usaccElectionsStatusValues = ["draft","open","sealed","tallying","certified","void","archived"] as const;
+export const usaccElectionsStatusSchema = z.enum(usaccElectionsStatusValues);
+export type UsaccElectionsStatus = z.infer<typeof usaccElectionsStatusSchema>;
+
+export const usaccElections = pgTable(
+  "usacc_elections",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id"),
+    stageId: uuid("stage_id"),
+    electionKind: varchar("election_kind", { length: 48 }).notNull(),
+    title: varchar("title", { length: 220 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
+    quorumCount: integer("quorum_count").default(sql`1`).notNull(),
+    thresholdMicros: integer("threshold_micros").default(sql`500000`).notNull(),
+    opensAt: timestamp("opens_at", { withTimezone: true, mode: "string" }),
+    closesAt: timestamp("closes_at", { withTimezone: true, mode: "string" }),
+    sealedUntil: timestamp("sealed_until", { withTimezone: true, mode: "string" }),
+    tally: jsonb("tally").default(sql`'{}'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccElectionsKindChk: check("usacc_elections_kind_chk", sql.raw("election_kind in ('priority', 'admission', 'panel_verdict', 'appeal', 'oversight', 'policy', 'assignment_acceptance')")),
+    usaccElectionsTitleSizeChk: check("usacc_elections_title_size_chk", sql.raw("octet_length(title) between 1 and 220")),
+    usaccElectionsStatusChk: check("usacc_elections_status_chk", sql.raw("status in ('draft', 'open', 'sealed', 'tallying', 'certified', 'void', 'archived')")),
+    usaccElectionsQuorumChk: check("usacc_elections_quorum_chk", sql.raw("quorum_count between 1 and 1000000")),
+    usaccElectionsThresholdChk: check("usacc_elections_threshold_chk", sql.raw("threshold_micros between 1 and 1000000")),
+    usaccElectionsTallyObjectChk: check("usacc_elections_tally_object_chk", sql.raw("jsonb_typeof(tally) = 'object'")),
+    usaccElectionsMetaObjectChk: check("usacc_elections_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccElectionsCaseStatusIdx: index("usacc_elections_case_status_idx").on(table.caseId, table.status, table.updatedAt.desc()).where(sql.raw("case_id is not null")),
+    usaccElectionsStageIdx: index("usacc_elections_stage_idx").on(table.stageId, table.createdAt.desc()).where(sql.raw("stage_id is not null")),
+  }),
+);
+
+export const usaccElectionsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  stageId: z.string().uuid().nullable(),
+  electionKind: usaccElectionsElectionKindSchema,
+  title: z.string().max(220).refine((value) => byteLength(value) <= 220, "Must be at most 220 bytes"),
+  status: usaccElectionsStatusSchema,
+  quorumCount: z.number().int().min(1).max(1000000),
+  thresholdMicros: z.number().int().min(1).max(1000000),
+  opensAt: z.string().datetime().nullable(),
+  closesAt: z.string().datetime().nullable(),
+  sealedUntil: z.string().datetime().nullable(),
+  tally: jsonObjectSchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccElectionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid().nullable().optional(),
+  stageId: z.string().uuid().nullable().optional(),
+  electionKind: usaccElectionsElectionKindSchema,
+  title: z.string().max(220).refine((value) => byteLength(value) <= 220, "Must be at most 220 bytes"),
+  status: usaccElectionsStatusSchema.optional().default("draft"),
+  quorumCount: z.number().int().min(1).max(1000000).optional().default(1),
+  thresholdMicros: z.number().int().min(1).max(1000000).optional().default(500000),
+  opensAt: z.string().datetime().nullable().optional(),
+  closesAt: z.string().datetime().nullable().optional(),
+  sealedUntil: z.string().datetime().nullable().optional(),
+  tally: jsonObjectSchema.optional().default({}),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccElectionsUpdateSchema = usaccElectionsInsertSchema.partial();
+export type UsaccElectionsRow = z.infer<typeof usaccElectionsRowSchema>;
+export type UsaccElectionsInsert = z.infer<typeof usaccElectionsInsertSchema>;
+export type UsaccElectionsUpdate = z.infer<typeof usaccElectionsUpdateSchema>;
+
+export const usaccVotesVoteKindValues = ["choice","priority_dollar_weighted","verdict","approval","assignment_response"] as const;
+export const usaccVotesVoteKindSchema = z.enum(usaccVotesVoteKindValues);
+export type UsaccVotesVoteKind = z.infer<typeof usaccVotesVoteKindSchema>;
+
+export const usaccVotes = pgTable(
+  "usacc_votes",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    electionId: uuid("election_id").notNull(),
+    caseId: uuid("case_id"),
+    voterUserId: uuid("voter_user_id").notNull(),
+    voteKind: varchar("vote_kind", { length: 48 }).default(sql`'choice'`).notNull(),
+    voteValue: varchar("vote_value", { length: 80 }).notNull(),
+    weightMicros: integer("weight_micros").default(sql`1000000`).notNull(),
+    commitmentHash: varchar("commitment_hash", { length: 128 }),
+    sealedPayload: jsonb("sealed_payload"),
+    revealedAt: timestamp("revealed_at", { withTimezone: true, mode: "string" }),
+    contractDigest: varchar("contract_digest", { length: 160 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccVotesKindChk: check("usacc_votes_kind_chk", sql.raw("vote_kind in ('choice', 'priority_dollar_weighted', 'verdict', 'approval', 'assignment_response')")),
+    usaccVotesVoteValueFormatChk: check("usacc_votes_vote_value_format_chk", sql.raw("vote_value ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    usaccVotesWeightChk: check("usacc_votes_weight_chk", sql.raw("weight_micros between 0 and 1000000000")),
+    usaccVotesCommitmentHashChk: check("usacc_votes_commitment_hash_chk", sql.raw("commitment_hash is null or commitment_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'")),
+    usaccVotesSealedPayloadObjectChk: check("usacc_votes_sealed_payload_object_chk", sql.raw("sealed_payload is null or jsonb_typeof(sealed_payload) = 'object'")),
+    usaccVotesContractDigestSizeChk: check("usacc_votes_contract_digest_size_chk", sql.raw("contract_digest is null or octet_length(contract_digest) <= 160")),
+    usaccVotesMetaObjectChk: check("usacc_votes_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccVotesElectionVoterUq: uniqueIndex("usacc_votes_election_voter_uq").on(table.electionId, table.voterUserId),
+    usaccVotesCaseIdx: index("usacc_votes_case_idx").on(table.caseId, table.createdAt.desc()).where(sql.raw("case_id is not null")),
+    usaccVotesVoterIdx: index("usacc_votes_voter_idx").on(table.voterUserId, table.createdAt.desc()),
+  }),
+);
+
+export const usaccVotesRowSchema = z.object({
+  id: z.string().uuid(),
+  electionId: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  voterUserId: z.string().uuid(),
+  voteKind: usaccVotesVoteKindSchema,
+  voteValue: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  weightMicros: z.number().int().min(0).max(1000000000),
+  commitmentHash: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")).nullable(),
+  sealedPayload: jsonObjectSchema.nullable(),
+  revealedAt: z.string().datetime().nullable(),
+  contractDigest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccVotesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  electionId: z.string().uuid(),
+  caseId: z.string().uuid().nullable().optional(),
+  voterUserId: z.string().uuid(),
+  voteKind: usaccVotesVoteKindSchema.optional().default("choice"),
+  voteValue: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  weightMicros: z.number().int().min(0).max(1000000000).optional().default(1000000),
+  commitmentHash: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")).nullable().optional(),
+  sealedPayload: jsonObjectSchema.nullable().optional(),
+  revealedAt: z.string().datetime().nullable().optional(),
+  contractDigest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccVotesUpdateSchema = usaccVotesInsertSchema.partial();
+export type UsaccVotesRow = z.infer<typeof usaccVotesRowSchema>;
+export type UsaccVotesInsert = z.infer<typeof usaccVotesInsertSchema>;
+export type UsaccVotesUpdate = z.infer<typeof usaccVotesUpdateSchema>;
+
+export const usaccEscrowAccountsStatusValues = ["pending","open","funding","locked","disbursing","closed","canceled"] as const;
+export const usaccEscrowAccountsStatusSchema = z.enum(usaccEscrowAccountsStatusValues);
+export type UsaccEscrowAccountsStatus = z.infer<typeof usaccEscrowAccountsStatusSchema>;
+
+export const usaccEscrowAccountsProviderValues = ["stripe_treasury","stripe_connect","column","evolve","mercury","trust_company","manual"] as const;
+export const usaccEscrowAccountsProviderSchema = z.enum(usaccEscrowAccountsProviderValues);
+export type UsaccEscrowAccountsProvider = z.infer<typeof usaccEscrowAccountsProviderSchema>;
+
+export const usaccEscrowAccounts = pgTable(
+  "usacc_escrow_accounts",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    provider: varchar("provider", { length: 48 }).default(sql`'stripe_treasury'`).notNull(),
+    providerAccountRef: varchar("provider_account_ref", { length: 240 }),
+    currency: varchar("currency", { length: 12 }).default(sql`'USD'`).notNull(),
+    targetAmountCents: bigint("target_amount_cents", { mode: "number" }).default(sql`0`).notNull(),
+    committedAmountCents: bigint("committed_amount_cents", { mode: "number" }).default(sql`0`).notNull(),
+    capturedAmountCents: bigint("captured_amount_cents", { mode: "number" }).default(sql`0`).notNull(),
+    disbursedAmountCents: bigint("disbursed_amount_cents", { mode: "number" }).default(sql`0`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccEscrowAccountsStatusChk: check("usacc_escrow_accounts_status_chk", sql.raw("status in ('pending', 'open', 'funding', 'locked', 'disbursing', 'closed', 'canceled')")),
+    usaccEscrowAccountsProviderChk: check("usacc_escrow_accounts_provider_chk", sql.raw("provider in ('stripe_treasury', 'stripe_connect', 'column', 'evolve', 'mercury', 'trust_company', 'manual')")),
+    usaccEscrowAccountsProviderRefSizeChk: check("usacc_escrow_accounts_provider_ref_size_chk", sql.raw("provider_account_ref is null or octet_length(provider_account_ref) <= 240")),
+    usaccEscrowAccountsCurrencyChk: check("usacc_escrow_accounts_currency_chk", sql.raw("currency ~ '^[A-Z]{3,12}$'")),
+    usaccEscrowAccountsMoneyChk: check("usacc_escrow_accounts_money_chk", sql.raw("target_amount_cents >= 0 and committed_amount_cents >= 0 and captured_amount_cents >= 0 and disbursed_amount_cents >= 0")),
+    usaccEscrowAccountsMetaObjectChk: check("usacc_escrow_accounts_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccEscrowAccountsCaseProviderUq: uniqueIndex("usacc_escrow_accounts_case_provider_uq").on(table.caseId, table.provider),
+  }),
+);
+
+export const usaccEscrowAccountsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  status: usaccEscrowAccountsStatusSchema,
+  provider: usaccEscrowAccountsProviderSchema,
+  providerAccountRef: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  currency: z.string().max(12).regex(new RegExp("^[A-Z]{3,12}$")),
+  targetAmountCents: z.number().int().min(0),
+  committedAmountCents: z.number().int().min(0),
+  capturedAmountCents: z.number().int().min(0),
+  disbursedAmountCents: z.number().int().min(0),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccEscrowAccountsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid(),
+  status: usaccEscrowAccountsStatusSchema.optional().default("pending"),
+  provider: usaccEscrowAccountsProviderSchema.optional().default("stripe_treasury"),
+  providerAccountRef: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  currency: z.string().max(12).regex(new RegExp("^[A-Z]{3,12}$")).optional().default("USD"),
+  targetAmountCents: z.number().int().min(0).optional().default(0),
+  committedAmountCents: z.number().int().min(0).optional().default(0),
+  capturedAmountCents: z.number().int().min(0).optional().default(0),
+  disbursedAmountCents: z.number().int().min(0).optional().default(0),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccEscrowAccountsUpdateSchema = usaccEscrowAccountsInsertSchema.partial();
+export type UsaccEscrowAccountsRow = z.infer<typeof usaccEscrowAccountsRowSchema>;
+export type UsaccEscrowAccountsInsert = z.infer<typeof usaccEscrowAccountsInsertSchema>;
+export type UsaccEscrowAccountsUpdate = z.infer<typeof usaccEscrowAccountsUpdateSchema>;
+
+export const usaccLedgerEntriesEntryKindValues = ["pledge","authorization","capture","refund","disbursement","fee","adjustment"] as const;
+export const usaccLedgerEntriesEntryKindSchema = z.enum(usaccLedgerEntriesEntryKindValues);
+export type UsaccLedgerEntriesEntryKind = z.infer<typeof usaccLedgerEntriesEntryKindSchema>;
+
+export const usaccLedgerEntriesDirectionValues = ["debit","credit"] as const;
+export const usaccLedgerEntriesDirectionSchema = z.enum(usaccLedgerEntriesDirectionValues);
+export type UsaccLedgerEntriesDirection = z.infer<typeof usaccLedgerEntriesDirectionSchema>;
+
+export const usaccLedgerEntries = pgTable(
+  "usacc_ledger_entries",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id"),
+    escrowAccountId: uuid("escrow_account_id"),
+    userId: uuid("user_id"),
+    entryKind: varchar("entry_kind", { length: 48 }).notNull(),
+    direction: varchar("direction", { length: 16 }).notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    currency: varchar("currency", { length: 12 }).default(sql`'USD'`).notNull(),
+    providerRef: varchar("provider_ref", { length: 240 }),
+    contractDigest: varchar("contract_digest", { length: 160 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccLedgerEntriesKindChk: check("usacc_ledger_entries_kind_chk", sql.raw("entry_kind in ('pledge', 'authorization', 'capture', 'refund', 'disbursement', 'fee', 'adjustment')")),
+    usaccLedgerEntriesDirectionChk: check("usacc_ledger_entries_direction_chk", sql.raw("direction in ('debit', 'credit')")),
+    usaccLedgerEntriesAmountChk: check("usacc_ledger_entries_amount_chk", sql.raw("amount_cents >= 0")),
+    usaccLedgerEntriesCurrencyChk: check("usacc_ledger_entries_currency_chk", sql.raw("currency ~ '^[A-Z]{3,12}$'")),
+    usaccLedgerEntriesProviderRefSizeChk: check("usacc_ledger_entries_provider_ref_size_chk", sql.raw("provider_ref is null or octet_length(provider_ref) <= 240")),
+    usaccLedgerEntriesContractDigestSizeChk: check("usacc_ledger_entries_contract_digest_size_chk", sql.raw("contract_digest is null or octet_length(contract_digest) <= 160")),
+    usaccLedgerEntriesMetaObjectChk: check("usacc_ledger_entries_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    usaccLedgerEntriesCaseCreatedIdx: index("usacc_ledger_entries_case_created_idx").on(table.caseId, table.createdAt.desc()).where(sql.raw("case_id is not null")),
+    usaccLedgerEntriesUserCreatedIdx: index("usacc_ledger_entries_user_created_idx").on(table.userId, table.createdAt.desc()).where(sql.raw("user_id is not null")),
+  }),
+);
+
+export const usaccLedgerEntriesRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  escrowAccountId: z.string().uuid().nullable(),
+  userId: z.string().uuid().nullable(),
+  entryKind: usaccLedgerEntriesEntryKindSchema,
+  direction: usaccLedgerEntriesDirectionSchema,
+  amountCents: z.number().int().min(0),
+  currency: z.string().max(12).regex(new RegExp("^[A-Z]{3,12}$")),
+  providerRef: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable(),
+  contractDigest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const usaccLedgerEntriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid().nullable().optional(),
+  escrowAccountId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid().nullable().optional(),
+  entryKind: usaccLedgerEntriesEntryKindSchema,
+  direction: usaccLedgerEntriesDirectionSchema,
+  amountCents: z.number().int().min(0),
+  currency: z.string().max(12).regex(new RegExp("^[A-Z]{3,12}$")).optional().default("USD"),
+  providerRef: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes").nullable().optional(),
+  contractDigest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const usaccLedgerEntriesUpdateSchema = usaccLedgerEntriesInsertSchema.partial();
+export type UsaccLedgerEntriesRow = z.infer<typeof usaccLedgerEntriesRowSchema>;
+export type UsaccLedgerEntriesInsert = z.infer<typeof usaccLedgerEntriesInsertSchema>;
+export type UsaccLedgerEntriesUpdate = z.infer<typeof usaccLedgerEntriesUpdateSchema>;
+
+export const usaccContractOperationsOperationKindValues = ["validate_envelope","simulate_transaction","send_transaction","vote_commitment","escrow_notary"] as const;
+export const usaccContractOperationsOperationKindSchema = z.enum(usaccContractOperationsOperationKindValues);
+export type UsaccContractOperationsOperationKind = z.infer<typeof usaccContractOperationsOperationKindSchema>;
+
+export const usaccContractOperationsStatusValues = ["pending","validated","simulated","sent","failed","canceled"] as const;
+export const usaccContractOperationsStatusSchema = z.enum(usaccContractOperationsStatusValues);
+export type UsaccContractOperationsStatus = z.infer<typeof usaccContractOperationsStatusSchema>;
+
+export const usaccContractOperations = pgTable(
+  "usacc_contract_operations",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id"),
+    electionId: uuid("election_id"),
+    voteId: uuid("vote_id"),
+    requestId: varchar("request_id", { length: 160 }).notNull(),
+    operationKind: varchar("operation_kind", { length: 48 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    programId: varchar("program_id", { length: 128 }),
+    digest: varchar("digest", { length: 160 }),
+    envelope: jsonb("envelope").default(sql`'{}'::jsonb`).notNull(),
+    response: jsonb("response").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccContractOperationsRequestIdSizeChk: check("usacc_contract_operations_request_id_size_chk", sql.raw("octet_length(request_id) between 1 and 160")),
+    usaccContractOperationsKindChk: check("usacc_contract_operations_kind_chk", sql.raw("operation_kind in ('validate_envelope', 'simulate_transaction', 'send_transaction', 'vote_commitment', 'escrow_notary')")),
+    usaccContractOperationsStatusChk: check("usacc_contract_operations_status_chk", sql.raw("status in ('pending', 'validated', 'simulated', 'sent', 'failed', 'canceled')")),
+    usaccContractOperationsProgramIdSizeChk: check("usacc_contract_operations_program_id_size_chk", sql.raw("program_id is null or octet_length(program_id) <= 128")),
+    usaccContractOperationsDigestSizeChk: check("usacc_contract_operations_digest_size_chk", sql.raw("digest is null or octet_length(digest) <= 160")),
+    usaccContractOperationsEnvelopeObjectChk: check("usacc_contract_operations_envelope_object_chk", sql.raw("jsonb_typeof(envelope) = 'object'")),
+    usaccContractOperationsResponseObjectChk: check("usacc_contract_operations_response_object_chk", sql.raw("jsonb_typeof(response) = 'object'")),
+    usaccContractOperationsRequestIdUq: uniqueIndex("usacc_contract_operations_request_id_uq").on(table.requestId),
+    usaccContractOperationsCaseIdx: index("usacc_contract_operations_case_idx").on(table.caseId, table.createdAt.desc()).where(sql.raw("case_id is not null")),
+  }),
+);
+
+export const usaccContractOperationsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  electionId: z.string().uuid().nullable(),
+  voteId: z.string().uuid().nullable(),
+  requestId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  operationKind: usaccContractOperationsOperationKindSchema,
+  status: usaccContractOperationsStatusSchema,
+  programId: z.string().max(128).refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes").nullable(),
+  digest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  envelope: jsonObjectSchema,
+  response: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccContractOperationsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid().nullable().optional(),
+  electionId: z.string().uuid().nullable().optional(),
+  voteId: z.string().uuid().nullable().optional(),
+  requestId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  operationKind: usaccContractOperationsOperationKindSchema,
+  status: usaccContractOperationsStatusSchema.optional().default("pending"),
+  programId: z.string().max(128).refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes").nullable().optional(),
+  digest: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  envelope: jsonObjectSchema.optional().default({}),
+  response: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccContractOperationsUpdateSchema = usaccContractOperationsInsertSchema.partial();
+export type UsaccContractOperationsRow = z.infer<typeof usaccContractOperationsRowSchema>;
+export type UsaccContractOperationsInsert = z.infer<typeof usaccContractOperationsInsertSchema>;
+export type UsaccContractOperationsUpdate = z.infer<typeof usaccContractOperationsUpdateSchema>;
+
+export const usaccSimulationRunsStatusValues = ["queued","running","succeeded","failed","canceled"] as const;
+export const usaccSimulationRunsStatusSchema = z.enum(usaccSimulationRunsStatusValues);
+export type UsaccSimulationRunsStatus = z.infer<typeof usaccSimulationRunsStatusSchema>;
+
+export const usaccSimulationRunsModeValues = ["sim","live_shadow","replay"] as const;
+export const usaccSimulationRunsModeSchema = z.enum(usaccSimulationRunsModeValues);
+export type UsaccSimulationRunsMode = z.infer<typeof usaccSimulationRunsModeSchema>;
+
+export const usaccSimulationRuns = pgTable(
+  "usacc_simulation_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id"),
+    status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
+    mode: varchar("mode", { length: 32 }).default(sql`'sim'`).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    horizonDays: integer("horizon_days").default(sql`180`).notNull(),
+    actorCount: integer("actor_count").default(sql`0`).notNull(),
+    eventCount: integer("event_count").default(sql`0`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    trace: jsonb("trace").default(sql`'[]'::jsonb`).notNull(),
+    input: jsonb("input").default(sql`'{}'::jsonb`).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccSimulationRunsStatusChk: check("usacc_simulation_runs_status_chk", sql.raw("status in ('queued', 'running', 'succeeded', 'failed', 'canceled')")),
+    usaccSimulationRunsModeChk: check("usacc_simulation_runs_mode_chk", sql.raw("mode in ('sim', 'live_shadow', 'replay')")),
+    usaccSimulationRunsHorizonChk: check("usacc_simulation_runs_horizon_chk", sql.raw("horizon_days between 1 and 3650")),
+    usaccSimulationRunsCountsChk: check("usacc_simulation_runs_counts_chk", sql.raw("actor_count >= 0 and event_count >= 0")),
+    usaccSimulationRunsMetricsObjectChk: check("usacc_simulation_runs_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    usaccSimulationRunsTraceArrayChk: check("usacc_simulation_runs_trace_array_chk", sql.raw("jsonb_typeof(trace) = 'array'")),
+    usaccSimulationRunsInputObjectChk: check("usacc_simulation_runs_input_object_chk", sql.raw("jsonb_typeof(input) = 'object'")),
+    usaccSimulationRunsCaseCreatedIdx: index("usacc_simulation_runs_case_created_idx").on(table.caseId, table.createdAt.desc()).where(sql.raw("case_id is not null")),
+    usaccSimulationRunsStatusCreatedIdx: index("usacc_simulation_runs_status_created_idx").on(table.status, table.createdAt.desc()),
+  }),
+);
+
+export const usaccSimulationRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  status: usaccSimulationRunsStatusSchema,
+  mode: usaccSimulationRunsModeSchema,
+  seed: z.number().int(),
+  horizonDays: z.number().int().min(1).max(3650),
+  actorCount: z.number().int().min(0),
+  eventCount: z.number().int().min(0),
+  metrics: jsonObjectSchema,
+  trace: jsonArraySchema,
+  input: jsonObjectSchema,
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const usaccSimulationRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid().nullable().optional(),
+  status: usaccSimulationRunsStatusSchema.optional().default("queued"),
+  mode: usaccSimulationRunsModeSchema.optional().default("sim"),
+  seed: z.number().int(),
+  horizonDays: z.number().int().min(1).max(3650).optional().default(180),
+  actorCount: z.number().int().min(0).optional().default(0),
+  eventCount: z.number().int().min(0).optional().default(0),
+  metrics: jsonObjectSchema.optional().default({}),
+  trace: jsonArraySchema.optional().default([]),
+  input: jsonObjectSchema.optional().default({}),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const usaccSimulationRunsUpdateSchema = usaccSimulationRunsInsertSchema.partial();
+export type UsaccSimulationRunsRow = z.infer<typeof usaccSimulationRunsRowSchema>;
+export type UsaccSimulationRunsInsert = z.infer<typeof usaccSimulationRunsInsertSchema>;
+export type UsaccSimulationRunsUpdate = z.infer<typeof usaccSimulationRunsUpdateSchema>;
+
+export const usaccAuditEvents = pgTable(
+  "usacc_audit_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    caseId: uuid("case_id"),
+    actorUserId: uuid("actor_user_id"),
+    eventType: varchar("event_type", { length: 96 }).notNull(),
+    eventHash: varchar("event_hash", { length: 128 }).notNull(),
+    source: varchar("source", { length: 80 }).default(sql`'usacc-rest-api-backend-rs'`).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    usaccAuditEventsTypeFormatChk: check("usacc_audit_events_type_format_chk", sql.raw("event_type ~ '^[A-Za-z0-9._:/-]{1,96}$'")),
+    usaccAuditEventsHashFormatChk: check("usacc_audit_events_hash_format_chk", sql.raw("event_hash ~ '^[A-Za-z0-9._:/-]{1,128}$'")),
+    usaccAuditEventsSourceFormatChk: check("usacc_audit_events_source_format_chk", sql.raw("source ~ '^[A-Za-z0-9._:/-]{1,80}$'")),
+    usaccAuditEventsPayloadObjectChk: check("usacc_audit_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    usaccAuditEventsHashUq: uniqueIndex("usacc_audit_events_hash_uq").on(table.eventHash),
+    usaccAuditEventsCaseCreatedIdx: index("usacc_audit_events_case_created_idx").on(table.caseId, table.createdAt.desc()).where(sql.raw("case_id is not null")),
+  }),
+);
+
+export const usaccAuditEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid().nullable(),
+  actorUserId: z.string().uuid().nullable(),
+  eventType: z.string().max(96).regex(new RegExp("^[A-Za-z0-9._:/-]{1,96}$")),
+  eventHash: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")),
+  source: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const usaccAuditEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  caseId: z.string().uuid().nullable().optional(),
+  actorUserId: z.string().uuid().nullable().optional(),
+  eventType: z.string().max(96).regex(new RegExp("^[A-Za-z0-9._:/-]{1,96}$")),
+  eventHash: z.string().max(128).regex(new RegExp("^[A-Za-z0-9._:/-]{1,128}$")),
+  source: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:/-]{1,80}$")).optional().default("usacc-rest-api-backend-rs"),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const usaccAuditEventsUpdateSchema = usaccAuditEventsInsertSchema.partial();
+export type UsaccAuditEventsRow = z.infer<typeof usaccAuditEventsRowSchema>;
+export type UsaccAuditEventsInsert = z.infer<typeof usaccAuditEventsInsertSchema>;
+export type UsaccAuditEventsUpdate = z.infer<typeof usaccAuditEventsUpdateSchema>;

@@ -14,6 +14,9 @@ Today there are several key runtime services:
   and controlled Kubernetes deploys
 - [`deployments/contract-service-rs/`](./deployments/contract-service-rs/) — Rust Solana contract gateway for validated
   instruction envelopes, signed transaction simulation, and NATS validation results.
+- [`deployments/usacc-rest-api-backend-rs/`](./deployments/usacc-rest-api-backend-rs/) — Rust/Axum REST API
+  for US Anti-Corruption Court simulations, voting, accounting ledgers, Solana contract validation,
+  and Postgres-backed CRUD data.
 - [`deployments/dd-escrow-rs/`](./deployments/dd-escrow-rs/) — Rust Solana escrow gateway for ten
   escrow intent shapes, signed settlement simulation, gated on-chain settlement, and NATS validation
   results.

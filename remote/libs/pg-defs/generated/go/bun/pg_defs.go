@@ -79,6 +79,21 @@ var benefactorMarketingVendorCostsIncurredOnPattern = regexp.MustCompile(`^[0-9]
 var benefactorMarketingCommissionEntriesEarnedOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingBudgetForecastsPeriodStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingBudgetForecastsPeriodEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccUsersEmailHashPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var usaccUsersLegalRegionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var usaccCasesCaseNumberPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var usaccCasesConductFingerprintPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccCasesConductWindowStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccCasesConductWindowEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var usaccCaseParticipantsGrantedByPolicyVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var usaccCaseStagesStageKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)
+var usaccVotesVoteValuePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var usaccVotesCommitmentHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccEscrowAccountsCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
+var usaccLedgerEntriesCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
+var usaccAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,96}$`)
+var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
+var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -4583,6 +4598,587 @@ func (value BenefactorMarketingCallInsightsBun) Validate() error {
 	if !validateRawJSON(value.NextSteps) { return errors.New("benefactor_marketing_call_insights.next_steps must be valid JSON") }
 	if value.ConfidenceMicros < 0 { return errors.New("benefactor_marketing_call_insights.confidence_micros is below the minimum") }
 	if value.ConfidenceMicros > 1000000 { return errors.New("benefactor_marketing_call_insights.confidence_micros is above the maximum") }
+	return nil
+}
+
+const UsaccUsersTable = "usacc_users"
+const UsaccUsersSelectSQL = `select
+      id::text as id,
+      external_subject,
+      email_hash,
+      display_name,
+      user_kind,
+      status,
+      kyc_level,
+      roles,
+      is_legal_entity,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_users`
+
+var UsaccUsersUserKindValues = []string{"natural_person", "legal_entity", "service_account", "sim_agent"}
+var UsaccUsersStatusValues = []string{"active", "pending", "suspended", "banned", "alumni", "archived"}
+var UsaccUsersKycLevelValues = []string{"none", "light", "medium", "high"}
+
+type UsaccUsersBun struct {
+	bun.BaseModel `bun:"table:usacc_users"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ExternalSubject *string `bun:"external_subject,type:varchar(240),nullzero" json:"externalSubject,omitempty"`
+	EmailHash *string `bun:"email_hash,type:varchar(64),nullzero" json:"emailHash,omitempty"`
+	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
+	UserKind string `bun:"user_kind,type:varchar(48),default:'natural_person'" json:"userKind"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	KycLevel string `bun:"kyc_level,type:varchar(32),default:'none'" json:"kycLevel"`
+	Roles json.RawMessage `bun:"roles,type:jsonb,default:'{}'::jsonb" json:"roles"`
+	IsLegalEntity bool `bun:"is_legal_entity,type:boolean,default:false" json:"isLegalEntity"`
+	LegalRegion *string `bun:"legal_region,type:varchar(64),nullzero" json:"legalRegion,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccUsersBun) Validate() error {
+	if value.ExternalSubject != nil {
+		if len([]byte(*value.ExternalSubject)) > 240 { return errors.New("usacc_users.external_subject exceeds 240 bytes") }
+		if len([]byte(*value.ExternalSubject)) < 1 { return errors.New("usacc_users.external_subject is below 1 bytes") }
+	}
+	if value.EmailHash != nil {
+		if !usaccUsersEmailHashPattern.MatchString(*value.EmailHash) { return errors.New("usacc_users.email_hash does not match the required pattern") }
+	}
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("usacc_users.display_name exceeds 200 bytes") }
+	if len([]byte(value.DisplayName)) < 1 { return errors.New("usacc_users.display_name is below 1 bytes") }
+	if !containsString(UsaccUsersUserKindValues, value.UserKind) { return errors.New("unsupported usacc_users.user_kind") }
+	if !containsString(UsaccUsersStatusValues, value.Status) { return errors.New("unsupported usacc_users.status") }
+	if !containsString(UsaccUsersKycLevelValues, value.KycLevel) { return errors.New("unsupported usacc_users.kyc_level") }
+	if !validateRawJSON(value.Roles) { return errors.New("usacc_users.roles must be valid JSON") }
+	if value.LegalRegion != nil {
+		if !usaccUsersLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("usacc_users.legal_region does not match the required pattern") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_users.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCasesTable = "usacc_cases"
+const UsaccCasesSelectSQL = `select
+      id::text as id,
+      case_number,
+      title,
+      status,
+      filing_tier,
+      plaintiff_user_id::text as plaintiff_user_id,
+      defendant_summary,
+      conduct_summary,
+      conduct_fingerprint,
+      conduct_window_start,
+      conduct_window_end,
+      priority_score_micros,
+      meta_data,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_cases`
+
+var UsaccCasesStatusValues = []string{"draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"}
+var UsaccCasesFilingTierValues = []string{"screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"}
+
+type UsaccCasesBun struct {
+	bun.BaseModel `bun:"table:usacc_cases"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseNumber string `bun:"case_number,type:varchar(80)" json:"caseNumber"`
+	Title string `bun:"title,type:varchar(240)" json:"title"`
+	Status string `bun:"status,type:varchar(40),default:'draft'" json:"status"`
+	FilingTier string `bun:"filing_tier,type:varchar(40),default:'screen'" json:"filingTier"`
+	PlaintiffUserId *uuid.UUID `bun:"plaintiff_user_id,type:uuid,nullzero" json:"plaintiffUserId,omitempty"`
+	DefendantSummary string `bun:"defendant_summary,type:text" json:"defendantSummary"`
+	ConductSummary string `bun:"conduct_summary,type:text" json:"conductSummary"`
+	ConductFingerprint *string `bun:"conduct_fingerprint,type:varchar(128),nullzero" json:"conductFingerprint,omitempty"`
+	ConductWindowStart *string `bun:"conduct_window_start,type:varchar(10),nullzero" json:"conductWindowStart,omitempty"`
+	ConductWindowEnd *string `bun:"conduct_window_end,type:varchar(10),nullzero" json:"conductWindowEnd,omitempty"`
+	PriorityScoreMicros int32 `bun:"priority_score_micros,type:integer,default:0" json:"priorityScoreMicros"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	OpenedAt *time.Time `bun:"opened_at,type:timestamptz,nullzero" json:"openedAt,omitempty"`
+	ClosedAt *time.Time `bun:"closed_at,type:timestamptz,nullzero" json:"closedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccCasesBun) Validate() error {
+	if !usaccCasesCaseNumberPattern.MatchString(value.CaseNumber) { return errors.New("usacc_cases.case_number does not match the required pattern") }
+	if len([]byte(value.Title)) > 240 { return errors.New("usacc_cases.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_cases.title is below 1 bytes") }
+	if !containsString(UsaccCasesStatusValues, value.Status) { return errors.New("unsupported usacc_cases.status") }
+	if !containsString(UsaccCasesFilingTierValues, value.FilingTier) { return errors.New("unsupported usacc_cases.filing_tier") }
+	if len([]byte(value.DefendantSummary)) > 4000 { return errors.New("usacc_cases.defendant_summary exceeds 4000 bytes") }
+	if len([]byte(value.DefendantSummary)) < 1 { return errors.New("usacc_cases.defendant_summary is below 1 bytes") }
+	if len([]byte(value.ConductSummary)) > 12000 { return errors.New("usacc_cases.conduct_summary exceeds 12000 bytes") }
+	if len([]byte(value.ConductSummary)) < 1 { return errors.New("usacc_cases.conduct_summary is below 1 bytes") }
+	if value.ConductFingerprint != nil {
+		if !usaccCasesConductFingerprintPattern.MatchString(*value.ConductFingerprint) { return errors.New("usacc_cases.conduct_fingerprint does not match the required pattern") }
+	}
+	if value.ConductWindowStart != nil {
+		if !usaccCasesConductWindowStartPattern.MatchString(*value.ConductWindowStart) { return errors.New("usacc_cases.conduct_window_start does not match the required pattern") }
+	}
+	if value.ConductWindowEnd != nil {
+		if !usaccCasesConductWindowEndPattern.MatchString(*value.ConductWindowEnd) { return errors.New("usacc_cases.conduct_window_end does not match the required pattern") }
+	}
+	if value.PriorityScoreMicros < 0 { return errors.New("usacc_cases.priority_score_micros is below the minimum") }
+	if value.PriorityScoreMicros > 1000000 { return errors.New("usacc_cases.priority_score_micros is above the maximum") }
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_cases.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCaseParticipantsTable = "usacc_case_participants"
+const UsaccCaseParticipantsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      user_id::text as user_id,
+      role,
+      status,
+      granted_by::text as granted_by,
+      granted_by_policy_version,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ended_at,
+      ended_reason,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_participants`
+
+var UsaccCaseParticipantsRoleValues = []string{"plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"}
+var UsaccCaseParticipantsStatusValues = []string{"active", "pending", "declined", "suspended", "ended", "banned"}
+
+type UsaccCaseParticipantsBun struct {
+	bun.BaseModel `bun:"table:usacc_case_participants"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `bun:"case_id,type:uuid" json:"caseId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	Role string `bun:"role,type:varchar(48)" json:"role"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	GrantedBy *uuid.UUID `bun:"granted_by,type:uuid,nullzero" json:"grantedBy,omitempty"`
+	GrantedByPolicyVersion *string `bun:"granted_by_policy_version,type:varchar(120),nullzero" json:"grantedByPolicyVersion,omitempty"`
+	EndedAt *time.Time `bun:"ended_at,type:timestamptz,nullzero" json:"endedAt,omitempty"`
+	EndedReason *string `bun:"ended_reason,type:varchar(240),nullzero" json:"endedReason,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccCaseParticipantsBun) Validate() error {
+	if !containsString(UsaccCaseParticipantsRoleValues, value.Role) { return errors.New("unsupported usacc_case_participants.role") }
+	if !containsString(UsaccCaseParticipantsStatusValues, value.Status) { return errors.New("unsupported usacc_case_participants.status") }
+	if value.GrantedByPolicyVersion != nil {
+		if !usaccCaseParticipantsGrantedByPolicyVersionPattern.MatchString(*value.GrantedByPolicyVersion) { return errors.New("usacc_case_participants.granted_by_policy_version does not match the required pattern") }
+	}
+	if value.EndedReason != nil {
+		if len([]byte(*value.EndedReason)) > 240 { return errors.New("usacc_case_participants.ended_reason exceeds 240 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_case_participants.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccCaseStagesTable = "usacc_case_stages"
+const UsaccCaseStagesSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      stage_key,
+      stage_order,
+      title,
+      status,
+      assigned_user_id::text as assigned_user_id,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as due_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      decision_summary,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_stages`
+
+var UsaccCaseStagesStatusValues = []string{"pending", "open", "blocked", "complete", "skipped", "canceled"}
+
+type UsaccCaseStagesBun struct {
+	bun.BaseModel `bun:"table:usacc_case_stages"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `bun:"case_id,type:uuid" json:"caseId"`
+	StageKey string `bun:"stage_key,type:varchar(64)" json:"stageKey"`
+	StageOrder int32 `bun:"stage_order,type:integer" json:"stageOrder"`
+	Title string `bun:"title,type:varchar(200)" json:"title"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	AssignedUserId *uuid.UUID `bun:"assigned_user_id,type:uuid,nullzero" json:"assignedUserId,omitempty"`
+	OpenedAt *time.Time `bun:"opened_at,type:timestamptz,nullzero" json:"openedAt,omitempty"`
+	DueAt *time.Time `bun:"due_at,type:timestamptz,nullzero" json:"dueAt,omitempty"`
+	ClosedAt *time.Time `bun:"closed_at,type:timestamptz,nullzero" json:"closedAt,omitempty"`
+	DecisionSummary *string `bun:"decision_summary,type:text,nullzero" json:"decisionSummary,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccCaseStagesBun) Validate() error {
+	if !usaccCaseStagesStageKeyPattern.MatchString(value.StageKey) { return errors.New("usacc_case_stages.stage_key does not match the required pattern") }
+	if value.StageOrder < 0 { return errors.New("usacc_case_stages.stage_order is below the minimum") }
+	if value.StageOrder > 1000 { return errors.New("usacc_case_stages.stage_order is above the maximum") }
+	if len([]byte(value.Title)) > 200 { return errors.New("usacc_case_stages.title exceeds 200 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_case_stages.title is below 1 bytes") }
+	if !containsString(UsaccCaseStagesStatusValues, value.Status) { return errors.New("unsupported usacc_case_stages.status") }
+	if value.DecisionSummary != nil {
+		if len([]byte(*value.DecisionSummary)) > 12000 { return errors.New("usacc_case_stages.decision_summary exceeds 12000 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_case_stages.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccElectionsTable = "usacc_elections"
+const UsaccElectionsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      stage_id::text as stage_id,
+      election_kind,
+      title,
+      status,
+      quorum_count,
+      threshold_micros,
+      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opens_at,
+      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closes_at,
+      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sealed_until,
+      tally,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_elections`
+
+var UsaccElectionsElectionKindValues = []string{"priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"}
+var UsaccElectionsStatusValues = []string{"draft", "open", "sealed", "tallying", "certified", "void", "archived"}
+
+type UsaccElectionsBun struct {
+	bun.BaseModel `bun:"table:usacc_elections"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	StageId *uuid.UUID `bun:"stage_id,type:uuid,nullzero" json:"stageId,omitempty"`
+	ElectionKind string `bun:"election_kind,type:varchar(48)" json:"electionKind"`
+	Title string `bun:"title,type:varchar(220)" json:"title"`
+	Status string `bun:"status,type:varchar(32),default:'draft'" json:"status"`
+	QuorumCount int32 `bun:"quorum_count,type:integer,default:1" json:"quorumCount"`
+	ThresholdMicros int32 `bun:"threshold_micros,type:integer,default:500000" json:"thresholdMicros"`
+	OpensAt *time.Time `bun:"opens_at,type:timestamptz,nullzero" json:"opensAt,omitempty"`
+	ClosesAt *time.Time `bun:"closes_at,type:timestamptz,nullzero" json:"closesAt,omitempty"`
+	SealedUntil *time.Time `bun:"sealed_until,type:timestamptz,nullzero" json:"sealedUntil,omitempty"`
+	Tally json.RawMessage `bun:"tally,type:jsonb,default:'{}'::jsonb" json:"tally"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccElectionsBun) Validate() error {
+	if !containsString(UsaccElectionsElectionKindValues, value.ElectionKind) { return errors.New("unsupported usacc_elections.election_kind") }
+	if len([]byte(value.Title)) > 220 { return errors.New("usacc_elections.title exceeds 220 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("usacc_elections.title is below 1 bytes") }
+	if !containsString(UsaccElectionsStatusValues, value.Status) { return errors.New("unsupported usacc_elections.status") }
+	if value.QuorumCount < 1 { return errors.New("usacc_elections.quorum_count is below the minimum") }
+	if value.QuorumCount > 1000000 { return errors.New("usacc_elections.quorum_count is above the maximum") }
+	if value.ThresholdMicros < 1 { return errors.New("usacc_elections.threshold_micros is below the minimum") }
+	if value.ThresholdMicros > 1000000 { return errors.New("usacc_elections.threshold_micros is above the maximum") }
+	if !validateRawJSON(value.Tally) { return errors.New("usacc_elections.tally must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_elections.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccVotesTable = "usacc_votes"
+const UsaccVotesSelectSQL = `select
+      id::text as id,
+      election_id::text as election_id,
+      case_id::text as case_id,
+      voter_user_id::text as voter_user_id,
+      vote_kind,
+      vote_value,
+      weight_micros,
+      commitment_hash,
+      sealed_payload,
+      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revealed_at,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_votes`
+
+var UsaccVotesVoteKindValues = []string{"choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"}
+
+type UsaccVotesBun struct {
+	bun.BaseModel `bun:"table:usacc_votes"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ElectionId uuid.UUID `bun:"election_id,type:uuid" json:"electionId"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	VoterUserId uuid.UUID `bun:"voter_user_id,type:uuid" json:"voterUserId"`
+	VoteKind string `bun:"vote_kind,type:varchar(48),default:'choice'" json:"voteKind"`
+	VoteValue string `bun:"vote_value,type:varchar(80)" json:"voteValue"`
+	WeightMicros int32 `bun:"weight_micros,type:integer,default:1000000" json:"weightMicros"`
+	CommitmentHash *string `bun:"commitment_hash,type:varchar(128),nullzero" json:"commitmentHash,omitempty"`
+	SealedPayload *json.RawMessage `bun:"sealed_payload,type:jsonb,nullzero" json:"sealedPayload,omitempty"`
+	RevealedAt *time.Time `bun:"revealed_at,type:timestamptz,nullzero" json:"revealedAt,omitempty"`
+	ContractDigest *string `bun:"contract_digest,type:varchar(160),nullzero" json:"contractDigest,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccVotesBun) Validate() error {
+	if !containsString(UsaccVotesVoteKindValues, value.VoteKind) { return errors.New("unsupported usacc_votes.vote_kind") }
+	if !usaccVotesVoteValuePattern.MatchString(value.VoteValue) { return errors.New("usacc_votes.vote_value does not match the required pattern") }
+	if value.WeightMicros < 0 { return errors.New("usacc_votes.weight_micros is below the minimum") }
+	if value.WeightMicros > 1000000000 { return errors.New("usacc_votes.weight_micros is above the maximum") }
+	if value.CommitmentHash != nil {
+		if !usaccVotesCommitmentHashPattern.MatchString(*value.CommitmentHash) { return errors.New("usacc_votes.commitment_hash does not match the required pattern") }
+	}
+	if value.SealedPayload != nil {
+		if !validateRawJSON(*value.SealedPayload) { return errors.New("usacc_votes.sealed_payload must be valid JSON") }
+	}
+	if value.ContractDigest != nil {
+		if len([]byte(*value.ContractDigest)) > 160 { return errors.New("usacc_votes.contract_digest exceeds 160 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_votes.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccEscrowAccountsTable = "usacc_escrow_accounts"
+const UsaccEscrowAccountsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      provider,
+      provider_account_ref,
+      currency,
+      target_amount_cents,
+      committed_amount_cents,
+      captured_amount_cents,
+      disbursed_amount_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_escrow_accounts`
+
+var UsaccEscrowAccountsStatusValues = []string{"pending", "open", "funding", "locked", "disbursing", "closed", "canceled"}
+var UsaccEscrowAccountsProviderValues = []string{"stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"}
+
+type UsaccEscrowAccountsBun struct {
+	bun.BaseModel `bun:"table:usacc_escrow_accounts"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId uuid.UUID `bun:"case_id,type:uuid" json:"caseId"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	Provider string `bun:"provider,type:varchar(48),default:'stripe_treasury'" json:"provider"`
+	ProviderAccountRef *string `bun:"provider_account_ref,type:varchar(240),nullzero" json:"providerAccountRef,omitempty"`
+	Currency string `bun:"currency,type:varchar(12),default:'USD'" json:"currency"`
+	TargetAmountCents int64 `bun:"target_amount_cents,type:bigint,default:0" json:"targetAmountCents"`
+	CommittedAmountCents int64 `bun:"committed_amount_cents,type:bigint,default:0" json:"committedAmountCents"`
+	CapturedAmountCents int64 `bun:"captured_amount_cents,type:bigint,default:0" json:"capturedAmountCents"`
+	DisbursedAmountCents int64 `bun:"disbursed_amount_cents,type:bigint,default:0" json:"disbursedAmountCents"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccEscrowAccountsBun) Validate() error {
+	if !containsString(UsaccEscrowAccountsStatusValues, value.Status) { return errors.New("unsupported usacc_escrow_accounts.status") }
+	if !containsString(UsaccEscrowAccountsProviderValues, value.Provider) { return errors.New("unsupported usacc_escrow_accounts.provider") }
+	if value.ProviderAccountRef != nil {
+		if len([]byte(*value.ProviderAccountRef)) > 240 { return errors.New("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes") }
+	}
+	if !usaccEscrowAccountsCurrencyPattern.MatchString(value.Currency) { return errors.New("usacc_escrow_accounts.currency does not match the required pattern") }
+	if value.TargetAmountCents < 0 { return errors.New("usacc_escrow_accounts.target_amount_cents is below the minimum") }
+	if value.CommittedAmountCents < 0 { return errors.New("usacc_escrow_accounts.committed_amount_cents is below the minimum") }
+	if value.CapturedAmountCents < 0 { return errors.New("usacc_escrow_accounts.captured_amount_cents is below the minimum") }
+	if value.DisbursedAmountCents < 0 { return errors.New("usacc_escrow_accounts.disbursed_amount_cents is below the minimum") }
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_escrow_accounts.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccLedgerEntriesTable = "usacc_ledger_entries"
+const UsaccLedgerEntriesSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      escrow_account_id::text as escrow_account_id,
+      user_id::text as user_id,
+      entry_kind,
+      direction,
+      amount_cents,
+      currency,
+      provider_ref,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_ledger_entries`
+
+var UsaccLedgerEntriesEntryKindValues = []string{"pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"}
+var UsaccLedgerEntriesDirectionValues = []string{"debit", "credit"}
+
+type UsaccLedgerEntriesBun struct {
+	bun.BaseModel `bun:"table:usacc_ledger_entries"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	EscrowAccountId *uuid.UUID `bun:"escrow_account_id,type:uuid,nullzero" json:"escrowAccountId,omitempty"`
+	UserId *uuid.UUID `bun:"user_id,type:uuid,nullzero" json:"userId,omitempty"`
+	EntryKind string `bun:"entry_kind,type:varchar(48)" json:"entryKind"`
+	Direction string `bun:"direction,type:varchar(16)" json:"direction"`
+	AmountCents int64 `bun:"amount_cents,type:bigint" json:"amountCents"`
+	Currency string `bun:"currency,type:varchar(12),default:'USD'" json:"currency"`
+	ProviderRef *string `bun:"provider_ref,type:varchar(240),nullzero" json:"providerRef,omitempty"`
+	ContractDigest *string `bun:"contract_digest,type:varchar(160),nullzero" json:"contractDigest,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value UsaccLedgerEntriesBun) Validate() error {
+	if !containsString(UsaccLedgerEntriesEntryKindValues, value.EntryKind) { return errors.New("unsupported usacc_ledger_entries.entry_kind") }
+	if !containsString(UsaccLedgerEntriesDirectionValues, value.Direction) { return errors.New("unsupported usacc_ledger_entries.direction") }
+	if value.AmountCents < 0 { return errors.New("usacc_ledger_entries.amount_cents is below the minimum") }
+	if !usaccLedgerEntriesCurrencyPattern.MatchString(value.Currency) { return errors.New("usacc_ledger_entries.currency does not match the required pattern") }
+	if value.ProviderRef != nil {
+		if len([]byte(*value.ProviderRef)) > 240 { return errors.New("usacc_ledger_entries.provider_ref exceeds 240 bytes") }
+	}
+	if value.ContractDigest != nil {
+		if len([]byte(*value.ContractDigest)) > 160 { return errors.New("usacc_ledger_entries.contract_digest exceeds 160 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("usacc_ledger_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const UsaccContractOperationsTable = "usacc_contract_operations"
+const UsaccContractOperationsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      election_id::text as election_id,
+      vote_id::text as vote_id,
+      request_id,
+      operation_kind,
+      status,
+      program_id,
+      digest,
+      envelope,
+      response,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_contract_operations`
+
+var UsaccContractOperationsOperationKindValues = []string{"validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"}
+var UsaccContractOperationsStatusValues = []string{"pending", "validated", "simulated", "sent", "failed", "canceled"}
+
+type UsaccContractOperationsBun struct {
+	bun.BaseModel `bun:"table:usacc_contract_operations"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	ElectionId *uuid.UUID `bun:"election_id,type:uuid,nullzero" json:"electionId,omitempty"`
+	VoteId *uuid.UUID `bun:"vote_id,type:uuid,nullzero" json:"voteId,omitempty"`
+	RequestId string `bun:"request_id,type:varchar(160)" json:"requestId"`
+	OperationKind string `bun:"operation_kind,type:varchar(48)" json:"operationKind"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	ProgramId *string `bun:"program_id,type:varchar(128),nullzero" json:"programId,omitempty"`
+	Digest *string `bun:"digest,type:varchar(160),nullzero" json:"digest,omitempty"`
+	Envelope json.RawMessage `bun:"envelope,type:jsonb,default:'{}'::jsonb" json:"envelope"`
+	Response json.RawMessage `bun:"response,type:jsonb,default:'{}'::jsonb" json:"response"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccContractOperationsBun) Validate() error {
+	if len([]byte(value.RequestId)) > 160 { return errors.New("usacc_contract_operations.request_id exceeds 160 bytes") }
+	if len([]byte(value.RequestId)) < 1 { return errors.New("usacc_contract_operations.request_id is below 1 bytes") }
+	if !containsString(UsaccContractOperationsOperationKindValues, value.OperationKind) { return errors.New("unsupported usacc_contract_operations.operation_kind") }
+	if !containsString(UsaccContractOperationsStatusValues, value.Status) { return errors.New("unsupported usacc_contract_operations.status") }
+	if value.ProgramId != nil {
+		if len([]byte(*value.ProgramId)) > 128 { return errors.New("usacc_contract_operations.program_id exceeds 128 bytes") }
+	}
+	if value.Digest != nil {
+		if len([]byte(*value.Digest)) > 160 { return errors.New("usacc_contract_operations.digest exceeds 160 bytes") }
+	}
+	if !validateRawJSON(value.Envelope) { return errors.New("usacc_contract_operations.envelope must be valid JSON") }
+	if !validateRawJSON(value.Response) { return errors.New("usacc_contract_operations.response must be valid JSON") }
+	return nil
+}
+
+const UsaccSimulationRunsTable = "usacc_simulation_runs"
+const UsaccSimulationRunsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      mode,
+      seed,
+      horizon_days,
+      actor_count,
+      event_count,
+      metrics,
+      trace,
+      input,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_simulation_runs`
+
+var UsaccSimulationRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "canceled"}
+var UsaccSimulationRunsModeValues = []string{"sim", "live_shadow", "replay"}
+
+type UsaccSimulationRunsBun struct {
+	bun.BaseModel `bun:"table:usacc_simulation_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	Status string `bun:"status,type:varchar(32),default:'queued'" json:"status"`
+	Mode string `bun:"mode,type:varchar(32),default:'sim'" json:"mode"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	HorizonDays int32 `bun:"horizon_days,type:integer,default:180" json:"horizonDays"`
+	ActorCount int32 `bun:"actor_count,type:integer,default:0" json:"actorCount"`
+	EventCount int32 `bun:"event_count,type:integer,default:0" json:"eventCount"`
+	Metrics json.RawMessage `bun:"metrics,type:jsonb,default:'{}'::jsonb" json:"metrics"`
+	Trace json.RawMessage `bun:"trace,type:jsonb,default:'[]'::jsonb" json:"trace"`
+	Input json.RawMessage `bun:"input,type:jsonb,default:'{}'::jsonb" json:"input"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value UsaccSimulationRunsBun) Validate() error {
+	if !containsString(UsaccSimulationRunsStatusValues, value.Status) { return errors.New("unsupported usacc_simulation_runs.status") }
+	if !containsString(UsaccSimulationRunsModeValues, value.Mode) { return errors.New("unsupported usacc_simulation_runs.mode") }
+	if value.HorizonDays < 1 { return errors.New("usacc_simulation_runs.horizon_days is below the minimum") }
+	if value.HorizonDays > 3650 { return errors.New("usacc_simulation_runs.horizon_days is above the maximum") }
+	if value.ActorCount < 0 { return errors.New("usacc_simulation_runs.actor_count is below the minimum") }
+	if value.EventCount < 0 { return errors.New("usacc_simulation_runs.event_count is below the minimum") }
+	if !validateRawJSON(value.Metrics) { return errors.New("usacc_simulation_runs.metrics must be valid JSON") }
+	if !validateRawJSON(value.Trace) { return errors.New("usacc_simulation_runs.trace must be valid JSON") }
+	if !validateRawJSON(value.Input) { return errors.New("usacc_simulation_runs.input must be valid JSON") }
+	return nil
+}
+
+const UsaccAuditEventsTable = "usacc_audit_events"
+const UsaccAuditEventsSelectSQL = `select
+      id::text as id,
+      case_id::text as case_id,
+      actor_user_id::text as actor_user_id,
+      event_type,
+      event_hash,
+      source,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_audit_events`
+
+type UsaccAuditEventsBun struct {
+	bun.BaseModel `bun:"table:usacc_audit_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	CaseId *uuid.UUID `bun:"case_id,type:uuid,nullzero" json:"caseId,omitempty"`
+	ActorUserId *uuid.UUID `bun:"actor_user_id,type:uuid,nullzero" json:"actorUserId,omitempty"`
+	EventType string `bun:"event_type,type:varchar(96)" json:"eventType"`
+	EventHash string `bun:"event_hash,type:varchar(128)" json:"eventHash"`
+	Source string `bun:"source,type:varchar(80),default:'usacc-rest-api-backend-rs'" json:"source"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value UsaccAuditEventsBun) Validate() error {
+	if !usaccAuditEventsEventTypePattern.MatchString(value.EventType) { return errors.New("usacc_audit_events.event_type does not match the required pattern") }
+	if !usaccAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("usacc_audit_events.event_hash does not match the required pattern") }
+	if !usaccAuditEventsSourcePattern.MatchString(value.Source) { return errors.New("usacc_audit_events.source does not match the required pattern") }
+	if !validateRawJSON(value.Payload) { return errors.New("usacc_audit_events.payload must be valid JSON") }
 	return nil
 }
 

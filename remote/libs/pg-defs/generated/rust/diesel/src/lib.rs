@@ -4825,3 +4825,617 @@ pub struct BenefactorMarketingCallInsightsDieselInsert {
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_users (id) {
+        id -> Uuid,
+        external_subject -> Nullable<Varchar>,
+        email_hash -> Nullable<Varchar>,
+        display_name -> Varchar,
+        user_kind -> Varchar,
+        status -> Varchar,
+        kyc_level -> Varchar,
+        roles -> Jsonb,
+        is_legal_entity -> Bool,
+        legal_region -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_users)]
+pub struct UsaccUsersDieselRow {
+    pub id: Uuid,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: String,
+    pub user_kind: String,
+    pub status: String,
+    pub kyc_level: String,
+    pub roles: Value,
+    pub is_legal_entity: bool,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_users)]
+pub struct UsaccUsersDieselInsert {
+    pub id: Option<Uuid>,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: Option<String>,
+    pub user_kind: Option<String>,
+    pub status: Option<String>,
+    pub kyc_level: Option<String>,
+    pub roles: Option<Value>,
+    pub is_legal_entity: Option<bool>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_cases (id) {
+        id -> Uuid,
+        case_number -> Varchar,
+        title -> Varchar,
+        status -> Varchar,
+        filing_tier -> Varchar,
+        plaintiff_user_id -> Nullable<Uuid>,
+        defendant_summary -> Text,
+        conduct_summary -> Text,
+        conduct_fingerprint -> Nullable<Varchar>,
+        conduct_window_start -> Nullable<Varchar>,
+        conduct_window_end -> Nullable<Varchar>,
+        priority_score_micros -> Int4,
+        meta_data -> Jsonb,
+        opened_at -> Nullable<Timestamptz>,
+        closed_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_cases)]
+pub struct UsaccCasesDieselRow {
+    pub id: Uuid,
+    pub case_number: String,
+    pub title: String,
+    pub status: String,
+    pub filing_tier: String,
+    pub plaintiff_user_id: Option<Uuid>,
+    pub defendant_summary: String,
+    pub conduct_summary: String,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: i32,
+    pub meta_data: Value,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_cases)]
+pub struct UsaccCasesDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_number: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub filing_tier: Option<String>,
+    pub plaintiff_user_id: Option<Uuid>,
+    pub defendant_summary: Option<String>,
+    pub conduct_summary: Option<String>,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_case_participants (id) {
+        id -> Uuid,
+        case_id -> Uuid,
+        user_id -> Uuid,
+        role -> Varchar,
+        status -> Varchar,
+        granted_by -> Nullable<Uuid>,
+        granted_by_policy_version -> Nullable<Varchar>,
+        ended_at -> Nullable<Timestamptz>,
+        ended_reason -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_case_participants)]
+pub struct UsaccCaseParticipantsDieselRow {
+    pub id: Uuid,
+    pub case_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub granted_by: Option<Uuid>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_case_participants)]
+pub struct UsaccCaseParticipantsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+    pub granted_by: Option<Uuid>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_case_stages (id) {
+        id -> Uuid,
+        case_id -> Uuid,
+        stage_key -> Varchar,
+        stage_order -> Int4,
+        title -> Varchar,
+        status -> Varchar,
+        assigned_user_id -> Nullable<Uuid>,
+        opened_at -> Nullable<Timestamptz>,
+        due_at -> Nullable<Timestamptz>,
+        closed_at -> Nullable<Timestamptz>,
+        decision_summary -> Nullable<Text>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_case_stages)]
+pub struct UsaccCaseStagesDieselRow {
+    pub id: Uuid,
+    pub case_id: Uuid,
+    pub stage_key: String,
+    pub stage_order: i32,
+    pub title: String,
+    pub status: String,
+    pub assigned_user_id: Option<Uuid>,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub due_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_case_stages)]
+pub struct UsaccCaseStagesDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub stage_key: Option<String>,
+    pub stage_order: Option<i32>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub assigned_user_id: Option<Uuid>,
+    pub opened_at: Option<DateTime<Utc>>,
+    pub due_at: Option<DateTime<Utc>>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_elections (id) {
+        id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        stage_id -> Nullable<Uuid>,
+        election_kind -> Varchar,
+        title -> Varchar,
+        status -> Varchar,
+        quorum_count -> Int4,
+        threshold_micros -> Int4,
+        opens_at -> Nullable<Timestamptz>,
+        closes_at -> Nullable<Timestamptz>,
+        sealed_until -> Nullable<Timestamptz>,
+        tally -> Jsonb,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_elections)]
+pub struct UsaccElectionsDieselRow {
+    pub id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub stage_id: Option<Uuid>,
+    pub election_kind: String,
+    pub title: String,
+    pub status: String,
+    pub quorum_count: i32,
+    pub threshold_micros: i32,
+    pub opens_at: Option<DateTime<Utc>>,
+    pub closes_at: Option<DateTime<Utc>>,
+    pub sealed_until: Option<DateTime<Utc>>,
+    pub tally: Value,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_elections)]
+pub struct UsaccElectionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub stage_id: Option<Uuid>,
+    pub election_kind: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub quorum_count: Option<i32>,
+    pub threshold_micros: Option<i32>,
+    pub opens_at: Option<DateTime<Utc>>,
+    pub closes_at: Option<DateTime<Utc>>,
+    pub sealed_until: Option<DateTime<Utc>>,
+    pub tally: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_votes (id) {
+        id -> Uuid,
+        election_id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        voter_user_id -> Uuid,
+        vote_kind -> Varchar,
+        vote_value -> Varchar,
+        weight_micros -> Int4,
+        commitment_hash -> Nullable<Varchar>,
+        sealed_payload -> Nullable<Jsonb>,
+        revealed_at -> Nullable<Timestamptz>,
+        contract_digest -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_votes)]
+pub struct UsaccVotesDieselRow {
+    pub id: Uuid,
+    pub election_id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub voter_user_id: Uuid,
+    pub vote_kind: String,
+    pub vote_value: String,
+    pub weight_micros: i32,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<DateTime<Utc>>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_votes)]
+pub struct UsaccVotesDieselInsert {
+    pub id: Option<Uuid>,
+    pub election_id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub voter_user_id: Option<Uuid>,
+    pub vote_kind: Option<String>,
+    pub vote_value: Option<String>,
+    pub weight_micros: Option<i32>,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<DateTime<Utc>>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_escrow_accounts (id) {
+        id -> Uuid,
+        case_id -> Uuid,
+        status -> Varchar,
+        provider -> Varchar,
+        provider_account_ref -> Nullable<Varchar>,
+        currency -> Varchar,
+        target_amount_cents -> Int8,
+        committed_amount_cents -> Int8,
+        captured_amount_cents -> Int8,
+        disbursed_amount_cents -> Int8,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_escrow_accounts)]
+pub struct UsaccEscrowAccountsDieselRow {
+    pub id: Uuid,
+    pub case_id: Uuid,
+    pub status: String,
+    pub provider: String,
+    pub provider_account_ref: Option<String>,
+    pub currency: String,
+    pub target_amount_cents: i64,
+    pub committed_amount_cents: i64,
+    pub captured_amount_cents: i64,
+    pub disbursed_amount_cents: i64,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_escrow_accounts)]
+pub struct UsaccEscrowAccountsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    pub provider_account_ref: Option<String>,
+    pub currency: Option<String>,
+    pub target_amount_cents: Option<i64>,
+    pub committed_amount_cents: Option<i64>,
+    pub captured_amount_cents: Option<i64>,
+    pub disbursed_amount_cents: Option<i64>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_ledger_entries (id) {
+        id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        escrow_account_id -> Nullable<Uuid>,
+        user_id -> Nullable<Uuid>,
+        entry_kind -> Varchar,
+        direction -> Varchar,
+        amount_cents -> Int8,
+        currency -> Varchar,
+        provider_ref -> Nullable<Varchar>,
+        contract_digest -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_ledger_entries)]
+pub struct UsaccLedgerEntriesDieselRow {
+    pub id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub escrow_account_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub entry_kind: String,
+    pub direction: String,
+    pub amount_cents: i64,
+    pub currency: String,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_ledger_entries)]
+pub struct UsaccLedgerEntriesDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub escrow_account_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub entry_kind: Option<String>,
+    pub direction: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_contract_operations (id) {
+        id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        election_id -> Nullable<Uuid>,
+        vote_id -> Nullable<Uuid>,
+        request_id -> Varchar,
+        operation_kind -> Varchar,
+        status -> Varchar,
+        program_id -> Nullable<Varchar>,
+        digest -> Nullable<Varchar>,
+        envelope -> Jsonb,
+        response -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_contract_operations)]
+pub struct UsaccContractOperationsDieselRow {
+    pub id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub election_id: Option<Uuid>,
+    pub vote_id: Option<Uuid>,
+    pub request_id: String,
+    pub operation_kind: String,
+    pub status: String,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Value,
+    pub response: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_contract_operations)]
+pub struct UsaccContractOperationsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub election_id: Option<Uuid>,
+    pub vote_id: Option<Uuid>,
+    pub request_id: Option<String>,
+    pub operation_kind: Option<String>,
+    pub status: Option<String>,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Option<Value>,
+    pub response: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_simulation_runs (id) {
+        id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        status -> Varchar,
+        mode -> Varchar,
+        seed -> Int8,
+        horizon_days -> Int4,
+        actor_count -> Int4,
+        event_count -> Int4,
+        metrics -> Jsonb,
+        trace -> Jsonb,
+        input -> Jsonb,
+        started_at -> Nullable<Timestamptz>,
+        finished_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_simulation_runs)]
+pub struct UsaccSimulationRunsDieselRow {
+    pub id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub status: String,
+    pub mode: String,
+    pub seed: i64,
+    pub horizon_days: i32,
+    pub actor_count: i32,
+    pub event_count: i32,
+    pub metrics: Value,
+    pub trace: Value,
+    pub input: Value,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_simulation_runs)]
+pub struct UsaccSimulationRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub mode: Option<String>,
+    pub seed: Option<i64>,
+    pub horizon_days: Option<i32>,
+    pub actor_count: Option<i32>,
+    pub event_count: Option<i32>,
+    pub metrics: Option<Value>,
+    pub trace: Option<Value>,
+    pub input: Option<Value>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    usacc_audit_events (id) {
+        id -> Uuid,
+        case_id -> Nullable<Uuid>,
+        actor_user_id -> Nullable<Uuid>,
+        event_type -> Varchar,
+        event_hash -> Varchar,
+        source -> Varchar,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = usacc_audit_events)]
+pub struct UsaccAuditEventsDieselRow {
+    pub id: Uuid,
+    pub case_id: Option<Uuid>,
+    pub actor_user_id: Option<Uuid>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub source: String,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = usacc_audit_events)]
+pub struct UsaccAuditEventsDieselInsert {
+    pub id: Option<Uuid>,
+    pub case_id: Option<Uuid>,
+    pub actor_user_id: Option<Uuid>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub source: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}

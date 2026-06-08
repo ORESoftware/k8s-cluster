@@ -7283,6 +7283,1090 @@ pub fn validate_benefactor_marketing_call_insights_sentiment(value: String) -> R
   }
 }
 
+pub const usacc_users_table = "usacc_users"
+pub const usacc_users_select_sql = "select\n      id::text as id,\n      external_subject,\n      email_hash,\n      display_name,\n      user_kind,\n      status,\n      kyc_level,\n      roles::text as roles_json,\n      is_legal_entity,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_users"
+
+pub type UsaccUsersUserKind {
+  UsaccUsersUserKindNaturalPerson
+  UsaccUsersUserKindLegalEntity
+  UsaccUsersUserKindServiceAccount
+  UsaccUsersUserKindSimAgent
+}
+
+pub fn usacc_users_user_kind_to_string(value: UsaccUsersUserKind) -> String {
+  case value {
+    UsaccUsersUserKindNaturalPerson -> "natural_person"
+    UsaccUsersUserKindLegalEntity -> "legal_entity"
+    UsaccUsersUserKindServiceAccount -> "service_account"
+    UsaccUsersUserKindSimAgent -> "sim_agent"
+  }
+}
+
+pub fn parse_usacc_users_user_kind(value: String) -> Result(UsaccUsersUserKind, String) {
+  case value {
+    "natural_person" -> Ok(UsaccUsersUserKindNaturalPerson)
+    "legal_entity" -> Ok(UsaccUsersUserKindLegalEntity)
+    "service_account" -> Ok(UsaccUsersUserKindServiceAccount)
+    "sim_agent" -> Ok(UsaccUsersUserKindSimAgent)
+    _ -> Error("unsupported usacc_users.user_kind: " <> value)
+  }
+}
+
+pub type UsaccUsersStatus {
+  UsaccUsersStatusActive
+  UsaccUsersStatusPending
+  UsaccUsersStatusSuspended
+  UsaccUsersStatusBanned
+  UsaccUsersStatusAlumni
+  UsaccUsersStatusArchived
+}
+
+pub fn usacc_users_status_to_string(value: UsaccUsersStatus) -> String {
+  case value {
+    UsaccUsersStatusActive -> "active"
+    UsaccUsersStatusPending -> "pending"
+    UsaccUsersStatusSuspended -> "suspended"
+    UsaccUsersStatusBanned -> "banned"
+    UsaccUsersStatusAlumni -> "alumni"
+    UsaccUsersStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_usacc_users_status(value: String) -> Result(UsaccUsersStatus, String) {
+  case value {
+    "active" -> Ok(UsaccUsersStatusActive)
+    "pending" -> Ok(UsaccUsersStatusPending)
+    "suspended" -> Ok(UsaccUsersStatusSuspended)
+    "banned" -> Ok(UsaccUsersStatusBanned)
+    "alumni" -> Ok(UsaccUsersStatusAlumni)
+    "archived" -> Ok(UsaccUsersStatusArchived)
+    _ -> Error("unsupported usacc_users.status: " <> value)
+  }
+}
+
+pub type UsaccUsersKycLevel {
+  UsaccUsersKycLevelNone
+  UsaccUsersKycLevelLight
+  UsaccUsersKycLevelMedium
+  UsaccUsersKycLevelHigh
+}
+
+pub fn usacc_users_kyc_level_to_string(value: UsaccUsersKycLevel) -> String {
+  case value {
+    UsaccUsersKycLevelNone -> "none"
+    UsaccUsersKycLevelLight -> "light"
+    UsaccUsersKycLevelMedium -> "medium"
+    UsaccUsersKycLevelHigh -> "high"
+  }
+}
+
+pub fn parse_usacc_users_kyc_level(value: String) -> Result(UsaccUsersKycLevel, String) {
+  case value {
+    "none" -> Ok(UsaccUsersKycLevelNone)
+    "light" -> Ok(UsaccUsersKycLevelLight)
+    "medium" -> Ok(UsaccUsersKycLevelMedium)
+    "high" -> Ok(UsaccUsersKycLevelHigh)
+    _ -> Error("unsupported usacc_users.kyc_level: " <> value)
+  }
+}
+
+pub type UsaccUsersRow {
+  UsaccUsersRow(
+    id: String,
+    external_subject: Option(String),
+    email_hash: Option(String),
+    display_name: String,
+    user_kind: String,
+    status: String,
+    kyc_level: String,
+    roles_json: String,
+    is_legal_entity: Bool,
+    legal_region: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_users_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_users.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_users_user_kind(value: String) -> Result(String, String) {
+  case list.contains(["natural_person", "legal_entity", "service_account", "sim_agent"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_users.user_kind: " <> value)
+  }
+}
+
+pub fn validate_usacc_users_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "pending", "suspended", "banned", "alumni", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_users.status: " <> value)
+  }
+}
+
+pub fn validate_usacc_users_kyc_level(value: String) -> Result(String, String) {
+  case list.contains(["none", "light", "medium", "high"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_users.kyc_level: " <> value)
+  }
+}
+
+pub const usacc_cases_table = "usacc_cases"
+pub const usacc_cases_select_sql = "select\n      id::text as id,\n      case_number,\n      title,\n      status,\n      filing_tier,\n      plaintiff_user_id::text as plaintiff_user_id,\n      defendant_summary,\n      conduct_summary,\n      conduct_fingerprint,\n      conduct_window_start,\n      conduct_window_end,\n      priority_score_micros,\n      meta_data::text as meta_data_json,\n      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opened_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_cases"
+
+pub type UsaccCasesStatus {
+  UsaccCasesStatusDraft
+  UsaccCasesStatusSignatureCollection
+  UsaccCasesStatusScreening
+  UsaccCasesStatusInquiry
+  UsaccCasesStatusAdmissionReview
+  UsaccCasesStatusTrial
+  UsaccCasesStatusAppeal
+  UsaccCasesStatusResolved
+  UsaccCasesStatusCanceled
+  UsaccCasesStatusArchived
+}
+
+pub fn usacc_cases_status_to_string(value: UsaccCasesStatus) -> String {
+  case value {
+    UsaccCasesStatusDraft -> "draft"
+    UsaccCasesStatusSignatureCollection -> "signature_collection"
+    UsaccCasesStatusScreening -> "screening"
+    UsaccCasesStatusInquiry -> "inquiry"
+    UsaccCasesStatusAdmissionReview -> "admission_review"
+    UsaccCasesStatusTrial -> "trial"
+    UsaccCasesStatusAppeal -> "appeal"
+    UsaccCasesStatusResolved -> "resolved"
+    UsaccCasesStatusCanceled -> "canceled"
+    UsaccCasesStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_usacc_cases_status(value: String) -> Result(UsaccCasesStatus, String) {
+  case value {
+    "draft" -> Ok(UsaccCasesStatusDraft)
+    "signature_collection" -> Ok(UsaccCasesStatusSignatureCollection)
+    "screening" -> Ok(UsaccCasesStatusScreening)
+    "inquiry" -> Ok(UsaccCasesStatusInquiry)
+    "admission_review" -> Ok(UsaccCasesStatusAdmissionReview)
+    "trial" -> Ok(UsaccCasesStatusTrial)
+    "appeal" -> Ok(UsaccCasesStatusAppeal)
+    "resolved" -> Ok(UsaccCasesStatusResolved)
+    "canceled" -> Ok(UsaccCasesStatusCanceled)
+    "archived" -> Ok(UsaccCasesStatusArchived)
+    _ -> Error("unsupported usacc_cases.status: " <> value)
+  }
+}
+
+pub type UsaccCasesFilingTier {
+  UsaccCasesFilingTierScreen
+  UsaccCasesFilingTierInquiry
+  UsaccCasesFilingTierTrial1
+  UsaccCasesFilingTierTrial2
+  UsaccCasesFilingTierTrial3
+  UsaccCasesFilingTierTrial5
+  UsaccCasesFilingTierTrial10
+}
+
+pub fn usacc_cases_filing_tier_to_string(value: UsaccCasesFilingTier) -> String {
+  case value {
+    UsaccCasesFilingTierScreen -> "screen"
+    UsaccCasesFilingTierInquiry -> "inquiry"
+    UsaccCasesFilingTierTrial1 -> "trial_1"
+    UsaccCasesFilingTierTrial2 -> "trial_2"
+    UsaccCasesFilingTierTrial3 -> "trial_3"
+    UsaccCasesFilingTierTrial5 -> "trial_5"
+    UsaccCasesFilingTierTrial10 -> "trial_10"
+  }
+}
+
+pub fn parse_usacc_cases_filing_tier(value: String) -> Result(UsaccCasesFilingTier, String) {
+  case value {
+    "screen" -> Ok(UsaccCasesFilingTierScreen)
+    "inquiry" -> Ok(UsaccCasesFilingTierInquiry)
+    "trial_1" -> Ok(UsaccCasesFilingTierTrial1)
+    "trial_2" -> Ok(UsaccCasesFilingTierTrial2)
+    "trial_3" -> Ok(UsaccCasesFilingTierTrial3)
+    "trial_5" -> Ok(UsaccCasesFilingTierTrial5)
+    "trial_10" -> Ok(UsaccCasesFilingTierTrial10)
+    _ -> Error("unsupported usacc_cases.filing_tier: " <> value)
+  }
+}
+
+pub type UsaccCasesRow {
+  UsaccCasesRow(
+    id: String,
+    case_number: String,
+    title: String,
+    status: String,
+    filing_tier: String,
+    plaintiff_user_id: Option(String),
+    defendant_summary: String,
+    conduct_summary: String,
+    conduct_fingerprint: Option(String),
+    conduct_window_start: Option(String),
+    conduct_window_end: Option(String),
+    priority_score_micros: Int,
+    meta_data_json: String,
+    opened_at: Option(String),
+    closed_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_cases_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_cases.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_cases_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_cases.status: " <> value)
+  }
+}
+
+pub fn validate_usacc_cases_filing_tier(value: String) -> Result(String, String) {
+  case list.contains(["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_cases.filing_tier: " <> value)
+  }
+}
+
+pub const usacc_case_participants_table = "usacc_case_participants"
+pub const usacc_case_participants_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      user_id::text as user_id,\n      role,\n      status,\n      granted_by::text as granted_by,\n      granted_by_policy_version,\n      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ended_at,\n      ended_reason,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_case_participants"
+
+pub type UsaccCaseParticipantsRole {
+  UsaccCaseParticipantsRolePlaintiff
+  UsaccCaseParticipantsRoleDefendant
+  UsaccCaseParticipantsRoleSponsor
+  UsaccCaseParticipantsRoleWitness
+  UsaccCaseParticipantsRoleJudge
+  UsaccCaseParticipantsRolePanelJuror
+  UsaccCaseParticipantsRoleAppealJudge
+  UsaccCaseParticipantsRolePresidingJuror
+  UsaccCaseParticipantsRoleParalegal
+  UsaccCaseParticipantsRoleInvestigator
+  UsaccCaseParticipantsRoleIntakeReviewer
+  UsaccCaseParticipantsRoleClerkOfCourt
+  UsaccCaseParticipantsRoleComplianceMonitor
+  UsaccCaseParticipantsRoleCounsel
+  UsaccCaseParticipantsRoleOversightBoard
+  UsaccCaseParticipantsRoleAuditor
+  UsaccCaseParticipantsRoleOmbuds
+}
+
+pub fn usacc_case_participants_role_to_string(value: UsaccCaseParticipantsRole) -> String {
+  case value {
+    UsaccCaseParticipantsRolePlaintiff -> "plaintiff"
+    UsaccCaseParticipantsRoleDefendant -> "defendant"
+    UsaccCaseParticipantsRoleSponsor -> "sponsor"
+    UsaccCaseParticipantsRoleWitness -> "witness"
+    UsaccCaseParticipantsRoleJudge -> "judge"
+    UsaccCaseParticipantsRolePanelJuror -> "panel_juror"
+    UsaccCaseParticipantsRoleAppealJudge -> "appeal_judge"
+    UsaccCaseParticipantsRolePresidingJuror -> "presiding_juror"
+    UsaccCaseParticipantsRoleParalegal -> "paralegal"
+    UsaccCaseParticipantsRoleInvestigator -> "investigator"
+    UsaccCaseParticipantsRoleIntakeReviewer -> "intake_reviewer"
+    UsaccCaseParticipantsRoleClerkOfCourt -> "clerk_of_court"
+    UsaccCaseParticipantsRoleComplianceMonitor -> "compliance_monitor"
+    UsaccCaseParticipantsRoleCounsel -> "counsel"
+    UsaccCaseParticipantsRoleOversightBoard -> "oversight_board"
+    UsaccCaseParticipantsRoleAuditor -> "auditor"
+    UsaccCaseParticipantsRoleOmbuds -> "ombuds"
+  }
+}
+
+pub fn parse_usacc_case_participants_role(value: String) -> Result(UsaccCaseParticipantsRole, String) {
+  case value {
+    "plaintiff" -> Ok(UsaccCaseParticipantsRolePlaintiff)
+    "defendant" -> Ok(UsaccCaseParticipantsRoleDefendant)
+    "sponsor" -> Ok(UsaccCaseParticipantsRoleSponsor)
+    "witness" -> Ok(UsaccCaseParticipantsRoleWitness)
+    "judge" -> Ok(UsaccCaseParticipantsRoleJudge)
+    "panel_juror" -> Ok(UsaccCaseParticipantsRolePanelJuror)
+    "appeal_judge" -> Ok(UsaccCaseParticipantsRoleAppealJudge)
+    "presiding_juror" -> Ok(UsaccCaseParticipantsRolePresidingJuror)
+    "paralegal" -> Ok(UsaccCaseParticipantsRoleParalegal)
+    "investigator" -> Ok(UsaccCaseParticipantsRoleInvestigator)
+    "intake_reviewer" -> Ok(UsaccCaseParticipantsRoleIntakeReviewer)
+    "clerk_of_court" -> Ok(UsaccCaseParticipantsRoleClerkOfCourt)
+    "compliance_monitor" -> Ok(UsaccCaseParticipantsRoleComplianceMonitor)
+    "counsel" -> Ok(UsaccCaseParticipantsRoleCounsel)
+    "oversight_board" -> Ok(UsaccCaseParticipantsRoleOversightBoard)
+    "auditor" -> Ok(UsaccCaseParticipantsRoleAuditor)
+    "ombuds" -> Ok(UsaccCaseParticipantsRoleOmbuds)
+    _ -> Error("unsupported usacc_case_participants.role: " <> value)
+  }
+}
+
+pub type UsaccCaseParticipantsStatus {
+  UsaccCaseParticipantsStatusActive
+  UsaccCaseParticipantsStatusPending
+  UsaccCaseParticipantsStatusDeclined
+  UsaccCaseParticipantsStatusSuspended
+  UsaccCaseParticipantsStatusEnded
+  UsaccCaseParticipantsStatusBanned
+}
+
+pub fn usacc_case_participants_status_to_string(value: UsaccCaseParticipantsStatus) -> String {
+  case value {
+    UsaccCaseParticipantsStatusActive -> "active"
+    UsaccCaseParticipantsStatusPending -> "pending"
+    UsaccCaseParticipantsStatusDeclined -> "declined"
+    UsaccCaseParticipantsStatusSuspended -> "suspended"
+    UsaccCaseParticipantsStatusEnded -> "ended"
+    UsaccCaseParticipantsStatusBanned -> "banned"
+  }
+}
+
+pub fn parse_usacc_case_participants_status(value: String) -> Result(UsaccCaseParticipantsStatus, String) {
+  case value {
+    "active" -> Ok(UsaccCaseParticipantsStatusActive)
+    "pending" -> Ok(UsaccCaseParticipantsStatusPending)
+    "declined" -> Ok(UsaccCaseParticipantsStatusDeclined)
+    "suspended" -> Ok(UsaccCaseParticipantsStatusSuspended)
+    "ended" -> Ok(UsaccCaseParticipantsStatusEnded)
+    "banned" -> Ok(UsaccCaseParticipantsStatusBanned)
+    _ -> Error("unsupported usacc_case_participants.status: " <> value)
+  }
+}
+
+pub type UsaccCaseParticipantsRow {
+  UsaccCaseParticipantsRow(
+    id: String,
+    case_id: String,
+    user_id: String,
+    role: String,
+    status: String,
+    granted_by: Option(String),
+    granted_by_policy_version: Option(String),
+    ended_at: Option(String),
+    ended_reason: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_case_participants_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_case_participants.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_case_participants_role(value: String) -> Result(String, String) {
+  case list.contains(["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_case_participants.role: " <> value)
+  }
+}
+
+pub fn validate_usacc_case_participants_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "pending", "declined", "suspended", "ended", "banned"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_case_participants.status: " <> value)
+  }
+}
+
+pub const usacc_case_stages_table = "usacc_case_stages"
+pub const usacc_case_stages_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      stage_key,\n      stage_order,\n      title,\n      status,\n      assigned_user_id::text as assigned_user_id,\n      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opened_at,\n      to_char(due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as due_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      decision_summary,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_case_stages"
+
+pub type UsaccCaseStagesStatus {
+  UsaccCaseStagesStatusPending
+  UsaccCaseStagesStatusOpen
+  UsaccCaseStagesStatusBlocked
+  UsaccCaseStagesStatusComplete
+  UsaccCaseStagesStatusSkipped
+  UsaccCaseStagesStatusCanceled
+}
+
+pub fn usacc_case_stages_status_to_string(value: UsaccCaseStagesStatus) -> String {
+  case value {
+    UsaccCaseStagesStatusPending -> "pending"
+    UsaccCaseStagesStatusOpen -> "open"
+    UsaccCaseStagesStatusBlocked -> "blocked"
+    UsaccCaseStagesStatusComplete -> "complete"
+    UsaccCaseStagesStatusSkipped -> "skipped"
+    UsaccCaseStagesStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_usacc_case_stages_status(value: String) -> Result(UsaccCaseStagesStatus, String) {
+  case value {
+    "pending" -> Ok(UsaccCaseStagesStatusPending)
+    "open" -> Ok(UsaccCaseStagesStatusOpen)
+    "blocked" -> Ok(UsaccCaseStagesStatusBlocked)
+    "complete" -> Ok(UsaccCaseStagesStatusComplete)
+    "skipped" -> Ok(UsaccCaseStagesStatusSkipped)
+    "canceled" -> Ok(UsaccCaseStagesStatusCanceled)
+    _ -> Error("unsupported usacc_case_stages.status: " <> value)
+  }
+}
+
+pub type UsaccCaseStagesRow {
+  UsaccCaseStagesRow(
+    id: String,
+    case_id: String,
+    stage_key: String,
+    stage_order: Int,
+    title: String,
+    status: String,
+    assigned_user_id: Option(String),
+    opened_at: Option(String),
+    due_at: Option(String),
+    closed_at: Option(String),
+    decision_summary: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_case_stages_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_case_stages.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_case_stages_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "open", "blocked", "complete", "skipped", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_case_stages.status: " <> value)
+  }
+}
+
+pub const usacc_elections_table = "usacc_elections"
+pub const usacc_elections_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      stage_id::text as stage_id,\n      election_kind,\n      title,\n      status,\n      quorum_count,\n      threshold_micros,\n      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opens_at,\n      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closes_at,\n      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sealed_until,\n      tally::text as tally_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_elections"
+
+pub type UsaccElectionsElectionKind {
+  UsaccElectionsElectionKindPriority
+  UsaccElectionsElectionKindAdmission
+  UsaccElectionsElectionKindPanelVerdict
+  UsaccElectionsElectionKindAppeal
+  UsaccElectionsElectionKindOversight
+  UsaccElectionsElectionKindPolicy
+  UsaccElectionsElectionKindAssignmentAcceptance
+}
+
+pub fn usacc_elections_election_kind_to_string(value: UsaccElectionsElectionKind) -> String {
+  case value {
+    UsaccElectionsElectionKindPriority -> "priority"
+    UsaccElectionsElectionKindAdmission -> "admission"
+    UsaccElectionsElectionKindPanelVerdict -> "panel_verdict"
+    UsaccElectionsElectionKindAppeal -> "appeal"
+    UsaccElectionsElectionKindOversight -> "oversight"
+    UsaccElectionsElectionKindPolicy -> "policy"
+    UsaccElectionsElectionKindAssignmentAcceptance -> "assignment_acceptance"
+  }
+}
+
+pub fn parse_usacc_elections_election_kind(value: String) -> Result(UsaccElectionsElectionKind, String) {
+  case value {
+    "priority" -> Ok(UsaccElectionsElectionKindPriority)
+    "admission" -> Ok(UsaccElectionsElectionKindAdmission)
+    "panel_verdict" -> Ok(UsaccElectionsElectionKindPanelVerdict)
+    "appeal" -> Ok(UsaccElectionsElectionKindAppeal)
+    "oversight" -> Ok(UsaccElectionsElectionKindOversight)
+    "policy" -> Ok(UsaccElectionsElectionKindPolicy)
+    "assignment_acceptance" -> Ok(UsaccElectionsElectionKindAssignmentAcceptance)
+    _ -> Error("unsupported usacc_elections.election_kind: " <> value)
+  }
+}
+
+pub type UsaccElectionsStatus {
+  UsaccElectionsStatusDraft
+  UsaccElectionsStatusOpen
+  UsaccElectionsStatusSealed
+  UsaccElectionsStatusTallying
+  UsaccElectionsStatusCertified
+  UsaccElectionsStatusVoid
+  UsaccElectionsStatusArchived
+}
+
+pub fn usacc_elections_status_to_string(value: UsaccElectionsStatus) -> String {
+  case value {
+    UsaccElectionsStatusDraft -> "draft"
+    UsaccElectionsStatusOpen -> "open"
+    UsaccElectionsStatusSealed -> "sealed"
+    UsaccElectionsStatusTallying -> "tallying"
+    UsaccElectionsStatusCertified -> "certified"
+    UsaccElectionsStatusVoid -> "void"
+    UsaccElectionsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_usacc_elections_status(value: String) -> Result(UsaccElectionsStatus, String) {
+  case value {
+    "draft" -> Ok(UsaccElectionsStatusDraft)
+    "open" -> Ok(UsaccElectionsStatusOpen)
+    "sealed" -> Ok(UsaccElectionsStatusSealed)
+    "tallying" -> Ok(UsaccElectionsStatusTallying)
+    "certified" -> Ok(UsaccElectionsStatusCertified)
+    "void" -> Ok(UsaccElectionsStatusVoid)
+    "archived" -> Ok(UsaccElectionsStatusArchived)
+    _ -> Error("unsupported usacc_elections.status: " <> value)
+  }
+}
+
+pub type UsaccElectionsRow {
+  UsaccElectionsRow(
+    id: String,
+    case_id: Option(String),
+    stage_id: Option(String),
+    election_kind: String,
+    title: String,
+    status: String,
+    quorum_count: Int,
+    threshold_micros: Int,
+    opens_at: Option(String),
+    closes_at: Option(String),
+    sealed_until: Option(String),
+    tally_json: String,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_elections_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_elections.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_elections_election_kind(value: String) -> Result(String, String) {
+  case list.contains(["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_elections.election_kind: " <> value)
+  }
+}
+
+pub fn validate_usacc_elections_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "open", "sealed", "tallying", "certified", "void", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_elections.status: " <> value)
+  }
+}
+
+pub const usacc_votes_table = "usacc_votes"
+pub const usacc_votes_select_sql = "select\n      id::text as id,\n      election_id::text as election_id,\n      case_id::text as case_id,\n      voter_user_id::text as voter_user_id,\n      vote_kind,\n      vote_value,\n      weight_micros,\n      commitment_hash,\n      sealed_payload::text as sealed_payload_json,\n      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revealed_at,\n      contract_digest,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_votes"
+
+pub type UsaccVotesVoteKind {
+  UsaccVotesVoteKindChoice
+  UsaccVotesVoteKindPriorityDollarWeighted
+  UsaccVotesVoteKindVerdict
+  UsaccVotesVoteKindApproval
+  UsaccVotesVoteKindAssignmentResponse
+}
+
+pub fn usacc_votes_vote_kind_to_string(value: UsaccVotesVoteKind) -> String {
+  case value {
+    UsaccVotesVoteKindChoice -> "choice"
+    UsaccVotesVoteKindPriorityDollarWeighted -> "priority_dollar_weighted"
+    UsaccVotesVoteKindVerdict -> "verdict"
+    UsaccVotesVoteKindApproval -> "approval"
+    UsaccVotesVoteKindAssignmentResponse -> "assignment_response"
+  }
+}
+
+pub fn parse_usacc_votes_vote_kind(value: String) -> Result(UsaccVotesVoteKind, String) {
+  case value {
+    "choice" -> Ok(UsaccVotesVoteKindChoice)
+    "priority_dollar_weighted" -> Ok(UsaccVotesVoteKindPriorityDollarWeighted)
+    "verdict" -> Ok(UsaccVotesVoteKindVerdict)
+    "approval" -> Ok(UsaccVotesVoteKindApproval)
+    "assignment_response" -> Ok(UsaccVotesVoteKindAssignmentResponse)
+    _ -> Error("unsupported usacc_votes.vote_kind: " <> value)
+  }
+}
+
+pub type UsaccVotesRow {
+  UsaccVotesRow(
+    id: String,
+    election_id: String,
+    case_id: Option(String),
+    voter_user_id: String,
+    vote_kind: String,
+    vote_value: String,
+    weight_micros: Int,
+    commitment_hash: Option(String),
+    sealed_payload_json: Option(String),
+    revealed_at: Option(String),
+    contract_digest: Option(String),
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_votes_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_votes.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_votes_vote_kind(value: String) -> Result(String, String) {
+  case list.contains(["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_votes.vote_kind: " <> value)
+  }
+}
+
+pub const usacc_escrow_accounts_table = "usacc_escrow_accounts"
+pub const usacc_escrow_accounts_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      status,\n      provider,\n      provider_account_ref,\n      currency,\n      target_amount_cents,\n      committed_amount_cents,\n      captured_amount_cents,\n      disbursed_amount_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_escrow_accounts"
+
+pub type UsaccEscrowAccountsStatus {
+  UsaccEscrowAccountsStatusPending
+  UsaccEscrowAccountsStatusOpen
+  UsaccEscrowAccountsStatusFunding
+  UsaccEscrowAccountsStatusLocked
+  UsaccEscrowAccountsStatusDisbursing
+  UsaccEscrowAccountsStatusClosed
+  UsaccEscrowAccountsStatusCanceled
+}
+
+pub fn usacc_escrow_accounts_status_to_string(value: UsaccEscrowAccountsStatus) -> String {
+  case value {
+    UsaccEscrowAccountsStatusPending -> "pending"
+    UsaccEscrowAccountsStatusOpen -> "open"
+    UsaccEscrowAccountsStatusFunding -> "funding"
+    UsaccEscrowAccountsStatusLocked -> "locked"
+    UsaccEscrowAccountsStatusDisbursing -> "disbursing"
+    UsaccEscrowAccountsStatusClosed -> "closed"
+    UsaccEscrowAccountsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_usacc_escrow_accounts_status(value: String) -> Result(UsaccEscrowAccountsStatus, String) {
+  case value {
+    "pending" -> Ok(UsaccEscrowAccountsStatusPending)
+    "open" -> Ok(UsaccEscrowAccountsStatusOpen)
+    "funding" -> Ok(UsaccEscrowAccountsStatusFunding)
+    "locked" -> Ok(UsaccEscrowAccountsStatusLocked)
+    "disbursing" -> Ok(UsaccEscrowAccountsStatusDisbursing)
+    "closed" -> Ok(UsaccEscrowAccountsStatusClosed)
+    "canceled" -> Ok(UsaccEscrowAccountsStatusCanceled)
+    _ -> Error("unsupported usacc_escrow_accounts.status: " <> value)
+  }
+}
+
+pub type UsaccEscrowAccountsProvider {
+  UsaccEscrowAccountsProviderStripeTreasury
+  UsaccEscrowAccountsProviderStripeConnect
+  UsaccEscrowAccountsProviderColumn
+  UsaccEscrowAccountsProviderEvolve
+  UsaccEscrowAccountsProviderMercury
+  UsaccEscrowAccountsProviderTrustCompany
+  UsaccEscrowAccountsProviderManual
+}
+
+pub fn usacc_escrow_accounts_provider_to_string(value: UsaccEscrowAccountsProvider) -> String {
+  case value {
+    UsaccEscrowAccountsProviderStripeTreasury -> "stripe_treasury"
+    UsaccEscrowAccountsProviderStripeConnect -> "stripe_connect"
+    UsaccEscrowAccountsProviderColumn -> "column"
+    UsaccEscrowAccountsProviderEvolve -> "evolve"
+    UsaccEscrowAccountsProviderMercury -> "mercury"
+    UsaccEscrowAccountsProviderTrustCompany -> "trust_company"
+    UsaccEscrowAccountsProviderManual -> "manual"
+  }
+}
+
+pub fn parse_usacc_escrow_accounts_provider(value: String) -> Result(UsaccEscrowAccountsProvider, String) {
+  case value {
+    "stripe_treasury" -> Ok(UsaccEscrowAccountsProviderStripeTreasury)
+    "stripe_connect" -> Ok(UsaccEscrowAccountsProviderStripeConnect)
+    "column" -> Ok(UsaccEscrowAccountsProviderColumn)
+    "evolve" -> Ok(UsaccEscrowAccountsProviderEvolve)
+    "mercury" -> Ok(UsaccEscrowAccountsProviderMercury)
+    "trust_company" -> Ok(UsaccEscrowAccountsProviderTrustCompany)
+    "manual" -> Ok(UsaccEscrowAccountsProviderManual)
+    _ -> Error("unsupported usacc_escrow_accounts.provider: " <> value)
+  }
+}
+
+pub type UsaccEscrowAccountsRow {
+  UsaccEscrowAccountsRow(
+    id: String,
+    case_id: String,
+    status: String,
+    provider: String,
+    provider_account_ref: Option(String),
+    currency: String,
+    target_amount_cents: Int,
+    committed_amount_cents: Int,
+    captured_amount_cents: Int,
+    disbursed_amount_cents: Int,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_escrow_accounts_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_escrow_accounts.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_escrow_accounts_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_escrow_accounts.status: " <> value)
+  }
+}
+
+pub fn validate_usacc_escrow_accounts_provider(value: String) -> Result(String, String) {
+  case list.contains(["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_escrow_accounts.provider: " <> value)
+  }
+}
+
+pub const usacc_ledger_entries_table = "usacc_ledger_entries"
+pub const usacc_ledger_entries_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      escrow_account_id::text as escrow_account_id,\n      user_id::text as user_id,\n      entry_kind,\n      direction,\n      amount_cents,\n      currency,\n      provider_ref,\n      contract_digest,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from usacc_ledger_entries"
+
+pub type UsaccLedgerEntriesEntryKind {
+  UsaccLedgerEntriesEntryKindPledge
+  UsaccLedgerEntriesEntryKindAuthorization
+  UsaccLedgerEntriesEntryKindCapture
+  UsaccLedgerEntriesEntryKindRefund
+  UsaccLedgerEntriesEntryKindDisbursement
+  UsaccLedgerEntriesEntryKindFee
+  UsaccLedgerEntriesEntryKindAdjustment
+}
+
+pub fn usacc_ledger_entries_entry_kind_to_string(value: UsaccLedgerEntriesEntryKind) -> String {
+  case value {
+    UsaccLedgerEntriesEntryKindPledge -> "pledge"
+    UsaccLedgerEntriesEntryKindAuthorization -> "authorization"
+    UsaccLedgerEntriesEntryKindCapture -> "capture"
+    UsaccLedgerEntriesEntryKindRefund -> "refund"
+    UsaccLedgerEntriesEntryKindDisbursement -> "disbursement"
+    UsaccLedgerEntriesEntryKindFee -> "fee"
+    UsaccLedgerEntriesEntryKindAdjustment -> "adjustment"
+  }
+}
+
+pub fn parse_usacc_ledger_entries_entry_kind(value: String) -> Result(UsaccLedgerEntriesEntryKind, String) {
+  case value {
+    "pledge" -> Ok(UsaccLedgerEntriesEntryKindPledge)
+    "authorization" -> Ok(UsaccLedgerEntriesEntryKindAuthorization)
+    "capture" -> Ok(UsaccLedgerEntriesEntryKindCapture)
+    "refund" -> Ok(UsaccLedgerEntriesEntryKindRefund)
+    "disbursement" -> Ok(UsaccLedgerEntriesEntryKindDisbursement)
+    "fee" -> Ok(UsaccLedgerEntriesEntryKindFee)
+    "adjustment" -> Ok(UsaccLedgerEntriesEntryKindAdjustment)
+    _ -> Error("unsupported usacc_ledger_entries.entry_kind: " <> value)
+  }
+}
+
+pub type UsaccLedgerEntriesDirection {
+  UsaccLedgerEntriesDirectionDebit
+  UsaccLedgerEntriesDirectionCredit
+}
+
+pub fn usacc_ledger_entries_direction_to_string(value: UsaccLedgerEntriesDirection) -> String {
+  case value {
+    UsaccLedgerEntriesDirectionDebit -> "debit"
+    UsaccLedgerEntriesDirectionCredit -> "credit"
+  }
+}
+
+pub fn parse_usacc_ledger_entries_direction(value: String) -> Result(UsaccLedgerEntriesDirection, String) {
+  case value {
+    "debit" -> Ok(UsaccLedgerEntriesDirectionDebit)
+    "credit" -> Ok(UsaccLedgerEntriesDirectionCredit)
+    _ -> Error("unsupported usacc_ledger_entries.direction: " <> value)
+  }
+}
+
+pub type UsaccLedgerEntriesRow {
+  UsaccLedgerEntriesRow(
+    id: String,
+    case_id: Option(String),
+    escrow_account_id: Option(String),
+    user_id: Option(String),
+    entry_kind: String,
+    direction: String,
+    amount_cents: Int,
+    currency: String,
+    provider_ref: Option(String),
+    contract_digest: Option(String),
+    meta_data_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_usacc_ledger_entries_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_ledger_entries.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_ledger_entries_entry_kind(value: String) -> Result(String, String) {
+  case list.contains(["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_ledger_entries.entry_kind: " <> value)
+  }
+}
+
+pub fn validate_usacc_ledger_entries_direction(value: String) -> Result(String, String) {
+  case list.contains(["debit", "credit"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_ledger_entries.direction: " <> value)
+  }
+}
+
+pub const usacc_contract_operations_table = "usacc_contract_operations"
+pub const usacc_contract_operations_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      election_id::text as election_id,\n      vote_id::text as vote_id,\n      request_id,\n      operation_kind,\n      status,\n      program_id,\n      digest,\n      envelope::text as envelope_json,\n      response::text as response_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_contract_operations"
+
+pub type UsaccContractOperationsOperationKind {
+  UsaccContractOperationsOperationKindValidateEnvelope
+  UsaccContractOperationsOperationKindSimulateTransaction
+  UsaccContractOperationsOperationKindSendTransaction
+  UsaccContractOperationsOperationKindVoteCommitment
+  UsaccContractOperationsOperationKindEscrowNotary
+}
+
+pub fn usacc_contract_operations_operation_kind_to_string(value: UsaccContractOperationsOperationKind) -> String {
+  case value {
+    UsaccContractOperationsOperationKindValidateEnvelope -> "validate_envelope"
+    UsaccContractOperationsOperationKindSimulateTransaction -> "simulate_transaction"
+    UsaccContractOperationsOperationKindSendTransaction -> "send_transaction"
+    UsaccContractOperationsOperationKindVoteCommitment -> "vote_commitment"
+    UsaccContractOperationsOperationKindEscrowNotary -> "escrow_notary"
+  }
+}
+
+pub fn parse_usacc_contract_operations_operation_kind(value: String) -> Result(UsaccContractOperationsOperationKind, String) {
+  case value {
+    "validate_envelope" -> Ok(UsaccContractOperationsOperationKindValidateEnvelope)
+    "simulate_transaction" -> Ok(UsaccContractOperationsOperationKindSimulateTransaction)
+    "send_transaction" -> Ok(UsaccContractOperationsOperationKindSendTransaction)
+    "vote_commitment" -> Ok(UsaccContractOperationsOperationKindVoteCommitment)
+    "escrow_notary" -> Ok(UsaccContractOperationsOperationKindEscrowNotary)
+    _ -> Error("unsupported usacc_contract_operations.operation_kind: " <> value)
+  }
+}
+
+pub type UsaccContractOperationsStatus {
+  UsaccContractOperationsStatusPending
+  UsaccContractOperationsStatusValidated
+  UsaccContractOperationsStatusSimulated
+  UsaccContractOperationsStatusSent
+  UsaccContractOperationsStatusFailed
+  UsaccContractOperationsStatusCanceled
+}
+
+pub fn usacc_contract_operations_status_to_string(value: UsaccContractOperationsStatus) -> String {
+  case value {
+    UsaccContractOperationsStatusPending -> "pending"
+    UsaccContractOperationsStatusValidated -> "validated"
+    UsaccContractOperationsStatusSimulated -> "simulated"
+    UsaccContractOperationsStatusSent -> "sent"
+    UsaccContractOperationsStatusFailed -> "failed"
+    UsaccContractOperationsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_usacc_contract_operations_status(value: String) -> Result(UsaccContractOperationsStatus, String) {
+  case value {
+    "pending" -> Ok(UsaccContractOperationsStatusPending)
+    "validated" -> Ok(UsaccContractOperationsStatusValidated)
+    "simulated" -> Ok(UsaccContractOperationsStatusSimulated)
+    "sent" -> Ok(UsaccContractOperationsStatusSent)
+    "failed" -> Ok(UsaccContractOperationsStatusFailed)
+    "canceled" -> Ok(UsaccContractOperationsStatusCanceled)
+    _ -> Error("unsupported usacc_contract_operations.status: " <> value)
+  }
+}
+
+pub type UsaccContractOperationsRow {
+  UsaccContractOperationsRow(
+    id: String,
+    case_id: Option(String),
+    election_id: Option(String),
+    vote_id: Option(String),
+    request_id: String,
+    operation_kind: String,
+    status: String,
+    program_id: Option(String),
+    digest: Option(String),
+    envelope_json: String,
+    response_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_contract_operations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_contract_operations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_contract_operations_operation_kind(value: String) -> Result(String, String) {
+  case list.contains(["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_contract_operations.operation_kind: " <> value)
+  }
+}
+
+pub fn validate_usacc_contract_operations_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "validated", "simulated", "sent", "failed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_contract_operations.status: " <> value)
+  }
+}
+
+pub const usacc_simulation_runs_table = "usacc_simulation_runs"
+pub const usacc_simulation_runs_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      status,\n      mode,\n      seed,\n      horizon_days,\n      actor_count,\n      event_count,\n      metrics::text as metrics_json,\n      trace::text as trace_json,\n      input::text as input_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_simulation_runs"
+
+pub type UsaccSimulationRunsStatus {
+  UsaccSimulationRunsStatusQueued
+  UsaccSimulationRunsStatusRunning
+  UsaccSimulationRunsStatusSucceeded
+  UsaccSimulationRunsStatusFailed
+  UsaccSimulationRunsStatusCanceled
+}
+
+pub fn usacc_simulation_runs_status_to_string(value: UsaccSimulationRunsStatus) -> String {
+  case value {
+    UsaccSimulationRunsStatusQueued -> "queued"
+    UsaccSimulationRunsStatusRunning -> "running"
+    UsaccSimulationRunsStatusSucceeded -> "succeeded"
+    UsaccSimulationRunsStatusFailed -> "failed"
+    UsaccSimulationRunsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_usacc_simulation_runs_status(value: String) -> Result(UsaccSimulationRunsStatus, String) {
+  case value {
+    "queued" -> Ok(UsaccSimulationRunsStatusQueued)
+    "running" -> Ok(UsaccSimulationRunsStatusRunning)
+    "succeeded" -> Ok(UsaccSimulationRunsStatusSucceeded)
+    "failed" -> Ok(UsaccSimulationRunsStatusFailed)
+    "canceled" -> Ok(UsaccSimulationRunsStatusCanceled)
+    _ -> Error("unsupported usacc_simulation_runs.status: " <> value)
+  }
+}
+
+pub type UsaccSimulationRunsMode {
+  UsaccSimulationRunsModeSim
+  UsaccSimulationRunsModeLiveShadow
+  UsaccSimulationRunsModeReplay
+}
+
+pub fn usacc_simulation_runs_mode_to_string(value: UsaccSimulationRunsMode) -> String {
+  case value {
+    UsaccSimulationRunsModeSim -> "sim"
+    UsaccSimulationRunsModeLiveShadow -> "live_shadow"
+    UsaccSimulationRunsModeReplay -> "replay"
+  }
+}
+
+pub fn parse_usacc_simulation_runs_mode(value: String) -> Result(UsaccSimulationRunsMode, String) {
+  case value {
+    "sim" -> Ok(UsaccSimulationRunsModeSim)
+    "live_shadow" -> Ok(UsaccSimulationRunsModeLiveShadow)
+    "replay" -> Ok(UsaccSimulationRunsModeReplay)
+    _ -> Error("unsupported usacc_simulation_runs.mode: " <> value)
+  }
+}
+
+pub type UsaccSimulationRunsRow {
+  UsaccSimulationRunsRow(
+    id: String,
+    case_id: Option(String),
+    status: String,
+    mode: String,
+    seed: Int,
+    horizon_days: Int,
+    actor_count: Int,
+    event_count: Int,
+    metrics_json: String,
+    trace_json: String,
+    input_json: String,
+    started_at: Option(String),
+    finished_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_usacc_simulation_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_simulation_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_usacc_simulation_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "succeeded", "failed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_simulation_runs.status: " <> value)
+  }
+}
+
+pub fn validate_usacc_simulation_runs_mode(value: String) -> Result(String, String) {
+  case list.contains(["sim", "live_shadow", "replay"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported usacc_simulation_runs.mode: " <> value)
+  }
+}
+
+pub const usacc_audit_events_table = "usacc_audit_events"
+pub const usacc_audit_events_select_sql = "select\n      id::text as id,\n      case_id::text as case_id,\n      actor_user_id::text as actor_user_id,\n      event_type,\n      event_hash,\n      source,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from usacc_audit_events"
+
+pub type UsaccAuditEventsRow {
+  UsaccAuditEventsRow(
+    id: String,
+    case_id: Option(String),
+    actor_user_id: Option(String),
+    event_type: String,
+    event_hash: String,
+    source: String,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_usacc_audit_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("usacc_audit_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

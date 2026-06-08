@@ -533,6 +533,19 @@
       ]
     },
     {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 15
+      },
+      "generated": [
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "wal-gateway-rs",
       "language": "rust",
       "routeCount": 10,

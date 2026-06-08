@@ -45,6 +45,9 @@ resources:
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
+  - usacc-rest-api-backend-rs.deployment.yaml
+  - usacc-rest-api-backend-rs.networkpolicy.yaml
+  - usacc-rest-api-backend-rs.service.yaml
   - dd-escrow-rs.deployment.yaml
   - dd-escrow-rs.networkpolicy.yaml
   - dd-escrow-rs.service.yaml

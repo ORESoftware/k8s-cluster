@@ -21,6 +21,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
 - `dd-fabrication-server` (Rust fabrication planner and instruction validator for printers, mills, routers, and lathes)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
+- `usacc-rest-api-backend-rs` (Rust/Axum USACC simulations, voting, accounting, and contract-backed REST API)
 - `dd-escrow-rs` (Rust Solana escrow gateway for `solana.escrow.v1` validation and settlement)
 - `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
 - `dd-patent-filing-rs` (Rust/Axum patent filing preparation workbench with htmx intake and package generation)
@@ -194,6 +195,9 @@ Gateway path map:
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
+- `/api/usacc`, `/api/usacc/*`, `/usacc/healthz`, `/usacc/metrics`, `/usacc/docs/api`,
+  `/usacc/api/docs`, `/usacc/api/docs.json` -> `usacc-rest-api-backend-rs:8121`
+  (gateway auth required)
 - `/escrow/`, `/escrow/types`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
   `POST /escrow/simulate-settlement`, `POST /escrow/settle` -> `dd-escrow-rs:8115`
   (internal auth required)
@@ -679,6 +683,21 @@ failures, and policy rejections; the service is scraped by both `dd-otel-collect
 The pod runs as non-root with a read-only root filesystem, no mounted service-account token, and a
 NetworkPolicy that keeps ingress to the gateway, runtime-config, and observability, while limiting
 egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
+
+## USACC REST API backend
+
+`usacc-rest-api-backend-rs` runs `remote/deployments/usacc-rest-api-backend-rs` as a JSON-only
+Rust/Axum backend for the US Anti-Corruption Court project. The public gateway exposes domain routes
+under `/api/usacc/*` for users, cases, stages, elections, votes, ledger entries, contract validation,
+contract simulation, and discrete-event simulation runs. Operator docs and health are available at
+`/usacc/docs/api`, `/usacc/api/docs`, `/usacc/api/docs.json`, `/usacc/healthz`, and
+`/usacc/metrics`.
+
+The pod reads `USACC_DATABASE_URL` from `dd-remote-rest-api-secrets` first, then falls back to the
+shared RDS URL envs understood by the service. It imports the shared Rust discrete-event-system
+submodule for deterministic simulation runs, calls `dd-contract-service` for Solana envelope
+validation/simulation, and uses generated `remote/libs/pg-defs` Rust adapters against the manually
+maintained `usacc_*` Postgres contract tables.
 
 ## Solana escrow service
 

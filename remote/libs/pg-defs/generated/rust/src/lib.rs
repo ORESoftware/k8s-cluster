@@ -46,7 +46,7 @@ impl AppConfigStatus {
 impl TryFrom<&str> for AppConfigStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -296,7 +296,7 @@ impl MusicSongsStatus {
 impl TryFrom<&str> for MusicSongsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "generated" => Ok(Self::Generated),
             "published" => Ok(Self::Published),
@@ -335,7 +335,7 @@ impl MusicSongsStorageProvider {
 impl TryFrom<&str> for MusicSongsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -636,7 +636,7 @@ impl SoundRecorderAccountsStatus {
 impl TryFrom<&str> for SoundRecorderAccountsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -762,7 +762,7 @@ impl SoundRecorderDevicesPlatform {
 impl TryFrom<&str> for SoundRecorderDevicesPlatform {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "ios" => Ok(Self::Ios),
             "android" => Ok(Self::Android),
@@ -798,7 +798,7 @@ impl SoundRecorderDevicesStatus {
 impl TryFrom<&str> for SoundRecorderDevicesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "revoked" => Ok(Self::Revoked),
@@ -963,7 +963,7 @@ impl SoundRecorderUploadSessionsStatus {
 impl TryFrom<&str> for SoundRecorderUploadSessionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "closed" => Ok(Self::Closed),
@@ -993,7 +993,7 @@ impl SoundRecorderUploadSessionsStorageProvider {
 impl TryFrom<&str> for SoundRecorderUploadSessionsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             _ => Err(format!("unsupported storage_provider: {value}")),
@@ -1195,7 +1195,7 @@ impl SoundRecorderSegmentsStatus {
 impl TryFrom<&str> for SoundRecorderSegmentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "uploaded" => Ok(Self::Uploaded),
@@ -1226,7 +1226,7 @@ impl SoundRecorderSegmentsStorageProvider {
 impl TryFrom<&str> for SoundRecorderSegmentsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             _ => Err(format!("unsupported storage_provider: {value}")),
@@ -1411,7 +1411,7 @@ impl SoundRecorderEvidenceExportsStatus {
 impl TryFrom<&str> for SoundRecorderEvidenceExportsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "requested" => Ok(Self::Requested),
             "ready" => Ok(Self::Ready),
@@ -1583,7 +1583,7 @@ impl SoundRecorderOauthStatesProvider {
 impl TryFrom<&str> for SoundRecorderOauthStatesProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
@@ -1618,7 +1618,7 @@ impl SoundRecorderOauthStatesStatus {
 impl TryFrom<&str> for SoundRecorderOauthStatesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "consumed" => Ok(Self::Consumed),
@@ -1753,7 +1753,7 @@ impl SoundRecorderCloudConnectionsProvider {
 impl TryFrom<&str> for SoundRecorderCloudConnectionsProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
@@ -1784,7 +1784,7 @@ impl SoundRecorderCloudConnectionsLinkMode {
 impl TryFrom<&str> for SoundRecorderCloudConnectionsLinkMode {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "server_oauth" => Ok(Self::ServerOauth),
             "client_managed" => Ok(Self::ClientManaged),
@@ -1818,7 +1818,7 @@ impl SoundRecorderCloudConnectionsStatus {
 impl TryFrom<&str> for SoundRecorderCloudConnectionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -2004,7 +2004,7 @@ impl SoundRecorderCloudCopyJobsProvider {
 impl TryFrom<&str> for SoundRecorderCloudCopyJobsProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
@@ -2043,7 +2043,7 @@ impl SoundRecorderCloudCopyJobsStatus {
 impl TryFrom<&str> for SoundRecorderCloudCopyJobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "running" => Ok(Self::Running),
@@ -2198,7 +2198,7 @@ impl ContainerPoolConfigsStatus {
 impl TryFrom<&str> for ContainerPoolConfigsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -2400,7 +2400,7 @@ impl KnownGitRepoProvider {
 impl TryFrom<&str> for KnownGitRepoProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "github" => Ok(Self::Github),
             "gitlab" => Ok(Self::Gitlab),
@@ -2434,7 +2434,7 @@ impl KnownGitRepoStatus {
 impl TryFrom<&str> for KnownGitRepoStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -2559,7 +2559,7 @@ impl AgentContextBlobsStatus {
 impl TryFrom<&str> for AgentContextBlobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -2852,7 +2852,7 @@ impl AgentRemoteDevTaskStatus {
 impl TryFrom<&str> for AgentRemoteDevTaskStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -2894,7 +2894,7 @@ impl AgentRemoteDevTaskPrState {
 impl TryFrom<&str> for AgentRemoteDevTaskPrState {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "open" => Ok(Self::Open),
@@ -2928,7 +2928,7 @@ impl AgentRemoteDevTaskExitReason {
 impl TryFrom<&str> for AgentRemoteDevTaskExitReason {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "cancelled" => Ok(Self::Cancelled),
@@ -3211,7 +3211,7 @@ impl AgentRemoteDevArtifactStorageProvider {
 impl TryFrom<&str> for AgentRemoteDevArtifactStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -3344,7 +3344,7 @@ impl AgentRemoteDevRuntimeLockStatus {
 impl TryFrom<&str> for AgentRemoteDevRuntimeLockStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "released" => Ok(Self::Released),
@@ -3498,7 +3498,7 @@ impl MipSolverSolvesNodeRole {
 impl TryFrom<&str> for MipSolverSolvesNodeRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "master" => Ok(Self::Master),
             "slave" => Ok(Self::Slave),
@@ -3890,7 +3890,7 @@ impl LambdaFunctionRuntime {
 impl TryFrom<&str> for LambdaFunctionRuntime {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "nodejs" => Ok(Self::Nodejs),
             "javascript" => Ok(Self::Javascript),
@@ -3943,7 +3943,7 @@ impl LambdaFunctionContainerBuildStatus {
 impl TryFrom<&str> for LambdaFunctionContainerBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "not_requested" => Ok(Self::NotRequested),
             "pending" => Ok(Self::Pending),
@@ -3981,7 +3981,7 @@ impl LambdaFunctionStatus {
 impl TryFrom<&str> for LambdaFunctionStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -4177,7 +4177,7 @@ impl ContainerPoolImageRevisionsSource {
 impl TryFrom<&str> for ContainerPoolImageRevisionsSource {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "disk-default" => Ok(Self::DiskDefault),
             "user" => Ok(Self::User),
@@ -4210,7 +4210,7 @@ impl ContainerPoolImageRevisionsStatus {
 impl TryFrom<&str> for ContainerPoolImageRevisionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -4366,7 +4366,7 @@ impl ContainerPoolBuildRunsBuildStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "building" => Ok(Self::Building),
@@ -4410,7 +4410,7 @@ impl ContainerPoolBuildRunsTestStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsTestStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "not_started" => Ok(Self::NotStarted),
             "pending" => Ok(Self::Pending),
@@ -4453,7 +4453,7 @@ impl ContainerPoolBuildRunsOverallStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsOverallStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -4611,7 +4611,7 @@ impl PresenceConvsStatus {
 impl TryFrom<&str> for PresenceConvsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -4723,7 +4723,7 @@ impl PresenceConvMembersRole {
 impl TryFrom<&str> for PresenceConvMembersRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "owner" => Ok(Self::Owner),
             "admin" => Ok(Self::Admin),
@@ -4760,7 +4760,7 @@ impl PresenceConvMembersStatus {
 impl TryFrom<&str> for PresenceConvMembersStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "muted" => Ok(Self::Muted),
@@ -4899,7 +4899,7 @@ impl PresenceEventsOp {
 impl TryFrom<&str> for PresenceEventsOp {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "INSERT" => Ok(Self::INSERT),
             "UPDATE" => Ok(Self::UPDATE),
@@ -5026,7 +5026,7 @@ impl DesSoccerLearningExperimentsStatus {
 impl TryFrom<&str> for DesSoccerLearningExperimentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -5168,7 +5168,7 @@ impl DesSoccerLearningPolicyVersionsSourceKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "seed" => Ok(Self::Seed),
             "merge" => Ok(Self::Merge),
@@ -5206,7 +5206,7 @@ impl DesSoccerLearningPolicyVersionsStatus {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -5240,7 +5240,7 @@ impl DesSoccerLearningPolicyVersionsRetentionKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsRetentionKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "branch_tip" => Ok(Self::BranchTip),
             "retain_all" => Ok(Self::RetainAll),
@@ -5404,7 +5404,7 @@ impl DesSoccerLearningPolicyEntriesTeam {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -5434,7 +5434,7 @@ impl DesSoccerLearningPolicyEntriesEntryKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -5587,7 +5587,7 @@ impl DesSoccerLearningJobsSpawnStrategy {
 impl TryFrom<&str> for DesSoccerLearningJobsSpawnStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "latest" => Ok(Self::Latest),
             "elite" => Ok(Self::Elite),
@@ -5627,7 +5627,7 @@ impl DesSoccerLearningJobsStatus {
 impl TryFrom<&str> for DesSoccerLearningJobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -5793,7 +5793,7 @@ impl DesSoccerLearningRunsStatus {
 impl TryFrom<&str> for DesSoccerLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -5825,7 +5825,7 @@ impl DesSoccerLearningRunsHomeOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsHomeOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -5858,7 +5858,7 @@ impl DesSoccerLearningRunsAwayOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsAwayOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -6049,7 +6049,7 @@ impl DesSoccerLearningRunDeltasTeam {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -6079,7 +6079,7 @@ impl DesSoccerLearningRunDeltasEntryKind {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -6233,7 +6233,7 @@ impl DesSoccerLearningMergeEventsStrategy {
 impl TryFrom<&str> for DesSoccerLearningMergeEventsStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "outcome_weighted_average" => Ok(Self::OutcomeWeightedAverage),
             "elite" => Ok(Self::Elite),
@@ -6360,7 +6360,7 @@ impl DesFelElevatorLearningRunsStatus {
 impl TryFrom<&str> for DesFelElevatorLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -6397,7 +6397,7 @@ impl DesFelElevatorLearningRunsDispatchPolicy {
 impl TryFrom<&str> for DesFelElevatorLearningRunsDispatchPolicy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6631,7 +6631,7 @@ impl DesFelElevatorPolicyStatesPolicyKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6668,7 +6668,7 @@ impl DesFelElevatorPolicyStatesSourceKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "run-final" => Ok(Self::RunFinal),
             "offline-training" => Ok(Self::OfflineTraining),
@@ -6793,7 +6793,7 @@ impl DesFelElevatorDispatchDecisionsPolicyKind {
 impl TryFrom<&str> for DesFelElevatorDispatchDecisionsPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -6904,7 +6904,7 @@ impl DesFelElevatorPomdpBeliefsAction {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsAction {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "hold" => Ok(Self::Hold),
             "dispatch" => Ok(Self::Dispatch),
@@ -6934,7 +6934,7 @@ impl DesFelElevatorPomdpBeliefsObservation {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsObservation {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "quiet" => Ok(Self::Quiet),
             "call" => Ok(Self::Call),
@@ -7072,7 +7072,7 @@ impl BenefactorMarketingClientsStatus {
 impl TryFrom<&str> for BenefactorMarketingClientsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "onboarding" => Ok(Self::Onboarding),
             "active" => Ok(Self::Active),
@@ -7225,7 +7225,7 @@ impl BenefactorMarketingContactsStatus {
 impl TryFrom<&str> for BenefactorMarketingContactsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "inactive" => Ok(Self::Inactive),
@@ -7265,7 +7265,7 @@ impl BenefactorMarketingContactsLifecycleRole {
 impl TryFrom<&str> for BenefactorMarketingContactsLifecycleRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "primary" => Ok(Self::Primary),
             "decision_maker" => Ok(Self::DecisionMaker),
@@ -7301,7 +7301,7 @@ impl BenefactorMarketingContactsConsentStatus {
 impl TryFrom<&str> for BenefactorMarketingContactsConsentStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "unknown" => Ok(Self::Unknown),
             "opted_in" => Ok(Self::OptedIn),
@@ -7449,7 +7449,7 @@ impl BenefactorMarketingServicePackagesStatus {
 impl TryFrom<&str> for BenefactorMarketingServicePackagesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "retired" => Ok(Self::Retired),
@@ -7577,7 +7577,7 @@ impl BenefactorMarketingContractsStatus {
 impl TryFrom<&str> for BenefactorMarketingContractsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -7712,7 +7712,7 @@ impl BenefactorMarketingInvoicesStatus {
 impl TryFrom<&str> for BenefactorMarketingInvoicesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "sent" => Ok(Self::Sent),
@@ -7854,7 +7854,7 @@ impl BenefactorMarketingIntegrationsPlatform {
 impl TryFrom<&str> for BenefactorMarketingIntegrationsPlatform {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "salesforce" => Ok(Self::Salesforce),
             "hubspot" => Ok(Self::Hubspot),
@@ -7896,7 +7896,7 @@ impl BenefactorMarketingIntegrationsStatus {
 impl TryFrom<&str> for BenefactorMarketingIntegrationsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "connected" => Ok(Self::Connected),
             "disabled" => Ok(Self::Disabled),
@@ -7931,7 +7931,7 @@ impl BenefactorMarketingIntegrationsAuthKind {
 impl TryFrom<&str> for BenefactorMarketingIntegrationsAuthKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "oauth2" => Ok(Self::Oauth2),
             "api_key" => Ok(Self::ApiKey),
@@ -8066,7 +8066,7 @@ impl BenefactorMarketingLeadsStatus {
 impl TryFrom<&str> for BenefactorMarketingLeadsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "new" => Ok(Self::New),
             "researching" => Ok(Self::Researching),
@@ -8104,7 +8104,7 @@ impl BenefactorMarketingLeadsVerificationStatus {
 impl TryFrom<&str> for BenefactorMarketingLeadsVerificationStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "unknown" => Ok(Self::Unknown),
             "verified" => Ok(Self::Verified),
@@ -8140,7 +8140,7 @@ impl BenefactorMarketingLeadsEnrichmentStatus {
 impl TryFrom<&str> for BenefactorMarketingLeadsEnrichmentStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "running" => Ok(Self::Running),
@@ -8337,7 +8337,7 @@ impl BenefactorMarketingEnrichmentJobsJobKind {
 impl TryFrom<&str> for BenefactorMarketingEnrichmentJobsJobKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "lead_enrichment" => Ok(Self::LeadEnrichment),
             "company_research" => Ok(Self::CompanyResearch),
@@ -8376,7 +8376,7 @@ impl BenefactorMarketingEnrichmentJobsStatus {
 impl TryFrom<&str> for BenefactorMarketingEnrichmentJobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -8519,7 +8519,7 @@ impl BenefactorMarketingCampaignsStatus {
 impl TryFrom<&str> for BenefactorMarketingCampaignsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -8562,7 +8562,7 @@ impl BenefactorMarketingCampaignsCampaignKind {
 impl TryFrom<&str> for BenefactorMarketingCampaignsCampaignKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "social_media" => Ok(Self::SocialMedia),
             "seo_aeo" => Ok(Self::SeoAeo),
@@ -8723,7 +8723,7 @@ impl BenefactorMarketingCampaignChannelsChannel {
 impl TryFrom<&str> for BenefactorMarketingCampaignChannelsChannel {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "social" => Ok(Self::Social),
             "linkedin" => Ok(Self::Linkedin),
@@ -8767,7 +8767,7 @@ impl BenefactorMarketingCampaignChannelsStatus {
 impl TryFrom<&str> for BenefactorMarketingCampaignChannelsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "scheduled" => Ok(Self::Scheduled),
@@ -8888,7 +8888,7 @@ impl BenefactorMarketingCampaignExperimentsStatus {
 impl TryFrom<&str> for BenefactorMarketingCampaignExperimentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "running" => Ok(Self::Running),
@@ -8928,7 +8928,7 @@ impl BenefactorMarketingCampaignExperimentsExperimentKind {
 impl TryFrom<&str> for BenefactorMarketingCampaignExperimentsExperimentKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "subject_line" => Ok(Self::SubjectLine),
             "creative" => Ok(Self::Creative),
@@ -9054,7 +9054,7 @@ impl BenefactorMarketingAutomationWorkflowsStatus {
 impl TryFrom<&str> for BenefactorMarketingAutomationWorkflowsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -9098,7 +9098,7 @@ impl BenefactorMarketingAutomationWorkflowsTriggerKind {
 impl TryFrom<&str> for BenefactorMarketingAutomationWorkflowsTriggerKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "lead_created" => Ok(Self::LeadCreated),
             "score_changed" => Ok(Self::ScoreChanged),
@@ -9213,7 +9213,7 @@ impl BenefactorMarketingAutomationEventsStatus {
 impl TryFrom<&str> for BenefactorMarketingAutomationEventsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "received" => Ok(Self::Received),
             "processed" => Ok(Self::Processed),
@@ -9328,7 +9328,7 @@ impl BenefactorMarketingReportsReportKind {
 impl TryFrom<&str> for BenefactorMarketingReportsReportKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "dashboard" => Ok(Self::Dashboard),
             "executive_summary" => Ok(Self::ExecutiveSummary),
@@ -9367,7 +9367,7 @@ impl BenefactorMarketingReportsStatus {
 impl TryFrom<&str> for BenefactorMarketingReportsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "ready" => Ok(Self::Ready),
@@ -9508,7 +9508,7 @@ impl BenefactorMarketingAttributionEventsEventType {
 impl TryFrom<&str> for BenefactorMarketingAttributionEventsEventType {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "impression" => Ok(Self::Impression),
             "click" => Ok(Self::Click),
@@ -9636,7 +9636,7 @@ impl BenefactorMarketingOpportunitiesStatus {
 impl TryFrom<&str> for BenefactorMarketingOpportunitiesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "open" => Ok(Self::Open),
             "won" => Ok(Self::Won),
@@ -9676,7 +9676,7 @@ impl BenefactorMarketingOpportunitiesStage {
 impl TryFrom<&str> for BenefactorMarketingOpportunitiesStage {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "prospecting" => Ok(Self::Prospecting),
             "qualified" => Ok(Self::Qualified),
@@ -9817,7 +9817,7 @@ impl BenefactorMarketingContentAssetsStatus {
 impl TryFrom<&str> for BenefactorMarketingContentAssetsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "in_review" => Ok(Self::InReview),
@@ -9865,7 +9865,7 @@ impl BenefactorMarketingContentAssetsAssetKind {
 impl TryFrom<&str> for BenefactorMarketingContentAssetsAssetKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "blog" => Ok(Self::Blog),
             "social_post" => Ok(Self::SocialPost),
@@ -9906,7 +9906,7 @@ impl BenefactorMarketingContentAssetsApprovalStatus {
 impl TryFrom<&str> for BenefactorMarketingContentAssetsApprovalStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "approved" => Ok(Self::Approved),
@@ -10059,7 +10059,7 @@ impl BenefactorMarketingProjectTasksStatus {
 impl TryFrom<&str> for BenefactorMarketingProjectTasksStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "todo" => Ok(Self::Todo),
             "in_progress" => Ok(Self::InProgress),
@@ -10096,7 +10096,7 @@ impl BenefactorMarketingProjectTasksPriority {
 impl TryFrom<&str> for BenefactorMarketingProjectTasksPriority {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "low" => Ok(Self::Low),
             "normal" => Ok(Self::Normal),
@@ -10236,7 +10236,7 @@ impl BenefactorMarketingClientApprovalsStatus {
 impl TryFrom<&str> for BenefactorMarketingClientApprovalsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "approved" => Ok(Self::Approved),
@@ -10275,7 +10275,7 @@ impl BenefactorMarketingClientApprovalsApprovalKind {
 impl TryFrom<&str> for BenefactorMarketingClientApprovalsApprovalKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "campaign_launch" => Ok(Self::CampaignLaunch),
             "content_publish" => Ok(Self::ContentPublish),
@@ -10402,7 +10402,7 @@ impl BenefactorMarketingTicketsStatus {
 impl TryFrom<&str> for BenefactorMarketingTicketsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "open" => Ok(Self::Open),
             "pending_client" => Ok(Self::PendingClient),
@@ -10439,7 +10439,7 @@ impl BenefactorMarketingTicketsPriority {
 impl TryFrom<&str> for BenefactorMarketingTicketsPriority {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "low" => Ok(Self::Low),
             "normal" => Ok(Self::Normal),
@@ -10473,7 +10473,7 @@ impl BenefactorMarketingTicketsSource {
 impl TryFrom<&str> for BenefactorMarketingTicketsSource {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "portal" => Ok(Self::Portal),
             "email" => Ok(Self::Email),
@@ -10598,7 +10598,7 @@ impl BenefactorMarketingMeetingsStatus {
 impl TryFrom<&str> for BenefactorMarketingMeetingsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "scheduled" => Ok(Self::Scheduled),
             "completed" => Ok(Self::Completed),
@@ -10638,7 +10638,7 @@ impl BenefactorMarketingMeetingsMeetingKind {
 impl TryFrom<&str> for BenefactorMarketingMeetingsMeetingKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "onboarding" => Ok(Self::Onboarding),
             "report_review" => Ok(Self::ReportReview),
@@ -10781,7 +10781,7 @@ impl BenefactorMarketingTeamAllocationsRole {
 impl TryFrom<&str> for BenefactorMarketingTeamAllocationsRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "strategist" => Ok(Self::Strategist),
             "designer" => Ok(Self::Designer),
@@ -10906,7 +10906,7 @@ impl BenefactorMarketingIntegrationSyncRunsSyncKind {
 impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsSyncKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "incremental" => Ok(Self::Incremental),
             "full" => Ok(Self::Full),
@@ -10941,7 +10941,7 @@ impl BenefactorMarketingIntegrationSyncRunsDirection {
 impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsDirection {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "import" => Ok(Self::Import),
             "export" => Ok(Self::Export),
@@ -10978,7 +10978,7 @@ impl BenefactorMarketingIntegrationSyncRunsStatus {
 impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -11126,7 +11126,7 @@ impl BenefactorMarketingOutreachSequencesStatus {
 impl TryFrom<&str> for BenefactorMarketingOutreachSequencesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -11165,7 +11165,7 @@ impl BenefactorMarketingOutreachSequencesChannel {
 impl TryFrom<&str> for BenefactorMarketingOutreachSequencesChannel {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "email" => Ok(Self::Email),
             "linkedin" => Ok(Self::Linkedin),
@@ -11284,7 +11284,7 @@ impl BenefactorMarketingOutreachStepsStatus {
 impl TryFrom<&str> for BenefactorMarketingOutreachStepsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "disabled" => Ok(Self::Disabled),
@@ -11321,7 +11321,7 @@ impl BenefactorMarketingOutreachStepsChannel {
 impl TryFrom<&str> for BenefactorMarketingOutreachStepsChannel {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "email" => Ok(Self::Email),
             "linkedin" => Ok(Self::Linkedin),
@@ -11469,7 +11469,7 @@ impl BenefactorMarketingOutreachEnrollmentsStatus {
 impl TryFrom<&str> for BenefactorMarketingOutreachEnrollmentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -11599,7 +11599,7 @@ impl BenefactorMarketingOutreachTouchpointsChannel {
 impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsChannel {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "email" => Ok(Self::Email),
             "linkedin" => Ok(Self::Linkedin),
@@ -11635,7 +11635,7 @@ impl BenefactorMarketingOutreachTouchpointsDirection {
 impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsDirection {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "outbound" => Ok(Self::Outbound),
             "inbound" => Ok(Self::Inbound),
@@ -11678,7 +11678,7 @@ impl BenefactorMarketingOutreachTouchpointsStatus {
 impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "planned" => Ok(Self::Planned),
             "sent" => Ok(Self::Sent),
@@ -11826,7 +11826,7 @@ impl BenefactorMarketingProspectResearchBriefsStatus {
 impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "ready" => Ok(Self::Ready),
@@ -11864,7 +11864,7 @@ impl BenefactorMarketingProspectResearchBriefsResearchKind {
 impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsResearchKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "account_research" => Ok(Self::AccountResearch),
             "contact_research" => Ok(Self::ContactResearch),
@@ -11901,7 +11901,7 @@ impl BenefactorMarketingProspectResearchBriefsSource {
 impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsSource {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "ai_assisted" => Ok(Self::AiAssisted),
             "analyst" => Ok(Self::Analyst),
@@ -12052,7 +12052,7 @@ impl BenefactorMarketingConversionEventsEventType {
 impl TryFrom<&str> for BenefactorMarketingConversionEventsEventType {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "landing_page_view" => Ok(Self::LandingPageView),
             "form_submit" => Ok(Self::FormSubmit),
@@ -12207,7 +12207,7 @@ impl BenefactorMarketingPortalMembersStatus {
 impl TryFrom<&str> for BenefactorMarketingPortalMembersStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "invited" => Ok(Self::Invited),
             "active" => Ok(Self::Active),
@@ -12245,7 +12245,7 @@ impl BenefactorMarketingPortalMembersRole {
 impl TryFrom<&str> for BenefactorMarketingPortalMembersRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "owner" => Ok(Self::Owner),
             "approver" => Ok(Self::Approver),
@@ -12362,7 +12362,7 @@ impl BenefactorMarketingSharedDocumentsStatus {
 impl TryFrom<&str> for BenefactorMarketingSharedDocumentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "archived" => Ok(Self::Archived),
@@ -12405,7 +12405,7 @@ impl BenefactorMarketingSharedDocumentsDocumentKind {
 impl TryFrom<&str> for BenefactorMarketingSharedDocumentsDocumentKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "contract" => Ok(Self::Contract),
             "invoice" => Ok(Self::Invoice),
@@ -12443,7 +12443,7 @@ impl BenefactorMarketingSharedDocumentsVisibility {
 impl TryFrom<&str> for BenefactorMarketingSharedDocumentsVisibility {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "internal" => Ok(Self::Internal),
             "client_portal" => Ok(Self::ClientPortal),
@@ -12585,7 +12585,7 @@ impl BenefactorMarketingCollaborationCommentsResourceType {
 impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsResourceType {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "client" => Ok(Self::Client),
             "campaign" => Ok(Self::Campaign),
@@ -12623,7 +12623,7 @@ impl BenefactorMarketingCollaborationCommentsStatus {
 impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "open" => Ok(Self::Open),
             "resolved" => Ok(Self::Resolved),
@@ -12654,7 +12654,7 @@ impl BenefactorMarketingCollaborationCommentsVisibility {
 impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsVisibility {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "internal" => Ok(Self::Internal),
             "client_portal" => Ok(Self::ClientPortal),
@@ -12774,7 +12774,7 @@ impl BenefactorMarketingNotificationsChannel {
 impl TryFrom<&str> for BenefactorMarketingNotificationsChannel {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "email" => Ok(Self::Email),
             "sms" => Ok(Self::Sms),
@@ -12813,7 +12813,7 @@ impl BenefactorMarketingNotificationsStatus {
 impl TryFrom<&str> for BenefactorMarketingNotificationsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "scheduled" => Ok(Self::Scheduled),
@@ -12856,7 +12856,7 @@ impl BenefactorMarketingNotificationsNotificationKind {
 impl TryFrom<&str> for BenefactorMarketingNotificationsNotificationKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "approval_request" => Ok(Self::ApprovalRequest),
             "comment" => Ok(Self::Comment),
@@ -13087,7 +13087,7 @@ impl BenefactorMarketingVendorCostsCategory {
 impl TryFrom<&str> for BenefactorMarketingVendorCostsCategory {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "ads" => Ok(Self::Ads),
             "creative" => Ok(Self::Creative),
@@ -13130,7 +13130,7 @@ impl BenefactorMarketingVendorCostsStatus {
 impl TryFrom<&str> for BenefactorMarketingVendorCostsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "planned" => Ok(Self::Planned),
             "approved" => Ok(Self::Approved),
@@ -13266,7 +13266,7 @@ impl BenefactorMarketingCommissionEntriesStatus {
 impl TryFrom<&str> for BenefactorMarketingCommissionEntriesStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "pending" => Ok(Self::Pending),
             "approved" => Ok(Self::Approved),
@@ -13304,7 +13304,7 @@ impl BenefactorMarketingCommissionEntriesCommissionKind {
 impl TryFrom<&str> for BenefactorMarketingCommissionEntriesCommissionKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "deal" => Ok(Self::Deal),
             "retainer" => Ok(Self::Retainer),
@@ -13440,7 +13440,7 @@ impl BenefactorMarketingBudgetForecastsForecastKind {
 impl TryFrom<&str> for BenefactorMarketingBudgetForecastsForecastKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "monthly" => Ok(Self::Monthly),
             "quarterly" => Ok(Self::Quarterly),
@@ -13476,7 +13476,7 @@ impl BenefactorMarketingBudgetForecastsStatus {
 impl TryFrom<&str> for BenefactorMarketingBudgetForecastsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "approved" => Ok(Self::Approved),
@@ -13619,7 +13619,7 @@ impl BenefactorMarketingCallInsightsStatus {
 impl TryFrom<&str> for BenefactorMarketingCallInsightsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "processing" => Ok(Self::Processing),
             "ready" => Ok(Self::Ready),
@@ -13655,7 +13655,7 @@ impl BenefactorMarketingCallInsightsSentiment {
 impl TryFrom<&str> for BenefactorMarketingCallInsightsSentiment {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "positive" => Ok(Self::Positive),
             "neutral" => Ok(Self::Neutral),
@@ -13763,6 +13763,1919 @@ pub fn validate_benefactor_marketing_call_insights_insert(value: &BenefactorMark
     if let Some(value) = &value.confidence_micros {
         if *(value) < 0 { return Err("benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string()); }
         if *(value) > 1000000 { return Err("benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_USERS_TABLE: &str = "usacc_users";
+pub const USACC_USERS_COLUMNS: &[&str] = &["id", "external_subject", "email_hash", "display_name", "user_kind", "status", "kyc_level", "roles", "is_legal_entity", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const USACC_USERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      external_subject,
+      email_hash,
+      display_name,
+      user_kind,
+      status,
+      kyc_level,
+      roles,
+      is_legal_entity,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_users"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersUserKind {
+    NaturalPerson,
+    LegalEntity,
+    ServiceAccount,
+    SimAgent,
+}
+
+impl UsaccUsersUserKind {
+    pub const VALUES: &'static [&'static str] = &["natural_person", "legal_entity", "service_account", "sim_agent"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NaturalPerson => "natural_person",
+            Self::LegalEntity => "legal_entity",
+            Self::ServiceAccount => "service_account",
+            Self::SimAgent => "sim_agent",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersUserKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "natural_person" => Ok(Self::NaturalPerson),
+            "legal_entity" => Ok(Self::LegalEntity),
+            "service_account" => Ok(Self::ServiceAccount),
+            "sim_agent" => Ok(Self::SimAgent),
+            _ => Err(format!("unsupported user_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersStatus {
+    Active,
+    Pending,
+    Suspended,
+    Banned,
+    Alumni,
+    Archived,
+}
+
+impl UsaccUsersStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "pending", "suspended", "banned", "alumni", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Suspended => "suspended",
+            Self::Banned => "banned",
+            Self::Alumni => "alumni",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "pending" => Ok(Self::Pending),
+            "suspended" => Ok(Self::Suspended),
+            "banned" => Ok(Self::Banned),
+            "alumni" => Ok(Self::Alumni),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersKycLevel {
+    None,
+    Light,
+    Medium,
+    High,
+}
+
+impl UsaccUsersKycLevel {
+    pub const VALUES: &'static [&'static str] = &["none", "light", "medium", "high"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Light => "light",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersKycLevel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "none" => Ok(Self::None),
+            "light" => Ok(Self::Light),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            _ => Err(format!("unsupported kyc_level: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccUsersRow {
+    pub id: String,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: String,
+    pub user_kind: String,
+    pub status: String,
+    pub kyc_level: String,
+    pub roles: Value,
+    pub is_legal_entity: bool,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccUsersInsert {
+    pub id: Option<String>,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: Option<String>,
+    pub user_kind: Option<String>,
+    pub status: Option<String>,
+    pub kyc_level: Option<String>,
+    pub roles: Option<Value>,
+    pub is_legal_entity: Option<bool>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_users_row(value: &UsaccUsersRow) -> Result<(), String> {
+    if let Some(value) = &value.external_subject {
+        validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email_hash {
+        validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
+    }
+    validate_string_length("usacc_users.display_name", &value.display_name, None, Some(200))?;
+    if (&value.display_name).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
+    if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(&value.user_kind).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", &value.user_kind)); }
+    if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_users.status: {}", &value.status)); }
+    if !["none", "light", "medium", "high"].contains(&(&value.kyc_level).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", &value.kyc_level)); }
+    if !(&value.roles).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_users_insert(value: &UsaccUsersInsert) -> Result<(), String> {
+    if let Some(value) = &value.external_subject {
+        validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email_hash {
+        validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("usacc_users.display_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.user_kind {
+        if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.status: {}", value)); }
+    }
+    if let Some(value) = &value.kyc_level {
+        if !["none", "light", "medium", "high"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", value)); }
+    }
+    if let Some(value) = &value.roles {
+        if !(value).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASES_TABLE: &str = "usacc_cases";
+pub const USACC_CASES_COLUMNS: &[&str] = &["id", "case_number", "title", "status", "filing_tier", "plaintiff_user_id", "defendant_summary", "conduct_summary", "conduct_fingerprint", "conduct_window_start", "conduct_window_end", "priority_score_micros", "meta_data", "opened_at", "closed_at", "created_at", "updated_at"];
+pub const USACC_CASES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_number,
+      title,
+      status,
+      filing_tier,
+      plaintiff_user_id::text as plaintiff_user_id,
+      defendant_summary,
+      conduct_summary,
+      conduct_fingerprint,
+      conduct_window_start,
+      conduct_window_end,
+      priority_score_micros,
+      meta_data,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_cases"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCasesStatus {
+    Draft,
+    SignatureCollection,
+    Screening,
+    Inquiry,
+    AdmissionReview,
+    Trial,
+    Appeal,
+    Resolved,
+    Canceled,
+    Archived,
+}
+
+impl UsaccCasesStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::SignatureCollection => "signature_collection",
+            Self::Screening => "screening",
+            Self::Inquiry => "inquiry",
+            Self::AdmissionReview => "admission_review",
+            Self::Trial => "trial",
+            Self::Appeal => "appeal",
+            Self::Resolved => "resolved",
+            Self::Canceled => "canceled",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCasesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "signature_collection" => Ok(Self::SignatureCollection),
+            "screening" => Ok(Self::Screening),
+            "inquiry" => Ok(Self::Inquiry),
+            "admission_review" => Ok(Self::AdmissionReview),
+            "trial" => Ok(Self::Trial),
+            "appeal" => Ok(Self::Appeal),
+            "resolved" => Ok(Self::Resolved),
+            "canceled" => Ok(Self::Canceled),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCasesFilingTier {
+    Screen,
+    Inquiry,
+    Trial1,
+    Trial2,
+    Trial3,
+    Trial5,
+    Trial10,
+}
+
+impl UsaccCasesFilingTier {
+    pub const VALUES: &'static [&'static str] = &["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Screen => "screen",
+            Self::Inquiry => "inquiry",
+            Self::Trial1 => "trial_1",
+            Self::Trial2 => "trial_2",
+            Self::Trial3 => "trial_3",
+            Self::Trial5 => "trial_5",
+            Self::Trial10 => "trial_10",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCasesFilingTier {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "screen" => Ok(Self::Screen),
+            "inquiry" => Ok(Self::Inquiry),
+            "trial_1" => Ok(Self::Trial1),
+            "trial_2" => Ok(Self::Trial2),
+            "trial_3" => Ok(Self::Trial3),
+            "trial_5" => Ok(Self::Trial5),
+            "trial_10" => Ok(Self::Trial10),
+            _ => Err(format!("unsupported filing_tier: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCasesRow {
+    pub id: String,
+    pub case_number: String,
+    pub title: String,
+    pub status: String,
+    pub filing_tier: String,
+    pub plaintiff_user_id: Option<String>,
+    pub defendant_summary: String,
+    pub conduct_summary: String,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: i32,
+    pub meta_data: Value,
+    pub opened_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCasesInsert {
+    pub id: Option<String>,
+    pub case_number: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub filing_tier: Option<String>,
+    pub plaintiff_user_id: Option<String>,
+    pub defendant_summary: Option<String>,
+    pub conduct_summary: Option<String>,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub opened_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_cases_row(value: &UsaccCasesRow) -> Result<(), String> {
+    validate_string_length("usacc_cases.case_number", &value.case_number, None, Some(80))?;
+    validate_string_length("usacc_cases.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
+    if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", &value.status)); }
+    if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(&value.filing_tier).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", &value.filing_tier)); }
+    if (&value.defendant_summary).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
+    if (&value.conduct_summary).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+    if let Some(value) = &value.conduct_fingerprint {
+        validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.conduct_window_start {
+        validate_string_length("usacc_cases.conduct_window_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.conduct_window_end {
+        validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
+    }
+    if *(&value.priority_score_micros) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
+    if *(&value.priority_score_micros) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_cases_insert(value: &UsaccCasesInsert) -> Result<(), String> {
+    if let Some(value) = &value.case_number {
+        validate_string_length("usacc_cases.case_number", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_cases.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", value)); }
+    }
+    if let Some(value) = &value.filing_tier {
+        if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", value)); }
+    }
+    if let Some(value) = &value.defendant_summary {
+        if (value).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.conduct_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.conduct_fingerprint {
+        validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.conduct_window_start {
+        validate_string_length("usacc_cases.conduct_window_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.conduct_window_end {
+        validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.priority_score_micros {
+        if *(value) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASE_PARTICIPANTS_TABLE: &str = "usacc_case_participants";
+pub const USACC_CASE_PARTICIPANTS_COLUMNS: &[&str] = &["id", "case_id", "user_id", "role", "status", "granted_by", "granted_by_policy_version", "ended_at", "ended_reason", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_PARTICIPANTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      user_id::text as user_id,
+      role,
+      status,
+      granted_by::text as granted_by,
+      granted_by_policy_version,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ended_at,
+      ended_reason,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_participants"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseParticipantsRole {
+    Plaintiff,
+    Defendant,
+    Sponsor,
+    Witness,
+    Judge,
+    PanelJuror,
+    AppealJudge,
+    PresidingJuror,
+    Paralegal,
+    Investigator,
+    IntakeReviewer,
+    ClerkOfCourt,
+    ComplianceMonitor,
+    Counsel,
+    OversightBoard,
+    Auditor,
+    Ombuds,
+}
+
+impl UsaccCaseParticipantsRole {
+    pub const VALUES: &'static [&'static str] = &["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plaintiff => "plaintiff",
+            Self::Defendant => "defendant",
+            Self::Sponsor => "sponsor",
+            Self::Witness => "witness",
+            Self::Judge => "judge",
+            Self::PanelJuror => "panel_juror",
+            Self::AppealJudge => "appeal_judge",
+            Self::PresidingJuror => "presiding_juror",
+            Self::Paralegal => "paralegal",
+            Self::Investigator => "investigator",
+            Self::IntakeReviewer => "intake_reviewer",
+            Self::ClerkOfCourt => "clerk_of_court",
+            Self::ComplianceMonitor => "compliance_monitor",
+            Self::Counsel => "counsel",
+            Self::OversightBoard => "oversight_board",
+            Self::Auditor => "auditor",
+            Self::Ombuds => "ombuds",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseParticipantsRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "plaintiff" => Ok(Self::Plaintiff),
+            "defendant" => Ok(Self::Defendant),
+            "sponsor" => Ok(Self::Sponsor),
+            "witness" => Ok(Self::Witness),
+            "judge" => Ok(Self::Judge),
+            "panel_juror" => Ok(Self::PanelJuror),
+            "appeal_judge" => Ok(Self::AppealJudge),
+            "presiding_juror" => Ok(Self::PresidingJuror),
+            "paralegal" => Ok(Self::Paralegal),
+            "investigator" => Ok(Self::Investigator),
+            "intake_reviewer" => Ok(Self::IntakeReviewer),
+            "clerk_of_court" => Ok(Self::ClerkOfCourt),
+            "compliance_monitor" => Ok(Self::ComplianceMonitor),
+            "counsel" => Ok(Self::Counsel),
+            "oversight_board" => Ok(Self::OversightBoard),
+            "auditor" => Ok(Self::Auditor),
+            "ombuds" => Ok(Self::Ombuds),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseParticipantsStatus {
+    Active,
+    Pending,
+    Declined,
+    Suspended,
+    Ended,
+    Banned,
+}
+
+impl UsaccCaseParticipantsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "pending", "declined", "suspended", "ended", "banned"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Declined => "declined",
+            Self::Suspended => "suspended",
+            Self::Ended => "ended",
+            Self::Banned => "banned",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseParticipantsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "pending" => Ok(Self::Pending),
+            "declined" => Ok(Self::Declined),
+            "suspended" => Ok(Self::Suspended),
+            "ended" => Ok(Self::Ended),
+            "banned" => Ok(Self::Banned),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseParticipantsRow {
+    pub id: String,
+    pub case_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub status: String,
+    pub granted_by: Option<String>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<String>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseParticipantsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+    pub granted_by: Option<String>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<String>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_case_participants_row(value: &UsaccCaseParticipantsRow) -> Result<(), String> {
+    if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(&value.role).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", &value.role)); }
+    if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", &value.status)); }
+    if let Some(value) = &value.granted_by_policy_version {
+        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_case_participants_insert(value: &UsaccCaseParticipantsInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", value)); }
+    }
+    if let Some(value) = &value.granted_by_policy_version {
+        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASE_STAGES_TABLE: &str = "usacc_case_stages";
+pub const USACC_CASE_STAGES_COLUMNS: &[&str] = &["id", "case_id", "stage_key", "stage_order", "title", "status", "assigned_user_id", "opened_at", "due_at", "closed_at", "decision_summary", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_STAGES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      stage_key,
+      stage_order,
+      title,
+      status,
+      assigned_user_id::text as assigned_user_id,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as due_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      decision_summary,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_stages"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseStagesStatus {
+    Pending,
+    Open,
+    Blocked,
+    Complete,
+    Skipped,
+    Canceled,
+}
+
+impl UsaccCaseStagesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "open", "blocked", "complete", "skipped", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Open => "open",
+            Self::Blocked => "blocked",
+            Self::Complete => "complete",
+            Self::Skipped => "skipped",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseStagesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "open" => Ok(Self::Open),
+            "blocked" => Ok(Self::Blocked),
+            "complete" => Ok(Self::Complete),
+            "skipped" => Ok(Self::Skipped),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseStagesRow {
+    pub id: String,
+    pub case_id: String,
+    pub stage_key: String,
+    pub stage_order: i32,
+    pub title: String,
+    pub status: String,
+    pub assigned_user_id: Option<String>,
+    pub opened_at: Option<String>,
+    pub due_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseStagesInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub stage_key: Option<String>,
+    pub stage_order: Option<i32>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub assigned_user_id: Option<String>,
+    pub opened_at: Option<String>,
+    pub due_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_case_stages_row(value: &UsaccCaseStagesRow) -> Result<(), String> {
+    validate_string_length("usacc_case_stages.stage_key", &value.stage_key, None, Some(64))?;
+    if *(&value.stage_order) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
+    if *(&value.stage_order) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
+    validate_string_length("usacc_case_stages.title", &value.title, None, Some(200))?;
+    if (&value.title).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
+    if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", &value.status)); }
+    if let Some(value) = &value.decision_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_case_stages_insert(value: &UsaccCaseStagesInsert) -> Result<(), String> {
+    if let Some(value) = &value.stage_key {
+        validate_string_length("usacc_case_stages.stage_key", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.stage_order {
+        if *(value) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
+        if *(value) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_case_stages.title", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", value)); }
+    }
+    if let Some(value) = &value.decision_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_ELECTIONS_TABLE: &str = "usacc_elections";
+pub const USACC_ELECTIONS_COLUMNS: &[&str] = &["id", "case_id", "stage_id", "election_kind", "title", "status", "quorum_count", "threshold_micros", "opens_at", "closes_at", "sealed_until", "tally", "meta_data", "created_at", "updated_at"];
+pub const USACC_ELECTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      stage_id::text as stage_id,
+      election_kind,
+      title,
+      status,
+      quorum_count,
+      threshold_micros,
+      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opens_at,
+      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closes_at,
+      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sealed_until,
+      tally,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_elections"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccElectionsElectionKind {
+    Priority,
+    Admission,
+    PanelVerdict,
+    Appeal,
+    Oversight,
+    Policy,
+    AssignmentAcceptance,
+}
+
+impl UsaccElectionsElectionKind {
+    pub const VALUES: &'static [&'static str] = &["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Priority => "priority",
+            Self::Admission => "admission",
+            Self::PanelVerdict => "panel_verdict",
+            Self::Appeal => "appeal",
+            Self::Oversight => "oversight",
+            Self::Policy => "policy",
+            Self::AssignmentAcceptance => "assignment_acceptance",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccElectionsElectionKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "priority" => Ok(Self::Priority),
+            "admission" => Ok(Self::Admission),
+            "panel_verdict" => Ok(Self::PanelVerdict),
+            "appeal" => Ok(Self::Appeal),
+            "oversight" => Ok(Self::Oversight),
+            "policy" => Ok(Self::Policy),
+            "assignment_acceptance" => Ok(Self::AssignmentAcceptance),
+            _ => Err(format!("unsupported election_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccElectionsStatus {
+    Draft,
+    Open,
+    Sealed,
+    Tallying,
+    Certified,
+    Void,
+    Archived,
+}
+
+impl UsaccElectionsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "open", "sealed", "tallying", "certified", "void", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Open => "open",
+            Self::Sealed => "sealed",
+            Self::Tallying => "tallying",
+            Self::Certified => "certified",
+            Self::Void => "void",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccElectionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "open" => Ok(Self::Open),
+            "sealed" => Ok(Self::Sealed),
+            "tallying" => Ok(Self::Tallying),
+            "certified" => Ok(Self::Certified),
+            "void" => Ok(Self::Void),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccElectionsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub stage_id: Option<String>,
+    pub election_kind: String,
+    pub title: String,
+    pub status: String,
+    pub quorum_count: i32,
+    pub threshold_micros: i32,
+    pub opens_at: Option<String>,
+    pub closes_at: Option<String>,
+    pub sealed_until: Option<String>,
+    pub tally: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccElectionsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub stage_id: Option<String>,
+    pub election_kind: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub quorum_count: Option<i32>,
+    pub threshold_micros: Option<i32>,
+    pub opens_at: Option<String>,
+    pub closes_at: Option<String>,
+    pub sealed_until: Option<String>,
+    pub tally: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_elections_row(value: &UsaccElectionsRow) -> Result<(), String> {
+    if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(&value.election_kind).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", &value.election_kind)); }
+    validate_string_length("usacc_elections.title", &value.title, None, Some(220))?;
+    if (&value.title).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
+    if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", &value.status)); }
+    if *(&value.quorum_count) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
+    if *(&value.quorum_count) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
+    if *(&value.threshold_micros) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
+    if *(&value.threshold_micros) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
+    if !(&value.tally).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_elections_insert(value: &UsaccElectionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.election_kind {
+        if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_elections.title", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", value)); }
+    }
+    if let Some(value) = &value.quorum_count {
+        if *(value) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.threshold_micros {
+        if *(value) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.tally {
+        if !(value).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_VOTES_TABLE: &str = "usacc_votes";
+pub const USACC_VOTES_COLUMNS: &[&str] = &["id", "election_id", "case_id", "voter_user_id", "vote_kind", "vote_value", "weight_micros", "commitment_hash", "sealed_payload", "revealed_at", "contract_digest", "meta_data", "created_at", "updated_at"];
+pub const USACC_VOTES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      election_id::text as election_id,
+      case_id::text as case_id,
+      voter_user_id::text as voter_user_id,
+      vote_kind,
+      vote_value,
+      weight_micros,
+      commitment_hash,
+      sealed_payload,
+      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revealed_at,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_votes"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccVotesVoteKind {
+    Choice,
+    PriorityDollarWeighted,
+    Verdict,
+    Approval,
+    AssignmentResponse,
+}
+
+impl UsaccVotesVoteKind {
+    pub const VALUES: &'static [&'static str] = &["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Choice => "choice",
+            Self::PriorityDollarWeighted => "priority_dollar_weighted",
+            Self::Verdict => "verdict",
+            Self::Approval => "approval",
+            Self::AssignmentResponse => "assignment_response",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccVotesVoteKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "choice" => Ok(Self::Choice),
+            "priority_dollar_weighted" => Ok(Self::PriorityDollarWeighted),
+            "verdict" => Ok(Self::Verdict),
+            "approval" => Ok(Self::Approval),
+            "assignment_response" => Ok(Self::AssignmentResponse),
+            _ => Err(format!("unsupported vote_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccVotesRow {
+    pub id: String,
+    pub election_id: String,
+    pub case_id: Option<String>,
+    pub voter_user_id: String,
+    pub vote_kind: String,
+    pub vote_value: String,
+    pub weight_micros: i32,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccVotesInsert {
+    pub id: Option<String>,
+    pub election_id: Option<String>,
+    pub case_id: Option<String>,
+    pub voter_user_id: Option<String>,
+    pub vote_kind: Option<String>,
+    pub vote_value: Option<String>,
+    pub weight_micros: Option<i32>,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_votes_row(value: &UsaccVotesRow) -> Result<(), String> {
+    if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(&value.vote_kind).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", &value.vote_kind)); }
+    validate_string_length("usacc_votes.vote_value", &value.vote_value, None, Some(80))?;
+    if *(&value.weight_micros) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
+    if *(&value.weight_micros) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+    if let Some(value) = &value.commitment_hash {
+        validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.sealed_payload {
+        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_votes_insert(value: &UsaccVotesInsert) -> Result<(), String> {
+    if let Some(value) = &value.vote_kind {
+        if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", value)); }
+    }
+    if let Some(value) = &value.vote_value {
+        validate_string_length("usacc_votes.vote_value", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.weight_micros {
+        if *(value) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
+        if *(value) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.commitment_hash {
+        validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.sealed_payload {
+        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_ESCROW_ACCOUNTS_TABLE: &str = "usacc_escrow_accounts";
+pub const USACC_ESCROW_ACCOUNTS_COLUMNS: &[&str] = &["id", "case_id", "status", "provider", "provider_account_ref", "currency", "target_amount_cents", "committed_amount_cents", "captured_amount_cents", "disbursed_amount_cents", "meta_data", "created_at", "updated_at"];
+pub const USACC_ESCROW_ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      provider,
+      provider_account_ref,
+      currency,
+      target_amount_cents,
+      committed_amount_cents,
+      captured_amount_cents,
+      disbursed_amount_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_escrow_accounts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccEscrowAccountsStatus {
+    Pending,
+    Open,
+    Funding,
+    Locked,
+    Disbursing,
+    Closed,
+    Canceled,
+}
+
+impl UsaccEscrowAccountsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Open => "open",
+            Self::Funding => "funding",
+            Self::Locked => "locked",
+            Self::Disbursing => "disbursing",
+            Self::Closed => "closed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccEscrowAccountsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "open" => Ok(Self::Open),
+            "funding" => Ok(Self::Funding),
+            "locked" => Ok(Self::Locked),
+            "disbursing" => Ok(Self::Disbursing),
+            "closed" => Ok(Self::Closed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccEscrowAccountsProvider {
+    StripeTreasury,
+    StripeConnect,
+    Column,
+    Evolve,
+    Mercury,
+    TrustCompany,
+    Manual,
+}
+
+impl UsaccEscrowAccountsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StripeTreasury => "stripe_treasury",
+            Self::StripeConnect => "stripe_connect",
+            Self::Column => "column",
+            Self::Evolve => "evolve",
+            Self::Mercury => "mercury",
+            Self::TrustCompany => "trust_company",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccEscrowAccountsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe_treasury" => Ok(Self::StripeTreasury),
+            "stripe_connect" => Ok(Self::StripeConnect),
+            "column" => Ok(Self::Column),
+            "evolve" => Ok(Self::Evolve),
+            "mercury" => Ok(Self::Mercury),
+            "trust_company" => Ok(Self::TrustCompany),
+            "manual" => Ok(Self::Manual),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccEscrowAccountsRow {
+    pub id: String,
+    pub case_id: String,
+    pub status: String,
+    pub provider: String,
+    pub provider_account_ref: Option<String>,
+    pub currency: String,
+    pub target_amount_cents: i64,
+    pub committed_amount_cents: i64,
+    pub captured_amount_cents: i64,
+    pub disbursed_amount_cents: i64,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccEscrowAccountsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    pub provider_account_ref: Option<String>,
+    pub currency: Option<String>,
+    pub target_amount_cents: Option<i64>,
+    pub committed_amount_cents: Option<i64>,
+    pub captured_amount_cents: Option<i64>,
+    pub disbursed_amount_cents: Option<i64>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_escrow_accounts_row(value: &UsaccEscrowAccountsRow) -> Result<(), String> {
+    if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", &value.status)); }
+    if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", &value.provider)); }
+    if let Some(value) = &value.provider_account_ref {
+        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+    }
+    validate_string_length("usacc_escrow_accounts.currency", &value.currency, None, Some(12))?;
+    if *(&value.target_amount_cents) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
+    if *(&value.committed_amount_cents) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
+    if *(&value.captured_amount_cents) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
+    if *(&value.disbursed_amount_cents) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_escrow_accounts_insert(value: &UsaccEscrowAccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", value)); }
+    }
+    if let Some(value) = &value.provider {
+        if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_account_ref {
+        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("usacc_escrow_accounts.currency", value, None, Some(12))?;
+    }
+    if let Some(value) = &value.target_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.committed_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.captured_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.disbursed_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_LEDGER_ENTRIES_TABLE: &str = "usacc_ledger_entries";
+pub const USACC_LEDGER_ENTRIES_COLUMNS: &[&str] = &["id", "case_id", "escrow_account_id", "user_id", "entry_kind", "direction", "amount_cents", "currency", "provider_ref", "contract_digest", "meta_data", "created_at"];
+pub const USACC_LEDGER_ENTRIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      escrow_account_id::text as escrow_account_id,
+      user_id::text as user_id,
+      entry_kind,
+      direction,
+      amount_cents,
+      currency,
+      provider_ref,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_ledger_entries"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccLedgerEntriesEntryKind {
+    Pledge,
+    Authorization,
+    Capture,
+    Refund,
+    Disbursement,
+    Fee,
+    Adjustment,
+}
+
+impl UsaccLedgerEntriesEntryKind {
+    pub const VALUES: &'static [&'static str] = &["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pledge => "pledge",
+            Self::Authorization => "authorization",
+            Self::Capture => "capture",
+            Self::Refund => "refund",
+            Self::Disbursement => "disbursement",
+            Self::Fee => "fee",
+            Self::Adjustment => "adjustment",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccLedgerEntriesEntryKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pledge" => Ok(Self::Pledge),
+            "authorization" => Ok(Self::Authorization),
+            "capture" => Ok(Self::Capture),
+            "refund" => Ok(Self::Refund),
+            "disbursement" => Ok(Self::Disbursement),
+            "fee" => Ok(Self::Fee),
+            "adjustment" => Ok(Self::Adjustment),
+            _ => Err(format!("unsupported entry_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccLedgerEntriesDirection {
+    Debit,
+    Credit,
+}
+
+impl UsaccLedgerEntriesDirection {
+    pub const VALUES: &'static [&'static str] = &["debit", "credit"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Debit => "debit",
+            Self::Credit => "credit",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccLedgerEntriesDirection {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "debit" => Ok(Self::Debit),
+            "credit" => Ok(Self::Credit),
+            _ => Err(format!("unsupported direction: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccLedgerEntriesRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub escrow_account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_kind: String,
+    pub direction: String,
+    pub amount_cents: i64,
+    pub currency: String,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccLedgerEntriesInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub escrow_account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_kind: Option<String>,
+    pub direction: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_usacc_ledger_entries_row(value: &UsaccLedgerEntriesRow) -> Result<(), String> {
+    if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", &value.entry_kind)); }
+    if !["debit", "credit"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", &value.direction)); }
+    if *(&value.amount_cents) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
+    validate_string_length("usacc_ledger_entries.currency", &value.currency, None, Some(12))?;
+    if let Some(value) = &value.provider_ref {
+        validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_ledger_entries_insert(value: &UsaccLedgerEntriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.entry_kind {
+        if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", value)); }
+    }
+    if let Some(value) = &value.direction {
+        if !["debit", "credit"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", value)); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("usacc_ledger_entries.currency", value, None, Some(12))?;
+    }
+    if let Some(value) = &value.provider_ref {
+        validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CONTRACT_OPERATIONS_TABLE: &str = "usacc_contract_operations";
+pub const USACC_CONTRACT_OPERATIONS_COLUMNS: &[&str] = &["id", "case_id", "election_id", "vote_id", "request_id", "operation_kind", "status", "program_id", "digest", "envelope", "response", "created_at", "updated_at"];
+pub const USACC_CONTRACT_OPERATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      election_id::text as election_id,
+      vote_id::text as vote_id,
+      request_id,
+      operation_kind,
+      status,
+      program_id,
+      digest,
+      envelope,
+      response,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_contract_operations"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccContractOperationsOperationKind {
+    ValidateEnvelope,
+    SimulateTransaction,
+    SendTransaction,
+    VoteCommitment,
+    EscrowNotary,
+}
+
+impl UsaccContractOperationsOperationKind {
+    pub const VALUES: &'static [&'static str] = &["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ValidateEnvelope => "validate_envelope",
+            Self::SimulateTransaction => "simulate_transaction",
+            Self::SendTransaction => "send_transaction",
+            Self::VoteCommitment => "vote_commitment",
+            Self::EscrowNotary => "escrow_notary",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccContractOperationsOperationKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "validate_envelope" => Ok(Self::ValidateEnvelope),
+            "simulate_transaction" => Ok(Self::SimulateTransaction),
+            "send_transaction" => Ok(Self::SendTransaction),
+            "vote_commitment" => Ok(Self::VoteCommitment),
+            "escrow_notary" => Ok(Self::EscrowNotary),
+            _ => Err(format!("unsupported operation_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccContractOperationsStatus {
+    Pending,
+    Validated,
+    Simulated,
+    Sent,
+    Failed,
+    Canceled,
+}
+
+impl UsaccContractOperationsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "validated", "simulated", "sent", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Validated => "validated",
+            Self::Simulated => "simulated",
+            Self::Sent => "sent",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccContractOperationsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "validated" => Ok(Self::Validated),
+            "simulated" => Ok(Self::Simulated),
+            "sent" => Ok(Self::Sent),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccContractOperationsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub election_id: Option<String>,
+    pub vote_id: Option<String>,
+    pub request_id: String,
+    pub operation_kind: String,
+    pub status: String,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Value,
+    pub response: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccContractOperationsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub election_id: Option<String>,
+    pub vote_id: Option<String>,
+    pub request_id: Option<String>,
+    pub operation_kind: Option<String>,
+    pub status: Option<String>,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Option<Value>,
+    pub response: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_contract_operations_row(value: &UsaccContractOperationsRow) -> Result<(), String> {
+    validate_string_length("usacc_contract_operations.request_id", &value.request_id, None, Some(160))?;
+    if (&value.request_id).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
+    if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(&value.operation_kind).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", &value.operation_kind)); }
+    if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", &value.status)); }
+    if let Some(value) = &value.program_id {
+        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
+        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+    }
+    if let Some(value) = &value.digest {
+        validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.envelope).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
+    if !(&value.response).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_contract_operations_insert(value: &UsaccContractOperationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.request_id {
+        validate_string_length("usacc_contract_operations.request_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.operation_kind {
+        if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", value)); }
+    }
+    if let Some(value) = &value.program_id {
+        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
+        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+    }
+    if let Some(value) = &value.digest {
+        validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.envelope {
+        if !(value).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.response {
+        if !(value).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_SIMULATION_RUNS_TABLE: &str = "usacc_simulation_runs";
+pub const USACC_SIMULATION_RUNS_COLUMNS: &[&str] = &["id", "case_id", "status", "mode", "seed", "horizon_days", "actor_count", "event_count", "metrics", "trace", "input", "started_at", "finished_at", "created_at", "updated_at"];
+pub const USACC_SIMULATION_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      mode,
+      seed,
+      horizon_days,
+      actor_count,
+      event_count,
+      metrics,
+      trace,
+      input,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_simulation_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccSimulationRunsStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Canceled,
+}
+
+impl UsaccSimulationRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccSimulationRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccSimulationRunsMode {
+    Sim,
+    LiveShadow,
+    Replay,
+}
+
+impl UsaccSimulationRunsMode {
+    pub const VALUES: &'static [&'static str] = &["sim", "live_shadow", "replay"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sim => "sim",
+            Self::LiveShadow => "live_shadow",
+            Self::Replay => "replay",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccSimulationRunsMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "sim" => Ok(Self::Sim),
+            "live_shadow" => Ok(Self::LiveShadow),
+            "replay" => Ok(Self::Replay),
+            _ => Err(format!("unsupported mode: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccSimulationRunsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub status: String,
+    pub mode: String,
+    pub seed: i64,
+    pub horizon_days: i32,
+    pub actor_count: i32,
+    pub event_count: i32,
+    pub metrics: Value,
+    pub trace: Value,
+    pub input: Value,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccSimulationRunsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub status: Option<String>,
+    pub mode: Option<String>,
+    pub seed: Option<i64>,
+    pub horizon_days: Option<i32>,
+    pub actor_count: Option<i32>,
+    pub event_count: Option<i32>,
+    pub metrics: Option<Value>,
+    pub trace: Option<Value>,
+    pub input: Option<Value>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_simulation_runs_row(value: &UsaccSimulationRunsRow) -> Result<(), String> {
+    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", &value.status)); }
+    if !["sim", "live_shadow", "replay"].contains(&(&value.mode).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", &value.mode)); }
+    if *(&value.horizon_days) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
+    if *(&value.horizon_days) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
+    if *(&value.actor_count) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
+    if *(&value.event_count) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
+    if !(&value.metrics).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
+    if !(&value.trace).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
+    if !(&value.input).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_simulation_runs_insert(value: &UsaccSimulationRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.mode {
+        if !["sim", "live_shadow", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", value)); }
+    }
+    if let Some(value) = &value.horizon_days {
+        if *(value) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
+        if *(value) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.actor_count {
+        if *(value) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.event_count {
+        if *(value) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.trace {
+        if !(value).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_AUDIT_EVENTS_TABLE: &str = "usacc_audit_events";
+pub const USACC_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "case_id", "actor_user_id", "event_type", "event_hash", "source", "payload", "created_at"];
+pub const USACC_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      actor_user_id::text as actor_user_id,
+      event_type,
+      event_hash,
+      source,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_audit_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccAuditEventsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub source: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccAuditEventsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub source: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_usacc_audit_events_row(value: &UsaccAuditEventsRow) -> Result<(), String> {
+    validate_string_length("usacc_audit_events.event_type", &value.event_type, None, Some(96))?;
+    validate_string_length("usacc_audit_events.event_hash", &value.event_hash, None, Some(128))?;
+    validate_string_length("usacc_audit_events.source", &value.source, None, Some(80))?;
+    if !(&value.payload).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_audit_events_insert(value: &UsaccAuditEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        validate_string_length("usacc_audit_events.event_type", value, None, Some(96))?;
+    }
+    if let Some(value) = &value.event_hash {
+        validate_string_length("usacc_audit_events.event_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.source {
+        validate_string_length("usacc_audit_events.source", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
     }
     Ok(())
 }

@@ -20,6 +20,9 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-runtime-config
+        - podSelector:
+            matchLabels:
+              app: usacc-rest-api-backend-rs
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

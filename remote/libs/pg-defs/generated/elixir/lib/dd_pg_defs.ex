@@ -95,6 +95,17 @@ defmodule DdPgDefs do
     DdPgDefs.BenefactorMarketingCommissionEntries,
     DdPgDefs.BenefactorMarketingBudgetForecasts,
     DdPgDefs.BenefactorMarketingCallInsights,
+    DdPgDefs.UsaccUsers,
+    DdPgDefs.UsaccCases,
+    DdPgDefs.UsaccCaseParticipants,
+    DdPgDefs.UsaccCaseStages,
+    DdPgDefs.UsaccElections,
+    DdPgDefs.UsaccVotes,
+    DdPgDefs.UsaccEscrowAccounts,
+    DdPgDefs.UsaccLedgerEntries,
+    DdPgDefs.UsaccContractOperations,
+    DdPgDefs.UsaccSimulationRuns,
+    DdPgDefs.UsaccAuditEvents,
   ]
 
   @spec tables() :: [module()]

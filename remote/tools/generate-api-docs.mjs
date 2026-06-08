@@ -64,6 +64,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'runtime-config-rs',
   'rust-vapi-phone-rs',
   'trading-server-rs',
+  'usacc-rest-api-backend-rs',
   'wal-gateway-rs',
   'web-home-rs',
   'webrtc-media-rs',
@@ -74,6 +75,7 @@ const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['billing-server-rs', 'src/api/mod.rs'],
   ['dd-compliance-rs', 'src/routes.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
+  ['usacc-rest-api-backend-rs', 'src/routes/mod.rs'],
 ]);
 
 // Subscriber receive surface auto-mounted by `dd_runtime_config_client::router()`

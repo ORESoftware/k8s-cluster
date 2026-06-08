@@ -8450,6 +8450,1077 @@ class BenefactorMarketingCallInsightsRow {
   }
 }
 
+const usaccUsersTable = "usacc_users";
+const usaccUsersSelectSql = "select\n      id::text as id,\n      external_subject,\n      email_hash,\n      display_name,\n      user_kind,\n      status,\n      kyc_level,\n      roles::text as roles_json,\n      is_legal_entity,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_users";
+
+const usaccUsersUserKindValues = <String>["natural_person", "legal_entity", "service_account", "sim_agent"];
+const usaccUsersStatusValues = <String>["active", "pending", "suspended", "banned", "alumni", "archived"];
+const usaccUsersKycLevelValues = <String>["none", "light", "medium", "high"];
+
+class UsaccUsersRow {
+  const UsaccUsersRow({
+    required this.id,
+    this.externalSubject,
+    this.emailHash,
+    required this.displayName,
+    required this.userKind,
+    required this.status,
+    required this.kycLevel,
+    required this.roles,
+    required this.isLegalEntity,
+    this.legalRegion,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? externalSubject;
+  final String? emailHash;
+  final String displayName;
+  final String userKind;
+  final String status;
+  final String kycLevel;
+  final Map<String, Object?> roles;
+  final bool isLegalEntity;
+  final String? legalRegion;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccUsersRow.fromJson(Map<String, Object?> json) {
+    return UsaccUsersRow(
+      id: _readRequiredString(json, "id"),
+      externalSubject: _readOptionalString(json, "externalSubject"),
+      emailHash: _readOptionalString(json, "emailHash"),
+      displayName: _readRequiredString(json, "displayName"),
+      userKind: _readRequiredString(json, "userKind"),
+      status: _readRequiredString(json, "status"),
+      kycLevel: _readRequiredString(json, "kycLevel"),
+      roles: _readRequiredObject(json, "roles"),
+      isLegalEntity: _readRequiredBool(json, "isLegalEntity"),
+      legalRegion: _readOptionalString(json, "legalRegion"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "externalSubject": externalSubject,
+    "emailHash": emailHash,
+    "displayName": displayName,
+    "userKind": userKind,
+    "status": status,
+    "kycLevel": kycLevel,
+    "roles": roles,
+    "isLegalEntity": isLegalEntity,
+    "legalRegion": legalRegion,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (externalSubject != null && utf8.encode(externalSubject!).length > 240) {
+      errors.add("usacc_users.external_subject exceeds 240 bytes");
+    }
+    if (externalSubject != null && utf8.encode(externalSubject!).length < 1) {
+      errors.add("usacc_users.external_subject is below 1 bytes");
+    }
+    if (emailHash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(emailHash!)) {
+      errors.add("usacc_users.email_hash does not match the required pattern");
+    }
+    if (utf8.encode(displayName).length > 200) {
+      errors.add("usacc_users.display_name exceeds 200 bytes");
+    }
+    if (utf8.encode(displayName).length < 1) {
+      errors.add("usacc_users.display_name is below 1 bytes");
+    }
+    if (!usaccUsersUserKindValues.contains(userKind)) {
+      errors.add("unsupported usacc_users.user_kind");
+    }
+    if (!usaccUsersStatusValues.contains(status)) {
+      errors.add("unsupported usacc_users.status");
+    }
+    if (!usaccUsersKycLevelValues.contains(kycLevel)) {
+      errors.add("unsupported usacc_users.kyc_level");
+    }
+    if (legalRegion != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,64}$').hasMatch(legalRegion!)) {
+      errors.add("usacc_users.legal_region does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const usaccCasesTable = "usacc_cases";
+const usaccCasesSelectSql = "select\n      id::text as id,\n      case_number,\n      title,\n      status,\n      filing_tier,\n      plaintiff_user_id::text as plaintiff_user_id,\n      defendant_summary,\n      conduct_summary,\n      conduct_fingerprint,\n      conduct_window_start,\n      conduct_window_end,\n      priority_score_micros,\n      meta_data::text as meta_data_json,\n      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opened_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_cases";
+
+const usaccCasesStatusValues = <String>["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"];
+const usaccCasesFilingTierValues = <String>["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"];
+
+class UsaccCasesRow {
+  const UsaccCasesRow({
+    required this.id,
+    required this.caseNumber,
+    required this.title,
+    required this.status,
+    required this.filingTier,
+    this.plaintiffUserId,
+    required this.defendantSummary,
+    required this.conductSummary,
+    this.conductFingerprint,
+    this.conductWindowStart,
+    this.conductWindowEnd,
+    required this.priorityScoreMicros,
+    required this.metaData,
+    this.openedAt,
+    this.closedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String caseNumber;
+  final String title;
+  final String status;
+  final String filingTier;
+  final String? plaintiffUserId;
+  final String defendantSummary;
+  final String conductSummary;
+  final String? conductFingerprint;
+  final String? conductWindowStart;
+  final String? conductWindowEnd;
+  final int priorityScoreMicros;
+  final Map<String, Object?> metaData;
+  final String? openedAt;
+  final String? closedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccCasesRow.fromJson(Map<String, Object?> json) {
+    return UsaccCasesRow(
+      id: _readRequiredString(json, "id"),
+      caseNumber: _readRequiredString(json, "caseNumber"),
+      title: _readRequiredString(json, "title"),
+      status: _readRequiredString(json, "status"),
+      filingTier: _readRequiredString(json, "filingTier"),
+      plaintiffUserId: _readOptionalString(json, "plaintiffUserId"),
+      defendantSummary: _readRequiredString(json, "defendantSummary"),
+      conductSummary: _readRequiredString(json, "conductSummary"),
+      conductFingerprint: _readOptionalString(json, "conductFingerprint"),
+      conductWindowStart: _readOptionalString(json, "conductWindowStart"),
+      conductWindowEnd: _readOptionalString(json, "conductWindowEnd"),
+      priorityScoreMicros: _readRequiredInt(json, "priorityScoreMicros"),
+      metaData: _readRequiredObject(json, "metaData"),
+      openedAt: _readOptionalString(json, "openedAt"),
+      closedAt: _readOptionalString(json, "closedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseNumber": caseNumber,
+    "title": title,
+    "status": status,
+    "filingTier": filingTier,
+    "plaintiffUserId": plaintiffUserId,
+    "defendantSummary": defendantSummary,
+    "conductSummary": conductSummary,
+    "conductFingerprint": conductFingerprint,
+    "conductWindowStart": conductWindowStart,
+    "conductWindowEnd": conductWindowEnd,
+    "priorityScoreMicros": priorityScoreMicros,
+    "metaData": metaData,
+    "openedAt": openedAt,
+    "closedAt": closedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(caseNumber)) {
+      errors.add("usacc_cases.case_number does not match the required pattern");
+    }
+    if (utf8.encode(title).length > 240) {
+      errors.add("usacc_cases.title exceeds 240 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("usacc_cases.title is below 1 bytes");
+    }
+    if (!usaccCasesStatusValues.contains(status)) {
+      errors.add("unsupported usacc_cases.status");
+    }
+    if (!usaccCasesFilingTierValues.contains(filingTier)) {
+      errors.add("unsupported usacc_cases.filing_tier");
+    }
+    if (utf8.encode(defendantSummary).length > 4000) {
+      errors.add("usacc_cases.defendant_summary exceeds 4000 bytes");
+    }
+    if (utf8.encode(defendantSummary).length < 1) {
+      errors.add("usacc_cases.defendant_summary is below 1 bytes");
+    }
+    if (utf8.encode(conductSummary).length > 12000) {
+      errors.add("usacc_cases.conduct_summary exceeds 12000 bytes");
+    }
+    if (utf8.encode(conductSummary).length < 1) {
+      errors.add("usacc_cases.conduct_summary is below 1 bytes");
+    }
+    if (conductFingerprint != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,128}$').hasMatch(conductFingerprint!)) {
+      errors.add("usacc_cases.conduct_fingerprint does not match the required pattern");
+    }
+    if (conductWindowStart != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(conductWindowStart!)) {
+      errors.add("usacc_cases.conduct_window_start does not match the required pattern");
+    }
+    if (conductWindowEnd != null && !RegExp(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$').hasMatch(conductWindowEnd!)) {
+      errors.add("usacc_cases.conduct_window_end does not match the required pattern");
+    }
+    if (priorityScoreMicros < 0) {
+      errors.add("usacc_cases.priority_score_micros is below the minimum");
+    }
+    if (priorityScoreMicros > 1000000) {
+      errors.add("usacc_cases.priority_score_micros is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const usaccCaseParticipantsTable = "usacc_case_participants";
+const usaccCaseParticipantsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      user_id::text as user_id,\n      role,\n      status,\n      granted_by::text as granted_by,\n      granted_by_policy_version,\n      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as ended_at,\n      ended_reason,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_case_participants";
+
+const usaccCaseParticipantsRoleValues = <String>["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"];
+const usaccCaseParticipantsStatusValues = <String>["active", "pending", "declined", "suspended", "ended", "banned"];
+
+class UsaccCaseParticipantsRow {
+  const UsaccCaseParticipantsRow({
+    required this.id,
+    required this.caseId,
+    required this.userId,
+    required this.role,
+    required this.status,
+    this.grantedBy,
+    this.grantedByPolicyVersion,
+    this.endedAt,
+    this.endedReason,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String caseId;
+  final String userId;
+  final String role;
+  final String status;
+  final String? grantedBy;
+  final String? grantedByPolicyVersion;
+  final String? endedAt;
+  final String? endedReason;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccCaseParticipantsRow.fromJson(Map<String, Object?> json) {
+    return UsaccCaseParticipantsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readRequiredString(json, "caseId"),
+      userId: _readRequiredString(json, "userId"),
+      role: _readRequiredString(json, "role"),
+      status: _readRequiredString(json, "status"),
+      grantedBy: _readOptionalString(json, "grantedBy"),
+      grantedByPolicyVersion: _readOptionalString(json, "grantedByPolicyVersion"),
+      endedAt: _readOptionalString(json, "endedAt"),
+      endedReason: _readOptionalString(json, "endedReason"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "userId": userId,
+    "role": role,
+    "status": status,
+    "grantedBy": grantedBy,
+    "grantedByPolicyVersion": grantedByPolicyVersion,
+    "endedAt": endedAt,
+    "endedReason": endedReason,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccCaseParticipantsRoleValues.contains(role)) {
+      errors.add("unsupported usacc_case_participants.role");
+    }
+    if (!usaccCaseParticipantsStatusValues.contains(status)) {
+      errors.add("unsupported usacc_case_participants.status");
+    }
+    if (grantedByPolicyVersion != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(grantedByPolicyVersion!)) {
+      errors.add("usacc_case_participants.granted_by_policy_version does not match the required pattern");
+    }
+    if (endedReason != null && utf8.encode(endedReason!).length > 240) {
+      errors.add("usacc_case_participants.ended_reason exceeds 240 bytes");
+    }
+    return errors;
+  }
+}
+
+const usaccCaseStagesTable = "usacc_case_stages";
+const usaccCaseStagesSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      stage_key,\n      stage_order,\n      title,\n      status,\n      assigned_user_id::text as assigned_user_id,\n      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opened_at,\n      to_char(due_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as due_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      decision_summary,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_case_stages";
+
+const usaccCaseStagesStatusValues = <String>["pending", "open", "blocked", "complete", "skipped", "canceled"];
+
+class UsaccCaseStagesRow {
+  const UsaccCaseStagesRow({
+    required this.id,
+    required this.caseId,
+    required this.stageKey,
+    required this.stageOrder,
+    required this.title,
+    required this.status,
+    this.assignedUserId,
+    this.openedAt,
+    this.dueAt,
+    this.closedAt,
+    this.decisionSummary,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String caseId;
+  final String stageKey;
+  final int stageOrder;
+  final String title;
+  final String status;
+  final String? assignedUserId;
+  final String? openedAt;
+  final String? dueAt;
+  final String? closedAt;
+  final String? decisionSummary;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccCaseStagesRow.fromJson(Map<String, Object?> json) {
+    return UsaccCaseStagesRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readRequiredString(json, "caseId"),
+      stageKey: _readRequiredString(json, "stageKey"),
+      stageOrder: _readRequiredInt(json, "stageOrder"),
+      title: _readRequiredString(json, "title"),
+      status: _readRequiredString(json, "status"),
+      assignedUserId: _readOptionalString(json, "assignedUserId"),
+      openedAt: _readOptionalString(json, "openedAt"),
+      dueAt: _readOptionalString(json, "dueAt"),
+      closedAt: _readOptionalString(json, "closedAt"),
+      decisionSummary: _readOptionalString(json, "decisionSummary"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "stageKey": stageKey,
+    "stageOrder": stageOrder,
+    "title": title,
+    "status": status,
+    "assignedUserId": assignedUserId,
+    "openedAt": openedAt,
+    "dueAt": dueAt,
+    "closedAt": closedAt,
+    "decisionSummary": decisionSummary,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,64}$').hasMatch(stageKey)) {
+      errors.add("usacc_case_stages.stage_key does not match the required pattern");
+    }
+    if (stageOrder < 0) {
+      errors.add("usacc_case_stages.stage_order is below the minimum");
+    }
+    if (stageOrder > 1000) {
+      errors.add("usacc_case_stages.stage_order is above the maximum");
+    }
+    if (utf8.encode(title).length > 200) {
+      errors.add("usacc_case_stages.title exceeds 200 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("usacc_case_stages.title is below 1 bytes");
+    }
+    if (!usaccCaseStagesStatusValues.contains(status)) {
+      errors.add("unsupported usacc_case_stages.status");
+    }
+    if (decisionSummary != null && utf8.encode(decisionSummary!).length > 12000) {
+      errors.add("usacc_case_stages.decision_summary exceeds 12000 bytes");
+    }
+    return errors;
+  }
+}
+
+const usaccElectionsTable = "usacc_elections";
+const usaccElectionsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      stage_id::text as stage_id,\n      election_kind,\n      title,\n      status,\n      quorum_count,\n      threshold_micros,\n      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as opens_at,\n      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closes_at,\n      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sealed_until,\n      tally::text as tally_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_elections";
+
+const usaccElectionsElectionKindValues = <String>["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"];
+const usaccElectionsStatusValues = <String>["draft", "open", "sealed", "tallying", "certified", "void", "archived"];
+
+class UsaccElectionsRow {
+  const UsaccElectionsRow({
+    required this.id,
+    this.caseId,
+    this.stageId,
+    required this.electionKind,
+    required this.title,
+    required this.status,
+    required this.quorumCount,
+    required this.thresholdMicros,
+    this.opensAt,
+    this.closesAt,
+    this.sealedUntil,
+    required this.tally,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? caseId;
+  final String? stageId;
+  final String electionKind;
+  final String title;
+  final String status;
+  final int quorumCount;
+  final int thresholdMicros;
+  final String? opensAt;
+  final String? closesAt;
+  final String? sealedUntil;
+  final Map<String, Object?> tally;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccElectionsRow.fromJson(Map<String, Object?> json) {
+    return UsaccElectionsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readOptionalString(json, "caseId"),
+      stageId: _readOptionalString(json, "stageId"),
+      electionKind: _readRequiredString(json, "electionKind"),
+      title: _readRequiredString(json, "title"),
+      status: _readRequiredString(json, "status"),
+      quorumCount: _readRequiredInt(json, "quorumCount"),
+      thresholdMicros: _readRequiredInt(json, "thresholdMicros"),
+      opensAt: _readOptionalString(json, "opensAt"),
+      closesAt: _readOptionalString(json, "closesAt"),
+      sealedUntil: _readOptionalString(json, "sealedUntil"),
+      tally: _readRequiredObject(json, "tally"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "stageId": stageId,
+    "electionKind": electionKind,
+    "title": title,
+    "status": status,
+    "quorumCount": quorumCount,
+    "thresholdMicros": thresholdMicros,
+    "opensAt": opensAt,
+    "closesAt": closesAt,
+    "sealedUntil": sealedUntil,
+    "tally": tally,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccElectionsElectionKindValues.contains(electionKind)) {
+      errors.add("unsupported usacc_elections.election_kind");
+    }
+    if (utf8.encode(title).length > 220) {
+      errors.add("usacc_elections.title exceeds 220 bytes");
+    }
+    if (utf8.encode(title).length < 1) {
+      errors.add("usacc_elections.title is below 1 bytes");
+    }
+    if (!usaccElectionsStatusValues.contains(status)) {
+      errors.add("unsupported usacc_elections.status");
+    }
+    if (quorumCount < 1) {
+      errors.add("usacc_elections.quorum_count is below the minimum");
+    }
+    if (quorumCount > 1000000) {
+      errors.add("usacc_elections.quorum_count is above the maximum");
+    }
+    if (thresholdMicros < 1) {
+      errors.add("usacc_elections.threshold_micros is below the minimum");
+    }
+    if (thresholdMicros > 1000000) {
+      errors.add("usacc_elections.threshold_micros is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const usaccVotesTable = "usacc_votes";
+const usaccVotesSelectSql = "select\n      id::text as id,\n      election_id::text as election_id,\n      case_id::text as case_id,\n      voter_user_id::text as voter_user_id,\n      vote_kind,\n      vote_value,\n      weight_micros,\n      commitment_hash,\n      sealed_payload::text as sealed_payload_json,\n      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revealed_at,\n      contract_digest,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_votes";
+
+const usaccVotesVoteKindValues = <String>["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"];
+
+class UsaccVotesRow {
+  const UsaccVotesRow({
+    required this.id,
+    required this.electionId,
+    this.caseId,
+    required this.voterUserId,
+    required this.voteKind,
+    required this.voteValue,
+    required this.weightMicros,
+    this.commitmentHash,
+    this.sealedPayload,
+    this.revealedAt,
+    this.contractDigest,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String electionId;
+  final String? caseId;
+  final String voterUserId;
+  final String voteKind;
+  final String voteValue;
+  final int weightMicros;
+  final String? commitmentHash;
+  final Map<String, Object?>? sealedPayload;
+  final String? revealedAt;
+  final String? contractDigest;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccVotesRow.fromJson(Map<String, Object?> json) {
+    return UsaccVotesRow(
+      id: _readRequiredString(json, "id"),
+      electionId: _readRequiredString(json, "electionId"),
+      caseId: _readOptionalString(json, "caseId"),
+      voterUserId: _readRequiredString(json, "voterUserId"),
+      voteKind: _readRequiredString(json, "voteKind"),
+      voteValue: _readRequiredString(json, "voteValue"),
+      weightMicros: _readRequiredInt(json, "weightMicros"),
+      commitmentHash: _readOptionalString(json, "commitmentHash"),
+      sealedPayload: _readRequiredObject(json, "sealedPayload"),
+      revealedAt: _readOptionalString(json, "revealedAt"),
+      contractDigest: _readOptionalString(json, "contractDigest"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "electionId": electionId,
+    "caseId": caseId,
+    "voterUserId": voterUserId,
+    "voteKind": voteKind,
+    "voteValue": voteValue,
+    "weightMicros": weightMicros,
+    "commitmentHash": commitmentHash,
+    "sealedPayload": sealedPayload,
+    "revealedAt": revealedAt,
+    "contractDigest": contractDigest,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccVotesVoteKindValues.contains(voteKind)) {
+      errors.add("unsupported usacc_votes.vote_kind");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(voteValue)) {
+      errors.add("usacc_votes.vote_value does not match the required pattern");
+    }
+    if (weightMicros < 0) {
+      errors.add("usacc_votes.weight_micros is below the minimum");
+    }
+    if (weightMicros > 1000000000) {
+      errors.add("usacc_votes.weight_micros is above the maximum");
+    }
+    if (commitmentHash != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,128}$').hasMatch(commitmentHash!)) {
+      errors.add("usacc_votes.commitment_hash does not match the required pattern");
+    }
+    if (contractDigest != null && utf8.encode(contractDigest!).length > 160) {
+      errors.add("usacc_votes.contract_digest exceeds 160 bytes");
+    }
+    return errors;
+  }
+}
+
+const usaccEscrowAccountsTable = "usacc_escrow_accounts";
+const usaccEscrowAccountsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      status,\n      provider,\n      provider_account_ref,\n      currency,\n      target_amount_cents,\n      committed_amount_cents,\n      captured_amount_cents,\n      disbursed_amount_cents,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_escrow_accounts";
+
+const usaccEscrowAccountsStatusValues = <String>["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"];
+const usaccEscrowAccountsProviderValues = <String>["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"];
+
+class UsaccEscrowAccountsRow {
+  const UsaccEscrowAccountsRow({
+    required this.id,
+    required this.caseId,
+    required this.status,
+    required this.provider,
+    this.providerAccountRef,
+    required this.currency,
+    required this.targetAmountCents,
+    required this.committedAmountCents,
+    required this.capturedAmountCents,
+    required this.disbursedAmountCents,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String caseId;
+  final String status;
+  final String provider;
+  final String? providerAccountRef;
+  final String currency;
+  final int targetAmountCents;
+  final int committedAmountCents;
+  final int capturedAmountCents;
+  final int disbursedAmountCents;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccEscrowAccountsRow.fromJson(Map<String, Object?> json) {
+    return UsaccEscrowAccountsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readRequiredString(json, "caseId"),
+      status: _readRequiredString(json, "status"),
+      provider: _readRequiredString(json, "provider"),
+      providerAccountRef: _readOptionalString(json, "providerAccountRef"),
+      currency: _readRequiredString(json, "currency"),
+      targetAmountCents: _readRequiredInt(json, "targetAmountCents"),
+      committedAmountCents: _readRequiredInt(json, "committedAmountCents"),
+      capturedAmountCents: _readRequiredInt(json, "capturedAmountCents"),
+      disbursedAmountCents: _readRequiredInt(json, "disbursedAmountCents"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "status": status,
+    "provider": provider,
+    "providerAccountRef": providerAccountRef,
+    "currency": currency,
+    "targetAmountCents": targetAmountCents,
+    "committedAmountCents": committedAmountCents,
+    "capturedAmountCents": capturedAmountCents,
+    "disbursedAmountCents": disbursedAmountCents,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccEscrowAccountsStatusValues.contains(status)) {
+      errors.add("unsupported usacc_escrow_accounts.status");
+    }
+    if (!usaccEscrowAccountsProviderValues.contains(provider)) {
+      errors.add("unsupported usacc_escrow_accounts.provider");
+    }
+    if (providerAccountRef != null && utf8.encode(providerAccountRef!).length > 240) {
+      errors.add("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes");
+    }
+    if (!RegExp(r'^[A-Z]{3,12}$').hasMatch(currency)) {
+      errors.add("usacc_escrow_accounts.currency does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const usaccLedgerEntriesTable = "usacc_ledger_entries";
+const usaccLedgerEntriesSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      escrow_account_id::text as escrow_account_id,\n      user_id::text as user_id,\n      entry_kind,\n      direction,\n      amount_cents,\n      currency,\n      provider_ref,\n      contract_digest,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from usacc_ledger_entries";
+
+const usaccLedgerEntriesEntryKindValues = <String>["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"];
+const usaccLedgerEntriesDirectionValues = <String>["debit", "credit"];
+
+class UsaccLedgerEntriesRow {
+  const UsaccLedgerEntriesRow({
+    required this.id,
+    this.caseId,
+    this.escrowAccountId,
+    this.userId,
+    required this.entryKind,
+    required this.direction,
+    required this.amountCents,
+    required this.currency,
+    this.providerRef,
+    this.contractDigest,
+    required this.metaData,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String? caseId;
+  final String? escrowAccountId;
+  final String? userId;
+  final String entryKind;
+  final String direction;
+  final int amountCents;
+  final String currency;
+  final String? providerRef;
+  final String? contractDigest;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+
+  factory UsaccLedgerEntriesRow.fromJson(Map<String, Object?> json) {
+    return UsaccLedgerEntriesRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readOptionalString(json, "caseId"),
+      escrowAccountId: _readOptionalString(json, "escrowAccountId"),
+      userId: _readOptionalString(json, "userId"),
+      entryKind: _readRequiredString(json, "entryKind"),
+      direction: _readRequiredString(json, "direction"),
+      amountCents: _readRequiredInt(json, "amountCents"),
+      currency: _readRequiredString(json, "currency"),
+      providerRef: _readOptionalString(json, "providerRef"),
+      contractDigest: _readOptionalString(json, "contractDigest"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "escrowAccountId": escrowAccountId,
+    "userId": userId,
+    "entryKind": entryKind,
+    "direction": direction,
+    "amountCents": amountCents,
+    "currency": currency,
+    "providerRef": providerRef,
+    "contractDigest": contractDigest,
+    "metaData": metaData,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccLedgerEntriesEntryKindValues.contains(entryKind)) {
+      errors.add("unsupported usacc_ledger_entries.entry_kind");
+    }
+    if (!usaccLedgerEntriesDirectionValues.contains(direction)) {
+      errors.add("unsupported usacc_ledger_entries.direction");
+    }
+    if (!RegExp(r'^[A-Z]{3,12}$').hasMatch(currency)) {
+      errors.add("usacc_ledger_entries.currency does not match the required pattern");
+    }
+    if (providerRef != null && utf8.encode(providerRef!).length > 240) {
+      errors.add("usacc_ledger_entries.provider_ref exceeds 240 bytes");
+    }
+    if (contractDigest != null && utf8.encode(contractDigest!).length > 160) {
+      errors.add("usacc_ledger_entries.contract_digest exceeds 160 bytes");
+    }
+    return errors;
+  }
+}
+
+const usaccContractOperationsTable = "usacc_contract_operations";
+const usaccContractOperationsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      election_id::text as election_id,\n      vote_id::text as vote_id,\n      request_id,\n      operation_kind,\n      status,\n      program_id,\n      digest,\n      envelope::text as envelope_json,\n      response::text as response_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_contract_operations";
+
+const usaccContractOperationsOperationKindValues = <String>["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"];
+const usaccContractOperationsStatusValues = <String>["pending", "validated", "simulated", "sent", "failed", "canceled"];
+
+class UsaccContractOperationsRow {
+  const UsaccContractOperationsRow({
+    required this.id,
+    this.caseId,
+    this.electionId,
+    this.voteId,
+    required this.requestId,
+    required this.operationKind,
+    required this.status,
+    this.programId,
+    this.digest,
+    required this.envelope,
+    required this.response,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? caseId;
+  final String? electionId;
+  final String? voteId;
+  final String requestId;
+  final String operationKind;
+  final String status;
+  final String? programId;
+  final String? digest;
+  final Map<String, Object?> envelope;
+  final Map<String, Object?> response;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccContractOperationsRow.fromJson(Map<String, Object?> json) {
+    return UsaccContractOperationsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readOptionalString(json, "caseId"),
+      electionId: _readOptionalString(json, "electionId"),
+      voteId: _readOptionalString(json, "voteId"),
+      requestId: _readRequiredString(json, "requestId"),
+      operationKind: _readRequiredString(json, "operationKind"),
+      status: _readRequiredString(json, "status"),
+      programId: _readOptionalString(json, "programId"),
+      digest: _readOptionalString(json, "digest"),
+      envelope: _readRequiredObject(json, "envelope"),
+      response: _readRequiredObject(json, "response"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "electionId": electionId,
+    "voteId": voteId,
+    "requestId": requestId,
+    "operationKind": operationKind,
+    "status": status,
+    "programId": programId,
+    "digest": digest,
+    "envelope": envelope,
+    "response": response,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(requestId).length > 160) {
+      errors.add("usacc_contract_operations.request_id exceeds 160 bytes");
+    }
+    if (utf8.encode(requestId).length < 1) {
+      errors.add("usacc_contract_operations.request_id is below 1 bytes");
+    }
+    if (!usaccContractOperationsOperationKindValues.contains(operationKind)) {
+      errors.add("unsupported usacc_contract_operations.operation_kind");
+    }
+    if (!usaccContractOperationsStatusValues.contains(status)) {
+      errors.add("unsupported usacc_contract_operations.status");
+    }
+    if (programId != null && utf8.encode(programId!).length > 128) {
+      errors.add("usacc_contract_operations.program_id exceeds 128 bytes");
+    }
+    if (digest != null && utf8.encode(digest!).length > 160) {
+      errors.add("usacc_contract_operations.digest exceeds 160 bytes");
+    }
+    return errors;
+  }
+}
+
+const usaccSimulationRunsTable = "usacc_simulation_runs";
+const usaccSimulationRunsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      status,\n      mode,\n      seed,\n      horizon_days,\n      actor_count,\n      event_count,\n      metrics::text as metrics_json,\n      trace::text as trace_json,\n      input::text as input_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from usacc_simulation_runs";
+
+const usaccSimulationRunsStatusValues = <String>["queued", "running", "succeeded", "failed", "canceled"];
+const usaccSimulationRunsModeValues = <String>["sim", "live_shadow", "replay"];
+
+class UsaccSimulationRunsRow {
+  const UsaccSimulationRunsRow({
+    required this.id,
+    this.caseId,
+    required this.status,
+    required this.mode,
+    required this.seed,
+    required this.horizonDays,
+    required this.actorCount,
+    required this.eventCount,
+    required this.metrics,
+    required this.trace,
+    required this.input,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? caseId;
+  final String status;
+  final String mode;
+  final int seed;
+  final int horizonDays;
+  final int actorCount;
+  final int eventCount;
+  final Map<String, Object?> metrics;
+  final List<Object?> trace;
+  final Map<String, Object?> input;
+  final String? startedAt;
+  final String? finishedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory UsaccSimulationRunsRow.fromJson(Map<String, Object?> json) {
+    return UsaccSimulationRunsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readOptionalString(json, "caseId"),
+      status: _readRequiredString(json, "status"),
+      mode: _readRequiredString(json, "mode"),
+      seed: _readRequiredInt(json, "seed"),
+      horizonDays: _readRequiredInt(json, "horizonDays"),
+      actorCount: _readRequiredInt(json, "actorCount"),
+      eventCount: _readRequiredInt(json, "eventCount"),
+      metrics: _readRequiredObject(json, "metrics"),
+      trace: _readRequiredArray(json, "trace"),
+      input: _readRequiredObject(json, "input"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "status": status,
+    "mode": mode,
+    "seed": seed,
+    "horizonDays": horizonDays,
+    "actorCount": actorCount,
+    "eventCount": eventCount,
+    "metrics": metrics,
+    "trace": trace,
+    "input": input,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!usaccSimulationRunsStatusValues.contains(status)) {
+      errors.add("unsupported usacc_simulation_runs.status");
+    }
+    if (!usaccSimulationRunsModeValues.contains(mode)) {
+      errors.add("unsupported usacc_simulation_runs.mode");
+    }
+    if (horizonDays < 1) {
+      errors.add("usacc_simulation_runs.horizon_days is below the minimum");
+    }
+    if (horizonDays > 3650) {
+      errors.add("usacc_simulation_runs.horizon_days is above the maximum");
+    }
+    if (actorCount < 0) {
+      errors.add("usacc_simulation_runs.actor_count is below the minimum");
+    }
+    if (eventCount < 0) {
+      errors.add("usacc_simulation_runs.event_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const usaccAuditEventsTable = "usacc_audit_events";
+const usaccAuditEventsSelectSql = "select\n      id::text as id,\n      case_id::text as case_id,\n      actor_user_id::text as actor_user_id,\n      event_type,\n      event_hash,\n      source,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from usacc_audit_events";
+
+class UsaccAuditEventsRow {
+  const UsaccAuditEventsRow({
+    required this.id,
+    this.caseId,
+    this.actorUserId,
+    required this.eventType,
+    required this.eventHash,
+    required this.source,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String? caseId;
+  final String? actorUserId;
+  final String eventType;
+  final String eventHash;
+  final String source;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory UsaccAuditEventsRow.fromJson(Map<String, Object?> json) {
+    return UsaccAuditEventsRow(
+      id: _readRequiredString(json, "id"),
+      caseId: _readOptionalString(json, "caseId"),
+      actorUserId: _readOptionalString(json, "actorUserId"),
+      eventType: _readRequiredString(json, "eventType"),
+      eventHash: _readRequiredString(json, "eventHash"),
+      source: _readRequiredString(json, "source"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "caseId": caseId,
+    "actorUserId": actorUserId,
+    "eventType": eventType,
+    "eventHash": eventHash,
+    "source": source,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,96}$').hasMatch(eventType)) {
+      errors.add("usacc_audit_events.event_type does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,128}$').hasMatch(eventHash)) {
+      errors.add("usacc_audit_events.event_hash does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(source)) {
+      errors.add("usacc_audit_events.source does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;
