@@ -282,6 +282,7 @@ Currently opted-in:
   `/fabrication/postprocess/plan`, `/fabrication/postprocess/result`,
   `/fabrication/release/preview`, `/fabrication/release/result`,
   `/fabrication/methods/catalog`, `/fabrication/process/catalog`,
+  `/fabrication/packages/catalog`,
   `/fabrication/strategy/recommend`,
   `/fabrication/strategy/result`,
   plus `/fabrication/artifacts/catalog`, `/fabrication/jobs/catalog`, `/fabrication/jobs`,

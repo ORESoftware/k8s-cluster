@@ -212,6 +212,7 @@ spec:
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/methods/catalog"' \
                 '"path": "/fabrication/process/catalog"' \
+                '"path": "/fabrication/packages/catalog"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/strategy/result"' \
                 '"path": "/fabrication/schedule/catalog"' \
