@@ -38,6 +38,10 @@ outcomes.
 - `GET /fabrication/subtractive/catalog`
 - `GET /subtractive/preflight/catalog`
 - `GET /fabrication/subtractive/preflight/catalog`
+- `GET /mill-router/catalog`
+- `GET /fabrication/mill-router/catalog`
+- `GET /sheet-cutting/catalog`
+- `GET /fabrication/sheet-cutting/catalog`
 - `GET /turning/catalog`
 - `GET /fabrication/turning/catalog`
 - `GET /turning/preflight/catalog`
@@ -72,6 +76,8 @@ outcomes.
 - `GET /fabrication/design/formats`
 - `GET /slicers/catalog`
 - `GET /fabrication/slicers/catalog`
+- `POST /slicers/plan`
+- `POST /fabrication/slicers/plan`
 - `POST /slicers/result`
 - `POST /fabrication/slicers/result`
 - `GET /mesh-repair/catalog`
@@ -950,6 +956,48 @@ approvals. Failed checks should be retained through setup, simulation, quality,
 telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can
 learn safer split/combine and machine-routing strategies.
 
+## `GET /fabrication/mill-router/catalog`
+
+`GET /mill-router/catalog` and the gateway-prefixed
+`GET /fabrication/mill-router/catalog` return the live
+`dd.fabrication.mill-router-catalog.v1` discovery view for vertical mills,
+horizontal mills, five-axis mills, rotary-indexed mills, and CNC routers derived
+from `default_machines()` and the subtractive catalog. The catalog exposes
+mill/router machine kinds, controllers, materials, operations, accepted
+instruction languages, release gates, and links to workholding, tooling,
+controller/postprocessor, toolpath, setup, simulation, quality, telemetry, and
+learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until stock, workholding, datum/work-offset,
+tool-length/probe, cutter compensation, tool-change, spindle, feed/speed, chip
+evacuation, dust collection, controller/postprocessor, simulation, quality, and
+operator or automation signoff evidence are retained. Mill/router outcomes
+should feed toolpath, workholding, setup, controller, simulation, quality,
+telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn
+safer fixture, index, split, combine, reroute, or human-intervention strategies.
+
+## `GET /fabrication/sheet-cutting/catalog`
+
+`GET /sheet-cutting/catalog` and the gateway-prefixed
+`GET /fabrication/sheet-cutting/catalog` return the live
+`dd.fabrication.sheet-cutting-catalog.v1` discovery view for laser, waterjet,
+plasma, and wire-EDM sheet/profile cutting profiles derived from
+`default_machines()` and the subtractive catalog. The catalog exposes
+sheet-cutting machine kinds, controllers, materials, operations, accepted
+instruction languages, release gates, and links to nesting, support-strategy,
+subtractive preflight, machine-code review, simulation, quality, telemetry, and
+learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until sheet material, thickness, nesting, datum,
+kerf/pierce, assist gas, fume extraction, abrasive/pump, water-table,
+slat/support, wire-threading, slug-retention, simulation, quality, and operator
+or automation signoff evidence are retained. Sheet-cutting outcomes should feed
+setup, nesting, support-strategy, simulation, quality, telemetry, and learning
+routes so DES, MDP/POMDP, and neural workers can learn safer split, combine,
+tab, bridge, or human-intervention strategies.
+
 ## `GET /fabrication/turning/catalog`
 
 `GET /turning/catalog` and the gateway-prefixed
@@ -1299,6 +1347,26 @@ simulation, and operator or automation signoff evidence clear. Slicer profile,
 support, first-layer, material-map, and kinematic outcomes are retained as
 MDP/POMDP/neural learning signals so future print jobs can choose safer slicer
 settings.
+
+## `POST /fabrication/slicers/plan`
+
+`POST /slicers/plan` and the gateway-prefixed
+`POST /fabrication/slicers/plan` run the normal fabrication planner and return a
+`dd.fabrication.slicer-profile-planning.v1` view for additive print-prep. The
+payload exposes `slicerPlanning`, `slicerProfileCatalog`, generated program
+instructions, controller/postprocess targets, material and fixture plans,
+simulation risk, quality inspection points, release blockers, and
+`learning.neuralTrainingCorpus` so slicer workers can choose draft printer
+profiles, support/orientation strategies, thermal settings, and generated
+machine-code evidence.
+
+The slicer planning response is advisory, not certified print parameters.
+Machine-ready release remains blocked while profile provenance, material
+conditioning, support/orientation, first-layer or exposure coupons, thermal
+state, simulation, machine-code, dry-run, or signoff evidence is unresolved.
+Those outcomes feed MDP/POMDP/neural workers so later jobs can choose safer
+profiles, split fragile parts, reroute printers, or require human intervention
+before release.
 
 ## `POST /fabrication/slicers/result`
 

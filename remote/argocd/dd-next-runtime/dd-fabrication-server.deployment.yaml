@@ -147,6 +147,8 @@ spec:
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
+                '"path": "/fabrication/mill-router/catalog"' \
+                '"path": "/fabrication/sheet-cutting/catalog"' \
                 '"path": "/fabrication/turning/catalog"' \
                 '"path": "/fabrication/turning/preflight/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
@@ -165,6 +167,7 @@ spec:
                 '"path": "/fabrication/materials/result"' \
                 '"path": "/fabrication/formats/catalog"' \
                 '"path": "/fabrication/slicers/catalog"' \
+                '"path": "/fabrication/slicers/plan"' \
                 '"path": "/fabrication/slicers/result"' \
                 '"path": "/fabrication/mesh-repair/catalog"' \
                 '"path": "/fabrication/mesh-repair/result"' \

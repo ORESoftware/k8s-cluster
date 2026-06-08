@@ -111,11 +111,11 @@ function assertRootRouteInventoryCoversRegisteredRoutes(source: string): void {
 
 function dashboardFabricationPathLiterals(grafanaDashboards: string): Set<string> {
   const decodedPaths = Array.from(
-    grafanaDashboards.matchAll(/\\\/fabrication(?:\\\/[A-Za-z0-9._:-]+)+/g),
+    grafanaDashboards.matchAll(/\\\/fabrication(?:\\\/[A-Za-z0-9._:\-]+)+/g),
     (match) => match[0].replaceAll('\\/', '/'),
   );
   const plainPaths = Array.from(
-    grafanaDashboards.matchAll(/\/fabrication(?:\/[A-Za-z0-9._:-]+)+/g),
+    grafanaDashboards.matchAll(/\/fabrication(?:\/[A-Za-z0-9._:\-]+)+/g),
     (match) => match[0],
   );
 
@@ -596,6 +596,15 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /"GET \/fabrication\/slicers\/catalog"/);
   assert.match(source, /"slicerProfileCatalog"/);
   assert.match(source, /slicer_profile_catalog_endpoint_exposes_profile_evidence_and_release_policy/);
+  assert.match(source, /async fn slicer_profile_plan_http/);
+  assert.match(source, /fn slicer_profile_planning_response/);
+  assert.match(source, /dd\.fabrication\.slicer-profile-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/slicers\/plan"/);
+  assert.match(source, /"slicerProfilePlan"/);
+  assert.match(
+    source,
+    /slicer_profile_planning_endpoint_returns_profile_machine_code_and_release_contract/,
+  );
   assert.match(source, /struct SlicerProfileResultReviewRequest/);
   assert.match(source, /struct SlicerProfileResultCheck/);
   assert.match(source, /struct SlicerProfileResultPreparation/);
@@ -3082,6 +3091,20 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /stock-workholding-and-datum-state/);
   assert.match(source, /tool-process-and-media-state/);
   assert.match(source, /controller-geometry-and-simulation-state/);
+  assert.match(source, /async fn mill_router_catalog_http/);
+  assert.match(source, /fn mill_router_catalog_response/);
+  assert.match(source, /dd\.fabrication\.mill-router-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/mill-router\/catalog"/);
+  assert.match(source, /"millRouterCatalog": \["GET \/mill-router\/catalog", "GET \/fabrication\/mill-router\/catalog"\]/);
+  assert.match(source, /mill_router_catalog_endpoint_exposes_vertical_horizontal_five_axis_and_router_profiles/);
+  assert.match(source, /vertical, horizontal, five-axis, indexed, and CNC-router planning profiles/);
+  assert.match(source, /async fn sheet_cutting_catalog_http/);
+  assert.match(source, /fn sheet_cutting_catalog_response/);
+  assert.match(source, /dd\.fabrication\.sheet-cutting-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/sheet-cutting\/catalog"/);
+  assert.match(source, /"sheetCuttingCatalog": \["GET \/sheet-cutting\/catalog", "GET \/fabrication\/sheet-cutting\/catalog"\]/);
+  assert.match(source, /sheet_cutting_catalog_endpoint_exposes_laser_waterjet_plasma_and_wire_profiles/);
+  assert.match(source, /assist gas, fume extraction, abrasive\/pump/);
   assert.match(source, /async fn turning_catalog_http/);
   assert.match(source, /fn turning_catalog_response/);
   assert.match(source, /dd\.fabrication\.turning-catalog\.v1/);
@@ -5819,6 +5842,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(
     source,
+    /\.route\("\/slicers\/plan", post\(slicer_profile_plan_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\(\s*"\/fabrication\/slicers\/plan",\s*post\(slicer_profile_plan_http\)\s*,?\s*\)/,
+  );
+  assert.match(
+    source,
     /\.route\("\/slicers\/result", post\(slicer_profile_result_http\)\)/,
   );
   assert.match(
@@ -6648,6 +6679,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /tool\/process\/media state/);
   assert.match(readme, /controller\/geometry\/simulation state/);
   assert.match(readme, /fixtures, vises, chucks, collets/);
+  assert.match(readme, /`GET \/mill-router\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/mill-router\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.mill-router-catalog\.v1/);
+  assert.match(readme, /vertical mills,\s+horizontal mills, five-axis mills/);
+  assert.match(readme, /tool-length\/probe, cutter compensation, tool-change/);
+  assert.match(readme, /safer fixture, index, split, combine, reroute, or human-intervention strategies/);
+  assert.match(readme, /`GET \/sheet-cutting\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/sheet-cutting\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.sheet-cutting-catalog\.v1/);
+  assert.match(readme, /laser, waterjet,\s+plasma, and wire-EDM sheet\/profile cutting profiles/);
+  assert.match(readme, /kerf\/pierce, assist gas, fume extraction, abrasive\/pump/);
+  assert.match(readme, /safer split, combine,\s+tab, bridge, or human-intervention strategies/);
   assert.match(readme, /`GET \/turning\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/turning\/catalog`/);
   assert.match(readme, /dd\.fabrication\.turning-catalog\.v1/);
@@ -6673,6 +6716,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /split differently, add datums/);
   assert.match(readme, /`GET \/slicers\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/slicers\/catalog`/);
+  assert.match(readme, /`POST \/slicers\/plan`/);
+  assert.match(readme, /`POST \/fabrication\/slicers\/plan`/);
   assert.match(readme, /`POST \/slicers\/result`/);
   assert.match(readme, /`POST \/fabrication\/slicers\/result`/);
   assert.match(source, /"POST \/fabrication\/mesh-repair\/result"/);
@@ -6709,6 +6754,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /conversion\/simulation\/learning state/);
   assert.match(readme, /ambiguous\s+`\.prt`\/`\.asm` disambiguation/);
   assert.match(readme, /dd\.fabrication\.slicer-profile-catalog\.v1/);
+  assert.match(readme, /dd\.fabrication\.slicer-profile-planning\.v1/);
+  assert.match(readme, /`slicerPlanning`/);
+  assert.match(readme, /not certified print parameters/);
   assert.match(readme, /dd\.fabrication\.slicer-profile-result-review\.v1/);
   assert.match(readme, /slicer-print-preparation/);
   assert.match(readme, /slicer-machine-code-checks/);
@@ -9665,6 +9713,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/design\/formats"/);
   assert.match(docs, /"path": "\/slicers\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/slicers\/catalog"/);
+  assert.match(docs, /"path": "\/slicers\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/slicers\/plan"/);
   assert.match(docs, /"path": "\/slicers\/result"/);
   assert.match(docs, /"path": "\/fabrication\/slicers\/result"/);
   assert.match(docs, /"path": "\/mesh-repair\/catalog"/);
@@ -10033,6 +10083,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /RUNTIME_CONFIG_APPLY_URL[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/);
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/mill-router\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/sheet-cutting\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/turning\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/turning\/preflight\/catalog"/);
   assert.match(deployment, /revisionHistoryLimit:\s*3/);
@@ -10066,6 +10118,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/materials\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/formats\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/slicers\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/slicers\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/slicers\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/mesh-repair\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/mesh-repair\/result"/);
@@ -10316,6 +10369,10 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /subtractive catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(grafanaDashboards, /subtractive preflight catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/mill-router\/catalog/);
+  assert.match(grafanaDashboards, /mill\/router catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/sheet-cutting\/catalog/);
+  assert.match(grafanaDashboards, /sheet-cutting catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/catalog/);
   assert.match(grafanaDashboards, /turning catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/preflight\/catalog/);
@@ -10344,6 +10401,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/design\/formats/);
   assert.match(grafanaDashboards, /\/fabrication\/slicers\/catalog/);
   assert.match(grafanaDashboards, /slicer catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/slicers\/plan/);
+  assert.match(grafanaDashboards, /slicer planning/);
   assert.match(grafanaDashboards, /\/fabrication\/slicers\/result/);
   assert.match(grafanaDashboards, /slicer profile result review/);
   assert.match(grafanaDashboards, /\/fabrication\/mesh-repair\/catalog/);
@@ -10633,6 +10692,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /format-import catalog discovery/);
   assert.match(runtimeReadme, /strategy and calibration catalog discovery/);
   assert.match(runtimeReadme, /\/fabrication\/printers\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/mill-router\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cells\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machines\/select/);
@@ -10641,6 +10702,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/result/);
   assert.match(runtimeReadme, /\/fabrication\/slicers\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/slicers\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/slicers\/result/);
   assert.match(runtimeReadme, /\/fabrication\/mesh-repair\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/mesh-repair\/result/);
@@ -10849,6 +10911,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/printers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/mill-router\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
@@ -10867,6 +10931,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/design\/formats/);
   assert.match(observabilityReadme, /\/fabrication\/design\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/slicers\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/slicers\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/slicers\/result/);
   assert.match(observabilityReadme, /\/fabrication\/mesh-repair\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/mesh-repair\/result/);
