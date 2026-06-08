@@ -3371,16 +3371,19 @@ surfaces plus a `dd.fabrication.quality-learning-outcome-draft.v1` payload that
 callers can send to `POST /fabrication/learning/outcomes`. The response reports
 blocker counts for out-of-tolerance
 measurements, nonconformance or human-intervention findings, unresolved
-inspection gates, and missing artifact evidence.
+inspection gates, missing artifact evidence, and a `priorityDispositions` array
+for machine-failure, human-intervention, split/combine or interface,
+non-G-code/job-sheet evidence, and learning-feedback lanes.
 
 Quality result reviews are retained release evidence, not certified acceptance
 or a machine-safety waiver. Machine-ready release remains blocked until
 measurements, findings, gates, artifacts, and any human dispositions clear.
 Stored artifacts include `quality-result`, `quality-measurements`,
-`quality-findings`, `quality-inspection-gates`, `quality-artifacts`, and
-`quality-learning-observations` so MDP/POMDP/neural workers can learn when to
-adjust processes, split or combine parts, add inspection, or require human
-signoff before release.
+`quality-findings`, `quality-inspection-gates`, `quality-artifacts`,
+`quality-priority-dispositions`, and `quality-learning-observations`. Quality
+observations include `quality-priority:<priority>:<disposition>` signals so
+MDP/POMDP/neural workers can learn when to adjust processes, split or combine
+parts, add inspection, or require human signoff before release.
 
 ## `GET /fabrication/calibration/catalog`
 
@@ -3439,17 +3442,21 @@ learning-observation surfaces plus a
 `dd.fabrication.calibration-learning-outcome-draft.v1` payload that callers can
 send to `POST /fabrication/learning/outcomes`. The response reports blocker counts for failed or
 human-intervention checks, out-of-tolerance offsets, unresolved release probes,
-and missing calibration artifact evidence.
+missing calibration artifact evidence, and a `priorityDispositions` array for
+machine-failure, human-intervention, split/combine or setup/interface,
+non-G-code/job-sheet evidence, and learning-feedback lanes.
 
 Calibration result reviews are retained machine-preparation evidence, not
 certified calibration or a machine-safety waiver. Machine-ready release remains
 blocked until required homing, work-offset, tool-length, thermal, process-media,
 sensor, fixture, probe, artifact, and human-disposition evidence clears. Stored
 artifacts include `calibration-result`, `calibration-checks`,
-`calibration-offsets`, `calibration-probes`, `calibration-artifacts`, and
-`calibration-learning-observations` so MDP/POMDP/neural workers can learn when to
-request probes, split setups, add operators, improve machine profiles, or
-regenerate instructions before release.
+`calibration-offsets`, `calibration-probes`, `calibration-artifacts`,
+`calibration-priority-dispositions`, and `calibration-learning-observations`.
+Calibration observations include `calibration-priority:<priority>:<disposition>`
+signals so MDP/POMDP/neural workers can learn when to request probes, split
+setups, add operators, improve machine profiles, or regenerate instructions
+before release.
 
 ## `GET /fabrication/interventions/catalog`
 
@@ -5605,7 +5612,8 @@ optional reward weights. It returns:
   strategy, human-review status, and learning signals for failed, scrapped, or
   intervention-heavy fabrication attempts.
 - A policy snapshot summarizing retained method preferences, ordered operation
-  sequences, machine-kind preferences, assembly preferences, and
+  sequences, machine-kind preferences, assembly preferences, first-class
+  `splitCombinePreferences`, and
   material-specific `remediationRisks` from failed or negative fabrication
   evidence.
 
@@ -5630,7 +5638,7 @@ retained compact/rich learning records, `maxOutcomes`, a `qualitySummary`,
 `qualityBuckets` for successful-positive-reward, failed-or-negative-reward,
 hybrid split/combine, and intervention-heavy history, the derived policy
 snapshot, `policyImpactPreview` entries for method-combination,
-machine-kind, operation-sequence, remediation-risk, and neural-training impacts,
+machine-kind, operation-sequence, split-combine-preference, remediation-risk, and neural-training impacts,
 and release-policy notes that learned preferences remain advisory until
 validation, simulation, controller review, and signoff evidence clear.
 `POST /learning/outcomes` and `POST /fabrication/learning/outcomes` accept a
@@ -5641,8 +5649,8 @@ map to the compact record identity/reward fields, while `sourceKind`, `*Hints`,
 and `featureHints` are retained as normalized learning observations and
 `manufacturingMethodHints` can seed learned method preferences. Assembly,
 decomposition, and strategy result drafts can also use `joinKindHints` and
-`splitCombineHints` to seed learned assembly strategies for future hybrid
-split/combine plans.
+`splitCombineHints` to seed learned assembly strategies and first-class
+`splitCombinePreferences` for future hybrid split/combine plans.
 
 When a policy snapshot has at least two positive samples for a method such as
 `additive-print`, `milling`, `five-axis-milling`, `horizontal-milling`, `routing`,
