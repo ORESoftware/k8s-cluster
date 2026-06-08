@@ -8,11 +8,12 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Current proof points
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
-  `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, Qlik-style selection state
-  lives in `src/associative.rs`, semantic model parsing and compilation lives in
-  `src/semantic.rs`, ETL flow planning lives in `src/etl.rs`, infrastructure diagram extraction
-  lives in `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy
-  lives in `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, self-service
+  `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, alert notification policy
+  validation lives in `src/notifications.rs`, Qlik-style selection state lives in
+  `src/associative.rs`, semantic model parsing and compilation lives in `src/semantic.rs`, ETL flow
+  planning lives in `src/etl.rs`, infrastructure diagram extraction lives in
+  `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives in
+  `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, self-service
   question/chart validation lives in `src/self_service.rs`, parser-backed SQL compilation lives in
   `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
   modules through route handlers.
@@ -39,6 +40,10 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Grafana-style alert rules are validated, stored in memory, and evaluated through
   `POST /alerts/rules/:rule_id/evaluate` using reducer/threshold conditions over existing query
   results.
+- Grafana-style alert contact points and notification policies are validated through
+  `POST /alerts/contact-points`, `POST /alerts/notification-policies`, and
+  `POST /alerts/rules/:rule_id/notification-preview` without storing raw tokens or sending
+  outbound messages.
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
@@ -70,8 +75,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Superset and Metabase parity still need database connection registries, SQL Lab history, natural
   language question generation, and durable ownership beyond the current in-memory role-gated
   question/chart catalog.
-- Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel
-  streams.
+- Grafana parity still needs a real notification dispatcher worker, Loki log frames, and live
+  WebSocket panel streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
   rendered artifact verification, and richer cloud-native relationship extraction beyond topology
   hints.

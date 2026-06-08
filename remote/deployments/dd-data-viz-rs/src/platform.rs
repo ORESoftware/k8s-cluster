@@ -263,11 +263,12 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "time-series panel catalog",
                 "Prometheus metrics route",
                 "alert rule catalog and evaluator",
+                "secretRef-backed contact points and notification policy preview",
             ],
             next_engine_work: vec![
-                "alert notification channels",
                 "Loki log frame adapter",
                 "WebSocket live panel stream",
+                "real notification dispatcher worker",
             ],
         },
         ProductParity {

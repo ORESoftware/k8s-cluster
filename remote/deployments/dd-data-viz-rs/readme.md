@@ -51,6 +51,8 @@ concept in `main.rs`:
   Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - `src/alerts.rs` owns Grafana-style alert rule validation, catalog metadata, and reducer-based
   evaluation responses.
+- `src/notifications.rs` owns Grafana-style contact point validation, notification policies, and
+  dry-run delivery previews.
 - `src/associative.rs` owns Qlik-style multi-dataset selection state and relationship indexing.
 - `src/semantic.rs` owns LookML-like semantic model parsing, dataset-field validation, and SQL
   target compilation.
@@ -81,8 +83,8 @@ Current first-class parity surfaces:
   for bounded visual flows.
 - Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, saved
   dashboard catalog, saved questions, and saved chart bindings.
-- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, and
-  alert rule evaluation.
+- Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
+  rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, infrastructure diagrams, and Markdown-plus-SQL report blueprint.
 
@@ -133,6 +135,14 @@ Current first-class parity surfaces:
 - `GET /alerts/rules` - authenticated alert rule catalog.
 - `GET /alerts/rules/:rule_id` - authenticated alert rule definition.
 - `POST /alerts/rules/:rule_id/evaluate` - authenticated alert rule evaluation.
+- `POST /alerts/contact-points` - authenticated alert contact point create/replace using secretRef
+  destinations.
+- `GET /alerts/contact-points` - authenticated alert contact point catalog.
+- `GET /alerts/contact-points/:contact_id` - authenticated alert contact point definition.
+- `POST /alerts/notification-policies` - authenticated alert notification policy create/replace.
+- `GET /alerts/notification-policies` - authenticated alert notification policy catalog.
+- `POST /alerts/rules/:rule_id/notification-preview` - authenticated dry-run notification delivery
+  preview.
 - `POST /query` - authenticated query translation and execution.
 - `POST /visualizations/suggest` - authenticated visualization spec synthesis.
 - `POST /evolution/run` - authenticated evolutionary visualization search.
