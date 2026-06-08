@@ -89,7 +89,6 @@ spec:
               readOnly: true
             - name: nerdctl-state
               mountPath: /var/lib/nerdctl
-              mountPropagation: Bidirectional
       volumes:
         - name: repo
           hostPath:

@@ -109,6 +109,8 @@ test("dd-idle-reaper has additive baseline securityContext", async () => {
   // one. The "containers:" block should contain both fields below.
   assert.match(reaper, /allowPrivilegeEscalation:\s*false/);
   assert.match(reaper, /seccompProfile:\s*\n\s*type:\s*RuntimeDefault/);
+  assert.doesNotMatch(reaper, /privileged:\s*true/);
+  assert.doesNotMatch(reaper, /mountPropagation:\s*Bidirectional/);
 });
 
 test("nats main container drops all linux capabilities", async () => {
