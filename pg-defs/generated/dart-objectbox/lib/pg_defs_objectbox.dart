@@ -6710,3 +6710,815 @@ class BenefactorMarketingConversionEventsObjectBox {
     );
   }
 }
+
+@Entity()
+class BenefactorMarketingPortalMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? contactId;
+
+  String? userId;
+
+  String email;
+
+  String status;
+
+  String role;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String accessScope;
+
+  String? lastSeenAt;
+
+  String invitedAt;
+
+  String? acceptedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingPortalMembersObjectBox({
+    required this.id,
+    required this.clientId,
+    this.contactId,
+    this.userId,
+    required this.email,
+    required this.status,
+    required this.role,
+    required this.accessScope,
+    this.lastSeenAt,
+    required this.invitedAt,
+    this.acceptedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "contactId": contactId,
+    "userId": userId,
+    "email": email,
+    "status": status,
+    "role": role,
+    "accessScope": jsonDecode(accessScope),
+    "lastSeenAt": lastSeenAt,
+    "invitedAt": invitedAt,
+    "acceptedAt": acceptedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingPortalMembersObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingPortalMembersObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      contactId: json["contactId"] as String?,
+      userId: json["userId"] as String?,
+      email: json["email"] as String,
+      status: json["status"] as String,
+      role: json["role"] as String,
+      accessScope: json["accessScope"] is String ? json["accessScope"] as String : jsonEncode(json["accessScope"]),
+      lastSeenAt: json["lastSeenAt"] as String?,
+      invitedAt: json["invitedAt"] as String,
+      acceptedAt: json["acceptedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingSharedDocumentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? campaignId;
+
+  String? contentAssetId;
+
+  String status;
+
+  String documentKind;
+
+  String title;
+
+  String storageUri;
+
+  String? mimeType;
+
+  String visibility;
+
+  String? uploadedBy;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingSharedDocumentsObjectBox({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    this.contentAssetId,
+    required this.status,
+    required this.documentKind,
+    required this.title,
+    required this.storageUri,
+    this.mimeType,
+    required this.visibility,
+    this.uploadedBy,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "contentAssetId": contentAssetId,
+    "status": status,
+    "documentKind": documentKind,
+    "title": title,
+    "storageUri": storageUri,
+    "mimeType": mimeType,
+    "visibility": visibility,
+    "uploadedBy": uploadedBy,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingSharedDocumentsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingSharedDocumentsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      campaignId: json["campaignId"] as String?,
+      contentAssetId: json["contentAssetId"] as String?,
+      status: json["status"] as String,
+      documentKind: json["documentKind"] as String,
+      title: json["title"] as String,
+      storageUri: json["storageUri"] as String,
+      mimeType: json["mimeType"] as String?,
+      visibility: json["visibility"] as String,
+      uploadedBy: json["uploadedBy"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingCollaborationCommentsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? parentCommentId;
+
+  String resourceType;
+
+  String? resourceId;
+
+  String? authorUserId;
+
+  String? authorContactId;
+
+  String body;
+
+  String status;
+
+  String visibility;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingCollaborationCommentsObjectBox({
+    required this.id,
+    required this.clientId,
+    this.parentCommentId,
+    required this.resourceType,
+    this.resourceId,
+    this.authorUserId,
+    this.authorContactId,
+    required this.body,
+    required this.status,
+    required this.visibility,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "parentCommentId": parentCommentId,
+    "resourceType": resourceType,
+    "resourceId": resourceId,
+    "authorUserId": authorUserId,
+    "authorContactId": authorContactId,
+    "body": body,
+    "status": status,
+    "visibility": visibility,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingCollaborationCommentsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCollaborationCommentsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      parentCommentId: json["parentCommentId"] as String?,
+      resourceType: json["resourceType"] as String,
+      resourceId: json["resourceId"] as String?,
+      authorUserId: json["authorUserId"] as String?,
+      authorContactId: json["authorContactId"] as String?,
+      body: json["body"] as String,
+      status: json["status"] as String,
+      visibility: json["visibility"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingNotificationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? recipientUserId;
+
+  String? recipientContactId;
+
+  String channel;
+
+  String status;
+
+  String notificationKind;
+
+  String title;
+
+  String? body;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String? scheduledAt;
+
+  String? sentAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingNotificationsObjectBox({
+    required this.id,
+    required this.clientId,
+    this.recipientUserId,
+    this.recipientContactId,
+    required this.channel,
+    required this.status,
+    required this.notificationKind,
+    required this.title,
+    this.body,
+    required this.payload,
+    this.scheduledAt,
+    this.sentAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "recipientUserId": recipientUserId,
+    "recipientContactId": recipientContactId,
+    "channel": channel,
+    "status": status,
+    "notificationKind": notificationKind,
+    "title": title,
+    "body": body,
+    "payload": jsonDecode(payload),
+    "scheduledAt": scheduledAt,
+    "sentAt": sentAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingNotificationsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingNotificationsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      recipientUserId: json["recipientUserId"] as String?,
+      recipientContactId: json["recipientContactId"] as String?,
+      channel: json["channel"] as String,
+      status: json["status"] as String,
+      notificationKind: json["notificationKind"] as String,
+      title: json["title"] as String,
+      body: json["body"] as String?,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      scheduledAt: json["scheduledAt"] as String?,
+      sentAt: json["sentAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingTimeEntriesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? clientId;
+
+  String? campaignId;
+
+  String? projectTaskId;
+
+  String userId;
+
+  String entryDate;
+
+  int minutes;
+
+  bool billable;
+
+  int rateCents;
+
+  int costCents;
+
+  String? notes;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingTimeEntriesObjectBox({
+    required this.id,
+    this.clientId,
+    this.campaignId,
+    this.projectTaskId,
+    required this.userId,
+    required this.entryDate,
+    required this.minutes,
+    required this.billable,
+    required this.rateCents,
+    required this.costCents,
+    this.notes,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "projectTaskId": projectTaskId,
+    "userId": userId,
+    "entryDate": entryDate,
+    "minutes": minutes,
+    "billable": billable,
+    "rateCents": rateCents,
+    "costCents": costCents,
+    "notes": notes,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingTimeEntriesObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingTimeEntriesObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String?,
+      campaignId: json["campaignId"] as String?,
+      projectTaskId: json["projectTaskId"] as String?,
+      userId: json["userId"] as String,
+      entryDate: json["entryDate"] as String,
+      minutes: (json["minutes"] as num).toInt(),
+      billable: json["billable"] as bool,
+      rateCents: (json["rateCents"] as num).toInt(),
+      costCents: (json["costCents"] as num).toInt(),
+      notes: json["notes"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingVendorCostsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? clientId;
+
+  String? campaignId;
+
+  String vendorName;
+
+  String category;
+
+  String status;
+
+  int amountCents;
+
+  String? incurredOn;
+
+  String? invoiceRef;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingVendorCostsObjectBox({
+    required this.id,
+    this.clientId,
+    this.campaignId,
+    required this.vendorName,
+    required this.category,
+    required this.status,
+    required this.amountCents,
+    this.incurredOn,
+    this.invoiceRef,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "vendorName": vendorName,
+    "category": category,
+    "status": status,
+    "amountCents": amountCents,
+    "incurredOn": incurredOn,
+    "invoiceRef": invoiceRef,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingVendorCostsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingVendorCostsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String?,
+      campaignId: json["campaignId"] as String?,
+      vendorName: json["vendorName"] as String,
+      category: json["category"] as String,
+      status: json["status"] as String,
+      amountCents: (json["amountCents"] as num).toInt(),
+      incurredOn: json["incurredOn"] as String?,
+      invoiceRef: json["invoiceRef"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingCommissionEntriesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? clientId;
+
+  String? opportunityId;
+
+  String userId;
+
+  String status;
+
+  String commissionKind;
+
+  int basisCents;
+
+  int rateMicros;
+
+  int amountCents;
+
+  String? earnedOn;
+
+  String? paidAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingCommissionEntriesObjectBox({
+    required this.id,
+    this.clientId,
+    this.opportunityId,
+    required this.userId,
+    required this.status,
+    required this.commissionKind,
+    required this.basisCents,
+    required this.rateMicros,
+    required this.amountCents,
+    this.earnedOn,
+    this.paidAt,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "opportunityId": opportunityId,
+    "userId": userId,
+    "status": status,
+    "commissionKind": commissionKind,
+    "basisCents": basisCents,
+    "rateMicros": rateMicros,
+    "amountCents": amountCents,
+    "earnedOn": earnedOn,
+    "paidAt": paidAt,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingCommissionEntriesObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCommissionEntriesObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String?,
+      opportunityId: json["opportunityId"] as String?,
+      userId: json["userId"] as String,
+      status: json["status"] as String,
+      commissionKind: json["commissionKind"] as String,
+      basisCents: (json["basisCents"] as num).toInt(),
+      rateMicros: (json["rateMicros"] as num).toInt(),
+      amountCents: (json["amountCents"] as num).toInt(),
+      earnedOn: json["earnedOn"] as String?,
+      paidAt: json["paidAt"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingBudgetForecastsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? campaignId;
+
+  String forecastKind;
+
+  String periodStart;
+
+  String periodEnd;
+
+  String status;
+
+  int revenueCents;
+
+  int mediaSpendCents;
+
+  int laborCostCents;
+
+  int vendorCostCents;
+
+  int grossMarginCents;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String assumptions;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingBudgetForecastsObjectBox({
+    required this.id,
+    required this.clientId,
+    this.campaignId,
+    required this.forecastKind,
+    required this.periodStart,
+    required this.periodEnd,
+    required this.status,
+    required this.revenueCents,
+    required this.mediaSpendCents,
+    required this.laborCostCents,
+    required this.vendorCostCents,
+    required this.grossMarginCents,
+    required this.assumptions,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "campaignId": campaignId,
+    "forecastKind": forecastKind,
+    "periodStart": periodStart,
+    "periodEnd": periodEnd,
+    "status": status,
+    "revenueCents": revenueCents,
+    "mediaSpendCents": mediaSpendCents,
+    "laborCostCents": laborCostCents,
+    "vendorCostCents": vendorCostCents,
+    "grossMarginCents": grossMarginCents,
+    "assumptions": jsonDecode(assumptions),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingBudgetForecastsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingBudgetForecastsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      campaignId: json["campaignId"] as String?,
+      forecastKind: json["forecastKind"] as String,
+      periodStart: json["periodStart"] as String,
+      periodEnd: json["periodEnd"] as String,
+      status: json["status"] as String,
+      revenueCents: (json["revenueCents"] as num).toInt(),
+      mediaSpendCents: (json["mediaSpendCents"] as num).toInt(),
+      laborCostCents: (json["laborCostCents"] as num).toInt(),
+      vendorCostCents: (json["vendorCostCents"] as num).toInt(),
+      grossMarginCents: (json["grossMarginCents"] as num).toInt(),
+      assumptions: json["assumptions"] is String ? json["assumptions"] as String : jsonEncode(json["assumptions"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorMarketingCallInsightsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String clientId;
+
+  String? meetingId;
+
+  String? leadId;
+
+  String? opportunityId;
+
+  String status;
+
+  String? provider;
+
+  String? transcriptUri;
+
+  String? summary;
+
+  String? sentiment;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String actionItems;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String objections;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String nextSteps;
+
+  int confidenceMicros;
+
+  String analyzedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  BenefactorMarketingCallInsightsObjectBox({
+    required this.id,
+    required this.clientId,
+    this.meetingId,
+    this.leadId,
+    this.opportunityId,
+    required this.status,
+    this.provider,
+    this.transcriptUri,
+    this.summary,
+    this.sentiment,
+    required this.actionItems,
+    required this.objections,
+    required this.nextSteps,
+    required this.confidenceMicros,
+    required this.analyzedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "clientId": clientId,
+    "meetingId": meetingId,
+    "leadId": leadId,
+    "opportunityId": opportunityId,
+    "status": status,
+    "provider": provider,
+    "transcriptUri": transcriptUri,
+    "summary": summary,
+    "sentiment": sentiment,
+    "actionItems": jsonDecode(actionItems),
+    "objections": jsonDecode(objections),
+    "nextSteps": jsonDecode(nextSteps),
+    "confidenceMicros": confidenceMicros,
+    "analyzedAt": analyzedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static BenefactorMarketingCallInsightsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorMarketingCallInsightsObjectBox(
+      id: json["id"] as String,
+      clientId: json["clientId"] as String,
+      meetingId: json["meetingId"] as String?,
+      leadId: json["leadId"] as String?,
+      opportunityId: json["opportunityId"] as String?,
+      status: json["status"] as String,
+      provider: json["provider"] as String?,
+      transcriptUri: json["transcriptUri"] as String?,
+      summary: json["summary"] as String?,
+      sentiment: json["sentiment"] as String?,
+      actionItems: json["actionItems"] is String ? json["actionItems"] as String : jsonEncode(json["actionItems"]),
+      objections: json["objections"] is String ? json["objections"] as String : jsonEncode(json["objections"]),
+      nextSteps: json["nextSteps"] is String ? json["nextSteps"] as String : jsonEncode(json["nextSteps"]),
+      confidenceMicros: (json["confidenceMicros"] as num).toInt(),
+      analyzedAt: json["analyzedAt"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}

@@ -7099,3 +7099,782 @@ class BenefactorMarketingConversionEventsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 200:
             raise ValueError("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes")
         return value
+
+BenefactorMarketingPortalMembersStatus = Literal["invited", "active", "disabled", "revoked"]
+BenefactorMarketingPortalMembersRole = Literal["owner", "approver", "viewer", "billing", "collaborator"]
+
+class BenefactorMarketingPortalMembers(Base):
+    __tablename__ = "benefactor_marketing_portal_members"
+    __table_args__ = (
+        CheckConstraint("octet_length(email) between 3 and 240", name="benefactor_marketing_portal_members_email_size_chk"),
+        CheckConstraint("status in ('invited', 'active', 'disabled', 'revoked')", name="benefactor_marketing_portal_members_status_chk"),
+        CheckConstraint("role in ('owner', 'approver', 'viewer', 'billing', 'collaborator')", name="benefactor_marketing_portal_members_role_chk"),
+        CheckConstraint("jsonb_typeof(access_scope) = 'object'", name="benefactor_marketing_portal_members_access_scope_object_chk"),
+        Index("benefactor_marketing_portal_members_client_email_uq", "client_id", "email", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    contact_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    email: Mapped[str] = mapped_column(String(240), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'invited'"))
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'viewer'"))
+    access_scope: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingPortalMembersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    contactId: UUID | None = None
+    userId: UUID | None = None
+    email: str = Field(..., max_length=240)
+    status: BenefactorMarketingPortalMembersStatus
+    role: BenefactorMarketingPortalMembersRole
+    accessScope: dict[str, Any]
+    lastSeenAt: datetime | None = None
+    invitedAt: datetime
+    acceptedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_portal_members.email exceeds 240 bytes")
+        return value
+
+class BenefactorMarketingPortalMembersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    contactId: UUID | None = None
+    userId: UUID | None = None
+    email: str = Field(..., max_length=240)
+    status: BenefactorMarketingPortalMembersStatus | None = "invited"
+    role: BenefactorMarketingPortalMembersRole | None = "viewer"
+    accessScope: dict[str, Any] | None = Field(default_factory=dict)
+    lastSeenAt: datetime | None = None
+    invitedAt: datetime | None = None
+    acceptedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_portal_members.email exceeds 240 bytes")
+        return value
+
+BenefactorMarketingSharedDocumentsStatus = Literal["active", "archived", "deleted"]
+BenefactorMarketingSharedDocumentsDocumentKind = Literal["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"]
+BenefactorMarketingSharedDocumentsVisibility = Literal["internal", "client_portal", "public_link"]
+
+class BenefactorMarketingSharedDocuments(Base):
+    __tablename__ = "benefactor_marketing_shared_documents"
+    __table_args__ = (
+        CheckConstraint("status in ('active', 'archived', 'deleted')", name="benefactor_marketing_shared_documents_status_chk"),
+        CheckConstraint("document_kind in ('contract', 'invoice', 'report', 'creative', 'brand_asset', 'proposal', 'meeting_notes', 'other')", name="benefactor_marketing_shared_documents_kind_chk"),
+        CheckConstraint("octet_length(title) between 1 and 240", name="benefactor_marketing_shared_documents_title_size_chk"),
+        CheckConstraint("octet_length(storage_uri) between 1 and 2048", name="benefactor_marketing_shared_documents_uri_size_chk"),
+        CheckConstraint("mime_type is null or octet_length(mime_type) <= 120", name="benefactor_marketing_shared_documents_mime_size_chk"),
+        CheckConstraint("visibility in ('internal', 'client_portal', 'public_link')", name="benefactor_marketing_shared_documents_visibility_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_marketing_shared_documents_meta_object_chk"),
+        Index("benefactor_marketing_shared_documents_client_idx", "client_id", "status", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    campaign_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    content_asset_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    document_kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    storage_uri: Mapped[str] = mapped_column(Text(), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'client_portal'"))
+    uploaded_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingSharedDocumentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    campaignId: UUID | None = None
+    contentAssetId: UUID | None = None
+    status: BenefactorMarketingSharedDocumentsStatus
+    documentKind: BenefactorMarketingSharedDocumentsDocumentKind
+    title: str = Field(..., max_length=240)
+    storageUri: str
+    mimeType: str | None = Field(None, max_length=120)
+    visibility: BenefactorMarketingSharedDocumentsVisibility
+    uploadedBy: UUID | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_shared_documents.title exceeds 240 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes")
+        return value
+
+    @field_validator("mimeType")
+    @classmethod
+    def validate_mime_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes")
+        return value
+
+class BenefactorMarketingSharedDocumentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    campaignId: UUID | None = None
+    contentAssetId: UUID | None = None
+    status: BenefactorMarketingSharedDocumentsStatus | None = "active"
+    documentKind: BenefactorMarketingSharedDocumentsDocumentKind
+    title: str = Field(..., max_length=240)
+    storageUri: str
+    mimeType: str | None = Field(None, max_length=120)
+    visibility: BenefactorMarketingSharedDocumentsVisibility | None = "client_portal"
+    uploadedBy: UUID | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_shared_documents.title exceeds 240 bytes")
+        return value
+
+    @field_validator("storageUri")
+    @classmethod
+    def validate_storage_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes")
+        return value
+
+    @field_validator("mimeType")
+    @classmethod
+    def validate_mime_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes")
+        return value
+
+BenefactorMarketingCollaborationCommentsResourceType = Literal["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"]
+BenefactorMarketingCollaborationCommentsStatus = Literal["open", "resolved", "archived"]
+BenefactorMarketingCollaborationCommentsVisibility = Literal["internal", "client_portal"]
+
+class BenefactorMarketingCollaborationComments(Base):
+    __tablename__ = "benefactor_marketing_collaboration_comments"
+    __table_args__ = (
+        CheckConstraint("resource_type in ('client', 'campaign', 'content_asset', 'approval', 'ticket', 'document', 'report', 'meeting')", name="benefactor_marketing_collaboration_comments_resource_type_chk"),
+        CheckConstraint("octet_length(body) between 1 and 20000", name="benefactor_marketing_collaboration_comments_body_size_chk"),
+        CheckConstraint("status in ('open', 'resolved', 'archived')", name="benefactor_marketing_collaboration_comments_status_chk"),
+        CheckConstraint("visibility in ('internal', 'client_portal')", name="benefactor_marketing_collaboration_comments_visibility_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_marketing_collaboration_comments_meta_object_chk"),
+        Index("benefactor_marketing_collaboration_comments_client_idx", "client_id", "resource_type", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    parent_comment_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    author_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    author_contact_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    body: Mapped[str] = mapped_column(Text(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'open'"))
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'client_portal'"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingCollaborationCommentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    parentCommentId: UUID | None = None
+    resourceType: BenefactorMarketingCollaborationCommentsResourceType
+    resourceId: UUID | None = None
+    authorUserId: UUID | None = None
+    authorContactId: UUID | None = None
+    body: str
+    status: BenefactorMarketingCollaborationCommentsStatus
+    visibility: BenefactorMarketingCollaborationCommentsVisibility
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes")
+        return value
+
+class BenefactorMarketingCollaborationCommentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    parentCommentId: UUID | None = None
+    resourceType: BenefactorMarketingCollaborationCommentsResourceType
+    resourceId: UUID | None = None
+    authorUserId: UUID | None = None
+    authorContactId: UUID | None = None
+    body: str
+    status: BenefactorMarketingCollaborationCommentsStatus | None = "open"
+    visibility: BenefactorMarketingCollaborationCommentsVisibility | None = "client_portal"
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes")
+        return value
+
+BenefactorMarketingNotificationsChannel = Literal["email", "sms", "portal", "slack", "webhook"]
+BenefactorMarketingNotificationsStatus = Literal["queued", "scheduled", "sent", "failed", "canceled"]
+BenefactorMarketingNotificationsNotificationKind = Literal["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"]
+
+class BenefactorMarketingNotifications(Base):
+    __tablename__ = "benefactor_marketing_notifications"
+    __table_args__ = (
+        CheckConstraint("recipient_user_id is not null or recipient_contact_id is not null", name="benefactor_marketing_notifications_recipient_chk"),
+        CheckConstraint("channel in ('email', 'sms', 'portal', 'slack', 'webhook')", name="benefactor_marketing_notifications_channel_chk"),
+        CheckConstraint("status in ('queued', 'scheduled', 'sent', 'failed', 'canceled')", name="benefactor_marketing_notifications_status_chk"),
+        CheckConstraint("notification_kind in ('approval_request', 'comment', 'report_ready', 'ticket_update', 'meeting_reminder', 'budget_alert', 'custom')", name="benefactor_marketing_notifications_kind_chk"),
+        CheckConstraint("octet_length(title) between 1 and 240", name="benefactor_marketing_notifications_title_size_chk"),
+        CheckConstraint("body is null or octet_length(body) <= 20000", name="benefactor_marketing_notifications_body_size_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="benefactor_marketing_notifications_payload_object_chk"),
+        Index("benefactor_marketing_notifications_client_status_idx", "client_id", "status", text("scheduled_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    recipient_user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    recipient_contact_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'email'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    notification_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingNotificationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    recipientUserId: UUID | None = None
+    recipientContactId: UUID | None = None
+    channel: BenefactorMarketingNotificationsChannel
+    status: BenefactorMarketingNotificationsStatus
+    notificationKind: BenefactorMarketingNotificationsNotificationKind
+    title: str = Field(..., max_length=240)
+    body: str | None = None
+    payload: dict[str, Any]
+    scheduledAt: datetime | None = None
+    sentAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_notifications.title exceeds 240 bytes")
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_notifications.body exceeds 20000 bytes")
+        return value
+
+class BenefactorMarketingNotificationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    recipientUserId: UUID | None = None
+    recipientContactId: UUID | None = None
+    channel: BenefactorMarketingNotificationsChannel | None = "email"
+    status: BenefactorMarketingNotificationsStatus | None = "queued"
+    notificationKind: BenefactorMarketingNotificationsNotificationKind
+    title: str = Field(..., max_length=240)
+    body: str | None = None
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    scheduledAt: datetime | None = None
+    sentAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("benefactor_marketing_notifications.title exceeds 240 bytes")
+        return value
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_notifications.body exceeds 20000 bytes")
+        return value
+
+class BenefactorMarketingTimeEntries(Base):
+    __tablename__ = "benefactor_marketing_time_entries"
+    __table_args__ = (
+        CheckConstraint("entry_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="benefactor_marketing_time_entries_date_chk"),
+        CheckConstraint("minutes between 1 and 1440", name="benefactor_marketing_time_entries_minutes_chk"),
+        CheckConstraint("rate_cents >= 0 and cost_cents >= 0", name="benefactor_marketing_time_entries_money_chk"),
+        CheckConstraint("notes is null or octet_length(notes) <= 4000", name="benefactor_marketing_time_entries_notes_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_marketing_time_entries_meta_object_chk"),
+        Index("benefactor_marketing_time_entries_client_date_idx", "client_id", text("entry_date desc"), postgresql_where=text("client_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    campaign_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    project_task_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    entry_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    minutes: Mapped[int] = mapped_column(Integer(), nullable=False)
+    billable: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    rate_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    cost_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingTimeEntriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID | None = None
+    campaignId: UUID | None = None
+    projectTaskId: UUID | None = None
+    userId: UUID
+    entryDate: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    minutes: int = Field(..., ge=1, le=1440)
+    billable: bool
+    rateCents: int = Field(..., ge=0)
+    costCents: int = Field(..., ge=0)
+    notes: str | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("benefactor_marketing_time_entries.notes exceeds 4000 bytes")
+        return value
+
+class BenefactorMarketingTimeEntriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID | None = None
+    campaignId: UUID | None = None
+    projectTaskId: UUID | None = None
+    userId: UUID
+    entryDate: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    minutes: int = Field(..., ge=1, le=1440)
+    billable: bool | None = True
+    rateCents: int | None = Field(0, ge=0)
+    costCents: int | None = Field(0, ge=0)
+    notes: str | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4000:
+            raise ValueError("benefactor_marketing_time_entries.notes exceeds 4000 bytes")
+        return value
+
+BenefactorMarketingVendorCostsCategory = Literal["ads", "creative", "data", "software", "contractor", "events", "other"]
+BenefactorMarketingVendorCostsStatus = Literal["planned", "approved", "incurred", "invoiced", "paid", "canceled"]
+
+class BenefactorMarketingVendorCosts(Base):
+    __tablename__ = "benefactor_marketing_vendor_costs"
+    __table_args__ = (
+        CheckConstraint("octet_length(vendor_name) between 1 and 200", name="benefactor_marketing_vendor_costs_vendor_size_chk"),
+        CheckConstraint("category in ('ads', 'creative', 'data', 'software', 'contractor', 'events', 'other')", name="benefactor_marketing_vendor_costs_category_chk"),
+        CheckConstraint("status in ('planned', 'approved', 'incurred', 'invoiced', 'paid', 'canceled')", name="benefactor_marketing_vendor_costs_status_chk"),
+        CheckConstraint("amount_cents >= 0", name="benefactor_marketing_vendor_costs_amount_chk"),
+        CheckConstraint("incurred_on is null or incurred_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="benefactor_marketing_vendor_costs_incurred_on_chk"),
+        CheckConstraint("invoice_ref is null or octet_length(invoice_ref) <= 120", name="benefactor_marketing_vendor_costs_invoice_ref_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_marketing_vendor_costs_meta_object_chk"),
+        Index("benefactor_marketing_vendor_costs_client_idx", "client_id", "status", text("updated_at desc"), postgresql_where=text("client_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    campaign_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    vendor_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'planned'"))
+    amount_cents: Mapped[int] = mapped_column(Integer(), nullable=False)
+    incurred_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    invoice_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingVendorCostsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID | None = None
+    campaignId: UUID | None = None
+    vendorName: str = Field(..., max_length=200)
+    category: BenefactorMarketingVendorCostsCategory
+    status: BenefactorMarketingVendorCostsStatus
+    amountCents: int = Field(..., ge=0)
+    incurredOn: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    invoiceRef: str | None = Field(None, max_length=120)
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("vendorName")
+    @classmethod
+    def validate_vendor_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes")
+        return value
+
+    @field_validator("invoiceRef")
+    @classmethod
+    def validate_invoice_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes")
+        return value
+
+class BenefactorMarketingVendorCostsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID | None = None
+    campaignId: UUID | None = None
+    vendorName: str = Field(..., max_length=200)
+    category: BenefactorMarketingVendorCostsCategory
+    status: BenefactorMarketingVendorCostsStatus | None = "planned"
+    amountCents: int = Field(..., ge=0)
+    incurredOn: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    invoiceRef: str | None = Field(None, max_length=120)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("vendorName")
+    @classmethod
+    def validate_vendor_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes")
+        return value
+
+    @field_validator("invoiceRef")
+    @classmethod
+    def validate_invoice_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes")
+        return value
+
+BenefactorMarketingCommissionEntriesStatus = Literal["pending", "approved", "paid", "void"]
+BenefactorMarketingCommissionEntriesCommissionKind = Literal["deal", "retainer", "renewal", "upsell", "appointment"]
+
+class BenefactorMarketingCommissionEntries(Base):
+    __tablename__ = "benefactor_marketing_commission_entries"
+    __table_args__ = (
+        CheckConstraint("status in ('pending', 'approved', 'paid', 'void')", name="benefactor_marketing_commission_entries_status_chk"),
+        CheckConstraint("commission_kind in ('deal', 'retainer', 'renewal', 'upsell', 'appointment')", name="benefactor_marketing_commission_entries_kind_chk"),
+        CheckConstraint("basis_cents >= 0 and amount_cents >= 0", name="benefactor_marketing_commission_entries_money_chk"),
+        CheckConstraint("rate_micros between 0 and 1000000", name="benefactor_marketing_commission_entries_rate_chk"),
+        CheckConstraint("earned_on is null or earned_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="benefactor_marketing_commission_entries_earned_on_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_marketing_commission_entries_meta_object_chk"),
+        Index("benefactor_marketing_commission_entries_user_idx", "user_id", "status", text("updated_at desc")),
+        Index("benefactor_marketing_commission_entries_client_idx", "client_id", "status", text("updated_at desc"), postgresql_where=text("client_id is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    opportunity_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    commission_kind: Mapped[str] = mapped_column(String(48), nullable=False, server_default=text("'deal'"))
+    basis_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    rate_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    amount_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    earned_on: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingCommissionEntriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID | None = None
+    opportunityId: UUID | None = None
+    userId: UUID
+    status: BenefactorMarketingCommissionEntriesStatus
+    commissionKind: BenefactorMarketingCommissionEntriesCommissionKind
+    basisCents: int = Field(..., ge=0)
+    rateMicros: int = Field(..., ge=0, le=1000000)
+    amountCents: int = Field(..., ge=0)
+    earnedOn: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    paidAt: datetime | None = None
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+class BenefactorMarketingCommissionEntriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID | None = None
+    opportunityId: UUID | None = None
+    userId: UUID
+    status: BenefactorMarketingCommissionEntriesStatus | None = "pending"
+    commissionKind: BenefactorMarketingCommissionEntriesCommissionKind | None = "deal"
+    basisCents: int | None = Field(0, ge=0)
+    rateMicros: int | None = Field(0, ge=0, le=1000000)
+    amountCents: int | None = Field(0, ge=0)
+    earnedOn: str | None = Field(None, max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    paidAt: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+BenefactorMarketingBudgetForecastsForecastKind = Literal["monthly", "quarterly", "campaign", "annual"]
+BenefactorMarketingBudgetForecastsStatus = Literal["draft", "approved", "locked", "archived"]
+
+class BenefactorMarketingBudgetForecasts(Base):
+    __tablename__ = "benefactor_marketing_budget_forecasts"
+    __table_args__ = (
+        CheckConstraint("forecast_kind in ('monthly', 'quarterly', 'campaign', 'annual')", name="benefactor_marketing_budget_forecasts_kind_chk"),
+        CheckConstraint("period_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="benefactor_marketing_budget_forecasts_period_start_chk"),
+        CheckConstraint("period_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'", name="benefactor_marketing_budget_forecasts_period_end_chk"),
+        CheckConstraint("status in ('draft', 'approved', 'locked', 'archived')", name="benefactor_marketing_budget_forecasts_status_chk"),
+        CheckConstraint("revenue_cents >= 0 and media_spend_cents >= 0 and labor_cost_cents >= 0 and vendor_cost_cents >= 0", name="benefactor_marketing_budget_forecasts_money_chk"),
+        CheckConstraint("jsonb_typeof(assumptions) = 'object'", name="benefactor_marketing_budget_forecasts_assumptions_object_chk"),
+        Index("benefactor_marketing_budget_forecasts_client_period_idx", "client_id", text("period_start desc"), "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    campaign_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    forecast_kind: Mapped[str] = mapped_column(String(48), nullable=False, server_default=text("'monthly'"))
+    period_start: Mapped[str] = mapped_column(String(10), nullable=False)
+    period_end: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'draft'"))
+    revenue_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    media_spend_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    labor_cost_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    vendor_cost_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    gross_margin_cents: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    assumptions: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingBudgetForecastsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    campaignId: UUID | None = None
+    forecastKind: BenefactorMarketingBudgetForecastsForecastKind
+    periodStart: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    periodEnd: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    status: BenefactorMarketingBudgetForecastsStatus
+    revenueCents: int = Field(..., ge=0)
+    mediaSpendCents: int = Field(..., ge=0)
+    laborCostCents: int = Field(..., ge=0)
+    vendorCostCents: int = Field(..., ge=0)
+    grossMarginCents: int
+    assumptions: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+class BenefactorMarketingBudgetForecastsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    campaignId: UUID | None = None
+    forecastKind: BenefactorMarketingBudgetForecastsForecastKind | None = "monthly"
+    periodStart: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    periodEnd: str = Field(..., max_length=10, pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+    status: BenefactorMarketingBudgetForecastsStatus | None = "draft"
+    revenueCents: int | None = Field(0, ge=0)
+    mediaSpendCents: int | None = Field(0, ge=0)
+    laborCostCents: int | None = Field(0, ge=0)
+    vendorCostCents: int | None = Field(0, ge=0)
+    grossMarginCents: int | None = 0
+    assumptions: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+BenefactorMarketingCallInsightsStatus = Literal["processing", "ready", "failed", "archived"]
+BenefactorMarketingCallInsightsSentiment = Literal["positive", "neutral", "negative", "mixed"]
+
+class BenefactorMarketingCallInsights(Base):
+    __tablename__ = "benefactor_marketing_call_insights"
+    __table_args__ = (
+        CheckConstraint("status in ('processing', 'ready', 'failed', 'archived')", name="benefactor_marketing_call_insights_status_chk"),
+        CheckConstraint("provider is null or octet_length(provider) <= 64", name="benefactor_marketing_call_insights_provider_size_chk"),
+        CheckConstraint("transcript_uri is null or octet_length(transcript_uri) <= 2048", name="benefactor_marketing_call_insights_transcript_uri_size_chk"),
+        CheckConstraint("summary is null or octet_length(summary) <= 20000", name="benefactor_marketing_call_insights_summary_size_chk"),
+        CheckConstraint("sentiment is null or sentiment in ('positive', 'neutral', 'negative', 'mixed')", name="benefactor_marketing_call_insights_sentiment_chk"),
+        CheckConstraint("jsonb_typeof(action_items) = 'array'", name="benefactor_marketing_call_insights_action_items_array_chk"),
+        CheckConstraint("jsonb_typeof(objections) = 'array'", name="benefactor_marketing_call_insights_objections_array_chk"),
+        CheckConstraint("jsonb_typeof(next_steps) = 'array'", name="benefactor_marketing_call_insights_next_steps_array_chk"),
+        CheckConstraint("confidence_micros between 0 and 1000000", name="benefactor_marketing_call_insights_confidence_chk"),
+        Index("benefactor_marketing_call_insights_client_idx", "client_id", text("analyzed_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    client_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    meeting_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    lead_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    opportunity_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'ready'"))
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    transcript_uri: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action_items: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    objections: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    next_steps: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    confidence_micros: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class BenefactorMarketingCallInsightsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    clientId: UUID
+    meetingId: UUID | None = None
+    leadId: UUID | None = None
+    opportunityId: UUID | None = None
+    status: BenefactorMarketingCallInsightsStatus
+    provider: str | None = Field(None, max_length=64)
+    transcriptUri: str | None = None
+    summary: str | None = None
+    sentiment: BenefactorMarketingCallInsightsSentiment | None = None
+    actionItems: list[Any]
+    objections: list[Any]
+    nextSteps: list[Any]
+    confidenceMicros: int = Field(..., ge=0, le=1000000)
+    analyzedAt: datetime
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("benefactor_marketing_call_insights.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("transcriptUri")
+    @classmethod
+    def validate_transcript_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_call_insights.summary exceeds 20000 bytes")
+        return value
+
+class BenefactorMarketingCallInsightsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    clientId: UUID
+    meetingId: UUID | None = None
+    leadId: UUID | None = None
+    opportunityId: UUID | None = None
+    status: BenefactorMarketingCallInsightsStatus | None = "ready"
+    provider: str | None = Field(None, max_length=64)
+    transcriptUri: str | None = None
+    summary: str | None = None
+    sentiment: BenefactorMarketingCallInsightsSentiment | None = None
+    actionItems: list[Any] | None = Field(default_factory=list)
+    objections: list[Any] | None = Field(default_factory=list)
+    nextSteps: list[Any] | None = Field(default_factory=list)
+    confidenceMicros: int | None = Field(0, ge=0, le=1000000)
+    analyzedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("benefactor_marketing_call_insights.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("transcriptUri")
+    @classmethod
+    def validate_transcript_uri(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("benefactor_marketing_call_insights.summary exceeds 20000 bytes")
+        return value

@@ -74,6 +74,11 @@ var benefactorMarketingOpportunitiesExpectedCloseOnPattern = regexp.MustCompile(
 var benefactorMarketingProjectTasksDueOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingTeamAllocationsStartsOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingTeamAllocationsEndsOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingTimeEntriesEntryDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingVendorCostsIncurredOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingCommissionEntriesEarnedOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingBudgetForecastsPeriodStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingBudgetForecastsPeriodEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -4177,6 +4182,491 @@ func (value BenefactorMarketingConversionEventsGorm) Validate() error {
 	if value.ValueCents < 0 { return errors.New("benefactor_marketing_conversion_events.value_cents is below the minimum") }
 	if !validateJSONString(value.Utm) { return errors.New("benefactor_marketing_conversion_events.utm must be valid JSON") }
 	if !validateJSONString(value.Payload) { return errors.New("benefactor_marketing_conversion_events.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingPortalMembersTable = "benefactor_marketing_portal_members"
+const BenefactorMarketingPortalMembersSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      contact_id::text as contact_id,
+      user_id::text as user_id,
+      email,
+      status,
+      role,
+      access_scope,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(invited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as invited_at,
+      to_char(accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as accepted_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_portal_members`
+
+var BenefactorMarketingPortalMembersStatusValues = []string{"invited", "active", "disabled", "revoked"}
+var BenefactorMarketingPortalMembersRoleValues = []string{"owner", "approver", "viewer", "billing", "collaborator"}
+
+type BenefactorMarketingPortalMembersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	ContactId *uuid.UUID `gorm:"column:contact_id;type:uuid" json:"contactId,omitempty"`
+	UserId *uuid.UUID `gorm:"column:user_id;type:uuid" json:"userId,omitempty"`
+	Email string `gorm:"column:email;type:varchar(240);not null" json:"email"`
+	Status string `gorm:"column:status;type:varchar(32);default:'invited';not null" json:"status"`
+	Role string `gorm:"column:role;type:varchar(32);default:'viewer';not null" json:"role"`
+	AccessScope datatypes.JSON `gorm:"column:access_scope;type:jsonb;default:'{}'::jsonb;not null" json:"accessScope"`
+	LastSeenAt *time.Time `gorm:"column:last_seen_at;type:timestamptz" json:"lastSeenAt,omitempty"`
+	InvitedAt time.Time `gorm:"column:invited_at;type:timestamptz;default:now();not null" json:"invitedAt"`
+	AcceptedAt *time.Time `gorm:"column:accepted_at;type:timestamptz" json:"acceptedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingPortalMembersGorm) TableName() string { return BenefactorMarketingPortalMembersTable }
+
+func (value BenefactorMarketingPortalMembersGorm) Validate() error {
+	if len([]byte(value.Email)) > 240 { return errors.New("benefactor_marketing_portal_members.email exceeds 240 bytes") }
+	if len([]byte(value.Email)) < 3 { return errors.New("benefactor_marketing_portal_members.email is below 3 bytes") }
+	if !containsString(BenefactorMarketingPortalMembersStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_portal_members.status") }
+	if !containsString(BenefactorMarketingPortalMembersRoleValues, value.Role) { return errors.New("unsupported benefactor_marketing_portal_members.role") }
+	if !validateJSONString(value.AccessScope) { return errors.New("benefactor_marketing_portal_members.access_scope must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingSharedDocumentsTable = "benefactor_marketing_shared_documents"
+const BenefactorMarketingSharedDocumentsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      status,
+      document_kind,
+      title,
+      storage_uri,
+      mime_type,
+      visibility,
+      uploaded_by::text as uploaded_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_shared_documents`
+
+var BenefactorMarketingSharedDocumentsStatusValues = []string{"active", "archived", "deleted"}
+var BenefactorMarketingSharedDocumentsDocumentKindValues = []string{"contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"}
+var BenefactorMarketingSharedDocumentsVisibilityValues = []string{"internal", "client_portal", "public_link"}
+
+type BenefactorMarketingSharedDocumentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	ContentAssetId *uuid.UUID `gorm:"column:content_asset_id;type:uuid" json:"contentAssetId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	DocumentKind string `gorm:"column:document_kind;type:varchar(48);not null" json:"documentKind"`
+	Title string `gorm:"column:title;type:varchar(240);not null" json:"title"`
+	StorageUri string `gorm:"column:storage_uri;type:text;not null" json:"storageUri"`
+	MimeType *string `gorm:"column:mime_type;type:varchar(120)" json:"mimeType,omitempty"`
+	Visibility string `gorm:"column:visibility;type:varchar(32);default:'client_portal';not null" json:"visibility"`
+	UploadedBy *uuid.UUID `gorm:"column:uploaded_by;type:uuid" json:"uploadedBy,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingSharedDocumentsGorm) TableName() string { return BenefactorMarketingSharedDocumentsTable }
+
+func (value BenefactorMarketingSharedDocumentsGorm) Validate() error {
+	if !containsString(BenefactorMarketingSharedDocumentsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_shared_documents.status") }
+	if !containsString(BenefactorMarketingSharedDocumentsDocumentKindValues, value.DocumentKind) { return errors.New("unsupported benefactor_marketing_shared_documents.document_kind") }
+	if len([]byte(value.Title)) > 240 { return errors.New("benefactor_marketing_shared_documents.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("benefactor_marketing_shared_documents.title is below 1 bytes") }
+	if len([]byte(value.StorageUri)) > 2048 { return errors.New("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("benefactor_marketing_shared_documents.storage_uri is below 1 bytes") }
+	if value.MimeType != nil {
+		if len([]byte(*value.MimeType)) > 120 { return errors.New("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes") }
+	}
+	if !containsString(BenefactorMarketingSharedDocumentsVisibilityValues, value.Visibility) { return errors.New("unsupported benefactor_marketing_shared_documents.visibility") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_shared_documents.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCollaborationCommentsTable = "benefactor_marketing_collaboration_comments"
+const BenefactorMarketingCollaborationCommentsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      parent_comment_id::text as parent_comment_id,
+      resource_type,
+      resource_id::text as resource_id,
+      author_user_id::text as author_user_id,
+      author_contact_id::text as author_contact_id,
+      body,
+      status,
+      visibility,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_collaboration_comments`
+
+var BenefactorMarketingCollaborationCommentsResourceTypeValues = []string{"client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"}
+var BenefactorMarketingCollaborationCommentsStatusValues = []string{"open", "resolved", "archived"}
+var BenefactorMarketingCollaborationCommentsVisibilityValues = []string{"internal", "client_portal"}
+
+type BenefactorMarketingCollaborationCommentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	ParentCommentId *uuid.UUID `gorm:"column:parent_comment_id;type:uuid" json:"parentCommentId,omitempty"`
+	ResourceType string `gorm:"column:resource_type;type:varchar(64);not null" json:"resourceType"`
+	ResourceId *uuid.UUID `gorm:"column:resource_id;type:uuid" json:"resourceId,omitempty"`
+	AuthorUserId *uuid.UUID `gorm:"column:author_user_id;type:uuid" json:"authorUserId,omitempty"`
+	AuthorContactId *uuid.UUID `gorm:"column:author_contact_id;type:uuid" json:"authorContactId,omitempty"`
+	Body string `gorm:"column:body;type:text;not null" json:"body"`
+	Status string `gorm:"column:status;type:varchar(32);default:'open';not null" json:"status"`
+	Visibility string `gorm:"column:visibility;type:varchar(32);default:'client_portal';not null" json:"visibility"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingCollaborationCommentsGorm) TableName() string { return BenefactorMarketingCollaborationCommentsTable }
+
+func (value BenefactorMarketingCollaborationCommentsGorm) Validate() error {
+	if !containsString(BenefactorMarketingCollaborationCommentsResourceTypeValues, value.ResourceType) { return errors.New("unsupported benefactor_marketing_collaboration_comments.resource_type") }
+	if len([]byte(value.Body)) > 20000 { return errors.New("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes") }
+	if len([]byte(value.Body)) < 1 { return errors.New("benefactor_marketing_collaboration_comments.body is below 1 bytes") }
+	if !containsString(BenefactorMarketingCollaborationCommentsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_collaboration_comments.status") }
+	if !containsString(BenefactorMarketingCollaborationCommentsVisibilityValues, value.Visibility) { return errors.New("unsupported benefactor_marketing_collaboration_comments.visibility") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_collaboration_comments.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingNotificationsTable = "benefactor_marketing_notifications"
+const BenefactorMarketingNotificationsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      recipient_user_id::text as recipient_user_id,
+      recipient_contact_id::text as recipient_contact_id,
+      channel,
+      status,
+      notification_kind,
+      title,
+      body,
+      payload,
+      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scheduled_at,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_notifications`
+
+var BenefactorMarketingNotificationsChannelValues = []string{"email", "sms", "portal", "slack", "webhook"}
+var BenefactorMarketingNotificationsStatusValues = []string{"queued", "scheduled", "sent", "failed", "canceled"}
+var BenefactorMarketingNotificationsNotificationKindValues = []string{"approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"}
+
+type BenefactorMarketingNotificationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	RecipientUserId *uuid.UUID `gorm:"column:recipient_user_id;type:uuid" json:"recipientUserId,omitempty"`
+	RecipientContactId *uuid.UUID `gorm:"column:recipient_contact_id;type:uuid" json:"recipientContactId,omitempty"`
+	Channel string `gorm:"column:channel;type:varchar(32);default:'email';not null" json:"channel"`
+	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
+	NotificationKind string `gorm:"column:notification_kind;type:varchar(64);not null" json:"notificationKind"`
+	Title string `gorm:"column:title;type:varchar(240);not null" json:"title"`
+	Body *string `gorm:"column:body;type:text" json:"body,omitempty"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	ScheduledAt *time.Time `gorm:"column:scheduled_at;type:timestamptz" json:"scheduledAt,omitempty"`
+	SentAt *time.Time `gorm:"column:sent_at;type:timestamptz" json:"sentAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingNotificationsGorm) TableName() string { return BenefactorMarketingNotificationsTable }
+
+func (value BenefactorMarketingNotificationsGorm) Validate() error {
+	if !containsString(BenefactorMarketingNotificationsChannelValues, value.Channel) { return errors.New("unsupported benefactor_marketing_notifications.channel") }
+	if !containsString(BenefactorMarketingNotificationsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_notifications.status") }
+	if !containsString(BenefactorMarketingNotificationsNotificationKindValues, value.NotificationKind) { return errors.New("unsupported benefactor_marketing_notifications.notification_kind") }
+	if len([]byte(value.Title)) > 240 { return errors.New("benefactor_marketing_notifications.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("benefactor_marketing_notifications.title is below 1 bytes") }
+	if value.Body != nil {
+		if len([]byte(*value.Body)) > 20000 { return errors.New("benefactor_marketing_notifications.body exceeds 20000 bytes") }
+	}
+	if !validateJSONString(value.Payload) { return errors.New("benefactor_marketing_notifications.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingTimeEntriesTable = "benefactor_marketing_time_entries"
+const BenefactorMarketingTimeEntriesSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      project_task_id::text as project_task_id,
+      user_id::text as user_id,
+      entry_date,
+      minutes,
+      billable,
+      rate_cents,
+      cost_cents,
+      notes,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_time_entries`
+
+type BenefactorMarketingTimeEntriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `gorm:"column:client_id;type:uuid" json:"clientId,omitempty"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	ProjectTaskId *uuid.UUID `gorm:"column:project_task_id;type:uuid" json:"projectTaskId,omitempty"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	EntryDate string `gorm:"column:entry_date;type:varchar(10);not null" json:"entryDate"`
+	Minutes int32 `gorm:"column:minutes;type:integer;not null" json:"minutes"`
+	Billable bool `gorm:"column:billable;type:boolean;default:true;not null" json:"billable"`
+	RateCents int32 `gorm:"column:rate_cents;type:integer;default:0;not null" json:"rateCents"`
+	CostCents int32 `gorm:"column:cost_cents;type:integer;default:0;not null" json:"costCents"`
+	Notes *string `gorm:"column:notes;type:text" json:"notes,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingTimeEntriesGorm) TableName() string { return BenefactorMarketingTimeEntriesTable }
+
+func (value BenefactorMarketingTimeEntriesGorm) Validate() error {
+	if !benefactorMarketingTimeEntriesEntryDatePattern.MatchString(value.EntryDate) { return errors.New("benefactor_marketing_time_entries.entry_date does not match the required pattern") }
+	if value.Minutes < 1 { return errors.New("benefactor_marketing_time_entries.minutes is below the minimum") }
+	if value.Minutes > 1440 { return errors.New("benefactor_marketing_time_entries.minutes is above the maximum") }
+	if value.RateCents < 0 { return errors.New("benefactor_marketing_time_entries.rate_cents is below the minimum") }
+	if value.CostCents < 0 { return errors.New("benefactor_marketing_time_entries.cost_cents is below the minimum") }
+	if value.Notes != nil {
+		if len([]byte(*value.Notes)) > 4000 { return errors.New("benefactor_marketing_time_entries.notes exceeds 4000 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_time_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingVendorCostsTable = "benefactor_marketing_vendor_costs"
+const BenefactorMarketingVendorCostsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      vendor_name,
+      category,
+      status,
+      amount_cents,
+      incurred_on,
+      invoice_ref,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_vendor_costs`
+
+var BenefactorMarketingVendorCostsCategoryValues = []string{"ads", "creative", "data", "software", "contractor", "events", "other"}
+var BenefactorMarketingVendorCostsStatusValues = []string{"planned", "approved", "incurred", "invoiced", "paid", "canceled"}
+
+type BenefactorMarketingVendorCostsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `gorm:"column:client_id;type:uuid" json:"clientId,omitempty"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	VendorName string `gorm:"column:vendor_name;type:varchar(200);not null" json:"vendorName"`
+	Category string `gorm:"column:category;type:varchar(64);not null" json:"category"`
+	Status string `gorm:"column:status;type:varchar(32);default:'planned';not null" json:"status"`
+	AmountCents int32 `gorm:"column:amount_cents;type:integer;not null" json:"amountCents"`
+	IncurredOn *string `gorm:"column:incurred_on;type:varchar(10)" json:"incurredOn,omitempty"`
+	InvoiceRef *string `gorm:"column:invoice_ref;type:varchar(120)" json:"invoiceRef,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingVendorCostsGorm) TableName() string { return BenefactorMarketingVendorCostsTable }
+
+func (value BenefactorMarketingVendorCostsGorm) Validate() error {
+	if len([]byte(value.VendorName)) > 200 { return errors.New("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes") }
+	if len([]byte(value.VendorName)) < 1 { return errors.New("benefactor_marketing_vendor_costs.vendor_name is below 1 bytes") }
+	if !containsString(BenefactorMarketingVendorCostsCategoryValues, value.Category) { return errors.New("unsupported benefactor_marketing_vendor_costs.category") }
+	if !containsString(BenefactorMarketingVendorCostsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_vendor_costs.status") }
+	if value.AmountCents < 0 { return errors.New("benefactor_marketing_vendor_costs.amount_cents is below the minimum") }
+	if value.IncurredOn != nil {
+		if !benefactorMarketingVendorCostsIncurredOnPattern.MatchString(*value.IncurredOn) { return errors.New("benefactor_marketing_vendor_costs.incurred_on does not match the required pattern") }
+	}
+	if value.InvoiceRef != nil {
+		if len([]byte(*value.InvoiceRef)) > 120 { return errors.New("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_vendor_costs.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCommissionEntriesTable = "benefactor_marketing_commission_entries"
+const BenefactorMarketingCommissionEntriesSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      opportunity_id::text as opportunity_id,
+      user_id::text as user_id,
+      status,
+      commission_kind,
+      basis_cents,
+      rate_micros,
+      amount_cents,
+      earned_on,
+      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as paid_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_commission_entries`
+
+var BenefactorMarketingCommissionEntriesStatusValues = []string{"pending", "approved", "paid", "void"}
+var BenefactorMarketingCommissionEntriesCommissionKindValues = []string{"deal", "retainer", "renewal", "upsell", "appointment"}
+
+type BenefactorMarketingCommissionEntriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `gorm:"column:client_id;type:uuid" json:"clientId,omitempty"`
+	OpportunityId *uuid.UUID `gorm:"column:opportunity_id;type:uuid" json:"opportunityId,omitempty"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	CommissionKind string `gorm:"column:commission_kind;type:varchar(48);default:'deal';not null" json:"commissionKind"`
+	BasisCents int32 `gorm:"column:basis_cents;type:integer;default:0;not null" json:"basisCents"`
+	RateMicros int32 `gorm:"column:rate_micros;type:integer;default:0;not null" json:"rateMicros"`
+	AmountCents int32 `gorm:"column:amount_cents;type:integer;default:0;not null" json:"amountCents"`
+	EarnedOn *string `gorm:"column:earned_on;type:varchar(10)" json:"earnedOn,omitempty"`
+	PaidAt *time.Time `gorm:"column:paid_at;type:timestamptz" json:"paidAt,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingCommissionEntriesGorm) TableName() string { return BenefactorMarketingCommissionEntriesTable }
+
+func (value BenefactorMarketingCommissionEntriesGorm) Validate() error {
+	if !containsString(BenefactorMarketingCommissionEntriesStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_commission_entries.status") }
+	if !containsString(BenefactorMarketingCommissionEntriesCommissionKindValues, value.CommissionKind) { return errors.New("unsupported benefactor_marketing_commission_entries.commission_kind") }
+	if value.BasisCents < 0 { return errors.New("benefactor_marketing_commission_entries.basis_cents is below the minimum") }
+	if value.RateMicros < 0 { return errors.New("benefactor_marketing_commission_entries.rate_micros is below the minimum") }
+	if value.RateMicros > 1000000 { return errors.New("benefactor_marketing_commission_entries.rate_micros is above the maximum") }
+	if value.AmountCents < 0 { return errors.New("benefactor_marketing_commission_entries.amount_cents is below the minimum") }
+	if value.EarnedOn != nil {
+		if !benefactorMarketingCommissionEntriesEarnedOnPattern.MatchString(*value.EarnedOn) { return errors.New("benefactor_marketing_commission_entries.earned_on does not match the required pattern") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_commission_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingBudgetForecastsTable = "benefactor_marketing_budget_forecasts"
+const BenefactorMarketingBudgetForecastsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      forecast_kind,
+      period_start,
+      period_end,
+      status,
+      revenue_cents,
+      media_spend_cents,
+      labor_cost_cents,
+      vendor_cost_cents,
+      gross_margin_cents,
+      assumptions,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_budget_forecasts`
+
+var BenefactorMarketingBudgetForecastsForecastKindValues = []string{"monthly", "quarterly", "campaign", "annual"}
+var BenefactorMarketingBudgetForecastsStatusValues = []string{"draft", "approved", "locked", "archived"}
+
+type BenefactorMarketingBudgetForecastsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	ForecastKind string `gorm:"column:forecast_kind;type:varchar(48);default:'monthly';not null" json:"forecastKind"`
+	PeriodStart string `gorm:"column:period_start;type:varchar(10);not null" json:"periodStart"`
+	PeriodEnd string `gorm:"column:period_end;type:varchar(10);not null" json:"periodEnd"`
+	Status string `gorm:"column:status;type:varchar(32);default:'draft';not null" json:"status"`
+	RevenueCents int32 `gorm:"column:revenue_cents;type:integer;default:0;not null" json:"revenueCents"`
+	MediaSpendCents int32 `gorm:"column:media_spend_cents;type:integer;default:0;not null" json:"mediaSpendCents"`
+	LaborCostCents int32 `gorm:"column:labor_cost_cents;type:integer;default:0;not null" json:"laborCostCents"`
+	VendorCostCents int32 `gorm:"column:vendor_cost_cents;type:integer;default:0;not null" json:"vendorCostCents"`
+	GrossMarginCents int32 `gorm:"column:gross_margin_cents;type:integer;default:0;not null" json:"grossMarginCents"`
+	Assumptions datatypes.JSON `gorm:"column:assumptions;type:jsonb;default:'{}'::jsonb;not null" json:"assumptions"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingBudgetForecastsGorm) TableName() string { return BenefactorMarketingBudgetForecastsTable }
+
+func (value BenefactorMarketingBudgetForecastsGorm) Validate() error {
+	if !containsString(BenefactorMarketingBudgetForecastsForecastKindValues, value.ForecastKind) { return errors.New("unsupported benefactor_marketing_budget_forecasts.forecast_kind") }
+	if !benefactorMarketingBudgetForecastsPeriodStartPattern.MatchString(value.PeriodStart) { return errors.New("benefactor_marketing_budget_forecasts.period_start does not match the required pattern") }
+	if !benefactorMarketingBudgetForecastsPeriodEndPattern.MatchString(value.PeriodEnd) { return errors.New("benefactor_marketing_budget_forecasts.period_end does not match the required pattern") }
+	if !containsString(BenefactorMarketingBudgetForecastsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_budget_forecasts.status") }
+	if value.RevenueCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum") }
+	if value.MediaSpendCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum") }
+	if value.LaborCostCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum") }
+	if value.VendorCostCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum") }
+	if !validateJSONString(value.Assumptions) { return errors.New("benefactor_marketing_budget_forecasts.assumptions must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCallInsightsTable = "benefactor_marketing_call_insights"
+const BenefactorMarketingCallInsightsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      meeting_id::text as meeting_id,
+      lead_id::text as lead_id,
+      opportunity_id::text as opportunity_id,
+      status,
+      provider,
+      transcript_uri,
+      summary,
+      sentiment,
+      action_items,
+      objections,
+      next_steps,
+      confidence_micros,
+      to_char(analyzed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as analyzed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_call_insights`
+
+var BenefactorMarketingCallInsightsStatusValues = []string{"processing", "ready", "failed", "archived"}
+var BenefactorMarketingCallInsightsSentimentValues = []string{"positive", "neutral", "negative", "mixed"}
+
+type BenefactorMarketingCallInsightsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	MeetingId *uuid.UUID `gorm:"column:meeting_id;type:uuid" json:"meetingId,omitempty"`
+	LeadId *uuid.UUID `gorm:"column:lead_id;type:uuid" json:"leadId,omitempty"`
+	OpportunityId *uuid.UUID `gorm:"column:opportunity_id;type:uuid" json:"opportunityId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'ready';not null" json:"status"`
+	Provider *string `gorm:"column:provider;type:varchar(64)" json:"provider,omitempty"`
+	TranscriptUri *string `gorm:"column:transcript_uri;type:text" json:"transcriptUri,omitempty"`
+	Summary *string `gorm:"column:summary;type:text" json:"summary,omitempty"`
+	Sentiment *string `gorm:"column:sentiment;type:varchar(32)" json:"sentiment,omitempty"`
+	ActionItems datatypes.JSON `gorm:"column:action_items;type:jsonb;default:'[]'::jsonb;not null" json:"actionItems"`
+	Objections datatypes.JSON `gorm:"column:objections;type:jsonb;default:'[]'::jsonb;not null" json:"objections"`
+	NextSteps datatypes.JSON `gorm:"column:next_steps;type:jsonb;default:'[]'::jsonb;not null" json:"nextSteps"`
+	ConfidenceMicros int32 `gorm:"column:confidence_micros;type:integer;default:0;not null" json:"confidenceMicros"`
+	AnalyzedAt time.Time `gorm:"column:analyzed_at;type:timestamptz;default:now();not null" json:"analyzedAt"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingCallInsightsGorm) TableName() string { return BenefactorMarketingCallInsightsTable }
+
+func (value BenefactorMarketingCallInsightsGorm) Validate() error {
+	if !containsString(BenefactorMarketingCallInsightsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_call_insights.status") }
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 64 { return errors.New("benefactor_marketing_call_insights.provider exceeds 64 bytes") }
+	}
+	if value.TranscriptUri != nil {
+		if len([]byte(*value.TranscriptUri)) > 2048 { return errors.New("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes") }
+	}
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 20000 { return errors.New("benefactor_marketing_call_insights.summary exceeds 20000 bytes") }
+	}
+	if value.Sentiment != nil {
+		if !containsString(BenefactorMarketingCallInsightsSentimentValues, *value.Sentiment) { return errors.New("unsupported benefactor_marketing_call_insights.sentiment") }
+	}
+	if !validateJSONString(value.ActionItems) { return errors.New("benefactor_marketing_call_insights.action_items must be valid JSON") }
+	if !validateJSONString(value.Objections) { return errors.New("benefactor_marketing_call_insights.objections must be valid JSON") }
+	if !validateJSONString(value.NextSteps) { return errors.New("benefactor_marketing_call_insights.next_steps must be valid JSON") }
+	if value.ConfidenceMicros < 0 { return errors.New("benefactor_marketing_call_insights.confidence_micros is below the minimum") }
+	if value.ConfidenceMicros > 1000000 { return errors.New("benefactor_marketing_call_insights.confidence_micros is above the maximum") }
 	return nil
 }
 

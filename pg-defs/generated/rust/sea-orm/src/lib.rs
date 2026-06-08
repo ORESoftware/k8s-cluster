@@ -3198,3 +3198,390 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use benefactor_marketing_conversion_events::Entity as BenefactorMarketingConversionEventsEntity;
 pub use benefactor_marketing_conversion_events::Model as BenefactorMarketingConversionEventsModel;
+
+pub mod benefactor_marketing_portal_members {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_portal_members")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "contact_id")]
+    pub contact_id: Option<Uuid>,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Option<Uuid>,
+    pub email: String,
+    pub status: String,
+    pub role: String,
+    #[sea_orm(column_name = "access_scope")]
+    pub access_scope: Json,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "invited_at")]
+    pub invited_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "accepted_at")]
+    pub accepted_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_portal_members::Entity as BenefactorMarketingPortalMembersEntity;
+pub use benefactor_marketing_portal_members::Model as BenefactorMarketingPortalMembersModel;
+
+pub mod benefactor_marketing_shared_documents {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_shared_documents")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "campaign_id")]
+    pub campaign_id: Option<Uuid>,
+    #[sea_orm(column_name = "content_asset_id")]
+    pub content_asset_id: Option<Uuid>,
+    pub status: String,
+    #[sea_orm(column_name = "document_kind")]
+    pub document_kind: String,
+    pub title: String,
+    #[sea_orm(column_name = "storage_uri")]
+    pub storage_uri: String,
+    #[sea_orm(column_name = "mime_type")]
+    pub mime_type: Option<String>,
+    pub visibility: String,
+    #[sea_orm(column_name = "uploaded_by")]
+    pub uploaded_by: Option<Uuid>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_shared_documents::Entity as BenefactorMarketingSharedDocumentsEntity;
+pub use benefactor_marketing_shared_documents::Model as BenefactorMarketingSharedDocumentsModel;
+
+pub mod benefactor_marketing_collaboration_comments {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_collaboration_comments")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "parent_comment_id")]
+    pub parent_comment_id: Option<Uuid>,
+    #[sea_orm(column_name = "resource_type")]
+    pub resource_type: String,
+    #[sea_orm(column_name = "resource_id")]
+    pub resource_id: Option<Uuid>,
+    #[sea_orm(column_name = "author_user_id")]
+    pub author_user_id: Option<Uuid>,
+    #[sea_orm(column_name = "author_contact_id")]
+    pub author_contact_id: Option<Uuid>,
+    pub body: String,
+    pub status: String,
+    pub visibility: String,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_collaboration_comments::Entity as BenefactorMarketingCollaborationCommentsEntity;
+pub use benefactor_marketing_collaboration_comments::Model as BenefactorMarketingCollaborationCommentsModel;
+
+pub mod benefactor_marketing_notifications {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_notifications")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "recipient_user_id")]
+    pub recipient_user_id: Option<Uuid>,
+    #[sea_orm(column_name = "recipient_contact_id")]
+    pub recipient_contact_id: Option<Uuid>,
+    pub channel: String,
+    pub status: String,
+    #[sea_orm(column_name = "notification_kind")]
+    pub notification_kind: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub payload: Json,
+    #[sea_orm(column_name = "scheduled_at")]
+    pub scheduled_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "sent_at")]
+    pub sent_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_notifications::Entity as BenefactorMarketingNotificationsEntity;
+pub use benefactor_marketing_notifications::Model as BenefactorMarketingNotificationsModel;
+
+pub mod benefactor_marketing_time_entries {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_time_entries")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Option<Uuid>,
+    #[sea_orm(column_name = "campaign_id")]
+    pub campaign_id: Option<Uuid>,
+    #[sea_orm(column_name = "project_task_id")]
+    pub project_task_id: Option<Uuid>,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Uuid,
+    #[sea_orm(column_name = "entry_date")]
+    pub entry_date: String,
+    pub minutes: i32,
+    pub billable: bool,
+    #[sea_orm(column_name = "rate_cents")]
+    pub rate_cents: i32,
+    #[sea_orm(column_name = "cost_cents")]
+    pub cost_cents: i32,
+    pub notes: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_time_entries::Entity as BenefactorMarketingTimeEntriesEntity;
+pub use benefactor_marketing_time_entries::Model as BenefactorMarketingTimeEntriesModel;
+
+pub mod benefactor_marketing_vendor_costs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_vendor_costs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Option<Uuid>,
+    #[sea_orm(column_name = "campaign_id")]
+    pub campaign_id: Option<Uuid>,
+    #[sea_orm(column_name = "vendor_name")]
+    pub vendor_name: String,
+    pub category: String,
+    pub status: String,
+    #[sea_orm(column_name = "amount_cents")]
+    pub amount_cents: i32,
+    #[sea_orm(column_name = "incurred_on")]
+    pub incurred_on: Option<String>,
+    #[sea_orm(column_name = "invoice_ref")]
+    pub invoice_ref: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_vendor_costs::Entity as BenefactorMarketingVendorCostsEntity;
+pub use benefactor_marketing_vendor_costs::Model as BenefactorMarketingVendorCostsModel;
+
+pub mod benefactor_marketing_commission_entries {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_commission_entries")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Option<Uuid>,
+    #[sea_orm(column_name = "opportunity_id")]
+    pub opportunity_id: Option<Uuid>,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Uuid,
+    pub status: String,
+    #[sea_orm(column_name = "commission_kind")]
+    pub commission_kind: String,
+    #[sea_orm(column_name = "basis_cents")]
+    pub basis_cents: i32,
+    #[sea_orm(column_name = "rate_micros")]
+    pub rate_micros: i32,
+    #[sea_orm(column_name = "amount_cents")]
+    pub amount_cents: i32,
+    #[sea_orm(column_name = "earned_on")]
+    pub earned_on: Option<String>,
+    #[sea_orm(column_name = "paid_at")]
+    pub paid_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_commission_entries::Entity as BenefactorMarketingCommissionEntriesEntity;
+pub use benefactor_marketing_commission_entries::Model as BenefactorMarketingCommissionEntriesModel;
+
+pub mod benefactor_marketing_budget_forecasts {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_budget_forecasts")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "campaign_id")]
+    pub campaign_id: Option<Uuid>,
+    #[sea_orm(column_name = "forecast_kind")]
+    pub forecast_kind: String,
+    #[sea_orm(column_name = "period_start")]
+    pub period_start: String,
+    #[sea_orm(column_name = "period_end")]
+    pub period_end: String,
+    pub status: String,
+    #[sea_orm(column_name = "revenue_cents")]
+    pub revenue_cents: i32,
+    #[sea_orm(column_name = "media_spend_cents")]
+    pub media_spend_cents: i32,
+    #[sea_orm(column_name = "labor_cost_cents")]
+    pub labor_cost_cents: i32,
+    #[sea_orm(column_name = "vendor_cost_cents")]
+    pub vendor_cost_cents: i32,
+    #[sea_orm(column_name = "gross_margin_cents")]
+    pub gross_margin_cents: i32,
+    pub assumptions: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_budget_forecasts::Entity as BenefactorMarketingBudgetForecastsEntity;
+pub use benefactor_marketing_budget_forecasts::Model as BenefactorMarketingBudgetForecastsModel;
+
+pub mod benefactor_marketing_call_insights {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_marketing_call_insights")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "client_id")]
+    pub client_id: Uuid,
+    #[sea_orm(column_name = "meeting_id")]
+    pub meeting_id: Option<Uuid>,
+    #[sea_orm(column_name = "lead_id")]
+    pub lead_id: Option<Uuid>,
+    #[sea_orm(column_name = "opportunity_id")]
+    pub opportunity_id: Option<Uuid>,
+    pub status: String,
+    pub provider: Option<String>,
+    #[sea_orm(column_name = "transcript_uri")]
+    pub transcript_uri: Option<String>,
+    pub summary: Option<String>,
+    pub sentiment: Option<String>,
+    #[sea_orm(column_name = "action_items")]
+    pub action_items: Json,
+    pub objections: Json,
+    #[sea_orm(column_name = "next_steps")]
+    pub next_steps: Json,
+    #[sea_orm(column_name = "confidence_micros")]
+    pub confidence_micros: i32,
+    #[sea_orm(column_name = "analyzed_at")]
+    pub analyzed_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_marketing_call_insights::Entity as BenefactorMarketingCallInsightsEntity;
+pub use benefactor_marketing_call_insights::Model as BenefactorMarketingCallInsightsModel;

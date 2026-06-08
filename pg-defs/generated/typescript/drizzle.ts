@@ -5701,3 +5701,694 @@ export const benefactorMarketingConversionEventsUpdateSchema = benefactorMarketi
 export type BenefactorMarketingConversionEventsRow = z.infer<typeof benefactorMarketingConversionEventsRowSchema>;
 export type BenefactorMarketingConversionEventsInsert = z.infer<typeof benefactorMarketingConversionEventsInsertSchema>;
 export type BenefactorMarketingConversionEventsUpdate = z.infer<typeof benefactorMarketingConversionEventsUpdateSchema>;
+
+export const benefactorMarketingPortalMembersStatusValues = ["invited","active","disabled","revoked"] as const;
+export const benefactorMarketingPortalMembersStatusSchema = z.enum(benefactorMarketingPortalMembersStatusValues);
+export type BenefactorMarketingPortalMembersStatus = z.infer<typeof benefactorMarketingPortalMembersStatusSchema>;
+
+export const benefactorMarketingPortalMembersRoleValues = ["owner","approver","viewer","billing","collaborator"] as const;
+export const benefactorMarketingPortalMembersRoleSchema = z.enum(benefactorMarketingPortalMembersRoleValues);
+export type BenefactorMarketingPortalMembersRole = z.infer<typeof benefactorMarketingPortalMembersRoleSchema>;
+
+export const benefactorMarketingPortalMembers = pgTable(
+  "benefactor_marketing_portal_members",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    contactId: uuid("contact_id"),
+    userId: uuid("user_id"),
+    email: varchar("email", { length: 240 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'invited'`).notNull(),
+    role: varchar("role", { length: 32 }).default(sql`'viewer'`).notNull(),
+    accessScope: jsonb("access_scope").default(sql`'{}'::jsonb`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }),
+    invitedAt: timestamp("invited_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingPortalMembersEmailSizeChk: check("benefactor_marketing_portal_members_email_size_chk", sql.raw("octet_length(email) between 3 and 240")),
+    benefactorMarketingPortalMembersStatusChk: check("benefactor_marketing_portal_members_status_chk", sql.raw("status in ('invited', 'active', 'disabled', 'revoked')")),
+    benefactorMarketingPortalMembersRoleChk: check("benefactor_marketing_portal_members_role_chk", sql.raw("role in ('owner', 'approver', 'viewer', 'billing', 'collaborator')")),
+    benefactorMarketingPortalMembersAccessScopeObjectChk: check("benefactor_marketing_portal_members_access_scope_object_chk", sql.raw("jsonb_typeof(access_scope) = 'object'")),
+    benefactorMarketingPortalMembersClientEmailUq: uniqueIndex("benefactor_marketing_portal_members_client_email_uq").on(table.clientId, table.email),
+  }),
+);
+
+export const benefactorMarketingPortalMembersRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  contactId: z.string().uuid().nullable(),
+  userId: z.string().uuid().nullable(),
+  email: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  status: benefactorMarketingPortalMembersStatusSchema,
+  role: benefactorMarketingPortalMembersRoleSchema,
+  accessScope: jsonObjectSchema,
+  lastSeenAt: z.string().datetime().nullable(),
+  invitedAt: z.string().datetime(),
+  acceptedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingPortalMembersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  contactId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid().nullable().optional(),
+  email: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  status: benefactorMarketingPortalMembersStatusSchema.optional().default("invited"),
+  role: benefactorMarketingPortalMembersRoleSchema.optional().default("viewer"),
+  accessScope: jsonObjectSchema.optional().default({}),
+  lastSeenAt: z.string().datetime().nullable().optional(),
+  invitedAt: z.string().datetime().optional(),
+  acceptedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingPortalMembersUpdateSchema = benefactorMarketingPortalMembersInsertSchema.partial();
+export type BenefactorMarketingPortalMembersRow = z.infer<typeof benefactorMarketingPortalMembersRowSchema>;
+export type BenefactorMarketingPortalMembersInsert = z.infer<typeof benefactorMarketingPortalMembersInsertSchema>;
+export type BenefactorMarketingPortalMembersUpdate = z.infer<typeof benefactorMarketingPortalMembersUpdateSchema>;
+
+export const benefactorMarketingSharedDocumentsStatusValues = ["active","archived","deleted"] as const;
+export const benefactorMarketingSharedDocumentsStatusSchema = z.enum(benefactorMarketingSharedDocumentsStatusValues);
+export type BenefactorMarketingSharedDocumentsStatus = z.infer<typeof benefactorMarketingSharedDocumentsStatusSchema>;
+
+export const benefactorMarketingSharedDocumentsDocumentKindValues = ["contract","invoice","report","creative","brand_asset","proposal","meeting_notes","other"] as const;
+export const benefactorMarketingSharedDocumentsDocumentKindSchema = z.enum(benefactorMarketingSharedDocumentsDocumentKindValues);
+export type BenefactorMarketingSharedDocumentsDocumentKind = z.infer<typeof benefactorMarketingSharedDocumentsDocumentKindSchema>;
+
+export const benefactorMarketingSharedDocumentsVisibilityValues = ["internal","client_portal","public_link"] as const;
+export const benefactorMarketingSharedDocumentsVisibilitySchema = z.enum(benefactorMarketingSharedDocumentsVisibilityValues);
+export type BenefactorMarketingSharedDocumentsVisibility = z.infer<typeof benefactorMarketingSharedDocumentsVisibilitySchema>;
+
+export const benefactorMarketingSharedDocuments = pgTable(
+  "benefactor_marketing_shared_documents",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    campaignId: uuid("campaign_id"),
+    contentAssetId: uuid("content_asset_id"),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    documentKind: varchar("document_kind", { length: 48 }).notNull(),
+    title: varchar("title", { length: 240 }).notNull(),
+    storageUri: text("storage_uri").notNull(),
+    mimeType: varchar("mime_type", { length: 120 }),
+    visibility: varchar("visibility", { length: 32 }).default(sql`'client_portal'`).notNull(),
+    uploadedBy: uuid("uploaded_by"),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingSharedDocumentsStatusChk: check("benefactor_marketing_shared_documents_status_chk", sql.raw("status in ('active', 'archived', 'deleted')")),
+    benefactorMarketingSharedDocumentsKindChk: check("benefactor_marketing_shared_documents_kind_chk", sql.raw("document_kind in ('contract', 'invoice', 'report', 'creative', 'brand_asset', 'proposal', 'meeting_notes', 'other')")),
+    benefactorMarketingSharedDocumentsTitleSizeChk: check("benefactor_marketing_shared_documents_title_size_chk", sql.raw("octet_length(title) between 1 and 240")),
+    benefactorMarketingSharedDocumentsUriSizeChk: check("benefactor_marketing_shared_documents_uri_size_chk", sql.raw("octet_length(storage_uri) between 1 and 2048")),
+    benefactorMarketingSharedDocumentsMimeSizeChk: check("benefactor_marketing_shared_documents_mime_size_chk", sql.raw("mime_type is null or octet_length(mime_type) <= 120")),
+    benefactorMarketingSharedDocumentsVisibilityChk: check("benefactor_marketing_shared_documents_visibility_chk", sql.raw("visibility in ('internal', 'client_portal', 'public_link')")),
+    benefactorMarketingSharedDocumentsMetaObjectChk: check("benefactor_marketing_shared_documents_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingSharedDocumentsClientIdx: index("benefactor_marketing_shared_documents_client_idx").on(table.clientId, table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const benefactorMarketingSharedDocumentsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable(),
+  contentAssetId: z.string().uuid().nullable(),
+  status: benefactorMarketingSharedDocumentsStatusSchema,
+  documentKind: benefactorMarketingSharedDocumentsDocumentKindSchema,
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  storageUri: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  mimeType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  visibility: benefactorMarketingSharedDocumentsVisibilitySchema,
+  uploadedBy: z.string().uuid().nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingSharedDocumentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable().optional(),
+  contentAssetId: z.string().uuid().nullable().optional(),
+  status: benefactorMarketingSharedDocumentsStatusSchema.optional().default("active"),
+  documentKind: benefactorMarketingSharedDocumentsDocumentKindSchema,
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  storageUri: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  mimeType: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  visibility: benefactorMarketingSharedDocumentsVisibilitySchema.optional().default("client_portal"),
+  uploadedBy: z.string().uuid().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingSharedDocumentsUpdateSchema = benefactorMarketingSharedDocumentsInsertSchema.partial();
+export type BenefactorMarketingSharedDocumentsRow = z.infer<typeof benefactorMarketingSharedDocumentsRowSchema>;
+export type BenefactorMarketingSharedDocumentsInsert = z.infer<typeof benefactorMarketingSharedDocumentsInsertSchema>;
+export type BenefactorMarketingSharedDocumentsUpdate = z.infer<typeof benefactorMarketingSharedDocumentsUpdateSchema>;
+
+export const benefactorMarketingCollaborationCommentsResourceTypeValues = ["client","campaign","content_asset","approval","ticket","document","report","meeting"] as const;
+export const benefactorMarketingCollaborationCommentsResourceTypeSchema = z.enum(benefactorMarketingCollaborationCommentsResourceTypeValues);
+export type BenefactorMarketingCollaborationCommentsResourceType = z.infer<typeof benefactorMarketingCollaborationCommentsResourceTypeSchema>;
+
+export const benefactorMarketingCollaborationCommentsStatusValues = ["open","resolved","archived"] as const;
+export const benefactorMarketingCollaborationCommentsStatusSchema = z.enum(benefactorMarketingCollaborationCommentsStatusValues);
+export type BenefactorMarketingCollaborationCommentsStatus = z.infer<typeof benefactorMarketingCollaborationCommentsStatusSchema>;
+
+export const benefactorMarketingCollaborationCommentsVisibilityValues = ["internal","client_portal"] as const;
+export const benefactorMarketingCollaborationCommentsVisibilitySchema = z.enum(benefactorMarketingCollaborationCommentsVisibilityValues);
+export type BenefactorMarketingCollaborationCommentsVisibility = z.infer<typeof benefactorMarketingCollaborationCommentsVisibilitySchema>;
+
+export const benefactorMarketingCollaborationComments = pgTable(
+  "benefactor_marketing_collaboration_comments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    parentCommentId: uuid("parent_comment_id"),
+    resourceType: varchar("resource_type", { length: 64 }).notNull(),
+    resourceId: uuid("resource_id"),
+    authorUserId: uuid("author_user_id"),
+    authorContactId: uuid("author_contact_id"),
+    body: text("body").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'open'`).notNull(),
+    visibility: varchar("visibility", { length: 32 }).default(sql`'client_portal'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingCollaborationCommentsResourceTypeChk: check("benefactor_marketing_collaboration_comments_resource_type_chk", sql.raw("resource_type in ('client', 'campaign', 'content_asset', 'approval', 'ticket', 'document', 'report', 'meeting')")),
+    benefactorMarketingCollaborationCommentsBodySizeChk: check("benefactor_marketing_collaboration_comments_body_size_chk", sql.raw("octet_length(body) between 1 and 20000")),
+    benefactorMarketingCollaborationCommentsStatusChk: check("benefactor_marketing_collaboration_comments_status_chk", sql.raw("status in ('open', 'resolved', 'archived')")),
+    benefactorMarketingCollaborationCommentsVisibilityChk: check("benefactor_marketing_collaboration_comments_visibility_chk", sql.raw("visibility in ('internal', 'client_portal')")),
+    benefactorMarketingCollaborationCommentsMetaObjectChk: check("benefactor_marketing_collaboration_comments_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingCollaborationCommentsClientIdx: index("benefactor_marketing_collaboration_comments_client_idx").on(table.clientId, table.resourceType, table.updatedAt.desc()),
+  }),
+);
+
+export const benefactorMarketingCollaborationCommentsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  parentCommentId: z.string().uuid().nullable(),
+  resourceType: benefactorMarketingCollaborationCommentsResourceTypeSchema,
+  resourceId: z.string().uuid().nullable(),
+  authorUserId: z.string().uuid().nullable(),
+  authorContactId: z.string().uuid().nullable(),
+  body: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  status: benefactorMarketingCollaborationCommentsStatusSchema,
+  visibility: benefactorMarketingCollaborationCommentsVisibilitySchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingCollaborationCommentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  parentCommentId: z.string().uuid().nullable().optional(),
+  resourceType: benefactorMarketingCollaborationCommentsResourceTypeSchema,
+  resourceId: z.string().uuid().nullable().optional(),
+  authorUserId: z.string().uuid().nullable().optional(),
+  authorContactId: z.string().uuid().nullable().optional(),
+  body: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  status: benefactorMarketingCollaborationCommentsStatusSchema.optional().default("open"),
+  visibility: benefactorMarketingCollaborationCommentsVisibilitySchema.optional().default("client_portal"),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingCollaborationCommentsUpdateSchema = benefactorMarketingCollaborationCommentsInsertSchema.partial();
+export type BenefactorMarketingCollaborationCommentsRow = z.infer<typeof benefactorMarketingCollaborationCommentsRowSchema>;
+export type BenefactorMarketingCollaborationCommentsInsert = z.infer<typeof benefactorMarketingCollaborationCommentsInsertSchema>;
+export type BenefactorMarketingCollaborationCommentsUpdate = z.infer<typeof benefactorMarketingCollaborationCommentsUpdateSchema>;
+
+export const benefactorMarketingNotificationsChannelValues = ["email","sms","portal","slack","webhook"] as const;
+export const benefactorMarketingNotificationsChannelSchema = z.enum(benefactorMarketingNotificationsChannelValues);
+export type BenefactorMarketingNotificationsChannel = z.infer<typeof benefactorMarketingNotificationsChannelSchema>;
+
+export const benefactorMarketingNotificationsStatusValues = ["queued","scheduled","sent","failed","canceled"] as const;
+export const benefactorMarketingNotificationsStatusSchema = z.enum(benefactorMarketingNotificationsStatusValues);
+export type BenefactorMarketingNotificationsStatus = z.infer<typeof benefactorMarketingNotificationsStatusSchema>;
+
+export const benefactorMarketingNotificationsNotificationKindValues = ["approval_request","comment","report_ready","ticket_update","meeting_reminder","budget_alert","custom"] as const;
+export const benefactorMarketingNotificationsNotificationKindSchema = z.enum(benefactorMarketingNotificationsNotificationKindValues);
+export type BenefactorMarketingNotificationsNotificationKind = z.infer<typeof benefactorMarketingNotificationsNotificationKindSchema>;
+
+export const benefactorMarketingNotifications = pgTable(
+  "benefactor_marketing_notifications",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    recipientUserId: uuid("recipient_user_id"),
+    recipientContactId: uuid("recipient_contact_id"),
+    channel: varchar("channel", { length: 32 }).default(sql`'email'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
+    notificationKind: varchar("notification_kind", { length: 64 }).notNull(),
+    title: varchar("title", { length: 240 }).notNull(),
+    body: text("body"),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: "string" }),
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingNotificationsRecipientChk: check("benefactor_marketing_notifications_recipient_chk", sql.raw("recipient_user_id is not null or recipient_contact_id is not null")),
+    benefactorMarketingNotificationsChannelChk: check("benefactor_marketing_notifications_channel_chk", sql.raw("channel in ('email', 'sms', 'portal', 'slack', 'webhook')")),
+    benefactorMarketingNotificationsStatusChk: check("benefactor_marketing_notifications_status_chk", sql.raw("status in ('queued', 'scheduled', 'sent', 'failed', 'canceled')")),
+    benefactorMarketingNotificationsKindChk: check("benefactor_marketing_notifications_kind_chk", sql.raw("notification_kind in ('approval_request', 'comment', 'report_ready', 'ticket_update', 'meeting_reminder', 'budget_alert', 'custom')")),
+    benefactorMarketingNotificationsTitleSizeChk: check("benefactor_marketing_notifications_title_size_chk", sql.raw("octet_length(title) between 1 and 240")),
+    benefactorMarketingNotificationsBodySizeChk: check("benefactor_marketing_notifications_body_size_chk", sql.raw("body is null or octet_length(body) <= 20000")),
+    benefactorMarketingNotificationsPayloadObjectChk: check("benefactor_marketing_notifications_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    benefactorMarketingNotificationsClientStatusIdx: index("benefactor_marketing_notifications_client_status_idx").on(table.clientId, table.status, table.scheduledAt.desc()),
+  }),
+);
+
+export const benefactorMarketingNotificationsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  recipientUserId: z.string().uuid().nullable(),
+  recipientContactId: z.string().uuid().nullable(),
+  channel: benefactorMarketingNotificationsChannelSchema,
+  status: benefactorMarketingNotificationsStatusSchema,
+  notificationKind: benefactorMarketingNotificationsNotificationKindSchema,
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  body: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable(),
+  payload: jsonObjectSchema,
+  scheduledAt: z.string().datetime().nullable(),
+  sentAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingNotificationsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  recipientUserId: z.string().uuid().nullable().optional(),
+  recipientContactId: z.string().uuid().nullable().optional(),
+  channel: benefactorMarketingNotificationsChannelSchema.optional().default("email"),
+  status: benefactorMarketingNotificationsStatusSchema.optional().default("queued"),
+  notificationKind: benefactorMarketingNotificationsNotificationKindSchema,
+  title: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  body: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable().optional(),
+  payload: jsonObjectSchema.optional().default({}),
+  scheduledAt: z.string().datetime().nullable().optional(),
+  sentAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingNotificationsUpdateSchema = benefactorMarketingNotificationsInsertSchema.partial();
+export type BenefactorMarketingNotificationsRow = z.infer<typeof benefactorMarketingNotificationsRowSchema>;
+export type BenefactorMarketingNotificationsInsert = z.infer<typeof benefactorMarketingNotificationsInsertSchema>;
+export type BenefactorMarketingNotificationsUpdate = z.infer<typeof benefactorMarketingNotificationsUpdateSchema>;
+
+export const benefactorMarketingTimeEntries = pgTable(
+  "benefactor_marketing_time_entries",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id"),
+    campaignId: uuid("campaign_id"),
+    projectTaskId: uuid("project_task_id"),
+    userId: uuid("user_id").notNull(),
+    entryDate: varchar("entry_date", { length: 10 }).notNull(),
+    minutes: integer("minutes").notNull(),
+    billable: boolean("billable").default(sql`true`).notNull(),
+    rateCents: integer("rate_cents").default(sql`0`).notNull(),
+    costCents: integer("cost_cents").default(sql`0`).notNull(),
+    notes: text("notes"),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingTimeEntriesDateChk: check("benefactor_marketing_time_entries_date_chk", sql.raw("entry_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    benefactorMarketingTimeEntriesMinutesChk: check("benefactor_marketing_time_entries_minutes_chk", sql.raw("minutes between 1 and 1440")),
+    benefactorMarketingTimeEntriesMoneyChk: check("benefactor_marketing_time_entries_money_chk", sql.raw("rate_cents >= 0 and cost_cents >= 0")),
+    benefactorMarketingTimeEntriesNotesSizeChk: check("benefactor_marketing_time_entries_notes_size_chk", sql.raw("notes is null or octet_length(notes) <= 4000")),
+    benefactorMarketingTimeEntriesMetaObjectChk: check("benefactor_marketing_time_entries_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingTimeEntriesClientDateIdx: index("benefactor_marketing_time_entries_client_date_idx").on(table.clientId, table.entryDate.desc()).where(sql.raw("client_id is not null")),
+  }),
+);
+
+export const benefactorMarketingTimeEntriesRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid().nullable(),
+  campaignId: z.string().uuid().nullable(),
+  projectTaskId: z.string().uuid().nullable(),
+  userId: z.string().uuid(),
+  entryDate: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  minutes: z.number().int().min(1).max(1440),
+  billable: z.boolean(),
+  rateCents: z.number().int().min(0),
+  costCents: z.number().int().min(0),
+  notes: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingTimeEntriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid().nullable().optional(),
+  campaignId: z.string().uuid().nullable().optional(),
+  projectTaskId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
+  entryDate: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  minutes: z.number().int().min(1).max(1440),
+  billable: z.boolean().optional().default(true),
+  rateCents: z.number().int().min(0).optional().default(0),
+  costCents: z.number().int().min(0).optional().default(0),
+  notes: z.string().refine((value) => byteLength(value) <= 4000, "Must be at most 4000 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingTimeEntriesUpdateSchema = benefactorMarketingTimeEntriesInsertSchema.partial();
+export type BenefactorMarketingTimeEntriesRow = z.infer<typeof benefactorMarketingTimeEntriesRowSchema>;
+export type BenefactorMarketingTimeEntriesInsert = z.infer<typeof benefactorMarketingTimeEntriesInsertSchema>;
+export type BenefactorMarketingTimeEntriesUpdate = z.infer<typeof benefactorMarketingTimeEntriesUpdateSchema>;
+
+export const benefactorMarketingVendorCostsCategoryValues = ["ads","creative","data","software","contractor","events","other"] as const;
+export const benefactorMarketingVendorCostsCategorySchema = z.enum(benefactorMarketingVendorCostsCategoryValues);
+export type BenefactorMarketingVendorCostsCategory = z.infer<typeof benefactorMarketingVendorCostsCategorySchema>;
+
+export const benefactorMarketingVendorCostsStatusValues = ["planned","approved","incurred","invoiced","paid","canceled"] as const;
+export const benefactorMarketingVendorCostsStatusSchema = z.enum(benefactorMarketingVendorCostsStatusValues);
+export type BenefactorMarketingVendorCostsStatus = z.infer<typeof benefactorMarketingVendorCostsStatusSchema>;
+
+export const benefactorMarketingVendorCosts = pgTable(
+  "benefactor_marketing_vendor_costs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id"),
+    campaignId: uuid("campaign_id"),
+    vendorName: varchar("vendor_name", { length: 200 }).notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'planned'`).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    incurredOn: varchar("incurred_on", { length: 10 }),
+    invoiceRef: varchar("invoice_ref", { length: 120 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingVendorCostsVendorSizeChk: check("benefactor_marketing_vendor_costs_vendor_size_chk", sql.raw("octet_length(vendor_name) between 1 and 200")),
+    benefactorMarketingVendorCostsCategoryChk: check("benefactor_marketing_vendor_costs_category_chk", sql.raw("category in ('ads', 'creative', 'data', 'software', 'contractor', 'events', 'other')")),
+    benefactorMarketingVendorCostsStatusChk: check("benefactor_marketing_vendor_costs_status_chk", sql.raw("status in ('planned', 'approved', 'incurred', 'invoiced', 'paid', 'canceled')")),
+    benefactorMarketingVendorCostsAmountChk: check("benefactor_marketing_vendor_costs_amount_chk", sql.raw("amount_cents >= 0")),
+    benefactorMarketingVendorCostsIncurredOnChk: check("benefactor_marketing_vendor_costs_incurred_on_chk", sql.raw("incurred_on is null or incurred_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    benefactorMarketingVendorCostsInvoiceRefSizeChk: check("benefactor_marketing_vendor_costs_invoice_ref_size_chk", sql.raw("invoice_ref is null or octet_length(invoice_ref) <= 120")),
+    benefactorMarketingVendorCostsMetaObjectChk: check("benefactor_marketing_vendor_costs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingVendorCostsClientIdx: index("benefactor_marketing_vendor_costs_client_idx").on(table.clientId, table.status, table.updatedAt.desc()).where(sql.raw("client_id is not null")),
+  }),
+);
+
+export const benefactorMarketingVendorCostsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid().nullable(),
+  campaignId: z.string().uuid().nullable(),
+  vendorName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  category: benefactorMarketingVendorCostsCategorySchema,
+  status: benefactorMarketingVendorCostsStatusSchema,
+  amountCents: z.number().int().min(0),
+  incurredOn: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable(),
+  invoiceRef: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingVendorCostsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid().nullable().optional(),
+  campaignId: z.string().uuid().nullable().optional(),
+  vendorName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  category: benefactorMarketingVendorCostsCategorySchema,
+  status: benefactorMarketingVendorCostsStatusSchema.optional().default("planned"),
+  amountCents: z.number().int().min(0),
+  incurredOn: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable().optional(),
+  invoiceRef: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingVendorCostsUpdateSchema = benefactorMarketingVendorCostsInsertSchema.partial();
+export type BenefactorMarketingVendorCostsRow = z.infer<typeof benefactorMarketingVendorCostsRowSchema>;
+export type BenefactorMarketingVendorCostsInsert = z.infer<typeof benefactorMarketingVendorCostsInsertSchema>;
+export type BenefactorMarketingVendorCostsUpdate = z.infer<typeof benefactorMarketingVendorCostsUpdateSchema>;
+
+export const benefactorMarketingCommissionEntriesStatusValues = ["pending","approved","paid","void"] as const;
+export const benefactorMarketingCommissionEntriesStatusSchema = z.enum(benefactorMarketingCommissionEntriesStatusValues);
+export type BenefactorMarketingCommissionEntriesStatus = z.infer<typeof benefactorMarketingCommissionEntriesStatusSchema>;
+
+export const benefactorMarketingCommissionEntriesCommissionKindValues = ["deal","retainer","renewal","upsell","appointment"] as const;
+export const benefactorMarketingCommissionEntriesCommissionKindSchema = z.enum(benefactorMarketingCommissionEntriesCommissionKindValues);
+export type BenefactorMarketingCommissionEntriesCommissionKind = z.infer<typeof benefactorMarketingCommissionEntriesCommissionKindSchema>;
+
+export const benefactorMarketingCommissionEntries = pgTable(
+  "benefactor_marketing_commission_entries",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id"),
+    opportunityId: uuid("opportunity_id"),
+    userId: uuid("user_id").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    commissionKind: varchar("commission_kind", { length: 48 }).default(sql`'deal'`).notNull(),
+    basisCents: integer("basis_cents").default(sql`0`).notNull(),
+    rateMicros: integer("rate_micros").default(sql`0`).notNull(),
+    amountCents: integer("amount_cents").default(sql`0`).notNull(),
+    earnedOn: varchar("earned_on", { length: 10 }),
+    paidAt: timestamp("paid_at", { withTimezone: true, mode: "string" }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingCommissionEntriesStatusChk: check("benefactor_marketing_commission_entries_status_chk", sql.raw("status in ('pending', 'approved', 'paid', 'void')")),
+    benefactorMarketingCommissionEntriesKindChk: check("benefactor_marketing_commission_entries_kind_chk", sql.raw("commission_kind in ('deal', 'retainer', 'renewal', 'upsell', 'appointment')")),
+    benefactorMarketingCommissionEntriesMoneyChk: check("benefactor_marketing_commission_entries_money_chk", sql.raw("basis_cents >= 0 and amount_cents >= 0")),
+    benefactorMarketingCommissionEntriesRateChk: check("benefactor_marketing_commission_entries_rate_chk", sql.raw("rate_micros between 0 and 1000000")),
+    benefactorMarketingCommissionEntriesEarnedOnChk: check("benefactor_marketing_commission_entries_earned_on_chk", sql.raw("earned_on is null or earned_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    benefactorMarketingCommissionEntriesMetaObjectChk: check("benefactor_marketing_commission_entries_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorMarketingCommissionEntriesUserIdx: index("benefactor_marketing_commission_entries_user_idx").on(table.userId, table.status, table.updatedAt.desc()),
+    benefactorMarketingCommissionEntriesClientIdx: index("benefactor_marketing_commission_entries_client_idx").on(table.clientId, table.status, table.updatedAt.desc()).where(sql.raw("client_id is not null")),
+  }),
+);
+
+export const benefactorMarketingCommissionEntriesRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid().nullable(),
+  opportunityId: z.string().uuid().nullable(),
+  userId: z.string().uuid(),
+  status: benefactorMarketingCommissionEntriesStatusSchema,
+  commissionKind: benefactorMarketingCommissionEntriesCommissionKindSchema,
+  basisCents: z.number().int().min(0),
+  rateMicros: z.number().int().min(0).max(1000000),
+  amountCents: z.number().int().min(0),
+  earnedOn: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable(),
+  paidAt: z.string().datetime().nullable(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingCommissionEntriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid().nullable().optional(),
+  opportunityId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
+  status: benefactorMarketingCommissionEntriesStatusSchema.optional().default("pending"),
+  commissionKind: benefactorMarketingCommissionEntriesCommissionKindSchema.optional().default("deal"),
+  basisCents: z.number().int().min(0).optional().default(0),
+  rateMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  amountCents: z.number().int().min(0).optional().default(0),
+  earnedOn: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")).nullable().optional(),
+  paidAt: z.string().datetime().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingCommissionEntriesUpdateSchema = benefactorMarketingCommissionEntriesInsertSchema.partial();
+export type BenefactorMarketingCommissionEntriesRow = z.infer<typeof benefactorMarketingCommissionEntriesRowSchema>;
+export type BenefactorMarketingCommissionEntriesInsert = z.infer<typeof benefactorMarketingCommissionEntriesInsertSchema>;
+export type BenefactorMarketingCommissionEntriesUpdate = z.infer<typeof benefactorMarketingCommissionEntriesUpdateSchema>;
+
+export const benefactorMarketingBudgetForecastsForecastKindValues = ["monthly","quarterly","campaign","annual"] as const;
+export const benefactorMarketingBudgetForecastsForecastKindSchema = z.enum(benefactorMarketingBudgetForecastsForecastKindValues);
+export type BenefactorMarketingBudgetForecastsForecastKind = z.infer<typeof benefactorMarketingBudgetForecastsForecastKindSchema>;
+
+export const benefactorMarketingBudgetForecastsStatusValues = ["draft","approved","locked","archived"] as const;
+export const benefactorMarketingBudgetForecastsStatusSchema = z.enum(benefactorMarketingBudgetForecastsStatusValues);
+export type BenefactorMarketingBudgetForecastsStatus = z.infer<typeof benefactorMarketingBudgetForecastsStatusSchema>;
+
+export const benefactorMarketingBudgetForecasts = pgTable(
+  "benefactor_marketing_budget_forecasts",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    campaignId: uuid("campaign_id"),
+    forecastKind: varchar("forecast_kind", { length: 48 }).default(sql`'monthly'`).notNull(),
+    periodStart: varchar("period_start", { length: 10 }).notNull(),
+    periodEnd: varchar("period_end", { length: 10 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
+    revenueCents: integer("revenue_cents").default(sql`0`).notNull(),
+    mediaSpendCents: integer("media_spend_cents").default(sql`0`).notNull(),
+    laborCostCents: integer("labor_cost_cents").default(sql`0`).notNull(),
+    vendorCostCents: integer("vendor_cost_cents").default(sql`0`).notNull(),
+    grossMarginCents: integer("gross_margin_cents").default(sql`0`).notNull(),
+    assumptions: jsonb("assumptions").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingBudgetForecastsKindChk: check("benefactor_marketing_budget_forecasts_kind_chk", sql.raw("forecast_kind in ('monthly', 'quarterly', 'campaign', 'annual')")),
+    benefactorMarketingBudgetForecastsPeriodStartChk: check("benefactor_marketing_budget_forecasts_period_start_chk", sql.raw("period_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    benefactorMarketingBudgetForecastsPeriodEndChk: check("benefactor_marketing_budget_forecasts_period_end_chk", sql.raw("period_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'")),
+    benefactorMarketingBudgetForecastsStatusChk: check("benefactor_marketing_budget_forecasts_status_chk", sql.raw("status in ('draft', 'approved', 'locked', 'archived')")),
+    benefactorMarketingBudgetForecastsMoneyChk: check("benefactor_marketing_budget_forecasts_money_chk", sql.raw("revenue_cents >= 0 and media_spend_cents >= 0 and labor_cost_cents >= 0 and vendor_cost_cents >= 0")),
+    benefactorMarketingBudgetForecastsAssumptionsObjectChk: check("benefactor_marketing_budget_forecasts_assumptions_object_chk", sql.raw("jsonb_typeof(assumptions) = 'object'")),
+    benefactorMarketingBudgetForecastsClientPeriodIdx: index("benefactor_marketing_budget_forecasts_client_period_idx").on(table.clientId, table.periodStart.desc(), table.status),
+  }),
+);
+
+export const benefactorMarketingBudgetForecastsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable(),
+  forecastKind: benefactorMarketingBudgetForecastsForecastKindSchema,
+  periodStart: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  periodEnd: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  status: benefactorMarketingBudgetForecastsStatusSchema,
+  revenueCents: z.number().int().min(0),
+  mediaSpendCents: z.number().int().min(0),
+  laborCostCents: z.number().int().min(0),
+  vendorCostCents: z.number().int().min(0),
+  grossMarginCents: z.number().int(),
+  assumptions: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingBudgetForecastsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  campaignId: z.string().uuid().nullable().optional(),
+  forecastKind: benefactorMarketingBudgetForecastsForecastKindSchema.optional().default("monthly"),
+  periodStart: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  periodEnd: z.string().max(10).regex(new RegExp("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")),
+  status: benefactorMarketingBudgetForecastsStatusSchema.optional().default("draft"),
+  revenueCents: z.number().int().min(0).optional().default(0),
+  mediaSpendCents: z.number().int().min(0).optional().default(0),
+  laborCostCents: z.number().int().min(0).optional().default(0),
+  vendorCostCents: z.number().int().min(0).optional().default(0),
+  grossMarginCents: z.number().int().optional().default(0),
+  assumptions: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingBudgetForecastsUpdateSchema = benefactorMarketingBudgetForecastsInsertSchema.partial();
+export type BenefactorMarketingBudgetForecastsRow = z.infer<typeof benefactorMarketingBudgetForecastsRowSchema>;
+export type BenefactorMarketingBudgetForecastsInsert = z.infer<typeof benefactorMarketingBudgetForecastsInsertSchema>;
+export type BenefactorMarketingBudgetForecastsUpdate = z.infer<typeof benefactorMarketingBudgetForecastsUpdateSchema>;
+
+export const benefactorMarketingCallInsightsStatusValues = ["processing","ready","failed","archived"] as const;
+export const benefactorMarketingCallInsightsStatusSchema = z.enum(benefactorMarketingCallInsightsStatusValues);
+export type BenefactorMarketingCallInsightsStatus = z.infer<typeof benefactorMarketingCallInsightsStatusSchema>;
+
+export const benefactorMarketingCallInsightsSentimentValues = ["positive","neutral","negative","mixed"] as const;
+export const benefactorMarketingCallInsightsSentimentSchema = z.enum(benefactorMarketingCallInsightsSentimentValues);
+export type BenefactorMarketingCallInsightsSentiment = z.infer<typeof benefactorMarketingCallInsightsSentimentSchema>;
+
+export const benefactorMarketingCallInsights = pgTable(
+  "benefactor_marketing_call_insights",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    clientId: uuid("client_id").notNull(),
+    meetingId: uuid("meeting_id"),
+    leadId: uuid("lead_id"),
+    opportunityId: uuid("opportunity_id"),
+    status: varchar("status", { length: 32 }).default(sql`'ready'`).notNull(),
+    provider: varchar("provider", { length: 64 }),
+    transcriptUri: text("transcript_uri"),
+    summary: text("summary"),
+    sentiment: varchar("sentiment", { length: 32 }),
+    actionItems: jsonb("action_items").default(sql`'[]'::jsonb`).notNull(),
+    objections: jsonb("objections").default(sql`'[]'::jsonb`).notNull(),
+    nextSteps: jsonb("next_steps").default(sql`'[]'::jsonb`).notNull(),
+    confidenceMicros: integer("confidence_micros").default(sql`0`).notNull(),
+    analyzedAt: timestamp("analyzed_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    benefactorMarketingCallInsightsStatusChk: check("benefactor_marketing_call_insights_status_chk", sql.raw("status in ('processing', 'ready', 'failed', 'archived')")),
+    benefactorMarketingCallInsightsProviderSizeChk: check("benefactor_marketing_call_insights_provider_size_chk", sql.raw("provider is null or octet_length(provider) <= 64")),
+    benefactorMarketingCallInsightsTranscriptUriSizeChk: check("benefactor_marketing_call_insights_transcript_uri_size_chk", sql.raw("transcript_uri is null or octet_length(transcript_uri) <= 2048")),
+    benefactorMarketingCallInsightsSummarySizeChk: check("benefactor_marketing_call_insights_summary_size_chk", sql.raw("summary is null or octet_length(summary) <= 20000")),
+    benefactorMarketingCallInsightsSentimentChk: check("benefactor_marketing_call_insights_sentiment_chk", sql.raw("sentiment is null or sentiment in ('positive', 'neutral', 'negative', 'mixed')")),
+    benefactorMarketingCallInsightsActionItemsArrayChk: check("benefactor_marketing_call_insights_action_items_array_chk", sql.raw("jsonb_typeof(action_items) = 'array'")),
+    benefactorMarketingCallInsightsObjectionsArrayChk: check("benefactor_marketing_call_insights_objections_array_chk", sql.raw("jsonb_typeof(objections) = 'array'")),
+    benefactorMarketingCallInsightsNextStepsArrayChk: check("benefactor_marketing_call_insights_next_steps_array_chk", sql.raw("jsonb_typeof(next_steps) = 'array'")),
+    benefactorMarketingCallInsightsConfidenceChk: check("benefactor_marketing_call_insights_confidence_chk", sql.raw("confidence_micros between 0 and 1000000")),
+    benefactorMarketingCallInsightsClientIdx: index("benefactor_marketing_call_insights_client_idx").on(table.clientId, table.analyzedAt.desc()),
+  }),
+);
+
+export const benefactorMarketingCallInsightsRowSchema = z.object({
+  id: z.string().uuid(),
+  clientId: z.string().uuid(),
+  meetingId: z.string().uuid().nullable(),
+  leadId: z.string().uuid().nullable(),
+  opportunityId: z.string().uuid().nullable(),
+  status: benefactorMarketingCallInsightsStatusSchema,
+  provider: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable(),
+  transcriptUri: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes").nullable(),
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable(),
+  sentiment: benefactorMarketingCallInsightsSentimentSchema.nullable(),
+  actionItems: jsonArraySchema,
+  objections: jsonArraySchema,
+  nextSteps: jsonArraySchema,
+  confidenceMicros: z.number().int().min(0).max(1000000),
+  analyzedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const benefactorMarketingCallInsightsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  clientId: z.string().uuid(),
+  meetingId: z.string().uuid().nullable().optional(),
+  leadId: z.string().uuid().nullable().optional(),
+  opportunityId: z.string().uuid().nullable().optional(),
+  status: benefactorMarketingCallInsightsStatusSchema.optional().default("ready"),
+  provider: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable().optional(),
+  transcriptUri: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes").nullable().optional(),
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").nullable().optional(),
+  sentiment: benefactorMarketingCallInsightsSentimentSchema.nullable().optional(),
+  actionItems: jsonArraySchema.optional().default([]),
+  objections: jsonArraySchema.optional().default([]),
+  nextSteps: jsonArraySchema.optional().default([]),
+  confidenceMicros: z.number().int().min(0).max(1000000).optional().default(0),
+  analyzedAt: z.string().datetime().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const benefactorMarketingCallInsightsUpdateSchema = benefactorMarketingCallInsightsInsertSchema.partial();
+export type BenefactorMarketingCallInsightsRow = z.infer<typeof benefactorMarketingCallInsightsRowSchema>;
+export type BenefactorMarketingCallInsightsInsert = z.infer<typeof benefactorMarketingCallInsightsInsertSchema>;
+export type BenefactorMarketingCallInsightsUpdate = z.infer<typeof benefactorMarketingCallInsightsUpdateSchema>;
