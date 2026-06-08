@@ -3082,6 +3082,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /stock-workholding-and-datum-state/);
   assert.match(source, /tool-process-and-media-state/);
   assert.match(source, /controller-geometry-and-simulation-state/);
+  assert.match(source, /async fn turning_catalog_http/);
+  assert.match(source, /fn turning_catalog_response/);
+  assert.match(source, /dd\.fabrication\.turning-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/turning\/catalog"/);
+  assert.match(source, /turning_catalog_endpoint_exposes_lathe_mill_turn_and_swiss_profiles/);
   assert.match(source, /async fn turning_preflight_catalog_http/);
   assert.match(source, /fn turning_preflight_catalog_response/);
   assert.match(source, /dd\.fabrication\.turning-preflight-catalog\.v1/);
@@ -5735,6 +5740,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/subtractive\/preflight\/catalog",\s*get\(subtractive_preflight_catalog_http\),\s*\)/,
   );
+  assert.match(source, /\.route\("\/turning\/catalog", get\(turning_catalog_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/turning\/catalog", get\(turning_catalog_http\)\)/,
+  );
   assert.match(
     source,
     /\.route\(\s*"\/turning\/preflight\/catalog",\s*get\(turning_preflight_catalog_http\),\s*\)/,
@@ -6638,6 +6648,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /tool\/process\/media state/);
   assert.match(readme, /controller\/geometry\/simulation state/);
   assert.match(readme, /fixtures, vises, chucks, collets/);
+  assert.match(readme, /`GET \/turning\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/turning\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.turning-catalog\.v1/);
+  assert.match(readme, /lathe, mill-turn, Swiss, and\s+bar-fed turning profiles/);
   assert.match(readme, /`GET \/turning\/preflight\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/turning\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.turning-preflight-catalog\.v1/);
@@ -9657,6 +9671,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/mesh-repair\/catalog"/);
   assert.match(docs, /"path": "\/mesh-repair\/result"/);
   assert.match(docs, /"path": "\/fabrication\/mesh-repair\/result"/);
+  assert.match(docs, /"path": "\/turning\/catalog"/);
+  assert.match(docs, /"path": "\/fabrication\/turning\/catalog"/);
   assert.match(docs, /"path": "\/turning\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/turning\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/formats\/catalog"/);
@@ -10017,6 +10033,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /RUNTIME_CONFIG_APPLY_URL[\s\S]*dd-fabrication-server\.default\.svc\.cluster\.local:8113/);
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/turning\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/turning\/preflight\/catalog"/);
   assert.match(deployment, /revisionHistoryLimit:\s*3/);
   assert.match(deployment, /topologySpreadConstraints:[\s\S]*topologyKey:\s*kubernetes\.io\/hostname/);
@@ -10299,6 +10316,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /subtractive catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(grafanaDashboards, /subtractive preflight catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/turning\/catalog/);
+  assert.match(grafanaDashboards, /turning catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(grafanaDashboards, /turning preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/cleanliness\/preflight\/catalog/);
@@ -10776,6 +10795,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/learning\/corpus/);
   assert.match(runtimeReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/turning\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cnc\/catalog/);
@@ -10829,6 +10849,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/printers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/turning\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
