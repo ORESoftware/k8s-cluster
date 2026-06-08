@@ -41,10 +41,14 @@ outcomes.
 - `GET /fabrication/resin-printer/catalog`
 - `GET /material-jetting/catalog`
 - `GET /fabrication/material-jetting/catalog`
+- `GET /robotic-additive/catalog`
+- `GET /fabrication/robotic-additive/catalog`
 - `GET /directed-energy-deposition/catalog`
 - `GET /fabrication/directed-energy-deposition/catalog`
 - `GET /composite-fiber/catalog`
 - `GET /fabrication/composite-fiber/catalog`
+- `GET /composite-layup/catalog`
+- `GET /fabrication/composite-layup/catalog`
 - `GET /powder-bed/catalog`
 - `GET /fabrication/powder-bed/catalog`
 - `GET /printers/preflight/catalog`
@@ -1035,6 +1039,27 @@ quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural
 workers can learn when to reorient, split, reroute, change support strategy, or
 require human intervention.
 
+## `GET /fabrication/robotic-additive/catalog`
+
+`GET /robotic-additive/catalog` and the gateway-prefixed
+`GET /fabrication/robotic-additive/catalog` return the
+`dd.fabrication.robotic-additive-catalog.v1` discovery view for robotic/gantry
+additive cell profiles. It narrows the additive printer catalog to
+robotic-additive machines and lists the release evidence needed before robot
+motion or machine-ready handoff: robot brand, controller dialect, TCP, tool
+frame, base/work frame, external-axis sync, reach envelope, singularity review,
+dry-run evidence, fixture nest, build plate, collision zone, safety interlocks,
+E-stop, guarding, operator clear zone, feedstock, nozzle, purge, bead width,
+layer height, extrusion rate, cooling/thermal plan, pause/resume, flow
+calibration, dimensional scan, telemetry, and signoff evidence. The payload
+names robotic path, extrusion, interlock, reach/collision,
+extrusion-calibration, and dimensional-inspection boundary families and links
+generated `ROBOT_FRAME`, `DRY_RUN_PATH`, `EXTRUDE_BEAD_PATH`, and `MONITOR`
+records back to release gates. Robotic-additive outcomes should feed
+controller, toolpath, safety, setup, telemetry, quality, costing, and learning
+routes so DES, MDP/POMDP, and neural workers can learn when to reroute, pause,
+split, change frames, or require human intervention.
+
 ## `GET /fabrication/directed-energy-deposition/catalog`
 
 `GET /directed-energy-deposition/catalog` and the gateway-prefixed
@@ -1079,6 +1104,29 @@ continuity evidence are retained. Composite-fiber outcomes should feed material,
 slicer, recipe, simulation, quality, telemetry, costing, and learning routes so
 DES, MDP/POMDP, and neural workers can learn when to reorient fibers, split,
 reroute, change reinforcement schedules, or require human intervention.
+
+## `GET /fabrication/composite-layup/catalog`
+
+`GET /composite-layup/catalog` and the gateway-prefixed
+`GET /fabrication/composite-layup/catalog` return the
+`dd.fabrication.composite-layup-catalog.v1` discovery view for wet-layup,
+prepreg, vacuum-bag, autoclave-cure, and resin-infusion composite layup cells.
+It narrows the machine/cell catalogs to composite-layup profiles and lists the
+evidence needed before generated layup job sheets or machine-ready handoff:
+mold or mandrel identity, tool revision, release film or release agent, ply kit,
+ply schedule, fiber orientation datum, resin/prepreg/core lot, out-time or
+pot-life, debulk schedule, vacuum bag stack, breather/bleeder/peel-ply records,
+leak-down result, vacuum port map, oven or autoclave cure profile, pressure and
+temperature trace, exotherm review, demold record, trim/drill allowance, coupon
+results, void/porosity/delamination inspection, NDI, dimensional release,
+interface-control, joining, postprocess, telemetry, and signoff evidence. The
+payload names composite-layup tooling and bag/cure boundary families and keeps
+machine-ready release blocked until tool, ply, orientation, vacuum/leak-down,
+cure trace, demold, trim/drill, coupon, NDI, dimensional, interface, and signoff
+evidence are retained. Composite-layup outcomes should feed material, recipe,
+postprocess, quality, telemetry, costing, assembly, and learning routes so DES,
+MDP/POMDP, and neural workers can learn when to split, combine, reroute, add
+inspection, or require human intervention.
 
 ## `GET /fabrication/powder-bed/catalog`
 

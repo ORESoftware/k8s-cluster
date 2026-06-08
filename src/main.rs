@@ -62789,10 +62789,14 @@ fn root_response() -> Value {
         "GET /fabrication/resin-printer/catalog",
         "GET /material-jetting/catalog",
         "GET /fabrication/material-jetting/catalog",
+        "GET /robotic-additive/catalog",
+        "GET /fabrication/robotic-additive/catalog",
         "GET /directed-energy-deposition/catalog",
         "GET /fabrication/directed-energy-deposition/catalog",
         "GET /composite-fiber/catalog",
         "GET /fabrication/composite-fiber/catalog",
+        "GET /composite-layup/catalog",
+        "GET /fabrication/composite-layup/catalog",
         "GET /powder-bed/catalog",
         "GET /fabrication/powder-bed/catalog",
         "GET /printers/preflight/catalog",
@@ -110510,6 +110514,123 @@ async fn material_jetting_catalog_http() -> impl IntoResponse {
     Json(material_jetting_catalog_response())
 }
 
+fn robotic_additive_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let robotic_additive_cells = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_robotic_additive_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let cell_kinds = unique_sorted(
+        robotic_additive_cells
+            .iter()
+            .filter_map(|cell| cell.get("kind").and_then(Value::as_str).map(str::to_string)),
+    );
+    let operations = unique_sorted(robotic_additive_cells.iter().flat_map(|cell| {
+        cell.get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(robotic_additive_cells.iter().flat_map(|cell| {
+        cell.get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.robotic-additive-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /robotic-additive/catalog", "GET /fabrication/robotic-additive/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /controllers/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /safety/catalog",
+            "GET /fabrication/safety/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "roboticAdditiveCellCount": robotic_additive_cells.len(),
+        "roboticAdditiveCellKinds": cell_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "robot brand, controller dialect, TCP, tool frame, base/work frame, external-axis sync, reach envelope, singularity review, and dry-run evidence",
+            "fixture nest, build plate, collision zone, safety interlocks, E-stop, guarding, operator clear zone, and cell-ready evidence before motion",
+            "feedstock, nozzle, purge, bead width, layer height, extrusion rate, cooling/thermal plan, pause/resume, and flow calibration evidence",
+            "generated robotic-additive job package, ROBOT_FRAME, DRY_RUN_PATH, EXTRUDE_BEAD_PATH, MONITOR, dimensional scan, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "robotic-additive-path-boundary",
+            "robotic-additive-extrusion-boundary",
+            "robotic-cell-interlock-boundary",
+            "robotic-reach-collision-boundary",
+            "additive-extrusion-calibration-missing",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/safety/plan"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/controllers/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "robotic-additive catalog entries are robotic/gantry additive planning profiles, not certified live cell approval",
+            "machine-ready release remains blocked until robot frame, TCP, reach, collision, fixture, interlock, feedstock, extrusion, thermal, simulation, dimensional scan, telemetry, and signoff evidence are retained",
+            "robotic-additive outcomes should feed controller, toolpath, safety, setup, telemetry, quality, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to reroute, pause, split, change frames, or require human intervention"
+        ],
+        "roboticAdditiveCells": robotic_additive_cells
+    })
+}
+
+async fn robotic_additive_catalog_http() -> impl IntoResponse {
+    Json(robotic_additive_catalog_response())
+}
+
 fn directed_energy_deposition_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let ded_cells = printer_payload
@@ -110739,6 +110860,122 @@ fn composite_fiber_catalog_response() -> Value {
 
 async fn composite_fiber_catalog_http() -> impl IntoResponse {
     Json(composite_fiber_catalog_response())
+}
+
+fn composite_layup_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let composite_layup_cells = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_composite_layup_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let cell_kinds = unique_sorted(
+        composite_layup_cells
+            .iter()
+            .filter_map(|cell| cell.get("kind").and_then(Value::as_str).map(str::to_string)),
+    );
+    let operations = unique_sorted(composite_layup_cells.iter().flat_map(|cell| {
+        cell.get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(composite_layup_cells.iter().flat_map(|cell| {
+        cell.get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.composite-layup-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /composite-layup/catalog", "GET /fabrication/composite-layup/catalog"],
+        "parentCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /interfaces/preflight/catalog",
+            "GET /fabrication/interfaces/preflight/catalog",
+            "GET /cleanliness/preflight/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "compositeLayupCellCount": composite_layup_cells.len(),
+        "compositeLayupCellKinds": cell_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "mold or mandrel identifier, tool revision, release film or release agent, ply kit, ply schedule, fiber orientation datum, resin/prepreg/core lot, out-time or pot-life, and PPE evidence",
+            "debulk schedule, vacuum bag stack, breather/bleeder/peel-ply record, leak-down result, vacuum port map, and resin-infusion or prepreg handling evidence",
+            "oven or autoclave cure profile, pressure and temperature trace, ramp/hold/cooldown proof, exotherm review, demold record, trim/drill allowance, and coupon evidence",
+            "void, porosity, delamination, witness panel, NDI, dimensional release, interface-control, joining, postprocess, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "composite-layup-tooling-boundary",
+            "composite-layup-bag-cure-boundary",
+            "postprocess-gate",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/decomposition/plan",
+            "POST /fabrication/assembly/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/postprocess/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "composite layup catalog entries are wet-layup, prepreg, vacuum-bag, autoclave, and resin-infusion planning profiles, not certified live-cell approval",
+            "machine-ready release remains blocked until tool, ply schedule, orientation, vacuum/leak-down, cure trace, demold, trim/drill, coupon, NDI, dimensional, interface, and signoff evidence are retained",
+            "composite layup outcomes should feed material, recipe, postprocess, quality, telemetry, costing, assembly, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, add inspection, or require human intervention"
+        ],
+        "compositeLayupCells": composite_layup_cells
+    })
+}
+
+async fn composite_layup_catalog_http() -> impl IntoResponse {
+    Json(composite_layup_catalog_response())
 }
 
 fn powder_bed_catalog_response() -> Value {
@@ -121776,8 +122013,10 @@ async fn request_schema() -> impl IntoResponse {
             "pelletFgfCatalog": ["GET /pellet-fgf/catalog", "GET /fabrication/pellet-fgf/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
+            "roboticAdditiveCatalog": ["GET /robotic-additive/catalog", "GET /fabrication/robotic-additive/catalog"],
             "directedEnergyDepositionCatalog": ["GET /directed-energy-deposition/catalog", "GET /fabrication/directed-energy-deposition/catalog"],
             "compositeFiberCatalog": ["GET /composite-fiber/catalog", "GET /fabrication/composite-fiber/catalog"],
+            "compositeLayupCatalog": ["GET /composite-layup/catalog", "GET /fabrication/composite-layup/catalog"],
             "powderBedCatalog": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
@@ -124983,6 +125222,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(material_jetting_catalog_http),
         )
         .route(
+            "/robotic-additive/catalog",
+            get(robotic_additive_catalog_http),
+        )
+        .route(
+            "/fabrication/robotic-additive/catalog",
+            get(robotic_additive_catalog_http),
+        )
+        .route(
             "/directed-energy-deposition/catalog",
             get(directed_energy_deposition_catalog_http),
         )
@@ -124997,6 +125244,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/composite-fiber/catalog",
             get(composite_fiber_catalog_http),
+        )
+        .route(
+            "/composite-layup/catalog",
+            get(composite_layup_catalog_http),
+        )
+        .route(
+            "/fabrication/composite-layup/catalog",
+            get(composite_layup_catalog_http),
         )
         .route("/powder-bed/catalog", get(powder_bed_catalog_http))
         .route(
@@ -152469,6 +152724,89 @@ mod tests {
     }
 
     #[test]
+    fn robotic_additive_catalog_endpoint_exposes_path_extrusion_and_interlock_release_contract() {
+        let payload = robotic_additive_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.robotic-additive-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/robotic-additive/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/cells/catalog"))));
+        assert!(payload
+            .get("roboticAdditiveCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let cell_kinds = payload
+            .get("roboticAdditiveCellKinds")
+            .and_then(Value::as_array)
+            .expect("robotic-additive cell kinds should be present");
+        assert!(cell_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("robotic-additive-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("robotic-additive setup evidence should be present");
+        for expected in [
+            "TCP, tool frame, base/work frame",
+            "safety interlocks, E-stop",
+            "feedstock, nozzle, purge",
+            "ROBOT_FRAME, DRY_RUN_PATH, EXTRUDE_BEAD_PATH",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing robotic-additive setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("robotic-additive boundary families should be present");
+        for boundary in [
+            "robotic-additive-path-boundary",
+            "robotic-additive-extrusion-boundary",
+            "robotic-cell-interlock-boundary",
+            "robotic-reach-collision-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing robotic-additive boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/robotic-additive/catalog")
+            })));
+    }
+
+    #[test]
     fn directed_energy_deposition_catalog_endpoint_exposes_feedstock_energy_and_thermal_release_contract(
     ) {
         let payload = directed_energy_deposition_catalog_response();
@@ -152630,6 +152968,96 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|routes| routes.iter().any(|route| {
                 route.as_str() == Some("GET /fabrication/composite-fiber/catalog")
+            })));
+    }
+
+    #[test]
+    fn composite_layup_catalog_endpoint_exposes_tooling_bag_cure_and_release_contract() {
+        let payload = composite_layup_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.composite-layup-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/composite-layup/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/cells/catalog"))));
+        assert!(payload
+            .get("compositeLayupCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let cell_kinds = payload
+            .get("compositeLayupCellKinds")
+            .and_then(Value::as_array)
+            .expect("composite-layup cell kinds should be present");
+        assert!(cell_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("composite-layup-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("composite-layup setup evidence should be present");
+        for expected in [
+            "mold or mandrel",
+            "ply schedule",
+            "vacuum bag stack",
+            "oven or autoclave cure profile",
+            "void, porosity, delamination",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing composite-layup setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("composite-layup boundary families should be present");
+        for boundary in [
+            "composite-layup-tooling-boundary",
+            "composite-layup-bag-cure-boundary",
+            "postprocess-gate",
+            "quality-dimensional-inspection-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing composite-layup boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/composite-layup/catalog")
             })));
     }
 
