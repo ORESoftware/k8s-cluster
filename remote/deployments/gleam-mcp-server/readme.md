@@ -210,20 +210,20 @@ because the `/mcp` JSON-RPC surface is intentionally read-only and the
 ops/runtime-config paths still require `X-Server-Auth
 (RUNTIME_CONFIG_SERVER_SECRET)`.
 
-## Warming `build/packages` and BEAM artifacts on the EC2 host
+## Warming `build/packages` on the EC2 host
 
 The pod boots from the `/home/ec2-user/codes/dd/dd-next-1` checkout on the EC2 node, and the
-NetworkPolicy intentionally blocks `repo.hex.pm`. That means `gleam run` inside the pod has to be
-able to compile fully offline: every package listed in `manifest.toml` must already exist under
+NetworkPolicy intentionally blocks `repo.hex.pm`. That means the build init container has to compile
+fully offline: every package listed in `manifest.toml` must already exist under
 `remote/deployments/gleam-mcp-server/build/packages/` on the host, either as a directory (hex deps)
 or as a `<name>.config_fingerprint` file (local-path deps such as `dd_pg_defs` and
 `dd_runtime_config_client`).
 
 If `build/packages/` is stale (typical symptom: a new local-path dep was added but the host was
-never re-warmed) the `preflight` init container now fails fast and prints the missing names. The
-long-running container also starts the already-built `build/dev/erlang` BEAM modules directly so
-the steady pod can stay below the 300Mi memory cap; if the entry module is missing, `preflight`
-prints a `gleam build` hint before the pod starts.
+never re-warmed) the build init container fails fast and prints the missing names. The
+same init container then runs `gleam build` with a larger temporary memory budget and places the
+generated `build/dev/erlang` tree on an `emptyDir`. The long-running container only starts those
+prebuilt BEAM modules, so the steady pod can stay below the 300Mi memory cap.
 
 To warm the host checkout from any shell with AWS access (SSM Session Manager works; no VPN
 required):
@@ -234,7 +234,7 @@ sudo nerdctl run --rm --net=host --memory=2g \
   -v /home/ec2-user/codes/dd/dd-next-1:/opt/dd-next-1 \
   --workdir /opt/dd-next-1/remote/deployments/gleam-mcp-server \
   ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine \
-  /bin/sh -lc 'gleam deps download && gleam build'
+  /bin/sh -lc 'gleam deps download'
 sudo chown -R ec2-user:ec2-user \
   /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server/build
 kubectl -n default rollout restart deploy/dd-gleam-mcp-server

@@ -19,6 +19,65 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      initContainers:
+        - name: build-gleamlang-server
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              SRC_ROOT=/opt/dd-next-1
+              WORK_ROOT=/work/dd-next-1
+              mkdir -p \
+                "$WORK_ROOT/remote/deployments" \
+                "$WORK_ROOT/remote/libs/cli-config-client-gleam" \
+                "$WORK_ROOT/remote/libs/nats/subject-defs/generated" \
+                "$WORK_ROOT/remote/libs/pg-defs/generated" \
+                "$WORK_ROOT/remote/libs/runtime-config-client-gleam" \
+                /work/home /work/cache /work/gleam-home
+              cp -R "$SRC_ROOT/remote/deployments/gleamlang-ws-server" "$WORK_ROOT/remote/deployments/gleamlang-ws-server"
+              cp -R "$SRC_ROOT/remote/libs/cli-config-client-gleam"/. "$WORK_ROOT/remote/libs/cli-config-client-gleam"/
+              cp -R "$SRC_ROOT/remote/libs/nats/subject-defs/generated/gleam" "$WORK_ROOT/remote/libs/nats/subject-defs/generated/gleam"
+              cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
+              cp -R "$SRC_ROOT/remote/libs/runtime-config-client-gleam"/. "$WORK_ROOT/remote/libs/runtime-config-client-gleam"/
+              cd "$WORK_ROOT/remote/deployments/gleamlang-ws-server"
+              gleam deps download
+              gleam build
+              if [ ! -f build/dev/erlang/gleamlang_ws_server/ebin/gleamlang_ws_server@@main.beam ]; then
+                echo "build: missing generated Gleam websocket entry module after gleam build"
+                exit 1
+              fi
+          env:
+            - name: HOME
+              value: /work/home
+            - name: XDG_CACHE_HOME
+              value: /work/cache
+            - name: GLEAM_HOME
+              value: /work/gleam-home
+            - name: ERL_FLAGS
+              value: "+S 2:2 +SDcpu 1:1 +SDio 1 +sbwt none +sbwtdcpu none +sbwtdio none"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: gleam-build
+              mountPath: /work
       containers:
         - name: gleamlang-server
           image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
@@ -33,13 +92,9 @@ spec:
           args:
             - |
               set -eu
-              if ! apk add --no-cache postgresql-client >/tmp/dd-gleamlang-apk.log 2>&1; then
-                cat /tmp/dd-gleamlang-apk.log
-                exit 1
-              fi
-              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
+              cd /work/dd-next-1/remote/deployments/gleamlang-ws-server
               if [ ! -f build/dev/erlang/gleamlang_ws_server/ebin/gleamlang_ws_server@@main.beam ]; then
-                echo "boot: missing prebuilt Gleam BEAM artifacts; warm the EC2 host checkout with 'gleam build' under remote/deployments/gleamlang-ws-server before deploying"
+                echo "boot: missing Gleam BEAM artifacts from build init container"
                 exit 1
               fi
               exec erl -pa build/dev/erlang/*/ebin -noshell -eval 'gleamlang_ws_server@@main:run(gleamlang_ws_server).'
@@ -52,6 +107,12 @@ spec:
             # than letting one Erlang VM reserve multiple GiB.
             - name: ERL_FLAGS
               value: "+S 2:2 +SDcpu 1:1 +SDio 1 +sbwt none +sbwtdcpu none +sbwtdio none"
+            - name: HOME
+              value: /work/home
+            - name: XDG_CACHE_HOME
+              value: /work/cache
+            - name: GLEAM_HOME
+              value: /work/gleam-home
             - name: GLEAM_BROADCAST_SECRET
               valueFrom:
                 secretKeyRef:
@@ -129,8 +190,8 @@ spec:
               cpu: '2'
               memory: 300Mi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
+            - name: gleam-build
+              mountPath: /work
         - name: nats-bridge
           image: docker.io/library/node:22-alpine
           imagePullPolicy: IfNotPresent
@@ -178,3 +239,6 @@ spec:
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: gleam-build
+          emptyDir:
+            sizeLimit: 2Gi
