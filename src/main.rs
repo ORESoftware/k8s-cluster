@@ -50425,6 +50425,9 @@ fn learned_part_description(method: &str) -> &'static str {
         "fastener-installation" => {
             "learned fastener installation, torque sequence, threadlocker, or retorque release inferred from successful hybrid outcomes"
         }
+        "rivet-installation" => {
+            "learned rivet installation, clinch, swage, mandrel-break, or shop-head release inferred from successful hybrid outcomes"
+        }
         _ => "learned special-process component inferred from successful hybrid outcomes",
     }
 }
@@ -167064,6 +167067,142 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-fastener-installation"
+        }));
+    }
+
+    #[test]
+    fn learned_rivet_installation_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("rivet-installation-methods-1".to_string()),
+            job_id: Some("plan-rivet-installation-1".to_string()),
+            objective: Some("printed ABS bracket joined with retained blind rivets".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "blind-rivet-installation".to_string(),
+            ]),
+            machine_kind: Some("rivet-installation-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("printed bracket plus retained rivet setting lane".to_string()),
+            source_kind: None,
+            success: true,
+            reward: Some(2.2),
+            observations: Some(vec![
+                "grip length retained".to_string(),
+                "mandrel break verified".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus rivet-installation process".to_string()
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned rivet installation outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("rivet-installation-methods-2".to_string()),
+            job_id: Some("plan-rivet-installation-2".to_string()),
+            objective: Some("printed ABS cover with swaged rivets and pull proof".to_string()),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "rivet-installation".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: Some("rivet-installation-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("printed bracket plus retained rivet setting lane".to_string()),
+            source_kind: None,
+            success: true,
+            reward: Some(2.0),
+            observations: Some(vec![
+                "shop head height recorded".to_string(),
+                "pull proof passed".to_string(),
+            ]),
+            notes: Some(vec!["same rivet lane worked again".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned rivet installation outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+rivet-installation"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-rivet-installation-combination".to_string()),
+                objective: "ABS assembly that can use learned printed and riveted process"
+                    .to_string(),
+                material: Some(material("abs", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "abs-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![250.0, 210.0, 210.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "rivet-cell".to_string(),
+                        kind: "rivet-installation-cell".to_string(),
+                        controller: Some("rivet-installation-job".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![500.0, 300.0, 160.0]),
+                        axes: Some(3),
+                        operations: Some(vec![
+                            "rivet-installation".to_string(),
+                            "blind-rivet-installation".to_string(),
+                            "swage-peen".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned rivet installation plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-rivet-installation-part"
+                && part.machine_kind == "rivet-installation-cell"
+                && part.manufacturing_method == "rivet-installation"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-rivet-installation-part"
+                && program.machine_id == "rivet-cell"
+                && program.language == "rivet-installation-job"
+                && program.instructions.iter().any(|instruction| {
+                    instruction.contains("VERIFY_RIVET_SETUP")
+                        || instruction.contains("VERIFY_RIVET_RELEASE")
+                })
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed bracket plus retained rivet setting lane"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-rivet-installation"
         }));
     }
 
