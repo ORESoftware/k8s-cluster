@@ -27,6 +27,9 @@ pub(crate) enum Permission {
     EvolutionRun,
     DashboardRead,
     DashboardWrite,
+    PublishingRead,
+    PublishingRequest,
+    PublishingReview,
     QuestionRead,
     QuestionSuggest,
     QuestionWrite,
@@ -91,6 +94,9 @@ impl Role {
                 Permission::EvolutionRun,
                 Permission::DashboardRead,
                 Permission::DashboardWrite,
+                Permission::PublishingRead,
+                Permission::PublishingRequest,
+                Permission::PublishingReview,
                 Permission::QuestionRead,
                 Permission::QuestionSuggest,
                 Permission::QuestionWrite,
@@ -115,6 +121,8 @@ impl Role {
                 Permission::VisualizationSuggest,
                 Permission::EvolutionRead,
                 Permission::DashboardRead,
+                Permission::PublishingRead,
+                Permission::PublishingRequest,
                 Permission::QuestionRead,
                 Permission::QuestionSuggest,
                 Permission::QuestionWrite,
@@ -129,6 +137,7 @@ impl Role {
                 Permission::DatasetRead,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
+                Permission::PublishingRead,
                 Permission::QuestionRead,
                 Permission::QuestionSuggest,
                 Permission::AssociationRead,
@@ -143,6 +152,8 @@ impl Role {
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
+                Permission::PublishingRead,
+                Permission::PublishingRequest,
                 Permission::QuestionRead,
                 Permission::QuestionSuggest,
                 Permission::AlertRead,
@@ -190,6 +201,9 @@ impl Permission {
             Self::EvolutionRun => "Run evolutionary visualization searches.",
             Self::DashboardRead => "Read saved dashboard definitions.",
             Self::DashboardWrite => "Create or replace saved dashboard definitions.",
+            Self::PublishingRead => "Read publishing approval requests.",
+            Self::PublishingRequest => "Request publication of saved dashboards, questions, or charts.",
+            Self::PublishingReview => "Approve or reject publishing requests.",
             Self::QuestionRead => "Read saved self-service questions and chart definitions.",
             Self::QuestionSuggest => {
                 "Generate deterministic natural-language question proposals from dataset schemas."
@@ -264,6 +278,9 @@ fn all_permissions() -> Vec<Permission> {
         Permission::EvolutionRun,
         Permission::DashboardRead,
         Permission::DashboardWrite,
+        Permission::PublishingRead,
+        Permission::PublishingRequest,
+        Permission::PublishingReview,
         Permission::QuestionRead,
         Permission::QuestionSuggest,
         Permission::QuestionWrite,
@@ -294,6 +311,8 @@ mod tests {
     #[test]
     fn builder_can_publish_dashboards() {
         assert!(Role::Builder.allows(Permission::DashboardWrite));
+        assert!(Role::Builder.allows(Permission::PublishingRequest));
+        assert!(Role::Builder.allows(Permission::PublishingReview));
         assert!(Role::Builder.allows(Permission::ConnectionWrite));
         assert!(Role::Builder.allows(Permission::SqlLabWrite));
         assert!(Role::Builder.allows(Permission::QueryCacheRead));
@@ -322,9 +341,14 @@ mod tests {
         assert!(Role::Analyst.allows(Permission::QueryCacheRead));
         assert!(Role::Analyst.allows(Permission::QuestionSuggest));
         assert!(Role::Analyst.allows(Permission::QuestionWrite));
+        assert!(Role::Analyst.allows(Permission::PublishingRequest));
+        assert!(!Role::Analyst.allows(Permission::PublishingReview));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(!Role::Analyst.allows(Permission::EtlPlan));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
+        assert!(Role::Viewer.allows(Permission::PublishingRead));
+        assert!(!Role::Viewer.allows(Permission::PublishingRequest));
+        assert!(!Role::Viewer.allows(Permission::PublishingReview));
         assert!(Role::Viewer.allows(Permission::QuestionRead));
         assert!(Role::Viewer.allows(Permission::QuestionSuggest));
         assert!(!Role::Viewer.allows(Permission::SqlLabRead));

@@ -170,6 +170,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/self_service.rs compiles question-builder payloads into bounded SQL request metadata and rejects missing fields or invalid chart encodings.",
         },
         ControlDescriptor {
+            id: "bounded-publishing-approvals",
+            status: "implemented",
+            description: "Publishing approval requests are capped, target saved dashboards/questions/charts must exist, notes/comments are bounded and reject secret-looking text, and reviews are RBAC-gated.",
+            evidence: "src/publishing.rs validates request/review metadata; /publishing/requests/:request_id/review applies approve/reject decisions through PublishingReview permission.",
+        },
+        ControlDescriptor {
             id: "bounded-question-nl",
             status: "implemented",
             description: "Natural-language question proposals are bounded by prompt bytes and suggestion count, reject secret-looking prompt text, and map only to existing dataset fields.",
@@ -190,8 +196,8 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
         ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
-            description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
-            evidence: "src/infra_diagrams.rs extracts topology references into neutral graph nodes, edges, and renderer blueprints while enforcing source-size limits before returning derived diagrams.",
+            description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed across the expanded renderer bundle.",
+            evidence: "src/infra_diagrams.rs extracts topology references into neutral graph nodes, edges, and diagram-as-code, web graph, graph analytics, whiteboard, spatial, and Kroki renderer blueprints while enforcing source-size limits before returning derived diagrams.",
         },
         ControlDescriptor {
             id: "route-derived-docs",

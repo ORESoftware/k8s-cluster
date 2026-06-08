@@ -12,6 +12,44 @@ const MAX_INVENTORY_RESOURCES: usize = 2_000;
 const MAX_DIAGRAM_NODES: usize = 2_000;
 const MAX_DIAGRAM_EDGES: usize = 6_000;
 
+const SOURCE_CATALOG: &[&str] = &[
+    "terraform",
+    "terraform-plan",
+    "aws-inventory",
+    "aws-resource-explorer",
+    "gcp-inventory",
+    "gcp-cloud-asset",
+    "mixed",
+];
+
+const RENDERER_CATALOG: &[&str] = &[
+    "mermaid",
+    "mermaid-c4",
+    "mermaid-mindmap",
+    "graphviz-dot",
+    "plantuml",
+    "d2",
+    "structurizr-dsl",
+    "nomnoml",
+    "blockdiag",
+    "cytoscape-json",
+    "drawio-mxfile",
+    "excalidraw-json",
+    "vega-force-json",
+    "networkx-json",
+    "json-graph",
+    "vis-network-json",
+    "sigma-graph-json",
+    "echarts-graph-json",
+    "elk-graph-json",
+    "deckgl-layers-json",
+    "gexf",
+    "markmap-markdown",
+    "markdown-inventory",
+    "topology-json",
+    "kroki-manifest",
+];
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct InfraDiagramRequest {
@@ -123,18 +161,30 @@ pub(crate) struct InfraGroup {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DiagramRenderers {
     mermaid: String,
+    mermaid_c4: String,
+    mermaid_mindmap: String,
     graphviz_dot: String,
     plantuml: String,
     d2: String,
     structurizr_dsl: String,
+    nomnoml: String,
+    blockdiag: String,
     cytoscape: Value,
     drawio_mxfile: String,
     excalidraw: Value,
     vega_force: Value,
     networkx_json: Value,
+    json_graph: Value,
+    vis_network: Value,
+    sigma_graph: Value,
+    echarts_graph: Value,
+    elk_graph: Value,
+    deckgl_layers: Value,
     gexf: String,
     markmap_markdown: String,
     markdown_inventory: String,
+    topology_json: Value,
+    kroki_manifest: Value,
     renderer_catalog: Vec<&'static str>,
 }
 
@@ -199,6 +249,80 @@ pub(crate) fn generate(request: InfraDiagramRequest) -> Result<InfraDiagramRespo
         graph,
         renderers,
         warnings,
+    })
+}
+
+pub(crate) fn source_names() -> &'static [&'static str] {
+    SOURCE_CATALOG
+}
+
+pub(crate) fn renderer_names() -> &'static [&'static str] {
+    RENDERER_CATALOG
+}
+
+pub(crate) fn tool_catalog_payload() -> Value {
+    json!({
+        "schemaVersion": "data-viz.infra-diagram-tools.v1",
+        "sources": source_names(),
+        "renderers": renderer_names(),
+        "toolFamilies": [
+            {
+                "family": "diagram-as-code",
+                "tools": ["Mermaid", "Graphviz DOT", "PlantUML", "D2", "Structurizr DSL", "Nomnoml", "BlockDiag"],
+                "bestFor": "Architecture review, pull request diffs, text-first diagrams, and repeatable docs pipelines."
+            },
+            {
+                "family": "whiteboard-and-docs",
+                "tools": ["draw.io", "Excalidraw", "Markmap", "Markdown inventory"],
+                "bestFor": "Human handoff, design docs, presentation drafts, and quick inventory walkthroughs."
+            },
+            {
+                "family": "interactive-web-graphs",
+                "tools": ["Cytoscape.js", "Vega force", "vis-network", "Sigma.js", "Apache ECharts", "ELK"],
+                "bestFor": "Large topology browsing, dynamic filtering, graph search, and layout experimentation."
+            },
+            {
+                "family": "graph-analytics",
+                "tools": ["NetworkX", "JSON Graph", "GEXF / Gephi", "topology JSON"],
+                "bestFor": "Centrality, blast-radius analysis, ownership maps, dependency clustering, and offline graph science."
+            },
+            {
+                "family": "spatial-and-presentation",
+                "tools": ["deck.gl layers", "Kroki manifest", "PowerPoint / Google Slides downstream layers"],
+                "bestFor": "Region-aware cloud maps, service overlays, exported decks, and multi-renderer batch jobs."
+            }
+        ],
+        "layoutStrategies": [
+            "layered-dag",
+            "force-directed",
+            "circular-service-clusters",
+            "provider-service-swimlanes",
+            "region-zone-facets",
+            "blast-radius-neighborhood",
+            "c4-context",
+            "ownership-tree"
+        ],
+        "pipelines": [
+            {
+                "id": "terraform-to-review-pack",
+                "inputs": ["terraform", "terraform-plan"],
+                "outputs": ["mermaid", "graphviz-dot", "d2", "structurizr-dsl", "kroki-manifest"],
+                "purpose": "Generate pull-request friendly architecture diagrams from IaC."
+            },
+            {
+                "id": "cloud-inventory-to-live-map",
+                "inputs": ["aws-resource-explorer", "gcp-cloud-asset", "mixed"],
+                "outputs": ["cytoscape-json", "sigma-graph-json", "echarts-graph-json", "deckgl-layers-json"],
+                "purpose": "Feed interactive cloud topology browsers without exposing raw inventory attributes."
+            },
+            {
+                "id": "topology-to-analytics",
+                "inputs": ["terraform-plan", "aws-inventory", "gcp-inventory", "mixed"],
+                "outputs": ["networkx-json", "json-graph", "gexf", "topology-json"],
+                "purpose": "Support graph algorithms, dependency scoring, and ownership or blast-radius analysis."
+            }
+        ],
+        "posture": "Derived topology only; raw cloud/IaC attributes are not echoed, renderer outputs are bounded by graph node and edge caps."
     })
 }
 
@@ -742,33 +866,31 @@ fn groups_for_nodes(nodes: &[InfraNode]) -> Vec<InfraGroup> {
 fn renderers(title: &str, graph: &InfraGraph) -> DiagramRenderers {
     DiagramRenderers {
         mermaid: mermaid(title, graph),
+        mermaid_c4: mermaid_c4(title, graph),
+        mermaid_mindmap: mermaid_mindmap(title, graph),
         graphviz_dot: graphviz_dot(title, graph),
         plantuml: plantuml(title, graph),
         d2: d2(title, graph),
         structurizr_dsl: structurizr_dsl(title, graph),
+        nomnoml: nomnoml(title, graph),
+        blockdiag: blockdiag(title, graph),
         cytoscape: cytoscape(graph),
         drawio_mxfile: drawio_mxfile(title, graph),
         excalidraw: excalidraw(graph),
         vega_force: vega_force(graph),
         networkx_json: networkx_json(title, graph),
+        json_graph: json_graph(title, graph),
+        vis_network: vis_network(graph),
+        sigma_graph: sigma_graph(graph),
+        echarts_graph: echarts_graph(title, graph),
+        elk_graph: elk_graph(graph),
+        deckgl_layers: deckgl_layers(graph),
         gexf: gexf(title, graph),
         markmap_markdown: markmap_markdown(title, graph),
         markdown_inventory: markdown_inventory(title, graph),
-        renderer_catalog: vec![
-            "mermaid",
-            "graphviz-dot",
-            "plantuml",
-            "d2",
-            "structurizr-dsl",
-            "cytoscape-json",
-            "drawio-mxfile",
-            "excalidraw-json",
-            "vega-force-json",
-            "networkx-json",
-            "gexf",
-            "markmap-markdown",
-            "markdown-inventory",
-        ],
+        topology_json: topology_json(graph),
+        kroki_manifest: kroki_manifest(title, graph),
+        renderer_catalog: renderer_names().to_vec(),
     }
 }
 
@@ -791,6 +913,54 @@ fn mermaid(title: &str, graph: &InfraGraph) -> String {
         output.push_str("| ");
         output.push_str(&mermaid_id(&edge.to));
         output.push('\n');
+    }
+    output
+}
+
+fn mermaid_c4(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!(
+        "C4Context\n  title {}\n",
+        title.replace('"', "'").replace('\n', " ")
+    );
+    for node in &graph.nodes {
+        output.push_str("  System(");
+        output.push_str(&mermaid_id(&node.id));
+        output.push_str(", \"");
+        output.push_str(&node.label.replace('"', "'"));
+        output.push_str("\", \"");
+        output.push_str(&format!("{} / {}", node.provider, node.resource_type).replace('"', "'"));
+        output.push_str("\")\n");
+    }
+    for edge in &graph.edges {
+        output.push_str("  Rel(");
+        output.push_str(&mermaid_id(&edge.from));
+        output.push_str(", ");
+        output.push_str(&mermaid_id(&edge.to));
+        output.push_str(", \"");
+        output.push_str(&edge.relation.replace('"', "'"));
+        output.push_str("\")\n");
+    }
+    output
+}
+
+fn mermaid_mindmap(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!("mindmap\n  root(({}))\n", title.replace('\n', " "));
+    let mut by_group = BTreeMap::<(&str, &str), Vec<&InfraNode>>::new();
+    for node in &graph.nodes {
+        by_group
+            .entry((&node.provider, &node.service))
+            .or_default()
+            .push(node);
+    }
+    for ((provider, service), nodes) in by_group {
+        output.push_str(&format!("    {} {}\n", provider, service));
+        for node in nodes {
+            output.push_str(&format!(
+                "      {} [{}]\n",
+                node.label.replace('\n', " "),
+                node.resource_type
+            ));
+        }
     }
     output
 }
@@ -891,6 +1061,63 @@ fn structurizr_dsl(title: &str, graph: &InfraGraph) -> String {
         output.push_str("\"\n");
     }
     output.push_str("  }\n  views { systemLandscape { include * autolayout lr } }\n}\n");
+    output
+}
+
+fn nomnoml(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!("#title: {}\n#direction: right\n", title.replace('\n', " "));
+    for node in &graph.nodes {
+        output.push_str("[");
+        output.push_str(&mermaid_id(&node.id));
+        output.push_str("|");
+        output.push_str(
+            &node
+                .label
+                .replace('[', " ")
+                .replace(']', " ")
+                .replace('|', " "),
+        );
+        output.push_str("|");
+        output.push_str(
+            &node
+                .resource_type
+                .replace('[', " ")
+                .replace(']', " ")
+                .replace('|', " "),
+        );
+        output.push_str("]\n");
+    }
+    for edge in &graph.edges {
+        output.push_str("[");
+        output.push_str(&mermaid_id(&edge.from));
+        output.push_str("] -> [");
+        output.push_str(&mermaid_id(&edge.to));
+        output.push_str("]\n");
+    }
+    output
+}
+
+fn blockdiag(title: &str, graph: &InfraGraph) -> String {
+    let mut output = format!("blockdiag {{\n  orientation = landscape;\n  // {}\n", title);
+    for node in &graph.nodes {
+        output.push_str("  ");
+        output.push_str(&mermaid_id(&node.id));
+        output.push_str(" [label = \"");
+        output.push_str(&node.label.replace('"', "'"));
+        output.push_str("\\n");
+        output.push_str(&node.resource_type.replace('"', "'"));
+        output.push_str("\"];\n");
+    }
+    for edge in &graph.edges {
+        output.push_str("  ");
+        output.push_str(&mermaid_id(&edge.from));
+        output.push_str(" -> ");
+        output.push_str(&mermaid_id(&edge.to));
+        output.push_str(" [label = \"");
+        output.push_str(&edge.relation.replace('"', "'"));
+        output.push_str("\"];\n");
+    }
+    output.push_str("}\n");
     output
 }
 
@@ -1126,6 +1353,344 @@ fn networkx_json(title: &str, graph: &InfraGraph) -> Value {
     })
 }
 
+fn json_graph(title: &str, graph: &InfraGraph) -> Value {
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "label": node.label,
+                "metadata": {
+                    "provider": node.provider,
+                    "service": node.service,
+                    "resourceType": node.resource_type,
+                    "region": node.region,
+                    "zone": node.zone,
+                    "tagCount": node.tag_count,
+                    "source": node.source
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let edges = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "source": edge.from,
+                "target": edge.to,
+                "relation": edge.relation
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "graph": {
+            "id": safe_id(title).unwrap_or_else(|| "infrastructure-diagram".to_string()),
+            "label": title,
+            "directed": true,
+            "type": "infrastructure-topology",
+            "nodes": nodes,
+            "edges": edges
+        }
+    })
+}
+
+fn vis_network(graph: &InfraGraph) -> Value {
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "label": node.label,
+                "group": format!("{}:{}", node.provider, node.service),
+                "title": format!("{} / {}", node.provider, node.resource_type),
+                "value": node.tag_count.max(1)
+            })
+        })
+        .collect::<Vec<_>>();
+    let edges = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "from": edge.from,
+                "to": edge.to,
+                "label": edge.relation,
+                "arrows": "to"
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "nodes": nodes,
+        "edges": edges,
+        "options": {
+            "layout": { "improvedLayout": true },
+            "physics": {
+                "solver": "forceAtlas2Based",
+                "stabilization": { "iterations": 160 }
+            },
+            "interaction": { "hover": true, "navigationButtons": true }
+        }
+    })
+}
+
+fn sigma_graph(graph: &InfraGraph) -> Value {
+    let positions = node_positions(graph);
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            let position = positions.get(&node.id).copied().unwrap_or([0.0, 0.0, 0.0]);
+            json!({
+                "key": node.id,
+                "label": node.label,
+                "x": position[0],
+                "y": position[1],
+                "size": 4 + node.tag_count.min(12),
+                "color": provider_color(&node.provider),
+                "attributes": {
+                    "provider": node.provider,
+                    "service": node.service,
+                    "resourceType": node.resource_type,
+                    "region": node.region,
+                    "zone": node.zone
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let edges = graph
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| {
+            json!({
+                "key": format!("edge-{index}"),
+                "source": edge.from,
+                "target": edge.to,
+                "label": edge.relation,
+                "type": "arrow"
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({ "nodes": nodes, "edges": edges })
+}
+
+fn echarts_graph(title: &str, graph: &InfraGraph) -> Value {
+    let categories = graph
+        .groups
+        .iter()
+        .map(|group| {
+            json!({
+                "name": group.id,
+                "provider": group.provider,
+                "service": group.service
+            })
+        })
+        .collect::<Vec<_>>();
+    let nodes = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "name": node.label,
+                "value": node.tag_count,
+                "category": format!("{}:{}", node.provider, node.service),
+                "symbolSize": 14 + node.tag_count.min(18),
+                "resourceType": node.resource_type,
+                "region": node.region,
+                "zone": node.zone
+            })
+        })
+        .collect::<Vec<_>>();
+    let links = graph
+        .edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "source": edge.from,
+                "target": edge.to,
+                "name": edge.relation
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "title": { "text": title },
+        "tooltip": {},
+        "legend": [{ "data": graph.groups.iter().map(|group| group.id.clone()).collect::<Vec<_>>() }],
+        "series": [{
+            "type": "graph",
+            "layout": "force",
+            "roam": true,
+            "draggable": true,
+            "categories": categories,
+            "data": nodes,
+            "links": links,
+            "label": { "show": true, "position": "right" },
+            "force": { "repulsion": 180, "edgeLength": 90 }
+        }]
+    })
+}
+
+fn elk_graph(graph: &InfraGraph) -> Value {
+    let children = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "width": 180,
+                "height": 72,
+                "labels": [{ "text": format!("{}\\n{}", node.label, node.resource_type) }],
+                "properties": {
+                    "provider": node.provider,
+                    "service": node.service,
+                    "resourceType": node.resource_type
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let edges = graph
+        .edges
+        .iter()
+        .enumerate()
+        .map(|(index, edge)| {
+            json!({
+                "id": format!("edge-{index}"),
+                "sources": [edge.from],
+                "targets": [edge.to],
+                "labels": [{ "text": edge.relation }]
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "id": "root",
+        "layoutOptions": {
+            "elk.algorithm": "layered",
+            "elk.direction": "RIGHT",
+            "elk.spacing.nodeNode": "48"
+        },
+        "children": children,
+        "edges": edges
+    })
+}
+
+fn deckgl_layers(graph: &InfraGraph) -> Value {
+    let positions = node_positions(graph);
+    let points = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            json!({
+                "id": node.id,
+                "label": node.label,
+                "provider": node.provider,
+                "service": node.service,
+                "resourceType": node.resource_type,
+                "position": positions.get(&node.id).copied().unwrap_or([0.0, 0.0, 0.0]),
+                "color": provider_rgb(&node.provider)
+            })
+        })
+        .collect::<Vec<_>>();
+    let arcs = graph
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let source = positions.get(&edge.from)?;
+            let target = positions.get(&edge.to)?;
+            Some(json!({
+                "sourceId": edge.from,
+                "targetId": edge.to,
+                "relation": edge.relation,
+                "sourcePosition": source,
+                "targetPosition": target
+            }))
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "coordinateSystem": "synthetic-grid",
+        "layers": [
+            {
+                "id": "infra-resource-points",
+                "type": "ScatterplotLayer",
+                "data": points,
+                "getPosition": "position",
+                "getFillColor": "color",
+                "getRadius": 30000,
+                "pickable": true
+            },
+            {
+                "id": "infra-resource-arcs",
+                "type": "ArcLayer",
+                "data": arcs,
+                "getSourcePosition": "sourcePosition",
+                "getTargetPosition": "targetPosition",
+                "getSourceColor": [80, 80, 80],
+                "getTargetColor": [20, 20, 20],
+                "pickable": true
+            }
+        ]
+    })
+}
+
+fn topology_json(graph: &InfraGraph) -> Value {
+    let adjacency = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            let outgoing = graph
+                .edges
+                .iter()
+                .filter(|edge| edge.from == node.id)
+                .map(|edge| json!({ "to": edge.to, "relation": edge.relation }))
+                .collect::<Vec<_>>();
+            let incoming = graph
+                .edges
+                .iter()
+                .filter(|edge| edge.to == node.id)
+                .map(|edge| json!({ "from": edge.from, "relation": edge.relation }))
+                .collect::<Vec<_>>();
+            json!({
+                "id": node.id,
+                "incoming": incoming,
+                "outgoing": outgoing
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "summary": {
+            "nodes": graph.nodes.len(),
+            "edges": graph.edges.len(),
+            "groups": graph.groups.len()
+        },
+        "groups": graph.groups,
+        "nodes": graph.nodes,
+        "edges": graph.edges,
+        "adjacency": adjacency
+    })
+}
+
+fn kroki_manifest(title: &str, graph: &InfraGraph) -> Value {
+    json!({
+        "title": title,
+        "service": "kroki",
+        "diagrams": [
+            { "type": "mermaid", "outputField": "renderers.mermaid" },
+            { "type": "graphviz", "outputField": "renderers.graphvizDot" },
+            { "type": "plantuml", "outputField": "renderers.plantuml" },
+            { "type": "d2", "outputField": "renderers.d2" },
+            { "type": "nomnoml", "outputField": "renderers.nomnoml" },
+            { "type": "blockdiag", "outputField": "renderers.blockdiag" }
+        ],
+        "graphSize": {
+            "nodes": graph.nodes.len(),
+            "edges": graph.edges.len()
+        }
+    })
+}
+
 fn gexf(title: &str, graph: &InfraGraph) -> String {
     let mut output = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><gexf xmlns="http://www.gexf.net/1.3" version="1.3"><meta><creator>dd-data-viz-rs</creator><description>{}</description></meta><graph mode="static" defaultedgetype="directed"><attributes class="node"><attribute id="provider" title="provider" type="string"/><attribute id="service" title="service" type="string"/><attribute id="resourceType" title="resourceType" type="string"/><attribute id="tagCount" title="tagCount" type="integer"/></attributes><nodes>"#,
@@ -1226,6 +1791,45 @@ fn markdown_inventory(title: &str, graph: &InfraGraph) -> String {
         }
     }
     output
+}
+
+fn node_positions(graph: &InfraGraph) -> BTreeMap<String, [f64; 3]> {
+    graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            let column = (index % 12) as f64;
+            let row = (index / 12) as f64;
+            let altitude = (node.tag_count.min(10) as f64) * 0.1;
+            (
+                node.id.clone(),
+                [-122.0 + column * 0.6, 37.0 - row * 0.45, altitude],
+            )
+        })
+        .collect()
+}
+
+fn provider_color(provider: &str) -> &'static str {
+    match provider {
+        "aws" => "#ff9900",
+        "gcp" => "#4285f4",
+        "azure" => "#0078d4",
+        "kubernetes" => "#326ce5",
+        "terraform" => "#7b42bc",
+        _ => "#546e7a",
+    }
+}
+
+fn provider_rgb(provider: &str) -> [u8; 3] {
+    match provider {
+        "aws" => [255, 153, 0],
+        "gcp" => [66, 133, 244],
+        "azure" => [0, 120, 212],
+        "kubernetes" => [50, 108, 229],
+        "terraform" => [123, 66, 188],
+        _ => [84, 110, 122],
+    }
 }
 
 fn value_string(value: &Value, path: &[&str]) -> Option<String> {
@@ -1577,8 +2181,32 @@ mod tests {
             .iter()
             .any(|edge| edge.from == "aws_vpc.main" && edge.to == "aws_subnet.public"));
         assert!(response.renderers.mermaid.contains("flowchart LR"));
+        assert!(response.renderers.mermaid_c4.contains("C4Context"));
         assert!(response.renderers.graphviz_dot.contains("digraph"));
         assert!(response.renderers.renderer_catalog.contains(&"plantuml"));
+        assert!(response
+            .renderers
+            .renderer_catalog
+            .contains(&"sigma-graph-json"));
+        assert!(response.renderers.nomnoml.contains("#direction: right"));
+        assert_eq!(response.renderers.json_graph["graph"]["directed"], true);
+    }
+
+    #[test]
+    fn diagram_tool_catalog_lists_many_interop_targets() {
+        let catalog = tool_catalog_payload();
+        assert!(renderer_names().len() >= 20);
+        assert!(source_names().contains(&"aws-resource-explorer"));
+        assert!(catalog["renderers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|renderer| renderer == "deckgl-layers-json"));
+        assert!(catalog["toolFamilies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|family| family["family"] == "interactive-web-graphs"));
     }
 
     #[test]

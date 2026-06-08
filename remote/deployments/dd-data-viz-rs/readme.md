@@ -61,13 +61,14 @@ concept in `main.rs`:
 - `src/connections.rs` owns secretRef-backed data connection metadata and dry-run connection test
   plans for warehouse and BI planner surfaces.
 - `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
-  Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus Mermaid, Graphviz, PlantUML,
-  D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
-  Markdown inventory outputs.
+  Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus diagram-as-code, web graph,
+  whiteboard, graph analytics, spatial, and presentation-oriented renderer outputs.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
 - `src/dashboard.rs` owns saved dashboard request validation and in-memory dashboard metadata.
+- `src/publishing.rs` owns Tableau/Superset-style publishing approval requests and review state for
+  saved dashboards, questions, and charts.
 - `src/self_service.rs` owns Metabase/Superset-style saved question validation, chart bindings, and
   compiled SQL request metadata.
 - `src/question_nl.rs` owns deterministic natural-language question suggestions and prompt-to-query
@@ -93,11 +94,12 @@ Current first-class parity surfaces:
   for bounded visual flows.
 - Superset / Metabase: bounded SQL Lab history, natural-language question proposals, visual
   query-builder/self-service contracts, RBAC policy, secretRef-backed database connection registry,
-  query result cache, saved dashboard catalog, saved questions, and saved chart bindings.
+  query result cache, saved dashboard catalog, saved questions, saved chart bindings, and publishing
+  approval requests.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
   rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
-  blueprint posture, infrastructure diagrams, and Markdown-plus-SQL report blueprint.
+  blueprint posture, infrastructure diagram tool catalog, and Markdown-plus-SQL report blueprint.
 
 ## Endpoints
 
@@ -121,9 +123,13 @@ Current first-class parity surfaces:
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
 - `POST /etl/plans` - authenticated Domo Magic ETL/Power Query-style flow validation with lineage,
   materialization, and connector pushdown hints.
+- `GET /diagrams/tools` - Terraform, AWS, GCP, diagram-as-code, whiteboard, web graph, graph
+  analytics, spatial, and presentation infrastructure diagram tool catalog.
 - `POST /diagrams/infra` - authenticated Terraform/AWS/GCP infrastructure diagram generation,
-  including Terraform plan JSON, AWS Resource Explorer, GCP Cloud Asset, and multi-renderer graph
-  export targets.
+  including Terraform plan JSON, AWS Resource Explorer, GCP Cloud Asset, Mermaid, Graphviz,
+  PlantUML, D2, Structurizr, Nomnoml, BlockDiag, Cytoscape, Draw.io, Excalidraw, Vega, NetworkX,
+  JSON Graph, vis-network, Sigma.js, ECharts, ELK, deck.gl, GEXF, Markmap, Markdown inventory, and
+  Kroki-ready export targets.
 - `GET /reports/evidence` - Evidence.dev-style Markdown plus SQL report blueprint.
 - `GET /security/policy` - hardening controls, limits, and residual-risk report.
 - `GET /security/rbac` - role and permission policy for protected routes.
@@ -141,6 +147,12 @@ Current first-class parity surfaces:
 - `POST /dashboards` - authenticated saved dashboard create/replace.
 - `GET /dashboards` - authenticated saved dashboard catalog.
 - `GET /dashboards/:dashboard_id` - authenticated saved dashboard definition.
+- `POST /publishing/requests` - authenticated publishing approval request create/replace for saved
+  dashboards, questions, or charts.
+- `GET /publishing/requests` - authenticated publishing approval request summaries.
+- `GET /publishing/requests/:request_id` - authenticated publishing approval request detail.
+- `POST /publishing/requests/:request_id/review` - authenticated publishing approval approve/reject
+  workflow.
 - `POST /questions` - authenticated Metabase-style saved question create/replace with optional chart
   binding.
 - `GET /questions` - authenticated saved question catalog.

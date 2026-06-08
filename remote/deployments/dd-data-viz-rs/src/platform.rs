@@ -129,12 +129,13 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "visualization genome",
                 "2d/3d/4d/5d/xd channel encodings",
                 "saved dashboard definitions",
+                "publishing approval registry",
                 "presentation layer export",
             ],
             next_engine_work: vec![
                 "interactive dashboard layout persistence",
                 "pixel-level renderer testing",
-                "published workbook permissions",
+                "durable workbook publication state",
             ],
         },
         ProductParity {
@@ -236,11 +237,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "database connection registry",
                 "bounded SQL Lab history",
                 "query result cache",
-            ],
-            next_engine_work: vec![
-                "cache invalidation policies",
                 "dataset-level chart publishing approvals",
             ],
+            next_engine_work: vec!["cache invalidation policies", "durable ownership workflows"],
         },
         ProductParity {
             product: "Metabase",
@@ -256,6 +255,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "SQL Lab history summaries",
                 "query result cache summaries",
                 "deterministic natural-language question proposals",
+                "publishing approval request summaries",
             ],
             next_engine_work: vec![
                 "visual query builder execution against live warehouses",
@@ -288,7 +288,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "D3 renderer contract",
                 "final-layer JSON",
                 "evolution-generated encodings",
-                "Terraform/HCL, Terraform plan, AWS, and GCP infrastructure diagram render targets",
+                "Terraform/HCL, Terraform plan, AWS, and GCP infrastructure diagram tool catalog",
             ],
             next_engine_work: vec![
                 "generated TypeScript renderer package",
@@ -553,7 +553,7 @@ pub fn renderer_contracts() -> Vec<RendererContract> {
         RendererContract {
             id: "infra-diagrams",
             analog: "Terraform graph / cloud architecture diagrams",
-            output: "Mermaid, Graphviz DOT, PlantUML, D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and Markdown inventory blueprints",
+            output: "Mermaid, Graphviz DOT, PlantUML, D2, Structurizr, Nomnoml, BlockDiag, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, JSON Graph, vis-network, Sigma.js, ECharts, ELK, deck.gl, GEXF, Markmap, Markdown inventory, topology JSON, and Kroki manifest blueprints",
             supports: vec![
                 "Terraform HCL resource graphs",
                 "Terraform plan JSON",

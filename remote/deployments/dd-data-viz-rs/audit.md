@@ -14,11 +14,12 @@ This audit tracks the current hardening and visualization-platform parity postur
   planning lives in `src/etl.rs`, secretRef-backed data connection metadata lives in
   `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
   hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard
-  validation lives in `src/dashboard.rs`, self-service question/chart validation lives in
-  `src/self_service.rs`, natural-language question planning lives in `src/question_nl.rs`, SQL Lab
-  history validation lives in `src/sql_lab.rs`, query result cache bounds live in
-  `src/query_cache.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared helpers
-  live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
+  validation lives in `src/dashboard.rs`, publishing approval validation lives in
+  `src/publishing.rs`, self-service question/chart validation lives in `src/self_service.rs`,
+  natural-language question planning lives in `src/question_nl.rs`, SQL Lab history validation lives
+  in `src/sql_lab.rs`, query result cache bounds live in `src/query_cache.rs`, parser-backed SQL
+  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
+  server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -33,6 +34,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Metabase-style natural-language question proposals are generated through `POST /questions/nl` and
   `GET /questions/suggestions/:dataset_id` using deterministic field-name matching over dataset
   metadata, without model calls or query execution.
+- Tableau/Superset-style publishing approval requests validate saved dashboard, question, or chart
+  targets, keep bounded pending/approved/rejected state, and expose role-gated create/list/detail
+  and review endpoints through `/publishing/requests`.
 - Superset-style SQL Lab history is validated through `POST /sql-lab/history`, exposed through
   `GET /sql-lab/history` and `GET /sql-lab/history/:history_id`, rejects mutating or secret-looking
   SQL, and stores external connection entries as dry-run plans only.
@@ -66,9 +70,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   `POST /connections/:connection_id/test-plan`; dry-run test plans do not open sockets or call cloud
   APIs.
 - Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP
-  Cloud Asset inputs can generate neutral infrastructure graphs and Mermaid, Graphviz, PlantUML,
-  D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
-  Markdown inventory renderer targets through `POST /diagrams/infra`.
+  Cloud Asset inputs can generate neutral infrastructure graphs and diagram-as-code, whiteboard,
+  interactive web graph, graph analytics, spatial, presentation, and Kroki-ready renderer targets
+  through `GET /diagrams/tools` and `POST /diagrams/infra`.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -77,7 +81,7 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Remaining parity gaps
 
 - Tableau parity still needs persisted dashboard layouts, renderer screenshots, interaction tests,
-  and workbook publishing.
+  and durable workbook publication state beyond in-memory approvals.
 - Power BI parity still needs DAX and Power Query M parsers plus incremental refresh partitions.
 - Qlik parity still needs persisted selection sessions, field-alias inference, and richer
   relationship confidence scoring.
@@ -89,12 +93,12 @@ This audit tracks the current hardening and visualization-platform parity postur
   drag-and-drop visual flow builder.
 - Superset and Metabase parity still need richer natural-language intent parsing, actual external
   connector execution, durable cache/storage backends, and durable ownership beyond the current
-  in-memory role-gated connection/SQL-Lab/cache/question/chart catalog.
+  in-memory role-gated connection/SQL-Lab/cache/question/chart/publishing catalog.
 - Grafana parity still needs a real notification dispatcher worker, Loki log frames, and live
   WebSocket panel streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
-  rendered artifact verification, and richer cloud-native relationship extraction beyond topology
-  hints.
+  rendered artifact verification, live cloud inventory connectors, and richer cloud-native
+  relationship extraction beyond topology hints.
 
 ## Hardening gaps
 

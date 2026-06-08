@@ -27,6 +27,7 @@ mod hardening;
 mod infra_diagrams;
 mod notifications;
 mod platform;
+mod publishing;
 mod query_cache;
 mod question_nl;
 mod rbac;
@@ -63,6 +64,7 @@ struct AppState {
     query_cache: Arc<RwLock<BTreeMap<String, query_cache::QueryCacheEntry>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
+    publishing_requests: Arc<RwLock<BTreeMap<String, publishing::PublishRequestRecord>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
     alert_contacts: Arc<RwLock<BTreeMap<String, notifications::ContactPoint>>>,
     notification_policies: Arc<RwLock<BTreeMap<String, notifications::NotificationPolicy>>>,
@@ -98,6 +100,9 @@ struct Metrics {
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
+    publishing_requests_total: AtomicU64,
+    publish_requests_saved_total: AtomicU64,
+    publish_reviews_total: AtomicU64,
     self_service_requests_total: AtomicU64,
     questions_saved_total: AtomicU64,
     question_suggestions_total: AtomicU64,
@@ -505,6 +510,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         query_cache: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
+        publishing_requests: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
         alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
         notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
@@ -564,6 +570,7 @@ fn app_router(state: AppState) -> Router {
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
+        .route("/diagrams/tools", get(diagram_tool_catalog))
         .route("/diagrams/infra", post(generate_infra_diagram))
         .route("/reports/evidence", get(evidence_report_blueprint))
         .route("/security/policy", get(security_policy))
@@ -572,6 +579,15 @@ fn app_router(state: AppState) -> Router {
         .route("/associations/select", post(association_selection))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
+        .route(
+            "/publishing/requests",
+            get(list_publish_requests).post(save_publish_request),
+        )
+        .route("/publishing/requests/:request_id", get(get_publish_request))
+        .route(
+            "/publishing/requests/:request_id/review",
+            post(review_publish_request),
+        )
         .route("/questions", get(list_questions).post(save_question))
         .route("/questions/nl", post(question_from_natural_language))
         .route(
@@ -801,14 +817,20 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "naturalLanguage": question_nl::limits_payload(),
             "posture": "validated against ingested dataset fields; saved questions compile to bounded SQL requests"
         },
+        "publishing": {
+            "surfaces": ["publishing requests", "approval reviews", "approved/rejected status"],
+            "limits": publishing::limits_payload(),
+            "targetKinds": ["dashboard", "question", "chart"],
+            "posture": "in-memory approval registry; target existence is validated before request creation"
+        },
         "alertNotifications": {
             "surfaces": ["contact points", "notification policies", "rule delivery preview"],
             "contactKinds": ["email", "slack", "webhook", "pager-duty", "teams", "opsgenie"],
             "posture": "dry-run delivery blueprints only; webhook tokens and destinations must be referenced through secretRef"
         },
         "infraDiagram": {
-            "sources": ["terraform", "terraform-plan", "aws-inventory", "aws-resource-explorer", "gcp-inventory", "gcp-cloud-asset", "mixed"],
-            "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json", "vega-force-json", "networkx-json", "gexf", "markmap-markdown", "markdown-inventory"],
+            "sources": infra_diagrams::source_names(),
+            "renderers": infra_diagrams::renderer_names(),
             "posture": "topology only; input attributes are parsed for references and not echoed as secrets"
         },
         "semanticModel": {
@@ -956,6 +978,15 @@ dd_data_viz_dashboard_requests_total {}
 # HELP dd_data_viz_dashboards_saved_total Dashboards saved.
 # TYPE dd_data_viz_dashboards_saved_total counter
 dd_data_viz_dashboards_saved_total {}
+# HELP dd_data_viz_publishing_requests_total Publishing registry requests handled.
+# TYPE dd_data_viz_publishing_requests_total counter
+dd_data_viz_publishing_requests_total {}
+# HELP dd_data_viz_publish_requests_saved_total Publishing approval requests saved.
+# TYPE dd_data_viz_publish_requests_saved_total counter
+dd_data_viz_publish_requests_saved_total {}
+# HELP dd_data_viz_publish_reviews_total Publishing approval reviews submitted.
+# TYPE dd_data_viz_publish_reviews_total counter
+dd_data_viz_publish_reviews_total {}
 # HELP dd_data_viz_self_service_requests_total Self-service question and chart requests handled.
 # TYPE dd_data_viz_self_service_requests_total counter
 dd_data_viz_self_service_requests_total {}
@@ -1025,6 +1056,9 @@ dd_data_viz_errors_total {}
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
+        metrics.publishing_requests_total.load(Ordering::Relaxed),
+        metrics.publish_requests_saved_total.load(Ordering::Relaxed),
+        metrics.publish_reviews_total.load(Ordering::Relaxed),
         metrics.self_service_requests_total.load(Ordering::Relaxed),
         metrics.questions_saved_total.load(Ordering::Relaxed),
         metrics.question_suggestions_total.load(Ordering::Relaxed),
@@ -1643,6 +1677,21 @@ async fn generate_infra_diagram(
     Ok(Json(response))
 }
 
+async fn diagram_tool_catalog(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .platform_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(json!({
+        "ok": true,
+        "infraDiagramTools": infra_diagrams::tool_catalog_payload()
+    }))
+}
+
 async fn evidence_report_blueprint(State(state): State<AppState>) -> Json<Value> {
     state
         .metrics
@@ -1846,6 +1895,187 @@ async fn get_dashboard(
         .cloned()
         .map(Json)
         .ok_or_else(|| ApiError::not_found(format!("dashboard `{dashboard_id}` not found")))
+}
+
+async fn save_publish_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<publishing::SavePublishRequest>,
+) -> Result<Json<publishing::SavePublishResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .publishing_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::PublishingRequest)?;
+    let metadata = publish_target_metadata(&state, request.target_kind, &request.target_id)?;
+    let mut publish_request = request
+        .into_record(now_ms(), metadata)
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut requests = state
+        .publishing_requests
+        .write()
+        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+    if let Some(existing) = requests.get(&publish_request.request_id) {
+        publish_request.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "publishing request {} replaced with a new pending review",
+            publish_request.request_id
+        ));
+    } else if requests.len() >= publishing::max_publish_requests() {
+        return Err(ApiError::bad_request(format!(
+            "publishing request count exceeds max {}",
+            publishing::max_publish_requests()
+        )));
+    }
+    publish_request.updated_at_ms = now_ms();
+    requests.insert(publish_request.request_id.clone(), publish_request.clone());
+    state
+        .metrics
+        .publish_requests_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(publishing::save_response(publish_request, warnings)))
+}
+
+async fn list_publish_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .publishing_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::PublishingRead)?;
+    let requests = state
+        .publishing_requests
+        .read()
+        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+    let summaries = requests
+        .values()
+        .map(publishing::PublishRequestRecord::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(publishing::catalog_payload(summaries)))
+}
+
+async fn get_publish_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(request_id): Path<String>,
+) -> Result<Json<publishing::PublishRequestRecord>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .publishing_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::PublishingRead)?;
+    let requests = state
+        .publishing_requests
+        .read()
+        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+    requests
+        .get(&request_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("publishing request `{request_id}` not found")))
+}
+
+async fn review_publish_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(request_id): Path<String>,
+    Json(request): Json<publishing::ReviewPublishRequest>,
+) -> Result<Json<publishing::ReviewPublishResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .publishing_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::PublishingReview)?;
+    let mut requests = state
+        .publishing_requests
+        .write()
+        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+    let publish_request = requests.get_mut(&request_id).ok_or_else(|| {
+        ApiError::not_found(format!("publishing request `{request_id}` not found"))
+    })?;
+    request
+        .apply_to(publish_request, now_ms())
+        .map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .publish_reviews_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(publishing::review_response(publish_request.clone())))
+}
+
+fn publish_target_metadata(
+    state: &AppState,
+    target_kind: publishing::PublishTargetKind,
+    target_id: &str,
+) -> Result<publishing::PublishTargetMetadata, ApiError> {
+    match target_kind {
+        publishing::PublishTargetKind::Dashboard => {
+            let dashboards = state
+                .dashboards
+                .read()
+                .map_err(|_| ApiError::bad_request("dashboard store lock poisoned"))?;
+            let dashboard = dashboards
+                .get(target_id)
+                .ok_or_else(|| ApiError::not_found(format!("dashboard `{target_id}` not found")))?;
+            Ok(publishing::PublishTargetMetadata {
+                title: dashboard.title.clone(),
+                dataset_id: None,
+            })
+        }
+        publishing::PublishTargetKind::Question => {
+            let questions = state
+                .questions
+                .read()
+                .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+            let question = questions
+                .get(target_id)
+                .ok_or_else(|| ApiError::not_found(format!("question `{target_id}` not found")))?;
+            Ok(publishing::PublishTargetMetadata {
+                title: question.title.clone(),
+                dataset_id: Some(question.dataset_id.clone()),
+            })
+        }
+        publishing::PublishTargetKind::Chart => {
+            let questions = state
+                .questions
+                .read()
+                .map_err(|_| ApiError::bad_request("question store lock poisoned"))?;
+            let chart = questions
+                .values()
+                .find_map(|question| {
+                    let chart = question.chart.as_ref()?;
+                    if chart.chart_id == target_id {
+                        Some((question.dataset_id.clone(), chart.title.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| ApiError::not_found(format!("chart `{target_id}` not found")))?;
+            Ok(publishing::PublishTargetMetadata {
+                dataset_id: Some(chart.0),
+                title: chart.1,
+            })
+        }
+    }
 }
 
 async fn save_question(
@@ -4314,10 +4544,16 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "D3, Plotly/Dash, Evidence, and Office renderer/export contracts.",
         },
         RouteDoc {
+            method: "GET",
+            path: "/diagrams/tools",
+            auth: "public",
+            description: "Catalog Terraform, AWS, GCP, diagram-as-code, whiteboard, web graph, graph analytics, spatial, and presentation infrastructure diagram tooling.",
+        },
+        RouteDoc {
             method: "POST",
             path: "/diagrams/infra",
             auth: "infra-diagram-generate",
-            description: "Generate Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP Cloud Asset infrastructure diagrams across Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and Markdown inventory targets.",
+            description: "Generate Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP Cloud Asset infrastructure diagrams across diagram-as-code, whiteboard, interactive web graph, graph analytics, spatial, and presentation targets.",
         },
         RouteDoc {
             method: "GET",
@@ -4366,6 +4602,30 @@ fn route_docs() -> Vec<RouteDoc> {
             path: "/dashboards/:dashboard_id",
             auth: "dashboard-read",
             description: "Read a saved dashboard definition.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/publishing/requests",
+            auth: "publishing-request",
+            description: "Create a Tableau/Superset-style publishing approval request for a saved dashboard, question, or chart.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/publishing/requests",
+            auth: "publishing-read",
+            description: "List publishing approval request summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/publishing/requests/:request_id",
+            auth: "publishing-read",
+            description: "Read a publishing approval request.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/publishing/requests/:request_id/review",
+            auth: "publishing-review",
+            description: "Approve or reject a publishing request.",
         },
         RouteDoc {
             method: "POST",
@@ -5099,6 +5359,7 @@ mod tests {
             query_cache: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
+            publishing_requests: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
             alert_contacts: Arc::new(RwLock::new(BTreeMap::new())),
             notification_policies: Arc::new(RwLock::new(BTreeMap::new())),
@@ -5257,6 +5518,9 @@ mod tests {
         assert!(paths.contains(&"/security/rbac"));
         assert!(paths.contains(&"/dashboards"));
         assert!(paths.contains(&"/dashboards/:dashboard_id"));
+        assert!(paths.contains(&"/publishing/requests"));
+        assert!(paths.contains(&"/publishing/requests/:request_id"));
+        assert!(paths.contains(&"/publishing/requests/:request_id/review"));
         assert!(paths.contains(&"/questions"));
         assert!(paths.contains(&"/questions/nl"));
         assert!(paths.contains(&"/questions/suggestions/:dataset_id"));
@@ -5280,6 +5544,7 @@ mod tests {
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
+        assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
     }
 
