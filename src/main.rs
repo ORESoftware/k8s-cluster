@@ -29589,6 +29589,41 @@ fn has_additive_chamber_thermal_evidence(line: &str) -> bool {
         || line_mentions(line, "warping control")
 }
 
+fn has_additive_thermal_clog_monitoring_context(line: &str) -> bool {
+    line_mentions(line, "unattended print")
+        || line_mentions(line, "unattended run")
+        || line_mentions(line, "overnight print")
+        || line_mentions(line, "long print")
+        || line_mentions(line, "batch print")
+        || line_mentions(line, "farm print")
+        || line_mentions(line, "thermal runaway")
+        || line_mentions(line, "thermal-runaway")
+        || line_mentions(line, "heater runaway")
+        || line_mentions(line, "heater fault")
+        || line_mentions(line, "nozzle clog")
+        || line_mentions(line, "clog risk")
+        || line_mentions(line, "underextrusion risk")
+        || line_mentions(line, "spaghetti risk")
+}
+
+fn has_additive_thermal_clog_monitoring_evidence(line: &str) -> bool {
+    line_mentions(line, "thermal runaway verified")
+        || line_mentions(line, "thermal-runaway verified")
+        || line_mentions(line, "thermal runaway protection verified")
+        || line_mentions(line, "heater watchdog verified")
+        || line_mentions(line, "heater fault monitoring verified")
+        || line_mentions(line, "nozzle clog monitor verified")
+        || line_mentions(line, "clog detection verified")
+        || line_mentions(line, "underextrusion monitor verified")
+        || line_mentions(line, "extrusion monitor verified")
+        || line_mentions(line, "spaghetti detection verified")
+        || line_mentions(line, "camera verified")
+        || line_mentions(line, "machine camera verified")
+        || line_mentions(line, "smoke detector verified")
+        || line_mentions(line, "alerting verified")
+        || line_mentions(line, "emergency stop verified")
+}
+
 fn has_additive_material_resume_evidence(line: &str) -> bool {
     let stripped = strip_comment(line);
     has_any_code(&stripped, &["G92"]) && number_after(&stripped, 'E').is_some()
@@ -36943,6 +36978,9 @@ fn analyze_instruction_programs(
         let mut additive_warp_prone_material_observed = false;
         let mut additive_chamber_thermal_evidence_observed = false;
         let mut reported_additive_chamber_thermal_boundary = false;
+        let mut additive_thermal_clog_monitoring_context_observed = false;
+        let mut additive_thermal_clog_monitoring_evidence_observed = false;
+        let mut reported_additive_thermal_clog_monitoring_boundary = false;
         let mut additive_material_change_pending_resume = false;
         let mut reported_additive_material_resume_boundary = false;
         let mut additive_tool_selection_pending_temperature = false;
@@ -37218,6 +37256,16 @@ fn analyze_instruction_programs(
 
         for (line_index, raw_line) in program.instructions.iter().enumerate() {
             let line_number = line_index + 1;
+            if class == MachineClass::Additive
+                && has_additive_thermal_clog_monitoring_context(raw_line)
+            {
+                additive_thermal_clog_monitoring_context_observed = true;
+            }
+            if class == MachineClass::Additive
+                && has_additive_thermal_clog_monitoring_evidence(raw_line)
+            {
+                additive_thermal_clog_monitoring_evidence_observed = true;
+            }
             if !machine_code_language {
                 if raw_line.trim().is_empty() {
                     continue;
@@ -38800,6 +38848,34 @@ fn analyze_instruction_programs(
                         requires_human_intervention: true,
                         suggested_resolution:
                             "record enclosure/chamber temperature, ambient draft control, thermal-soak dwell, and warp-control setup before first extrusion, then rerun analysis before unattended release"
+                                .to_string(),
+	                    });
+                }
+                if additive_thermal_clog_monitoring_context_observed
+                    && !additive_thermal_clog_monitoring_evidence_observed
+                    && !reported_additive_thermal_clog_monitoring_boundary
+                {
+                    reported_additive_thermal_clog_monitoring_boundary = true;
+                    findings.push(ValidationFinding {
+                        severity: "warning".to_string(),
+                        code: "additive-thermal-clog-monitoring-missing".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        message:
+                            "first positive extrusion for a long or unattended printer stream appears before thermal-runaway, nozzle-clog, visual, alerting, or emergency-stop monitoring evidence"
+                                .to_string(),
+                    });
+                    boundaries.push(FailureBoundary {
+                        kind: "printer-thermal-clog-monitoring-boundary".to_string(),
+                        severity: "warning".to_string(),
+                        program_id: Some(program_id.clone()),
+                        line: Some(line_number),
+                        reason:
+                            "unattended or long FDM programs can continue extruding after heater faults, underextrusion, nozzle clogs, spaghetti failures, or smoke/fire conditions unless the stream retains monitoring and operator-escalation evidence before extrusion starts"
+                                .to_string(),
+                        requires_human_intervention: true,
+                        suggested_resolution:
+                            "record thermal-runaway or heater-watchdog verification, nozzle-clog or underextrusion detection, machine camera/spaghetti monitoring, alerting, smoke detection, and emergency-stop/operator escalation evidence before first extrusion"
                                 .to_string(),
                     });
                 }
@@ -63383,6 +63459,7 @@ async fn landing_page() -> axum::response::Html<&'static str> {
         <li><strong>3. Validate And Improve</strong><br><a href="/fabrication/instructions/validation/catalog">Validation</a>, <a href="/fabrication/boundaries/catalog">failure boundaries</a>, <a href="/fabrication/remediation/catalog">remediation</a>, and <a href="/fabrication/improvements/catalog">instruction improvement</a>.</li>
         <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
         <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
+        <li><strong>6. Operate</strong><br><a href="/grafana/fabrication">Fabrication Planner Grafana dashboard</a> shows request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity before operators trust generated work.</li>
       </ul>
     </section>
 
@@ -124401,6 +124478,9 @@ mod tests {
             "Validate And Improve",
             "Split, Combine, Or Release",
             "Learn From Results",
+            "Operate",
+            "Fabrication Planner Grafana dashboard",
+            "request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity",
             "PTC Creo / Pro/ENGINEER",
             "SOLIDWORKS",
             "Autodesk Fusion",
@@ -124455,6 +124535,7 @@ mod tests {
             "/fabrication/learning/rewards/catalog",
             "/fabrication/learning/replay/catalog",
             "/fabrication/learning/outcomes",
+            "/grafana/fabrication",
             "/fabrication/schema",
             "/fabrication/examples",
         ] {
@@ -161960,6 +162041,76 @@ mod tests {
             .instructions
             .iter()
             .any(|line| line.contains("boundary printer-chamber-thermal-boundary")));
+        assert!(!improved[1].changed);
+    }
+
+    #[test]
+    fn additive_analysis_requires_thermal_clog_monitoring_for_unattended_prints() {
+        let programs = vec![
+            program(
+                "unattended-without-monitoring",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; PLA filament lot A42 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S215",
+                    "M109 S215",
+                    "M140 S60",
+                    "M190 S60",
+                    "; unattended overnight print with nozzle clog and thermal-runaway risk review required",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+            program(
+                "unattended-with-monitoring",
+                "fdm-printer",
+                &[
+                    "G21 G90",
+                    "M82 ; PLA filament lot A42 dry-storage, dryer, desiccant, flow calibration, and pressure-advance evidence verified",
+                    "G28",
+                    "M104 S215",
+                    "M109 S215",
+                    "M140 S60",
+                    "M190 S60",
+                    "; unattended overnight print thermal runaway protection verified, nozzle clog monitor verified, machine camera verified, smoke detector verified, alerting verified, and emergency stop verified",
+                    "G92 E0",
+                    "G1 Z0.28 F1200",
+                    "G1 X10 Y10 E1.0 F900",
+                    "M84",
+                ],
+            ),
+        ];
+
+        let (_, validation, improvements) = analyze_instruction_programs(&programs);
+
+        assert_eq!(validation.severity, "warning");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.code == "additive-thermal-clog-monitoring-missing"
+                && finding.program_id.as_deref() == Some("unattended-without-monitoring")
+                && finding.line == Some(11)
+        }));
+        assert!(validation.failure_boundaries.iter().any(|boundary| {
+            boundary.kind == "printer-thermal-clog-monitoring-boundary"
+                && boundary.program_id.as_deref() == Some("unattended-without-monitoring")
+                && boundary.requires_human_intervention
+                && boundary.suggested_resolution.contains("heater-watchdog")
+        }));
+        assert!(!validation.findings.iter().any(|finding| {
+            finding.code == "additive-thermal-clog-monitoring-missing"
+                && finding.program_id.as_deref() == Some("unattended-with-monitoring")
+        }));
+        assert!(improvements.is_empty());
+
+        let improved = improve_instruction_programs(&programs, &validation, &improvements);
+        assert!(improved[0].changed);
+        assert!(improved[0]
+            .instructions
+            .iter()
+            .any(|line| line.contains("boundary printer-thermal-clog-monitoring-boundary")));
         assert!(!improved[1].changed);
     }
 
