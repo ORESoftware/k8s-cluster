@@ -151,6 +151,7 @@ Gateway path map:
   `POST /fabrication/release/preview`,
   `POST /fabrication/release/result`,
   `/fabrication/strategy/catalog`, `/fabrication/methods/catalog`,
+  `/fabrication/process/catalog`,
   `POST /fabrication/strategy/recommend`, `POST /fabrication/strategy/result`,
   `/fabrication/schedule/catalog`, `POST /fabrication/schedule/result`,
   `/fabrication/execution/preflight/catalog`,
