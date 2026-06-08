@@ -130,8 +130,8 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
         ControlDescriptor {
             id: "bounded-associative-selection",
             status: "implemented",
-            description: "Cross-dataset associative selection requests and saved sessions bound dataset count, selection count, values returned per field, session count, session tags, and session labels.",
-            evidence: "src/associative.rs enforces max dataset, selection, field-value, session, and metadata limits before computing or saving Qlik-style state.",
+            description: "Cross-dataset associative selection, relationship discovery, and saved sessions bound dataset count, selection count, relationship count, values returned per field, session count, session tags, and session labels.",
+            evidence: "src/associative.rs enforces max dataset, selection, relationship, field-value, session, and metadata limits before computing Qlik-style state or field-alias confidence scores.",
         },
         ControlDescriptor {
             id: "bounded-alert-rules",

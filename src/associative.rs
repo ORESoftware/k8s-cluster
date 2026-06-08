@@ -15,6 +15,8 @@ const MAX_VALUES_PER_FIELD: usize = 128;
 const MAX_SELECTION_SESSIONS: usize = 256;
 const MAX_SESSION_TAGS: usize = 24;
 const MAX_SESSION_LABEL_BYTES: usize = 160;
+const DEFAULT_MAX_RELATIONSHIPS: usize = 64;
+const MAX_RELATIONSHIPS: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +43,14 @@ pub(crate) struct SaveSelectionSessionRequest {
     pub owner: Option<String>,
     pub tags: Option<Vec<String>>,
     pub selection: AssociativeSelectionRequest,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RelationshipDiscoveryRequest {
+    pub dataset_ids: Vec<String>,
+    pub max_relationships: Option<usize>,
+    pub min_confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -226,6 +236,88 @@ pub(crate) fn selection_payload(
     }))
 }
 
+pub(crate) fn relationship_discovery_payload(
+    datasets: &BTreeMap<String, Dataset>,
+    request: RelationshipDiscoveryRequest,
+) -> Result<Value, String> {
+    let dataset_ids = normalize_dataset_ids(&request.dataset_ids)?;
+    let max_relationships = request
+        .max_relationships
+        .unwrap_or(DEFAULT_MAX_RELATIONSHIPS)
+        .clamp(1, MAX_RELATIONSHIPS);
+    let min_confidence = request.min_confidence.unwrap_or(0.10).clamp(0.0, 1.0);
+    let mut selected_datasets = Vec::with_capacity(dataset_ids.len());
+    for dataset_id in &dataset_ids {
+        let dataset = datasets
+            .get(dataset_id)
+            .ok_or_else(|| format!("dataset `{dataset_id}` not found"))?;
+        selected_datasets.push(dataset);
+    }
+
+    let mut fields = Vec::new();
+    for dataset in selected_datasets {
+        for field in categorical_fields(dataset) {
+            let values = field_values(dataset, &field);
+            if values.is_empty() {
+                continue;
+            }
+            fields.push(RelationshipField {
+                dataset_id: dataset.dataset_id.clone(),
+                field,
+                values,
+            });
+        }
+    }
+
+    let mut candidates = Vec::new();
+    for left_index in 0..fields.len() {
+        for right_index in left_index + 1..fields.len() {
+            let left = &fields[left_index];
+            let right = &fields[right_index];
+            if left.dataset_id == right.dataset_id {
+                continue;
+            }
+            if let Some(candidate) = relationship_candidate(left, right, min_confidence) {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates.sort_by(|left, right| {
+        right["confidence"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&left["confidence"].as_f64().unwrap_or(0.0))
+            .then_with(|| {
+                right["sharedValueCount"]
+                    .as_u64()
+                    .cmp(&left["sharedValueCount"].as_u64())
+            })
+            .then_with(|| {
+                left["left"]["field"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(right["left"]["field"].as_str().unwrap_or_default())
+            })
+    });
+    candidates.truncate(max_relationships);
+
+    Ok(json!({
+        "ok": true,
+        "schemaVersion": "data-viz.associative-relationships.v1",
+        "datasetCount": dataset_ids.len(),
+        "fieldCount": fields.len(),
+        "relationshipCount": candidates.len(),
+        "relationships": candidates,
+        "scoring": {
+            "valueJaccardWeight": 0.45,
+            "coverageWeight": 0.35,
+            "fieldNameWeight": 0.20,
+            "aliasKinds": ["exact-name", "normalized-name", "suffix-match", "value-overlap", "weak"]
+        },
+        "limits": selection_limits_payload()
+    }))
+}
+
 pub(crate) fn save_session_response(
     session: SelectionSessionRecord,
     selection_state: Value,
@@ -274,7 +366,9 @@ pub(crate) fn selection_limits_payload() -> Value {
         "maxValuesPerField": MAX_VALUES_PER_FIELD,
         "maxSessions": MAX_SELECTION_SESSIONS,
         "maxSessionTags": MAX_SESSION_TAGS,
-        "maxSessionLabelBytes": MAX_SESSION_LABEL_BYTES
+        "maxSessionLabelBytes": MAX_SESSION_LABEL_BYTES,
+        "defaultMaxRelationships": DEFAULT_MAX_RELATIONSHIPS,
+        "maxRelationships": MAX_RELATIONSHIPS
     })
 }
 
@@ -607,6 +701,142 @@ fn relationship_index(datasets: &[&Dataset]) -> Value {
     })
 }
 
+#[derive(Debug)]
+struct RelationshipField {
+    dataset_id: String,
+    field: String,
+    values: BTreeSet<String>,
+}
+
+fn relationship_candidate(
+    left: &RelationshipField,
+    right: &RelationshipField,
+    min_confidence: f64,
+) -> Option<Value> {
+    let shared = left
+        .values
+        .intersection(&right.values)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if shared.is_empty() {
+        return None;
+    }
+    let union_count = left.values.union(&right.values).count().max(1);
+    let value_jaccard = shared.len() as f64 / union_count as f64;
+    let left_coverage = shared.len() as f64 / left.values.len().max(1) as f64;
+    let right_coverage = shared.len() as f64 / right.values.len().max(1) as f64;
+    let coverage = (left_coverage + right_coverage) / 2.0;
+    let field_name_score = field_name_similarity(&left.field, &right.field);
+    let confidence = round4(value_jaccard * 0.45 + coverage * 0.35 + field_name_score * 0.20);
+    if confidence < min_confidence {
+        return None;
+    }
+    let alias_kind = alias_kind(&left.field, &right.field, value_jaccard);
+    let shared_value_count = shared.len();
+    let sample_shared_values = shared.into_iter().take(12).collect::<Vec<_>>();
+
+    Some(json!({
+        "left": {
+            "datasetId": left.dataset_id,
+            "field": left.field,
+            "cardinality": left.values.len()
+        },
+        "right": {
+            "datasetId": right.dataset_id,
+            "field": right.field,
+            "cardinality": right.values.len()
+        },
+        "aliasKind": alias_kind,
+        "confidence": confidence,
+        "strength": relationship_strength(confidence),
+        "sharedValueCount": shared_value_count,
+        "sampleSharedValues": sample_shared_values,
+        "scoreComponents": {
+            "valueJaccard": round4(value_jaccard),
+            "leftCoverage": round4(left_coverage),
+            "rightCoverage": round4(right_coverage),
+            "fieldNameSimilarity": round4(field_name_score)
+        }
+    }))
+}
+
+fn relationship_strength(confidence: f64) -> &'static str {
+    if confidence >= 0.75 {
+        "strong"
+    } else if confidence >= 0.45 {
+        "medium"
+    } else {
+        "tentative"
+    }
+}
+
+fn alias_kind(left: &str, right: &str, value_jaccard: f64) -> &'static str {
+    let left_lower = left.to_ascii_lowercase();
+    let right_lower = right.to_ascii_lowercase();
+    if left_lower == right_lower {
+        return "exact-name";
+    }
+    let left_canonical = canonical_field_name(left);
+    let right_canonical = canonical_field_name(right);
+    if left_canonical == right_canonical {
+        return "normalized-name";
+    }
+    if left_canonical.ends_with(&right_canonical) || right_canonical.ends_with(&left_canonical) {
+        return "suffix-match";
+    }
+    if value_jaccard >= 0.50 {
+        "value-overlap"
+    } else {
+        "weak"
+    }
+}
+
+fn field_name_similarity(left: &str, right: &str) -> f64 {
+    let left_lower = left.to_ascii_lowercase();
+    let right_lower = right.to_ascii_lowercase();
+    if left_lower == right_lower {
+        return 1.0;
+    }
+    let left_canonical = canonical_field_name(left);
+    let right_canonical = canonical_field_name(right);
+    if left_canonical == right_canonical {
+        return 0.95;
+    }
+    if left_canonical.ends_with(&right_canonical) || right_canonical.ends_with(&left_canonical) {
+        return 0.80;
+    }
+    let left_tokens = field_tokens(left);
+    let right_tokens = field_tokens(right);
+    if left_tokens.is_empty() || right_tokens.is_empty() {
+        return 0.0;
+    }
+    let shared = left_tokens.intersection(&right_tokens).count();
+    let union = left_tokens.union(&right_tokens).count().max(1);
+    shared as f64 / union as f64
+}
+
+fn canonical_field_name(field: &str) -> String {
+    field_tokens(field)
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+fn field_tokens(field: &str) -> BTreeSet<String> {
+    field
+        .to_ascii_lowercase()
+        .split(|ch: char| !(ch.is_ascii_alphanumeric()))
+        .filter(|token| !token.is_empty())
+        .filter(|token| {
+            !matches!(
+                *token,
+                "id" | "key" | "code" | "name" | "dim" | "fact" | "src" | "source"
+            )
+        })
+        .map(str::to_string)
+        .collect()
+}
+
 fn field_values(dataset: &Dataset, field: &str) -> BTreeSet<String> {
     let mut values = BTreeSet::new();
     for row in 0..dataset.row_count {
@@ -754,5 +984,63 @@ mod tests {
         .expect_err("secret-like owner rejected");
 
         assert!(error.contains("secret-bearing"));
+    }
+
+    #[test]
+    fn relationship_discovery_scores_field_aliases_by_values_and_names() {
+        let sales = dataset(
+            "sales",
+            vec![
+                record(vec![
+                    ("region", Value::from("north")),
+                    ("segment", Value::from("enterprise")),
+                ]),
+                record(vec![
+                    ("region", Value::from("south")),
+                    ("segment", Value::from("consumer")),
+                ]),
+            ],
+        );
+        let inventory = dataset(
+            "inventory",
+            vec![
+                record(vec![
+                    ("sales_region", Value::from("north")),
+                    ("category", Value::from("hardware")),
+                ]),
+                record(vec![
+                    ("sales_region", Value::from("south")),
+                    ("category", Value::from("software")),
+                ]),
+            ],
+        );
+        let mut datasets = BTreeMap::new();
+        datasets.insert(sales.dataset_id.clone(), sales);
+        datasets.insert(inventory.dataset_id.clone(), inventory);
+
+        let payload = relationship_discovery_payload(
+            &datasets,
+            RelationshipDiscoveryRequest {
+                dataset_ids: vec!["sales".to_string(), "inventory".to_string()],
+                max_relationships: Some(8),
+                min_confidence: Some(0.20),
+            },
+        )
+        .expect("relationship discovery");
+
+        assert_eq!(payload["ok"], true);
+        let relationships = payload["relationships"]
+            .as_array()
+            .expect("relationships array");
+        let region_alias = relationships
+            .iter()
+            .find(|relationship| {
+                relationship["left"]["field"] == "region"
+                    && relationship["right"]["field"] == "sales_region"
+            })
+            .expect("region alias relationship");
+        assert_eq!(region_alias["aliasKind"], "suffix-match");
+        assert_eq!(region_alias["sharedValueCount"], 2);
+        assert!(region_alias["confidence"].as_f64().unwrap() >= 0.80);
     }
 }

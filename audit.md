@@ -56,6 +56,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Qlik-style saved selection sessions are exposed through `POST /associations/sessions`,
   `GET /associations/sessions`, and `GET /associations/sessions/:session_id`, with bounded
   metadata and detail reads that recompute current green/white/gray state against loaded datasets.
+- Qlik-style relationship discovery is exposed through `POST /associations/relationships`, scoring
+  likely cross-dataset categorical relationships with value-overlap, coverage, field-name
+  similarity, alias-kind labels, and confidence strengths.
 - Grafana-style alert rules are validated, stored in memory, and evaluated through
   `POST /alerts/rules/:rule_id/evaluate` using reducer/threshold conditions over existing query
   results.
@@ -91,8 +94,8 @@ This audit tracks the current hardening and visualization-platform parity postur
   and durable workbook publication state beyond in-memory approvals.
 - Power BI parity still needs broader DAX time-intelligence and row-context semantics, a Power Query
   M import parser, and incremental refresh partitions.
-- Qlik parity still needs field-alias inference, durable selection sessions beyond memory, and
-  richer relationship confidence scoring.
+- Qlik parity still needs durable selection sessions beyond memory, operator-reviewed relationship
+  override maps, and semantic relationship inference beyond categorical value overlap.
 - Looker parity still needs full LookML project parsing, multi-view joins, Git-backed validation
   workflows, and live warehouse-specific SQL execution targets.
 - Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
