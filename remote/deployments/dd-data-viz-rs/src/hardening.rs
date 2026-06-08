@@ -176,6 +176,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/sql_lab.rs validates stored SQL history; /sql-lab/history lists summaries without raw query text while detail reads remain role-gated.",
         },
         ControlDescriptor {
+            id: "bounded-query-cache",
+            status: "implemented",
+            description: "Query result snapshots are capped by entry count, cached row count, and TTL, and cache summaries omit raw query text.",
+            evidence: "src/query_cache.rs bounds in-memory snapshots; /query-cache lists redacted summaries and /query-cache/:cache_id is RBAC-gated.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
