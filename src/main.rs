@@ -62785,6 +62785,8 @@ fn root_response() -> Value {
         "GET /fabrication/fdm-printer/catalog",
         "GET /resin-printer/catalog",
         "GET /fabrication/resin-printer/catalog",
+        "GET /material-jetting/catalog",
+        "GET /fabrication/material-jetting/catalog",
         "GET /powder-bed/catalog",
         "GET /fabrication/powder-bed/catalog",
         "GET /printers/preflight/catalog",
@@ -110275,6 +110277,118 @@ async fn resin_printer_catalog_http() -> impl IntoResponse {
     Json(resin_printer_catalog_response())
 }
 
+fn material_jetting_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let material_jetting_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_material_jetting_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(material_jetting_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(material_jetting_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(material_jetting_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.material-jetting-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "materialJettingPrinterCount": material_jetting_printers.len(),
+        "materialJettingPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "material cartridge, material lot, color/material channel map, printhead health, nozzle status, tray or build platform, packing, and purge evidence",
+            "support material, support strategy, soluble/support-removal plan, drain/rinse, UV or thermal post-cure, and waste-handling evidence",
+            "color target, material mix, flexible/rigid interface, part orientation, finish allowance, and dimensional inspection evidence",
+            "machine profile, generated material-jetting job package, PACK_TRAY, JET_MATERIALS, REMOVE_SUPPORT, UV_CURE_INLINE, first-article, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "material-jetting-material-boundary",
+            "material-jetting-support-uv-inspection-boundary",
+            "additive-support-orientation-boundary",
+            "additive-build-surface-boundary",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/slicers/plan",
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/postprocess/plan",
+            "POST /fabrication/simulation/run"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/postprocess/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "material-jetting catalog entries are PolyJet/MJP planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until material cartridge, channel map, printhead, tray, support-removal, UV/post-cure, color/material, dimensional inspection, and signoff evidence are retained",
+            "material-jetting outcomes should feed material, postprocess, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to reorient, split, reroute, change support strategy, or require human intervention"
+        ],
+        "materialJettingPrinters": material_jetting_printers
+    })
+}
+
+async fn material_jetting_catalog_http() -> impl IntoResponse {
+    Json(material_jetting_catalog_response())
+}
+
 fn powder_bed_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let powder_bed_printers = printer_payload
@@ -121189,6 +121303,7 @@ async fn request_schema() -> impl IntoResponse {
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
+            "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
             "powderBedCatalog": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
@@ -124378,6 +124493,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/resin-printer/catalog",
             get(resin_printer_catalog_http),
+        )
+        .route(
+            "/material-jetting/catalog",
+            get(material_jetting_catalog_http),
+        )
+        .route(
+            "/fabrication/material-jetting/catalog",
+            get(material_jetting_catalog_http),
         )
         .route("/powder-bed/catalog", get(powder_bed_catalog_http))
         .route(
@@ -151673,6 +151796,88 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|routes| routes.iter().any(|route| {
                 route.as_str() == Some("GET /fabrication/resin-printer/catalog")
+            })));
+    }
+
+    #[test]
+    fn material_jetting_catalog_endpoint_exposes_channel_support_and_uv_release_contract() {
+        let payload = material_jetting_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.material-jetting-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/material-jetting/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/printers/catalog"))));
+        assert!(payload
+            .get("materialJettingPrinterCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let printer_kinds = payload
+            .get("materialJettingPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("material-jetting printer kinds should be present");
+        assert!(printer_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("material-jetting-printer")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("material-jetting setup evidence should be present");
+        for expected in [
+            "material cartridge, material lot",
+            "color/material channel map",
+            "support material, support strategy",
+            "UV or thermal post-cure",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing material-jetting setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("material-jetting boundary families should be present");
+        for boundary in [
+            "material-jetting-material-boundary",
+            "material-jetting-support-uv-inspection-boundary",
+            "additive-support-orientation-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing material-jetting boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/material-jetting/catalog")
             })));
     }
 
