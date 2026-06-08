@@ -338,6 +338,8 @@ outcomes.
 - `GET /fabrication/learning/rewards/catalog`
 - `GET /learning/models/catalog`
 - `GET /fabrication/learning/models/catalog`
+- `GET /learning/replay/catalog`
+- `GET /fabrication/learning/replay/catalog`
 - `GET /learning/beliefs/catalog`
 - `GET /fabrication/learning/beliefs/catalog`
 - `GET /learning/optimizers/catalog`
@@ -1054,6 +1056,15 @@ simulation or dry-run review, and operator or automation signoff are retained.
 Material-machine mismatches emit `material-machine-boundary` signals for
 MDP/POMDP/neural workers so future plans can learn when to reroute, split, or
 request new material evidence.
+
+The catalog also includes a `materialReadinessChecklist` for lot/certificate
+traceability, conditioning and shelf-life state, quantity/scrap/runout capacity,
+and machine-material-process compatibility. Each entry names blocked surfaces
+such as `materialPlan.routeRequirements`, `releasePackagePlan.packages`,
+`machineRelease.blockers`, `executionPlan.stopPoints`, and
+`machineSchedule.dependencyHolds`, plus learning signals such as
+`material-lot:*`, `material-conditioning:*`, `runout-risk:*`, and
+`material-machine-boundary:*`.
 
 ## `POST /fabrication/materials/plan`
 
@@ -4509,6 +4520,23 @@ accepted model results keep `machineReady=false`; promotion for future advisory
 planning requires retained artifacts, replay verification, metric review, and
 cleared promotion blockers, and remains subordinate to fabrication validation,
 simulation, setup, quality, telemetry, and human-intervention gates.
+
+`GET /learning/replay/catalog` and
+`GET /fabrication/learning/replay/catalog` return the live
+`dd.fabrication.learning-replay-catalog.v1` policy-promotion replay contract for
+DES/MDP/POMDP/neural candidates. The catalog names replay sets for
+failure-boundary and human-intervention regression, machine route and controller
+regression, and reward counterfactuals across retained learning outcomes,
+quality buckets, neural examples, simulation findings, toolpath results, release
+gates, and split/combine decisions.
+
+Replay evidence must retain source job and candidate ids, artifact URI/checksum
+links, baseline and candidate actions, blocker/release-state deltas, DES
+MDP/POMDP schema versions, neural feature-map versions, and replay worker
+identity. Replay cannot override validation, simulation, quality, setup,
+telemetry, release-package, split/combine, or human-intervention gates; accepted
+model and optimizer results remain advisory until replay, simulation, artifacts,
+and promotion blockers clear through their result review routes.
 
 `GET /learning/beliefs/catalog` and
 `GET /fabrication/learning/beliefs/catalog` return the live

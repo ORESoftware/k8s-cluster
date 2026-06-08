@@ -58697,6 +58697,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/learning/preflight/catalog",
         "GET /learning/models/catalog",
         "GET /fabrication/learning/models/catalog",
+        "GET /learning/replay/catalog",
+        "GET /fabrication/learning/replay/catalog",
         "GET /learning/beliefs/catalog",
         "GET /fabrication/learning/beliefs/catalog",
         "GET /learning/optimizers/catalog",
@@ -92707,6 +92709,56 @@ fn material_catalog_family_counts(catalog: &[Value]) -> BTreeMap<String, usize> 
     counts
 }
 
+fn material_readiness_checklist() -> Vec<Value> {
+    vec![
+        json!({
+            "checkId": "lot-certificate-and-traceability",
+            "appliesTo": ["filament-spool", "photopolymer-resin", "bar-stock", "sheet-plate-or-panel", "qualified-metal-powder-lot", "composite-prepreg-or-fiber-spool"],
+            "requiredEvidence": [
+                "material lot or batch identity",
+                "certificate, datasheet, or operator material acceptance evidence",
+                "source-to-job traceability for split, combined, nested, or batched parts",
+                "release-package record linking lot evidence to generated or imported instructions"
+            ],
+            "blocks": ["materialPlan.routeRequirements", "releasePackagePlan.packages", "machineRelease.blockers"],
+            "learningSignals": ["material-lot:*", "traceability:*", "certificate-review:*"]
+        }),
+        json!({
+            "checkId": "conditioning-and-shelf-life-state",
+            "appliesTo": ["filament-spool", "pellet-feedstock", "photopolymer-resin", "qualified-metal-powder-lot", "composite-prepreg-or-fiber-spool", "adhesive-or-chemical-process-media"],
+            "requiredEvidence": [
+                "drying, moisture, humidity, wash/cure, inerting, thaw/out-time, or shelf-life state as applicable",
+                "conditioning equipment, temperature, time, and operator or sensor proof",
+                "contamination, resin-vat, powder-refresh, or desiccant/dry-box review"
+            ],
+            "blocks": ["materialPlan.routeRequirements.conditioning", "postprocessPlan.requiredArtifacts", "machineRelease.blockers"],
+            "learningSignals": ["material-conditioning:*", "moisture-state:*", "shelf-life:*"]
+        }),
+        json!({
+            "checkId": "quantity-scrap-and-runout-capacity",
+            "appliesTo": ["long FDM extrusion jobs", "powder-bed builds", "sheet nests", "bar-fed turning", "hybrid split/combine batches"],
+            "requiredEvidence": [
+                "required quantity, projected scrap, purge, support, tab, coupon, or test-cut allowance",
+                "remaining spool weight, resin volume, powder mass, sheet area, bar length, or support-media capacity",
+                "runout, refill, batch-change, or operator intervention plan when capacity is marginal"
+            ],
+            "blocks": ["materialPlan.quantity", "executionPlan.stopPoints", "machineSchedule.dependencyHolds"],
+            "learningSignals": ["material-capacity:*", "runout-risk:*", "scrap-allowance:*"]
+        }),
+        json!({
+            "checkId": "machine-material-process-compatibility",
+            "appliesTo": ["additive printers", "mills", "routers", "lathes", "sheet cutters", "postprocess cells", "assembly cells"],
+            "requiredEvidence": [
+                "selected machine profile supports the material family and feedstock or stock form",
+                "tooling, nozzle, abrasive, coolant, support-media, or process recipe matches material requirements",
+                "simulation, dry-run, coupon, or first-article evidence for the exact material route"
+            ],
+            "blocks": ["machineSelection.candidates", "toolingPlan.requirements", "validation.failureBoundaries", "boundarySummary"],
+            "learningSignals": ["material-machine-boundary:*", "process-recipe:*", "material-route-risk:*"]
+        }),
+    ]
+}
+
 fn material_catalog_response() -> Value {
     let catalog = material_catalog_targets();
     let families = unique_sorted(catalog.iter().filter_map(|item| {
@@ -92752,6 +92804,7 @@ fn material_catalog_response() -> Value {
             "toolingPlan.releaseBlockers",
             "releasePackagePlan.packages"
         ],
+        "materialReadinessChecklist": material_readiness_checklist(),
         "releasePolicy": [
             "catalog materials are default planning compatibility labels, not certified inventory",
             "machine-ready release remains blocked until material lot/certificate or operator evidence, quantity plus scrap proof, machine profile evidence, process conditioning, and simulation or dry-run review are retained",
@@ -99976,6 +100029,8 @@ fn learning_capability_catalog_response() -> Value {
             "GET /fabrication/learning/engines/catalog",
             "GET /learning/models/catalog",
             "GET /fabrication/learning/models/catalog",
+            "GET /learning/replay/catalog",
+            "GET /fabrication/learning/replay/catalog",
             "GET /learning/optimizers/catalog",
             "GET /fabrication/learning/optimizers/catalog",
             "POST /learning/models/result",
@@ -100066,6 +100121,8 @@ fn learning_capability_catalog_response() -> Value {
             "GET /fabrication/learning/outcomes",
             "GET /learning/models/catalog",
             "GET /fabrication/learning/models/catalog",
+            "GET /learning/replay/catalog",
+            "GET /fabrication/learning/replay/catalog",
             "GET /learning/optimizers/catalog",
             "GET /fabrication/learning/optimizers/catalog",
             "POST /learning/models/result",
@@ -100444,6 +100501,119 @@ fn learning_model_catalog_response() -> Value {
 
 async fn learning_model_catalog_http() -> impl IntoResponse {
     Json(learning_model_catalog_response())
+}
+
+fn learning_replay_catalog_response() -> Value {
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.learning-replay-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /learning/replay/catalog",
+            "GET /fabrication/learning/replay/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/learning/models/catalog",
+            "GET /fabrication/learning/optimizers/catalog",
+            "GET /fabrication/learning/corpus",
+            "GET /fabrication/learning/outcomes",
+            "POST /fabrication/learning/models/result",
+            "POST /fabrication/learning/optimizers/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "engineTargets": ["DES", "MDP", "POMDP", "neural"],
+        "decisionSchemas": {
+            "mdp": MDP_SCHEMA,
+            "pomdp": POMDP_SCHEMA,
+            "studioGraph": STUDIO_GRAPH_SCHEMA
+        },
+        "replaySets": [
+            {
+                "set": "failure-boundary-and-human-intervention-regression",
+                "sourceSurfaces": [
+                    "validation.failureBoundaries",
+                    "boundaryAnalysisResult.findings",
+                    "operatorInterventionPlan.requiredOperatorActions",
+                    "executionResult.operatorInterventions"
+                ],
+                "mustCover": [
+                    "machine-failure boundaries",
+                    "human-intervention gates",
+                    "split/combine and recomposition decisions",
+                    "unresolved remediation blockers"
+                ],
+                "promotionBlockers": [
+                    "policy improves reward by hiding a boundary or intervention",
+                    "replay omits a previously failed machine, controller, fixture, or split/combine route"
+                ]
+            },
+            {
+                "set": "machine-route-and-controller-regression",
+                "sourceSurfaces": [
+                    "machineCodeResult.controllerChecks",
+                    "toolpathResult.toolpaths",
+                    "simulationResult.findings",
+                    "releaseReadinessResult.releaseGates"
+                ],
+                "mustCover": [
+                    "printer, mill, lathe, sheet-cut, EDM, assembly, and postprocess routes",
+                    "controller dialect and postprocessor assumptions",
+                    "simulation and dry-run release blockers"
+                ],
+                "promotionBlockers": [
+                    "candidate selects a route that failed retained validation without new evidence",
+                    "controller or machine-code replay lacks retained URI/checksum artifacts"
+                ]
+            },
+            {
+                "set": "outcome-quality-and-reward-counterfactual",
+                "sourceSurfaces": [
+                    "learning.outcomes",
+                    "learningOutcomes.qualityBuckets",
+                    "learningRewardTerms",
+                    "neuralTrainingCorpus.examples"
+                ],
+                "mustCover": [
+                    "positive and negative reward examples",
+                    "quality, scrap, rework, waiver, and release disposition",
+                    "false-positive and false-negative boundary labels"
+                ],
+                "promotionBlockers": [
+                    "reward gains are not reproducible from retained evidence",
+                    "neural scores diverge from deterministic validation, simulation, or release blockers"
+                ]
+            }
+        ],
+        "replayEvidence": [
+            "source job id, source kind, request id, and policy/model candidate id",
+            "retained artifact URI and checksum for each program, design, toolpath, simulation, quality, and release surface",
+            "baseline action, candidate action, expected reward, observed reward, blocker delta, and release-state delta",
+            "DES MDP/POMDP spec version, neural feature-map version, and replay worker identity"
+        ],
+        "resultReviewRoutes": [
+            "POST /learning/models/result",
+            "POST /fabrication/learning/models/result",
+            "POST /learning/optimizers/result",
+            "POST /fabrication/learning/optimizers/result"
+        ],
+        "promotionRequirements": [
+            "replayVerified=true",
+            "simulationVerified=true when the replay touches machine motion or release",
+            "all replay artifacts include URI/checksum evidence",
+            "human-intervention and split/combine regressions are explicitly reviewed",
+            "promotion blockers are cleared before a model or optimizer can influence future advisory planning"
+        ],
+        "releasePolicy": [
+            "learning replay catalog entries describe policy-promotion evidence, not autonomous release authority",
+            "replay cannot override validation, simulation, quality, setup, telemetry, release-package, or human-intervention gates",
+            "DES, MDP, POMDP, and neural candidates remain advisory until replay results are accepted through model or optimizer result review"
+        ]
+    })
+}
+
+async fn learning_replay_catalog_http() -> impl IntoResponse {
+    Json(learning_replay_catalog_response())
 }
 
 fn learning_belief_catalog_response() -> Value {
@@ -107004,6 +107174,7 @@ async fn request_schema() -> impl IntoResponse {
             "learningOutcome": ["POST /learning/outcomes", "POST /fabrication/learning/outcomes"],
             "learningOptimizerCatalog": ["GET /learning/optimizers/catalog", "GET /fabrication/learning/optimizers/catalog"],
             "learningOptimizerResult": ["POST /learning/optimizers/result", "POST /fabrication/learning/optimizers/result"],
+            "learningReplayCatalog": ["GET /learning/replay/catalog", "GET /fabrication/learning/replay/catalog"],
             "requestTemplates": ["GET /templates/catalog", "GET /fabrication/templates/catalog"]
         },
         "intakeGuide": intake_guide(),
@@ -110239,6 +110410,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/learning/models/catalog",
             get(learning_model_catalog_http),
+        )
+        .route(
+            "/learning/replay/catalog",
+            get(learning_replay_catalog_http),
+        )
+        .route(
+            "/fabrication/learning/replay/catalog",
+            get(learning_replay_catalog_http),
         )
         .route(
             "/learning/beliefs/catalog",
@@ -117700,6 +117879,35 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        let checklist = payload
+            .get("materialReadinessChecklist")
+            .and_then(Value::as_array)
+            .expect("material readiness checklist should be present");
+        for check_id in [
+            "lot-certificate-and-traceability",
+            "conditioning-and-shelf-life-state",
+            "quantity-scrap-and-runout-capacity",
+            "machine-material-process-compatibility",
+        ] {
+            assert!(
+                checklist
+                    .iter()
+                    .any(|item| item.get("checkId").and_then(Value::as_str) == Some(check_id)),
+                "missing material readiness check {check_id}"
+            );
+        }
+        assert!(checklist.iter().any(|item| item
+            .get("blocks")
+            .and_then(Value::as_array)
+            .is_some_and(|blocks| blocks
+                .iter()
+                .any(|entry| entry.as_str() == Some("machineRelease.blockers")))));
+        assert!(checklist.iter().any(|item| item
+            .get("learningSignals")
+            .and_then(Value::as_array)
+            .is_some_and(|signals| signals.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("runout-risk"))))));
 
         let families = payload
             .get("families")
@@ -132731,6 +132939,69 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("cannot bypass validation findings")))));
+    }
+
+    #[test]
+    fn learning_replay_catalog_endpoint_exposes_policy_promotion_replay_contract() {
+        let payload = learning_replay_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.learning-replay-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/learning/replay/catalog")
+            })));
+        assert_eq!(
+            payload
+                .get("decisionSchemas")
+                .and_then(|schemas| schemas.get("mdp"))
+                .and_then(Value::as_str),
+            Some(MDP_SCHEMA)
+        );
+        assert_eq!(
+            payload
+                .get("decisionSchemas")
+                .and_then(|schemas| schemas.get("pomdp"))
+                .and_then(Value::as_str),
+            Some(POMDP_SCHEMA)
+        );
+        let replay_sets = payload
+            .get("replaySets")
+            .and_then(Value::as_array)
+            .expect("replay sets should be exposed");
+        for set_name in [
+            "failure-boundary-and-human-intervention-regression",
+            "machine-route-and-controller-regression",
+            "outcome-quality-and-reward-counterfactual",
+        ] {
+            assert!(
+                replay_sets
+                    .iter()
+                    .any(|set| set.get("set").and_then(Value::as_str) == Some(set_name)),
+                "missing replay set {set_name}"
+            );
+        }
+        assert!(payload
+            .get("replayEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("baseline action")))));
+        assert!(payload
+            .get("promotionRequirements")
+            .and_then(Value::as_array)
+            .is_some_and(|requirements| requirements.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("replayVerified=true")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("remain advisory")))));
     }
 
     #[test]

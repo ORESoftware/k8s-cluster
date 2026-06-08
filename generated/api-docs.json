@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 378,
+  "routeCount": 380,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 368,
+    "user-generated": 370,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -2568,6 +2568,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/learning/replay/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "learning_replay_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/learning/rewards/catalog",
       "methods": [
         "GET"
@@ -4926,6 +4943,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "learning_preflight_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/learning/replay/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "learning_replay_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
