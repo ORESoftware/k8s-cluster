@@ -303,6 +303,7 @@ spec:
                 '"path": "/fabrication/learning/capabilities"' \
                 '"path": "/fabrication/learning/engines/catalog"' \
                 '"path": "/fabrication/learning/preflight/catalog"' \
+                '"path": "/fabrication/learning/features/catalog"' \
                 '"path": "/fabrication/learning/rewards/catalog"' \
                 '"path": "/fabrication/learning/models/catalog"' \
                 '"path": "/fabrication/learning/replay/catalog"' \

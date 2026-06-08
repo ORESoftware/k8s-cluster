@@ -347,6 +347,8 @@ outcomes.
 - `GET /fabrication/learning/engines/catalog`
 - `GET /learning/preflight/catalog`
 - `GET /fabrication/learning/preflight/catalog`
+- `GET /learning/features/catalog`
+- `GET /fabrication/learning/features/catalog`
 - `GET /learning/rewards/catalog`
 - `GET /fabrication/learning/rewards/catalog`
 - `GET /learning/models/catalog`
@@ -4633,6 +4635,28 @@ MDP/POMDP/neural workers so future plans can add evidence, split or combine
 work, choose safer machines, regenerate instructions, or require human
 intervention earlier.
 
+## `GET /fabrication/learning/features/catalog`
+
+`GET /learning/features/catalog` and the gateway-prefixed
+`GET /fabrication/learning/features/catalog` return the live
+`dd.fabrication.learning-feature-catalog.v1` feature-map discovery contract for
+DES/MDP/POMDP/neural workers. The catalog names `des_engine` from
+`remote/submodules/discrete-event-system.rs` as the preferred primitive source
+and groups normalized features for plan route/material state,
+instruction-validation boundary state, split/combine interface state,
+release-evidence and outcome state, and the neural-policy input vector.
+
+Feature groups map signals such as material family, machine class, validation
+boundary count, machine-failure boundary kind, automation gap, split/combine
+counts, interface evidence, release blockers, reward, `machine-ready`, and
+`toolpath-token-sequence` to response surfaces such as `machineSelection`,
+`validation.failureBoundaries`, `hybridMakePlan.splitCombineDecisions`,
+`releasePackagePlan.releaseGates`, `neuralTrainingCorpus.featureNames`, and
+`neuralTrainingCorpus.examples`. Feature vectors are deterministic planning
+evidence only: missing CAD/CAM/controller context must remain a blocker or
+review-required state, and neural, MDP, POMDP, and DES scores stay advisory
+until validation, simulation, setup, quality, operator, and release gates clear.
+
 ## `GET /fabrication/learning/rewards/catalog`
 
 `GET /learning/rewards/catalog` and the gateway-prefixed
@@ -5066,6 +5090,18 @@ gates, or operator and automation signoffs remain open, and they expose
 `workflow-plan` plus `mdp-request` artifact surfaces so MDP/POMDP/DES/neural
 workers can learn where to reroute, split/combine, regenerate, remediate, or add
 human checkpoints.
+
+The response also includes `workflowActionQueue` and
+`workflowPlan.actionQueue`, derived from blocked workflow stages. Queue entries
+turn stage blockers into explicit next actions such as
+`generate-or-review-machine-instructions`,
+`analyze-remediate-and-simulate-before-release`,
+`resolve-split-combine-interface-control`, and
+`hold-release-and-record-learning-outcome`. Each action carries route handoffs,
+result handoffs, response and evidence surfaces, a `learningSignal` such as
+`workflow-action:validation-remediation-simulation`, and a release policy that
+requires the action or an explicit waiver/review record before machine-ready
+release.
 
 ## `POST /instructions/analyze`
 
