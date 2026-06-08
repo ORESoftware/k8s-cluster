@@ -216,7 +216,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             category: "open-source self-service BI",
             parity_goal: "SQL-first chart exploration with RBAC-aware publishing",
             implemented_surfaces: vec![
-                "SQL dialect endpoint",
+                "parser-backed SQL dialect endpoint",
                 "self-service chart builder contract",
                 "hardening/RBAC policy surface",
             ],

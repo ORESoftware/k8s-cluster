@@ -6,7 +6,6 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -21,6 +20,13 @@ use serde_json::{json, Value};
 
 mod hardening;
 mod platform;
+mod sql_frontend;
+mod util;
+
+use util::{
+    clean_field, clean_identifier, env_flag, find_ascii_case, header_value, html_escape, now_ms,
+    round4, scalar_to_label, xml_escape,
+};
 
 const SERVICE_NAME: &str = "dd-data-viz-rs";
 const SCHEMA_VERSION: &str = "data-viz.analytics.v1";
@@ -1626,6 +1632,10 @@ fn logical_plan_from_query(request: &QueryRequest) -> Result<LogicalPlan, ApiErr
 }
 
 fn parse_sql_like(request: &QueryRequest, default_limit: usize) -> Result<LogicalPlan, ApiError> {
+    if request.dialect == QueryDialect::Sql {
+        return sql_frontend::parse_select(request, default_limit);
+    }
+
     let query = request.query.trim();
     let select_idx = find_ascii_case(query, "SELECT ")
         .ok_or_else(|| ApiError::bad_request("SQL query must include SELECT"))?;
@@ -2824,7 +2834,10 @@ fn route_docs() -> Vec<RouteDoc> {
 
 fn dialect_catalog() -> Vec<Value> {
     vec![
-        dialect("sql", "SELECT/FROM/WHERE/GROUP BY/LIMIT subset."),
+        dialect(
+            "sql",
+            "Parser-backed one-table SELECT/FROM/WHERE/GROUP BY/LIMIT analytics subset.",
+        ),
         dialect(
             "graphql",
             "dataset(name:) with groupBy(field:) and aggregate field calls.",
@@ -3224,49 +3237,6 @@ fn parse_field_list(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn clean_identifier(input: &str) -> Option<String> {
-    let cleaned = input
-        .trim()
-        .trim_matches('`')
-        .trim_matches('"')
-        .trim_matches('\'')
-        .trim_matches('$')
-        .to_string();
-    if cleaned.is_empty()
-        || cleaned.len() > 128
-        || !cleaned
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
-    {
-        None
-    } else {
-        Some(cleaned)
-    }
-}
-
-fn clean_field(input: &str) -> Option<String> {
-    let trimmed = input
-        .trim()
-        .trim_matches(',')
-        .trim_matches('`')
-        .trim_matches('"')
-        .trim_matches('\'')
-        .trim_matches('$');
-    let suffix = trimmed
-        .rsplit('.')
-        .next()
-        .unwrap_or(trimmed)
-        .trim_matches(')')
-        .trim_matches('(');
-    clean_identifier(suffix)
-}
-
-fn find_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
-    haystack
-        .to_ascii_lowercase()
-        .find(&needle.to_ascii_lowercase())
-}
-
 fn extract_between<'a>(input: &'a str, start: &str, end: &str) -> Option<&'a str> {
     let start_idx = find_ascii_case(input, start)?;
     let after_start = &input[start_idx + start.len()..];
@@ -3315,58 +3285,6 @@ fn extract_token_value(input: &str, key: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn scalar_to_label(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::String(value) => value.clone(),
-        Value::Number(value) => value.to_string(),
-        Value::Bool(value) => value.to_string(),
-        other => other.to_string(),
-    }
-}
-
-fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string)
-}
-
-fn env_flag(name: &str, default: bool) -> bool {
-    env::var(name)
-        .ok()
-        .map(|value| {
-            matches!(
-                value.to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(default)
-}
-
-fn now_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0)
-}
-
-fn round4(value: f64) -> f64 {
-    (value * 10_000.0).round() / 10_000.0
-}
-
-fn html_escape(input: &str) -> String {
-    input
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn xml_escape(input: &str) -> String {
-    html_escape(input).replace('\'', "&apos;")
 }
 
 fn log_event(severity: &str, event_name: &str, message: &str, attributes: Value) {

@@ -15,6 +15,8 @@ layers for PowerPoint/OpenXML, Google Slides, Reveal markdown, and downstream re
 - Boolean columns are stored as `Vec<Option<bool>>`.
 - Queries compile into a unified `LogicalPlan` with projection, filter, group-by, aggregation, and
   limit nodes.
+- SQL queries compile through `sqlparser` before they become a `LogicalPlan`; unsupported SQL
+  constructs fail closed instead of being string-sliced.
 - The execution path is intentionally dependency-light for the first slice. The public API leaves
   room to swap the physical backend to Apache Arrow/DataFusion, SIMD kernels, and parallel chunk
   reducers later.
@@ -36,9 +38,9 @@ layers for PowerPoint/OpenXML, Google Slides, Reveal markdown, and downstream re
 - Lucene-style search pipeline
 - Splunk SPL-style `stats` pipeline
 
-Each frontend currently implements a useful analytics subset: source selection, simple filters,
-grouping, and `count`/`sum`/`avg`/`min`/`max` aggregations where the dialect naturally supports
-them.
+SQL is parser-backed through `sqlparser` for one-table `SELECT` analytics. The other frontends
+currently implement useful analytics subsets: source selection, simple filters, grouping, and
+`count`/`sum`/`avg`/`min`/`max` aggregations where the dialect naturally supports them.
 
 ## Platform parity map
 
@@ -49,6 +51,8 @@ concept in `main.rs`:
   Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
+- `src/sql_frontend.rs` owns parser-backed SQL-to-`LogicalPlan` compilation.
+- `src/util.rs` owns shared identifier, escaping, timestamp, header, and scalar-label helpers.
 
 Current first-class parity surfaces:
 

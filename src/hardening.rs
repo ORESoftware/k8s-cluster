@@ -109,6 +109,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "clean_identifier and clean_field gate dataset IDs and projected fields.",
         },
         ControlDescriptor {
+            id: "parser-backed-sql",
+            status: "implemented",
+            description: "SQL SELECT requests compile through sqlparser before becoming a LogicalPlan.",
+            evidence: "src/sql_frontend.rs accepts one SELECT AST and rejects joins, CTEs, set operations, unsupported predicates, and unsupported aggregates fail-closed.",
+        },
+        ControlDescriptor {
             id: "route-derived-docs",
             status: "implemented",
             description: "API documentation is served by the same route catalog used by the router.",
@@ -144,10 +150,10 @@ pub fn residual_risks() -> Vec<ResidualRisk> {
             planned_mitigation: "Add durable Arrow/Parquet spill and dataset TTL enforcement.",
         },
         ResidualRisk {
-            id: "parser-subsets",
+            id: "non-sql-parser-subsets",
             severity: "medium",
-            risk: "Dialect support is intentionally subset-based and should not be advertised as full SQL/GraphQL/PromQL compatibility yet.",
-            planned_mitigation: "Replace ad-hoc frontends with sqlparser-rs, async-graphql-parser, and dialect-specific parser crates.",
+            risk: "Non-SQL dialect support is intentionally subset-based and should not be advertised as full GraphQL/PromQL/Flux/Cypher compatibility yet.",
+            planned_mitigation: "Add async-graphql-parser, PromQL/LogQL parsers, and dialect-specific parser crates with fail-closed AST validation.",
         },
         ResidualRisk {
             id: "shared-secret-auth",
