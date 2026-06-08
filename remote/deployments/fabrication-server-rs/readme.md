@@ -4410,17 +4410,21 @@ learning-observation surfaces plus a
 `POST /fabrication/learning/outcomes`. The response reports blocker counts for
 failed or human-intervention setup checks, out-of-tolerance datum transfers,
 monitoring channels without heartbeat or safe-stop evidence, restart blockers,
-and missing setup artifact evidence.
+and missing setup artifact evidence. It also includes a `priorityDispositions`
+array for machine-failure, human-intervention, split/combine or interface setup
+review, non-G-code job-sheet evidence, and learning-feedback lanes, with
+`setup-priority:<priority>:<disposition>` observations mirrored into the learning
+draft.
 
 Setup result reviews are retained tooling, fixture, datum, workholding, and
 monitoring evidence, not certified fixture design or a machine-safety waiver.
 Machine-ready and unattended release remain blocked until setup checks, datum
 transfers, monitoring channels, retained artifacts, and human dispositions
 clear. Stored artifacts include `setup-result`, `setup-checks`,
-`setup-datum-transfers`, `setup-monitoring-channels`, `setup-artifacts`, and
-`setup-learning-observations` so MDP/POMDP/neural workers can learn when to
-change workholding, split setups, add automation, regenerate instructions, or
-require human signoff before release.
+`setup-datum-transfers`, `setup-monitoring-channels`, `setup-artifacts`,
+`setup-priority-dispositions`, and `setup-learning-observations` so
+MDP/POMDP/neural workers can learn when to change workholding, split setups, add
+automation, regenerate instructions, or require human signoff before release.
 
 ## `GET /fabrication/monitoring/catalog`
 
@@ -5837,7 +5841,9 @@ runtime inspection boundary while the database contract is still being designed.
   jobs before fetching full bundles. `GET /fabrication/jobs` is the
   gateway-prefixed app alias for the same ledger.
 - `GET /jobs/:job_id` returns the recorded plan or analysis response plus
-  artifact summaries. `GET /fabrication/jobs/:job_id` is the prefixed alias.
+  artifact summaries, `releaseGateSummary`, and `releaseBundleRoute` for compact
+  single-job gate triage before callers fetch the full bundle.
+  `GET /fabrication/jobs/:job_id` is the prefixed alias.
 - `GET /jobs/:job_id/release-bundle` returns the
   `dd.fabrication.job-release-bundle.v1` packet for a retained job, including
   full design-package/export, generated machine-code, improved-program,

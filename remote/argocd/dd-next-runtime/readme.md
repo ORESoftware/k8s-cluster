@@ -232,8 +232,9 @@ Gateway path map:
 - `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
   `dd-trading-server:8103` (internal auth required)
 - `/economics/`, `/economics/healthz`, `/economics/readyz`, `/economics/metrics`,
-  `/economics/observability`, `/economics/dashboard.json`, `/economics/model/equations`,
-  `/economics/sources`, `/economics/sources/public`, `POST /economics/forecast`,
+  `/economics/observability`, `/economics/integrations/health`, `/economics/dashboard.json`,
+  `/economics/model/equations`, `/economics/sources`, `/economics/sources/public`,
+  `POST /economics/forecast`,
   `POST /economics/ingest`, `POST /economics/sources/pull`, `/economics/sentiment/sources`,
   `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
   `/economics/vc/investment`, `POST /economics/recommendations`,
@@ -323,8 +324,8 @@ scrape still looks healthy. Operators can open `/grafana/fabrication` from the w
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
 blockers, split/combine reviews, capabilities/schema/example discovery, CAD/design format
-discovery, format-import catalog and preflight discovery, design-import review, design-import result review,
-design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
+discovery, format-import catalog discovery, design-import review, design-import result review,
+instruction import preflight discovery, design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
 worker result-review route traffic, instruction-improvement review, instruction-boundary review,
 NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,

@@ -17,6 +17,7 @@ confidence intervals.
 - `GET /readyz` - readiness probe.
 - `GET /metrics` - Prometheus text metrics.
 - `GET /observability` - telemetry posture, Prometheus/Loki/Grafana hints, and runtime cardinality.
+- `GET /integrations/health` - redacted ready/degraded/disabled status for external and cluster integrations.
 - `GET /schema` - request/response contract summary for `economics.forecast.v1`.
 - `GET /example` - sample forecast request.
 - `GET /sources` - public/private source catalog.
@@ -70,6 +71,7 @@ The default Kubernetes deployment runs with:
 - `ECONOMICS_CONFIDENCE_LEVEL=0.90`
 - `ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=false`
 - `ECONOMICS_ALLOWED_SOURCE_HOSTS=api.fiscaldata.treasury.gov,api.worldbank.org,api.coingecko.com,fred.stlouisfed.org`
+- `ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS` can extend the built-in `ECONOMICS_*` credential allowlist for private source pulls.
 - `ECONOMICS_FORECAST_REQUEST_SUBJECT=dd.remote.economics.forecast.requests`
 - `ECONOMICS_FORECAST_RESULT_SUBJECT=dd.remote.economics.forecast.results`
 - `ECONOMICS_MARKET_EVENT_SUBJECT=dd.remote.economics.market.events`
@@ -123,9 +125,10 @@ financial advice or trade execution instructions.
 ## Observability
 
 `GET /metrics` exposes Prometheus counters for HTTP requests, authenticated forecast/ingest/pipeline
-work, source pull success/failure, source pull response bytes, stored source points, and the last
-successful source pull unix timestamp. `GET /observability` returns the same telemetry contract as
-structured JSON for dashboards and operators.
+work, pipeline NATS publish success/failure, Spark submit success/failure, integration-health
+requests, source pull success/failure, source pull response bytes, stored source points, and the
+last successful source pull unix timestamp. `GET /observability` returns the same telemetry contract
+as structured JSON for dashboards and operators.
 
 The service writes compact `dd.log.v1` JSON log envelopes to stdout/stderr so Promtail/Loki can
 collect startup, auth failure, NATS, pipeline, and source-pull events from container logs. OpenTelemetry
@@ -153,7 +156,9 @@ report containing observed points, dropped points, first/last date, and min/max 
 Custom pulls remain available for private APIs, but are gated: source URLs cannot contain
 credentials or fragments, redirects are not followed, private/link-local hosts and custom ports are
 blocked unless `ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true`, and
-`ECONOMICS_ALLOWED_SOURCE_HOSTS` can restrict ad-hoc public egress. Known parser modes are
+`ECONOMICS_ALLOWED_SOURCE_HOSTS` can restrict ad-hoc public egress. Outbound `authHeaderEnv` values
+must be in the built-in economics credential allowlist or `ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS`, so
+callers cannot forward arbitrary process secrets to a source host. Known parser modes are
 `json-records`, `json-tuple-array`, and `csv-records`.
 
 CoinGecko's unauthenticated public API currently limits historical market chart pulls to the past
@@ -172,8 +177,11 @@ history.
 - public source IDs from `GET /sources/public` for upstream dataset refreshes
 
 `POST /pipelines/submit` submits only the Spark pipeline server intents, only to a cluster-local
-HTTP URL by default, and only when `ECONOMICS_ENABLE_PIPELINE_SUBMIT=true`. Airflow and Databricks
-remain plan-only until their service auth and audit flows are explicitly designed.
+HTTP URL by default, and only when `ECONOMICS_ENABLE_PIPELINE_SUBMIT=true`. Spark submit URLs reject
+embedded credentials, query strings, and fragments. Airflow and Databricks remain plan-only until
+their service auth and audit flows are explicitly designed. `GET /integrations/health` reports
+redacted dependency status for auth, source egress, source credential allowlists, Spark, Airflow,
+Databricks, NATS, runtime-config, data lake, market data, sentiment providers, and the DES engine.
 
 ## Local checks
 
@@ -181,6 +189,7 @@ remain plan-only until their service auth and audit flows are explicitly designe
 cargo fmt
 cargo test
 curl -fsS http://127.0.0.1:8114/observability
+curl -fsS http://127.0.0.1:8114/integrations/health
 cargo test public_source_templates_fetch_live_external_data_when_available -- --ignored --nocapture
 ```
 

@@ -66,6 +66,7 @@ struct Config {
     allow_unauthenticated: bool,
     allow_private_source_urls: bool,
     allowed_source_hosts: Vec<String>,
+    allowed_source_auth_envs: Vec<String>,
     sentiment_credentials: SentimentCredentialStatus,
     market_data_credentials: MarketDataCredentialStatus,
     history_years: u32,
@@ -102,6 +103,12 @@ struct Metrics {
     recommendation_requests_total: AtomicU64,
     pipeline_plan_requests_total: AtomicU64,
     pipeline_submit_requests_total: AtomicU64,
+    pipeline_publish_attempts_total: AtomicU64,
+    pipeline_publish_success_total: AtomicU64,
+    pipeline_publish_failure_total: AtomicU64,
+    pipeline_submit_success_total: AtomicU64,
+    pipeline_submit_failure_total: AtomicU64,
+    integration_health_requests_total: AtomicU64,
     observability_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
@@ -463,6 +470,19 @@ struct PipelineIntegrationStatus {
     nats_configured: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IntegrationDependencyStatus {
+    id: String,
+    kind: String,
+    status: String,
+    configured: bool,
+    required_for_core_readiness: bool,
+    mode: String,
+    details: Value,
+    warnings: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SentimentAnalyzeRequest {
@@ -748,6 +768,48 @@ fn env_list(key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn default_source_auth_envs() -> Vec<String> {
+    [
+        "ECONOMICS_X_BEARER_TOKEN",
+        "ECONOMICS_X_API_KEY",
+        "ECONOMICS_X_API_SECRET",
+        "ECONOMICS_X_ACCESS_TOKEN",
+        "ECONOMICS_X_ACCESS_TOKEN_SECRET",
+        "ECONOMICS_REDDIT_CLIENT_ID",
+        "ECONOMICS_REDDIT_CLIENT_SECRET",
+        "ECONOMICS_NEWS_API_KEY",
+        "ECONOMICS_STOCKTWITS_TOKEN",
+        "ECONOMICS_GDELT_API_KEY",
+        "ECONOMICS_FRED_API_KEY",
+        "ECONOMICS_BEA_API_KEY",
+        "ECONOMICS_BLS_API_KEY",
+        "ECONOMICS_TREASURY_API_KEY",
+        "ECONOMICS_CENSUS_API_KEY",
+        "ECONOMICS_EIA_API_KEY",
+        "ECONOMICS_COINGECKO_API_KEY",
+        "ECONOMICS_SEC_API_KEY",
+        "ECONOMICS_CRUNCHBASE_API_KEY",
+        "ECONOMICS_PITCHBOOK_API_KEY",
+        "ECONOMICS_CB_INSIGHTS_API_KEY",
+        "ECONOMICS_DEALROOM_API_KEY",
+        "ECONOMICS_PREQIN_API_KEY",
+        "ECONOMICS_DATABRICKS_TOKEN",
+    ]
+    .into_iter()
+    .map(|value| value.to_ascii_lowercase())
+    .collect()
+}
+
+fn configured_source_auth_envs() -> Vec<String> {
+    let mut allowed = default_source_auth_envs()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for env_name in env_list("ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS") {
+        allowed.insert(env_name);
+    }
+    allowed.into_iter().collect()
+}
+
 fn env_bool(key: &str, fallback: bool) -> bool {
     env::var(key)
         .ok()
@@ -783,6 +845,7 @@ fn config_from_env() -> Config {
         allow_unauthenticated: env_bool("ECONOMICS_ALLOW_UNAUTHENTICATED", false),
         allow_private_source_urls: env_bool("ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS", false),
         allowed_source_hosts: env_list("ECONOMICS_ALLOWED_SOURCE_HOSTS"),
+        allowed_source_auth_envs: configured_source_auth_envs(),
         sentiment_credentials: sentiment_credentials_from_env(),
         market_data_credentials: market_data_credentials_from_env(),
         history_years: env_u32("ECONOMICS_HISTORY_YEARS", DEFAULT_HISTORY_YEARS),
@@ -967,6 +1030,46 @@ fn clean_optional_token(value: &Option<String>, label: &str) -> Result<(), Strin
     Ok(())
 }
 
+fn validate_source_auth_env(config: &Config, env_name: &str) -> Result<String, String> {
+    let clean = clean_token(env_name, "authHeaderEnv")?;
+    let normalized = clean.to_ascii_lowercase();
+    if config
+        .allowed_source_auth_envs
+        .iter()
+        .any(|allowed| allowed == &normalized)
+    {
+        return Ok(clean);
+    }
+    Err(
+        "authHeaderEnv must be listed in ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS or one of the built-in ECONOMICS_* credential placeholders"
+            .to_string(),
+    )
+}
+
+fn validate_source_auth_header_name(name: &str) -> Result<reqwest::header::HeaderName, String> {
+    let clean = clean_token(name, "authHeaderName")?;
+    let lower = clean.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "host"
+            | "connection"
+            | "content-length"
+            | "transfer-encoding"
+            | "cookie"
+            | "set-cookie"
+            | "proxy-authorization"
+            | "upgrade"
+    ) {
+        return Err(
+            "authHeaderName cannot be a hop-by-hop, cookie, host, or payload framing header"
+                .to_string(),
+        );
+    }
+    clean
+        .parse::<reqwest::header::HeaderName>()
+        .map_err(|error| format!("authHeaderName is invalid: {error}"))
+}
+
 fn constant_time_eq(left: &str, right: &str) -> bool {
     let left = left.as_bytes();
     let right = right.as_bytes();
@@ -1122,6 +1225,12 @@ fn des_service_descriptor() -> Value {
             "GET",
             "/observability",
             "Prometheus, Loki, Grafana, and explicit-only OTel telemetry posture.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/integrations/health",
+            "Redacted readiness and degradation status for economics integrations.",
             EndpointKind::Service,
         )
         .endpoint(
@@ -1730,6 +1839,12 @@ fn observability_payload(state: &AppState) -> Value {
                 "dd_economics_server_recommendation_requests_total",
                 "dd_economics_server_pipeline_plan_requests_total",
                 "dd_economics_server_pipeline_submit_requests_total",
+                "dd_economics_server_pipeline_publish_attempts_total",
+                "dd_economics_server_pipeline_publish_success_total",
+                "dd_economics_server_pipeline_publish_failure_total",
+                "dd_economics_server_pipeline_submit_success_total",
+                "dd_economics_server_pipeline_submit_failure_total",
+                "dd_economics_server_integration_health_requests_total",
                 "dd_economics_server_observability_requests_total",
                 "dd_economics_server_auth_failures_total",
                 "dd_economics_server_errors_total",
@@ -1754,7 +1869,13 @@ fn observability_payload(state: &AppState) -> Value {
                 "economics.nats.request.oversize",
                 "economics.nats.forecast.error",
                 "economics.nats.request.invalid",
-                "economics.pipeline.plan.encode.error"
+                "economics.pipeline.plan.encode.error",
+                "economics.pipeline.plan.publish.skipped",
+                "economics.pipeline.plan.publish.ok",
+                "economics.pipeline.plan.publish.error",
+                "economics.pipeline.submit.ok",
+                "economics.pipeline.submit.rejected",
+                "economics.pipeline.submit.error"
             ],
             "labelGuidance": "Promtail should promote only low-cardinality fields such as schema, severity_text, service, namespace, and app labels."
         },
@@ -1773,7 +1894,8 @@ fn observability_payload(state: &AppState) -> Value {
             "suggestedPanels": [
                 "request, error, and auth-failure rates",
                 "source pull success/failure, bytes, stored points, and last success timestamp",
-                "forecast/recommendation/pipeline plan rates",
+                "forecast/recommendation/pipeline plan/publish/submit rates",
+                "integration health request rate and degraded dependency count",
                 "Loki dd.log.v1 warning/error stream filtered by resource_service_name",
                 "pod readiness/restarts from k8s resource exporter"
             ]
@@ -1783,6 +1905,8 @@ fn observability_payload(state: &AppState) -> Value {
             "publicSourceTemplateCount": public_source_templates().len(),
             "knownPublicSourceHosts": public_source_hosts(),
             "sourcePullAllowedHosts": state.config.allowed_source_hosts,
+            "sourceAuthHeaderEnvAllowlistCount": state.config.allowed_source_auth_envs.len(),
+            "integrationHealthRoute": "GET /integrations/health",
             "storedSeries": state.series_store.read().map(|store| store.len()).unwrap_or(0)
         },
         "atMs": now_ms()
@@ -1893,6 +2017,7 @@ fn schema_descriptor() -> Value {
         },
         "pipelines": {
             "catalog": "GET /pipelines/catalog reports Spark, Airflow, Databricks, data lake, and NATS integration status without returning secrets.",
+            "integrations": "GET /integrations/health reports redacted ready/degraded/disabled status for auth, egress, source credentials, Spark, Airflow, Databricks, NATS, runtime-config, data lake, and DES dependencies.",
             "plan": "POST /pipelines/plan creates redacted job intents for Spark pipeline server, Spark feature builds, Airflow DAG triggers, Databricks run-now payloads, and NATS public-data pipeline events.",
             "submit": "POST /pipelines/submit submits only spark-pipeline-server intents and only when ECONOMICS_ENABLE_PIPELINE_SUBMIT=true.",
             "audit": "GET /audit/hardening reports auth, request bounds, SSRF controls, secret handling, and residual risks."
@@ -1968,6 +2093,7 @@ fn service_descriptor(state: &AppState) -> Value {
             "pipelinePlan": "POST /pipelines/plan",
             "pipelineSubmit": "POST /pipelines/submit",
             "observability": "GET /observability",
+            "integrationHealth": "GET /integrations/health",
             "equations": "GET /model/equations",
             "schema": "GET /schema",
             "example": "GET /example",
@@ -2002,8 +2128,10 @@ fn service_descriptor(state: &AppState) -> Value {
             "catalogRoute": "GET /pipelines/catalog",
             "planRoute": "POST /pipelines/plan",
             "submitRoute": "POST /pipelines/submit",
+            "integrationHealthRoute": "GET /integrations/health",
             "auditRoute": "GET /audit/hardening"
         },
+        "integrations": integration_health_payload(state),
         "observability": observability_payload(state),
         "equationCount": equation_catalog().len(),
         "sourceCount": source_catalog().len(),
@@ -3351,6 +3479,473 @@ fn vc_investment_payload(config: &Config) -> Value {
     })
 }
 
+fn is_cluster_internal_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host.ends_with(".svc.cluster.local")
+        || host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+}
+
+fn validate_http_base_url(
+    base: &str,
+    allow_external: bool,
+    label: &str,
+) -> Result<reqwest::Url, String> {
+    let trimmed = base.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "{label} must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    let parsed =
+        reqwest::Url::parse(trimmed).map_err(|error| format!("{label} is invalid: {error}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err(format!("{label} must use http or https")),
+    }
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err(format!("{label} must not contain URL credentials"));
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(format!(
+            "{label} must not contain query strings or fragments"
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| format!("{label} must include a host"))?;
+    if !is_cluster_internal_host(host) && !allow_external {
+        return Err(format!(
+            "{label} must be cluster-local unless ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=true"
+        ));
+    }
+    Ok(parsed)
+}
+
+fn validate_plan_only_http_url(base: &str, label: &str) -> Result<reqwest::Url, String> {
+    validate_http_base_url(base, true, label)
+}
+
+fn integration_dependency(
+    id: &str,
+    kind: &str,
+    status: &str,
+    configured: bool,
+    required_for_core_readiness: bool,
+    mode: &str,
+    details: Value,
+    warnings: Vec<String>,
+) -> IntegrationDependencyStatus {
+    IntegrationDependencyStatus {
+        id: id.to_string(),
+        kind: kind.to_string(),
+        status: status.to_string(),
+        configured,
+        required_for_core_readiness,
+        mode: mode.to_string(),
+        details,
+        warnings,
+    }
+}
+
+fn sentiment_credential_count(credentials: &SentimentCredentialStatus) -> usize {
+    [
+        credentials.x_bearer_token,
+        credentials.x_api_key,
+        credentials.x_api_secret,
+        credentials.x_access_token,
+        credentials.x_access_token_secret,
+        credentials.reddit_client_id,
+        credentials.reddit_client_secret,
+        credentials.reddit_user_agent,
+        credentials.news_api_key,
+        credentials.stocktwits_token,
+        credentials.gdelt_api_key,
+    ]
+    .into_iter()
+    .filter(|configured| *configured)
+    .count()
+}
+
+fn market_data_credential_count(credentials: &MarketDataCredentialStatus) -> usize {
+    [
+        credentials.fred_api_key,
+        credentials.bea_api_key,
+        credentials.bls_api_key,
+        credentials.treasury_api_key,
+        credentials.census_api_key,
+        credentials.eia_api_key,
+        credentials.coingecko_api_key,
+        credentials.sec_api_key,
+        credentials.crunchbase_api_key,
+        credentials.pitchbook_api_key,
+        credentials.cb_insights_api_key,
+        credentials.dealroom_api_key,
+        credentials.preqin_api_key,
+    ]
+    .into_iter()
+    .filter(|configured| *configured)
+    .count()
+}
+
+fn integration_dependencies(state: &AppState) -> Vec<IntegrationDependencyStatus> {
+    let auth_ready =
+        state.config.allow_unauthenticated || state.config.server_auth_secret.is_some();
+    let mut dependencies = vec![integration_dependency(
+        "server-auth",
+        "security",
+        if auth_ready { "ready" } else { "not-ready" },
+        state.config.server_auth_secret.is_some(),
+        true,
+        if state.config.allow_unauthenticated {
+            "local-unauthenticated"
+        } else {
+            "shared-secret"
+        },
+        json!({
+            "acceptedHeaders": ["x-server-auth", "auth", "authorization"],
+            "allowUnauthenticated": state.config.allow_unauthenticated,
+            "secretConfigured": state.config.server_auth_secret.is_some()
+        }),
+        if state.config.allow_unauthenticated {
+            vec![
+                "ECONOMICS_ALLOW_UNAUTHENTICATED=true should stay limited to local development"
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        },
+    )];
+
+    let source_warnings = [
+        (
+            state.config.allow_private_source_urls,
+            "private/link-local source URLs are enabled",
+        ),
+        (
+            state.config.allowed_source_hosts.is_empty(),
+            "ad-hoc source host allowlist is empty",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(active, warning)| active.then(|| warning.to_string()))
+    .collect::<Vec<_>>();
+    dependencies.push(integration_dependency(
+        "source-egress",
+        "data-ingest",
+        if source_warnings.is_empty() {
+            "ready"
+        } else {
+            "degraded"
+        },
+        true,
+        false,
+        "bounded-http-pull",
+        json!({
+            "privateUrlsAllowed": state.config.allow_private_source_urls,
+            "redirectFollowing": false,
+            "allowedSourceHosts": state.config.allowed_source_hosts,
+            "knownPublicHosts": public_source_hosts(),
+            "maxSourceFetchBytes": MAX_SOURCE_FETCH_BYTES
+        }),
+        source_warnings,
+    ));
+    dependencies.push(integration_dependency(
+        "source-auth-env-allowlist",
+        "secret-boundary",
+        if state.config.allowed_source_auth_envs.is_empty() {
+            "degraded"
+        } else {
+            "ready"
+        },
+        !state.config.allowed_source_auth_envs.is_empty(),
+        false,
+        "explicit-env-allowlist",
+        json!({
+            "allowedEnvCount": state.config.allowed_source_auth_envs.len(),
+            "allowlistEnv": "ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS",
+            "valuesReturned": false
+        }),
+        Vec::new(),
+    ));
+
+    let spark_url_status = state.config.spark_pipeline_url.as_deref().map(|url| {
+        validate_http_base_url(
+            url,
+            state.config.allow_external_pipeline_urls,
+            "spark pipeline URL",
+        )
+    });
+    let spark_valid = spark_url_status
+        .as_ref()
+        .map(Result::is_ok)
+        .unwrap_or(false);
+    let spark_auth_configured = optional_env(&state.config.spark_pipeline_auth_env).is_some();
+    let spark_status = if state.config.allow_pipeline_submit {
+        if spark_valid && spark_auth_configured {
+            "ready"
+        } else {
+            "degraded"
+        }
+    } else if spark_url_status.as_ref().is_some_and(Result::is_err) {
+        "misconfigured"
+    } else {
+        "disabled"
+    };
+    dependencies.push(integration_dependency(
+        "spark-pipeline-server",
+        "big-data",
+        spark_status,
+        state.config.spark_pipeline_url.is_some(),
+        false,
+        if state.config.allow_pipeline_submit {
+            "submit-enabled"
+        } else {
+            "plan-only"
+        },
+        json!({
+            "urlConfigured": state.config.spark_pipeline_url.is_some(),
+            "urlValid": spark_valid,
+            "authEnv": state.config.spark_pipeline_auth_env,
+            "authConfigured": spark_auth_configured,
+            "externalUrlsAllowed": state.config.allow_external_pipeline_urls
+        }),
+        spark_url_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    let airflow_status = state
+        .config
+        .airflow_api_url
+        .as_deref()
+        .map(|url| validate_plan_only_http_url(url, "Airflow API URL"));
+    dependencies.push(integration_dependency(
+        "airflow",
+        "orchestrator",
+        match airflow_status.as_ref() {
+            Some(Ok(_)) => "plan-only",
+            Some(Err(_)) => "misconfigured",
+            None => "disabled",
+        },
+        state.config.airflow_api_url.is_some(),
+        false,
+        "plan-only",
+        json!({
+            "apiUrlConfigured": state.config.airflow_api_url.is_some(),
+            "dagBlueprint": "economics_market_refresh",
+            "liveSubmissionImplemented": false
+        }),
+        airflow_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    let databricks_status = state
+        .config
+        .databricks_host
+        .as_deref()
+        .map(|url| validate_plan_only_http_url(url, "Databricks host"));
+    let databricks_token_configured = optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some();
+    dependencies.push(integration_dependency(
+        "databricks",
+        "managed-big-data",
+        match databricks_status.as_ref() {
+            Some(Ok(_)) if databricks_token_configured => "plan-only",
+            Some(Ok(_)) => "degraded",
+            Some(Err(_)) => "misconfigured",
+            None => "disabled",
+        },
+        state.config.databricks_host.is_some() || databricks_token_configured,
+        false,
+        "plan-only",
+        json!({
+            "hostConfigured": state.config.databricks_host.is_some(),
+            "tokenConfigured": databricks_token_configured,
+            "credentialValuesReturned": false,
+            "liveSubmissionImplemented": false
+        }),
+        databricks_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_else(|| {
+                if state.config.databricks_host.is_some() && !databricks_token_configured {
+                    vec!["ECONOMICS_DATABRICKS_TOKEN is not configured".to_string()]
+                } else {
+                    Vec::new()
+                }
+            }),
+    ));
+
+    let data_lake_valid = validate_data_lake_uri(&state.config.data_lake_uri);
+    dependencies.push(integration_dependency(
+        "data-lake",
+        "storage",
+        if data_lake_valid.is_ok() {
+            "ready"
+        } else {
+            "misconfigured"
+        },
+        true,
+        false,
+        "pipeline-target",
+        json!({
+            "uriSchemeAllowed": data_lake_valid.is_ok(),
+            "allowedSchemes": ["s3", "s3a", "abfss", "gs", "file:///tmp/"]
+        }),
+        data_lake_valid
+            .err()
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "nats",
+        "messaging",
+        if state.nats.is_some() {
+            "ready"
+        } else {
+            "disabled"
+        },
+        state.nats.is_some(),
+        false,
+        "forecast-and-pipeline-events",
+        json!({
+            "forecastRequestSubject": state.config.request_subject,
+            "forecastResultSubject": state.config.result_subject,
+            "marketEventSubject": state.config.market_event_subject,
+            "runtimeEventSubject": state.config.runtime_event_subject,
+            "pipelineIntentSubject": state.config.pipeline_intent_subject
+        }),
+        if state.nats.is_some() {
+            Vec::new()
+        } else {
+            vec!["NATS_URL is not configured or connection was not established".to_string()]
+        },
+    ));
+
+    let sentiment_count = sentiment_credential_count(&state.config.sentiment_credentials);
+    dependencies.push(integration_dependency(
+        "sentiment-providers",
+        "social-news",
+        if sentiment_count > 0 {
+            "ready"
+        } else {
+            "placeholder"
+        },
+        sentiment_count > 0,
+        false,
+        "document-analysis-now-live-fetchers-later",
+        json!({
+            "configuredCredentialCount": sentiment_count,
+            "providerCatalogRoute": "GET /sentiment/sources",
+            "analyzeRoute": "POST /sentiment/analyze"
+        }),
+        if sentiment_count > 0 {
+            Vec::new()
+        } else {
+            vec!["live sentiment provider fetchers are placeholders; POST supplied documents for scoring".to_string()]
+        },
+    ));
+
+    let market_count = market_data_credential_count(&state.config.market_data_credentials);
+    dependencies.push(integration_dependency(
+        "market-data-providers",
+        "market-macro-private-data",
+        if market_count > 0 {
+            "ready"
+        } else {
+            "public-only"
+        },
+        market_count > 0,
+        false,
+        "source-templates-and-private-credentials",
+        json!({
+            "configuredCredentialCount": market_count,
+            "publicSourceTemplateCount": public_source_templates().len(),
+            "publicSourcesRoute": "GET /sources/public"
+        }),
+        Vec::new(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "runtime-config",
+        "control-plane",
+        if optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some() {
+            "ready"
+        } else {
+            "disabled"
+        },
+        optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some(),
+        false,
+        "register-and-receive-updates",
+        json!({
+            "registerUrlConfigured": optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some(),
+            "applyRouteConfigured": optional_env("RUNTIME_CONFIG_APPLY_URL").is_some(),
+            "scope": env_value("RUNTIME_CONFIG_SCOPE", "default"),
+            "env": env_value("RUNTIME_CONFIG_ENV", "stage")
+        }),
+        Vec::new(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "des-engine",
+        "math-engine",
+        "ready",
+        true,
+        true,
+        "embedded-sdk-surface",
+        des_surface_descriptor(),
+        Vec::new(),
+    ));
+
+    dependencies
+}
+
+fn integration_health_payload(state: &AppState) -> Value {
+    let dependencies = integration_dependencies(state);
+    let required_ready = dependencies
+        .iter()
+        .filter(|dependency| dependency.required_for_core_readiness)
+        .all(|dependency| dependency.status == "ready");
+    let degraded_count = dependencies
+        .iter()
+        .filter(|dependency| {
+            matches!(
+                dependency.status.as_str(),
+                "degraded" | "misconfigured" | "not-ready"
+            )
+        })
+        .count();
+    let overall_status = if required_ready && degraded_count == 0 {
+        "ready"
+    } else if required_ready {
+        "degraded"
+    } else {
+        "not-ready"
+    };
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "overallStatus": overall_status,
+        "coreReady": required_ready,
+        "dependencyCount": dependencies.len(),
+        "degradedDependencyCount": degraded_count,
+        "dependencies": dependencies,
+        "telemetry": {
+            "metricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "integrationHealthRequestsMetric": "dd_economics_server_integration_health_requests_total",
+            "structuredLogSchema": "dd.log.v1"
+        },
+        "atMs": now_ms()
+    })
+}
+
 fn pipeline_integration_status(state: &AppState) -> PipelineIntegrationStatus {
     PipelineIntegrationStatus {
         spark_pipeline_url_configured: state.config.spark_pipeline_url.is_some(),
@@ -3415,6 +4010,7 @@ fn pipeline_catalog_payload(state: &AppState) -> Value {
                 "notes": "Pipeline plans can be published as redacted job intents for downstream big-data workers."
             }
         ],
+        "integrationHealthRoute": "GET /integrations/health",
         "planRoute": "POST /pipelines/plan",
         "auditRoute": "GET /audit/hardening"
     })
@@ -3456,12 +4052,16 @@ fn hardening_audit_payload(state: &AppState) -> Value {
         "secretHandling": {
             "credentialValuesReturned": false,
             "credentialStatusOnly": true,
+            "sourceAuthHeaderEnvAllowlistEnabled": true,
+            "sourceAuthHeaderEnvAllowlistCount": state.config.allowed_source_auth_envs.len(),
+            "sourceAuthHeaderEnvAllowlistVar": "ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS",
             "sparkPipelineAuthEnv": state.config.spark_pipeline_auth_env,
             "databricksTokenEnv": "ECONOMICS_DATABRICKS_TOKEN"
         },
         "observability": {
             "prometheusMetricsRoute": "GET /metrics",
             "observabilityRoute": "GET /observability",
+            "integrationHealthRoute": "GET /integrations/health",
             "structuredLogSchema": "dd.log.v1",
             "lokiCollectionBoundary": "container stdout/stderr via Promtail",
             "otelMode": "explicit-only",
@@ -3469,6 +4069,7 @@ fn hardening_audit_payload(state: &AppState) -> Value {
             "runtimeMonkeyPatching": false
         },
         "bigData": pipeline_integration_status(state),
+        "integrationHealth": integration_health_payload(state),
         "deploymentPosture": {
             "expectedNoServiceAccountToken": true,
             "expectedReadOnlyRootFilesystem": true,
@@ -3480,6 +4081,7 @@ fn hardening_audit_payload(state: &AppState) -> Value {
             "live provider connectors are placeholders until per-provider rate limits, retries, and backoff are implemented",
             "recommendation rankings are research signals, not trade execution instructions",
             "Airflow and Databricks submission remain plan-only until their auth and audit flows are explicitly designed",
+            "GET /integrations/health reports integration readiness but does not perform active network probes against external providers",
             "Spark pipeline HTTP submission is disabled unless ECONOMICS_ENABLE_PIPELINE_SUBMIT=true"
         ],
         "atMs": now_ms()
@@ -3856,7 +4458,25 @@ fn nats_pipeline_intent(
 }
 
 async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
+    state
+        .metrics
+        .pipeline_publish_attempts_total
+        .fetch_add(1, Ordering::Relaxed);
     let Some(nats) = state.nats.as_ref() else {
+        state
+            .metrics
+            .pipeline_publish_failure_total
+            .fetch_add(1, Ordering::Relaxed);
+        emit_log(
+            "WARN",
+            "economics.pipeline.plan.publish.skipped",
+            "pipeline plan publish requested but NATS is not configured",
+            json!({
+                "requestId": &plan.request_id,
+                "subject": state.config.pipeline_intent_subject,
+                "natsConfigured": false
+            }),
+        );
         return;
     };
     let payload = match serde_json::to_vec(&json!({
@@ -3866,6 +4486,11 @@ async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
+            state
+                .metrics
+                .pipeline_publish_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             emit_log(
                 "ERROR",
                 "economics.pipeline.plan.encode.error",
@@ -3878,15 +4503,47 @@ async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
             return;
         }
     };
-    if nats
+    match nats
         .publish(state.config.pipeline_intent_subject.clone(), payload.into())
         .await
-        .is_ok()
     {
-        state
-            .metrics
-            .nats_published_total
-            .fetch_add(1, Ordering::Relaxed);
+        Ok(()) => {
+            state
+                .metrics
+                .nats_published_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_publish_success_total
+                .fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "INFO",
+                "economics.pipeline.plan.publish.ok",
+                "pipeline plan published to NATS",
+                json!({
+                    "requestId": &plan.request_id,
+                    "subject": state.config.pipeline_intent_subject,
+                    "jobIntentCount": plan.job_intents.len()
+                }),
+            );
+        }
+        Err(error) => {
+            state
+                .metrics
+                .pipeline_publish_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "ERROR",
+                "economics.pipeline.plan.publish.error",
+                "failed to publish pipeline plan to NATS",
+                json!({
+                    "requestId": &plan.request_id,
+                    "subject": state.config.pipeline_intent_subject,
+                    "error": error_summary(&error.to_string())
+                }),
+            );
+        }
     }
 }
 
@@ -3894,23 +4551,11 @@ fn validate_pipeline_submit_url(config: &Config) -> Result<String, String> {
     let Some(base) = config.spark_pipeline_url.as_deref() else {
         return Err("ECONOMICS_SPARK_PIPELINE_URL is not configured".to_string());
     };
-    let parsed = reqwest::Url::parse(base)
-        .map_err(|error| format!("spark pipeline URL is invalid: {error}"))?;
-    match parsed.scheme() {
-        "http" | "https" => {}
-        _ => return Err("spark pipeline URL must use http or https".to_string()),
-    }
-    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
-    let internal = host.ends_with(".svc.cluster.local")
-        || host == "localhost"
-        || host == "127.0.0.1"
-        || host == "::1";
-    if !internal && !config.allow_external_pipeline_urls {
-        return Err(
-            "spark pipeline URL must be cluster-local unless ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=true"
-                .to_string(),
-        );
-    }
+    validate_http_base_url(
+        base,
+        config.allow_external_pipeline_urls,
+        "spark pipeline URL",
+    )?;
     Ok(format!("{}/v1/jobs", base.trim_end_matches('/')))
 }
 
@@ -3951,24 +4596,75 @@ async fn submit_pipeline_plan(
         match response {
             Ok(response) => {
                 let status = response.status().as_u16();
+                let accepted = (200..300).contains(&status);
                 let body = response.json::<Value>().await.ok();
+                if accepted {
+                    state
+                        .metrics
+                        .pipeline_submit_success_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    emit_log(
+                        "INFO",
+                        "economics.pipeline.submit.ok",
+                        "pipeline job submitted to Spark pipeline server",
+                        json!({
+                            "requestId": &plan.request_id,
+                            "intentId": &intent.id,
+                            "kind": &intent.kind,
+                            "httpStatus": status
+                        }),
+                    );
+                } else {
+                    state
+                        .metrics
+                        .pipeline_submit_failure_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    emit_log(
+                        "WARN",
+                        "economics.pipeline.submit.rejected",
+                        "Spark pipeline server rejected a submitted economics job",
+                        json!({
+                            "requestId": &plan.request_id,
+                            "intentId": &intent.id,
+                            "kind": &intent.kind,
+                            "httpStatus": status
+                        }),
+                    );
+                }
                 submitted.push(PipelineSubmittedJob {
                     intent_id: intent.id.clone(),
                     target: submit_url.clone(),
                     http_status: Some(status),
-                    accepted: (200..300).contains(&status),
+                    accepted,
                     response: body,
                     error: None,
                 });
             }
-            Err(error) => submitted.push(PipelineSubmittedJob {
-                intent_id: intent.id.clone(),
-                target: submit_url.clone(),
-                http_status: None,
-                accepted: false,
-                response: None,
-                error: Some(error.to_string()),
-            }),
+            Err(error) => {
+                state
+                    .metrics
+                    .pipeline_submit_failure_total
+                    .fetch_add(1, Ordering::Relaxed);
+                emit_log(
+                    "ERROR",
+                    "economics.pipeline.submit.error",
+                    "failed to submit economics job to Spark pipeline server",
+                    json!({
+                        "requestId": &plan.request_id,
+                        "intentId": &intent.id,
+                        "kind": &intent.kind,
+                        "error": error_summary(&error.to_string())
+                    }),
+                );
+                submitted.push(PipelineSubmittedJob {
+                    intent_id: intent.id.clone(),
+                    target: submit_url.clone(),
+                    http_status: None,
+                    accepted: false,
+                    response: None,
+                    error: Some(error_summary(&error.to_string())),
+                });
+            }
         }
     }
     Ok(submitted)
@@ -6355,6 +7051,7 @@ async fn sources() -> impl IntoResponse {
         "pipelineCatalogRoute": "GET /pipelines/catalog",
         "pipelinePlanRoute": "POST /pipelines/plan",
         "pipelineSubmitRoute": "POST /pipelines/submit",
+        "integrationHealthRoute": "GET /integrations/health",
         "auditHardeningRoute": "GET /audit/hardening"
     }))
 }
@@ -6379,6 +7076,18 @@ async fn vc_investment(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn pipeline_catalog(State(state): State<AppState>) -> impl IntoResponse {
     Json(pipeline_catalog_payload(&state))
+}
+
+async fn integrations_health(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .integration_health_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(integration_health_payload(&state))
 }
 
 async fn hardening_audit(State(state): State<AppState>) -> impl IntoResponse {
@@ -6522,6 +7231,10 @@ async fn pipeline_submit_http(
         Ok(plan) => plan,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_submit_failure_total
+                .fetch_add(1, Ordering::Relaxed);
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
@@ -6550,6 +7263,10 @@ async fn pipeline_submit_http(
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_submit_failure_total
+                .fetch_add(1, Ordering::Relaxed);
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error, "plan": plan })),
@@ -6716,15 +7433,15 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     }
     let mut http_request = state.http.get(parsed_url.clone());
     if let Some(env_name) = request.auth_header_env.as_deref() {
-        let env_name = clean_token(env_name, "authHeaderEnv")?;
+        let env_name = validate_source_auth_env(&state.config, env_name)?;
         let header_value = optional_env(&env_name)
             .ok_or_else(|| format!("auth header env var {env_name} is not configured"))?;
-        let header_name = request
-            .auth_header_name
-            .as_deref()
-            .unwrap_or("authorization")
-            .parse::<reqwest::header::HeaderName>()
-            .map_err(|error| format!("authHeaderName is invalid: {error}"))?;
+        let header_name = validate_source_auth_header_name(
+            request
+                .auth_header_name
+                .as_deref()
+                .unwrap_or("authorization"),
+        )?;
         let header_value = reqwest::header::HeaderValue::from_str(&header_value)
             .map_err(|_| "auth header value contains invalid bytes".to_string())?;
         http_request = http_request.header(header_name, header_value);
@@ -7453,6 +8170,24 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_economics_server_pipeline_submit_requests_total Pipeline submit requests accepted.\n\
          # TYPE dd_economics_server_pipeline_submit_requests_total counter\n\
          dd_economics_server_pipeline_submit_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_attempts_total Pipeline plan NATS publish attempts requested.\n\
+         # TYPE dd_economics_server_pipeline_publish_attempts_total counter\n\
+         dd_economics_server_pipeline_publish_attempts_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_success_total Pipeline plans published to NATS successfully.\n\
+         # TYPE dd_economics_server_pipeline_publish_success_total counter\n\
+         dd_economics_server_pipeline_publish_success_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_failure_total Pipeline plan publish attempts skipped or failed.\n\
+         # TYPE dd_economics_server_pipeline_publish_failure_total counter\n\
+         dd_economics_server_pipeline_publish_failure_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_success_total Spark pipeline jobs accepted by the pipeline server.\n\
+         # TYPE dd_economics_server_pipeline_submit_success_total counter\n\
+         dd_economics_server_pipeline_submit_success_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_failure_total Spark pipeline job submits rejected or failed before submit.\n\
+         # TYPE dd_economics_server_pipeline_submit_failure_total counter\n\
+         dd_economics_server_pipeline_submit_failure_total {}\n\
+         # HELP dd_economics_server_integration_health_requests_total Integration health requests served.\n\
+         # TYPE dd_economics_server_integration_health_requests_total counter\n\
+         dd_economics_server_integration_health_requests_total {}\n\
          # HELP dd_economics_server_observability_requests_total Observability descriptor requests served.\n\
          # TYPE dd_economics_server_observability_requests_total counter\n\
          dd_economics_server_observability_requests_total {}\n\
@@ -7504,6 +8239,30 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state
             .metrics
             .pipeline_submit_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_attempts_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .integration_health_requests_total
             .load(Ordering::Relaxed),
         state
             .metrics
@@ -7575,6 +8334,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/recommendations", post(recommendations_http))
         .route("/audit/hardening", get(hardening_audit))
         .route("/observability", get(observability))
+        .route("/integrations/health", get(integrations_health))
         .route("/pipelines/catalog", get(pipeline_catalog))
         .route("/pipelines/plan", post(pipeline_plan_http))
         .route("/pipelines/submit", post(pipeline_submit_http))
@@ -7947,6 +8707,7 @@ mod tests {
             allow_unauthenticated: false,
             allow_private_source_urls: false,
             allowed_source_hosts: Vec::new(),
+            allowed_source_auth_envs: default_source_auth_envs(),
             sentiment_credentials: SentimentCredentialStatus {
                 x_bearer_token: true,
                 x_api_key: false,
@@ -8295,6 +9056,64 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_submit_url_rejects_credentials_queries_and_fragments() {
+        let mut config = test_config();
+        config.spark_pipeline_url = Some(
+            "http://user:secret@dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        );
+        let error = validate_pipeline_submit_url(&config).expect_err("credentials rejected");
+        assert!(error.contains("credentials"));
+
+        config.spark_pipeline_url = Some(
+            "http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085?token=secret".to_string(),
+        );
+        let error = validate_pipeline_submit_url(&config).expect_err("query rejected");
+        assert!(error.contains("query strings"));
+
+        config.spark_pipeline_url =
+            Some("http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085/#frag".to_string());
+        let error = validate_pipeline_submit_url(&config).expect_err("fragment rejected");
+        assert!(error.contains("fragments"));
+    }
+
+    #[tokio::test]
+    async fn source_auth_header_env_must_be_allowed() {
+        let state = test_state();
+        let request = ApiPullRequest {
+            request_id: Some("auth-env-unit".to_string()),
+            source_id: None,
+            url: Some("https://api.worldbank.org/v2/country/US".to_string()),
+            parser: None,
+            instrument_id: None,
+            display_name: None,
+            asset_class: None,
+            currency: None,
+            source: Some("unit".to_string()),
+            root_pointer: None,
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: Some("SERVER_AUTH_SECRET".to_string()),
+            auth_header_name: Some("authorization".to_string()),
+        };
+
+        let error = pull_source(&state, request)
+            .await
+            .expect_err("non-economics auth env rejected before request");
+        assert!(error.contains("authHeaderEnv"));
+    }
+
+    #[test]
+    fn source_auth_header_name_blocks_transport_headers() {
+        let error = validate_source_auth_header_name("host").expect_err("host header rejected");
+
+        assert!(error.contains("hop-by-hop"));
+    }
+
+    #[test]
     fn public_source_catalog_covers_tradeable_and_macro_assets() {
         let ids = public_source_ids();
 
@@ -8503,6 +9322,39 @@ mod tests {
     }
 
     #[test]
+    fn integration_health_payload_reports_dependency_status_without_secrets() {
+        let mut config = test_config();
+        config.server_auth_secret = Some("ultra-private-unit-token".to_string());
+        let state = AppState {
+            config: Arc::new(config),
+            metrics: Arc::new(Metrics::default()),
+            nats: None,
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("dd-economics-server/0.1 test-source-pull")
+                .build()
+                .unwrap(),
+            series_store: Arc::new(RwLock::new(BTreeMap::new())),
+        };
+        let payload = integration_health_payload(&state);
+        let dependencies = payload["dependencies"]
+            .as_array()
+            .expect("dependencies array");
+
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["coreReady"], true);
+        assert!(dependencies
+            .iter()
+            .any(|dependency| dependency["id"] == "source-auth-env-allowlist"
+                && dependency["status"] == "ready"));
+        assert!(dependencies
+            .iter()
+            .any(|dependency| dependency["id"] == "spark-pipeline-server"));
+        assert!(!payload.to_string().contains("ultra-private-unit-token"));
+    }
+
+    #[test]
     fn telemetry_log_record_uses_dd_log_v1_envelope() {
         let record = telemetry_log_record(
             "INFO",
@@ -8533,6 +9385,12 @@ mod tests {
         assert!(body.contains("dd_economics_server_source_pull_stored_points_total"));
         assert!(body.contains("dd_economics_server_source_pull_last_success_unix_seconds"));
         assert!(body.contains("dd_economics_server_observability_requests_total"));
+        assert!(body.contains("dd_economics_server_integration_health_requests_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_attempts_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_success_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_failure_total"));
+        assert!(body.contains("dd_economics_server_pipeline_submit_success_total"));
+        assert!(body.contains("dd_economics_server_pipeline_submit_failure_total"));
     }
 
     #[tokio::test]

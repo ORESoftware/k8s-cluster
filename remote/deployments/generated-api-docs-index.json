@@ -206,10 +206,10 @@
     {
       "service": "economics-server-rs",
       "language": "rust",
-      "routeCount": 31,
+      "routeCount": 32,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 21,
+        "user-generated": 22,
         "runtime-config": 3
       },
       "generated": [

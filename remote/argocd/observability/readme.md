@@ -355,13 +355,15 @@ Currently opted-in:
   carry Prometheus discovery annotations for future discovery-based scrapers.
   The `Economics Server` Grafana dashboard (uid `dd-economics-server`)
   groups service scrape health, firing economics alerts, source-pull success
-  freshness, stored observations, model/recommendation/sentiment/pipeline
-  request rates, external source bytes/points, auth failures, server errors,
-  NATS request/result activity, Kubernetes workload state, and Loki warning
-  or error logs. Prometheus alerts when the scrape target is down, source
-  pulls start failing, the latest successful source pull grows stale, auth
-  failures rise, or the service records forecast/ingest/source/pipeline
-  errors.
+  freshness, stored observations, integration-health traffic, model/
+  recommendation/sentiment/pipeline request rates, pipeline publish/submit
+  outcomes, external source bytes/points, auth failures, server errors, NATS
+  request/result activity, Kubernetes workload state, and Loki warning or
+  error logs. Prometheus alerts when the scrape target is down, source pulls
+  start failing, the latest successful source pull grows stale, auth failures
+  rise, integration-health traffic disappears after use, pipeline publish or
+  submit failures increase, or the service records forecast/ingest/source/
+  pipeline errors.
 - The `Kubernetes Workload Fleet` Grafana dashboard (uid
   `dd-kubernetes-workload-fleet`) is the generic dashboard for every
   checked-in workload in the exporter allowlist. It is driven by

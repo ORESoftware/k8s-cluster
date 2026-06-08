@@ -575,6 +575,24 @@ data:
             annotations:
               summary: Economics server auth failures are increasing
               description: "dd-economics-server is rejecting requests with missing or invalid auth; check gateway/client routing before treating downstream forecast failures as model errors."
+          - alert: DDEconomicsServerPipelinePublishFailuresIncreasing
+            expr: sum(rate(dd_economics_server_pipeline_publish_failure_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics pipeline publish failures are increasing
+              description: "dd-economics-server is failing or skipping requested NATS pipeline-plan publishes; check NATS_URL and dd.log.v1 pipeline publish events."
+          - alert: DDEconomicsServerPipelineSubmitFailuresIncreasing
+            expr: sum(rate(dd_economics_server_pipeline_submit_failure_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-economics-server
+            annotations:
+              summary: Economics pipeline submit failures are increasing
+              description: "dd-economics-server is recording Spark pipeline submit failures; check ECONOMICS_ENABLE_PIPELINE_SUBMIT, cluster-local submit URL validation, auth env configuration, and dd.log.v1 submit events."
           - alert: DDOtelCollectorRejectedTelemetry
             expr: sum(rate({__name__=~"otelcol_receiver_refused_(spans|metric_points|log_records)"}[5m])) > 0
             for: 2m

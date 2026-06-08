@@ -433,17 +433,18 @@ Runtime telemetry is deliberately explicit:
 - Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
 - Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
-- Rust `remote/deployments/economics-server-rs` exposes `/metrics` and `/observability`, writes
-  `dd.log.v1` JSON stdout/stderr records for Loki, and is scraped by Prometheus and the collector as
-  `dd-economics-server` without runtime auto-instrumentation.
+- Rust `remote/deployments/economics-server-rs` exposes `/metrics`, `/observability`, and
+  `/integrations/health`, writes `dd.log.v1` JSON stdout/stderr records for Loki, and is scraped by
+  Prometheus and the collector as `dd-economics-server` without runtime auto-instrumentation.
 - Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
 - Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
 Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, plus dedicated
-service dashboards such as `Economics Server` for source-pull health, forecast/recommendation
-traffic, auth/errors, Kubernetes state, and Loki service logs.
+service dashboards such as `Economics Server` for source-pull health, integration-health status,
+pipeline publish/submit telemetry, forecast/recommendation traffic, auth/errors, Kubernetes state,
+and Loki service logs.
 
 ## Messaging
 

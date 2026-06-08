@@ -1330,7 +1330,9 @@ data:
             { "expr": "sum(rate(dd_economics_server_forecasts_total[5m]))", "legendFormat": "forecasts", "refId": "A" },
             { "expr": "sum(rate(dd_economics_server_recommendation_requests_total[5m]))", "legendFormat": "recommendations", "refId": "B" },
             { "expr": "sum(rate(dd_economics_server_sentiment_requests_total[5m]))", "legendFormat": "sentiment", "refId": "C" },
-            { "expr": "sum(rate(dd_economics_server_pipeline_plan_requests_total[5m]))", "legendFormat": "pipeline plans", "refId": "D" }
+            { "expr": "sum(rate(dd_economics_server_pipeline_plan_requests_total[5m]))", "legendFormat": "pipeline plans", "refId": "D" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_requests_total[5m]))", "legendFormat": "pipeline submit requests", "refId": "E" },
+            { "expr": "sum(rate(dd_economics_server_integration_health_requests_total[5m]))", "legendFormat": "integration health", "refId": "F" }
           ],
           "title": "Model and Decision Requests",
           "type": "timeseries"
@@ -1360,7 +1362,11 @@ data:
             { "expr": "sum(rate(dd_economics_server_errors_total[5m]))", "legendFormat": "errors", "refId": "A" },
             { "expr": "sum(rate(dd_economics_server_auth_failures_total[5m]))", "legendFormat": "auth failures", "refId": "B" },
             { "expr": "sum(rate(dd_economics_server_nats_messages_total[5m]))", "legendFormat": "nats requests", "refId": "C" },
-            { "expr": "sum(rate(dd_economics_server_nats_published_total[5m]))", "legendFormat": "nats published", "refId": "D" }
+            { "expr": "sum(rate(dd_economics_server_nats_published_total[5m]))", "legendFormat": "nats published", "refId": "D" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_publish_success_total[5m]))", "legendFormat": "pipeline publish success", "refId": "E" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_publish_failure_total[5m]))", "legendFormat": "pipeline publish failure", "refId": "F" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_success_total[5m]))", "legendFormat": "pipeline submit success", "refId": "G" },
+            { "expr": "sum(rate(dd_economics_server_pipeline_submit_failure_total[5m]))", "legendFormat": "pipeline submit failure", "refId": "H" }
           ],
           "title": "Errors, Auth, and NATS",
           "type": "timeseries"
