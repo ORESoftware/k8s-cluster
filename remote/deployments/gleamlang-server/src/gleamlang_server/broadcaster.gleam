@@ -77,7 +77,10 @@ pub fn start(
   |> actor.start
 }
 
-fn handle_message(state: State, message: Message) -> actor.Next(State, Message) {
+fn handle_message(
+  state: State,
+  message: Message,
+) -> actor.Next(State, Message) {
   let State(
     control_subject: control_subject,
     subscribers: subscribers,
@@ -175,13 +178,16 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       }
 
     GetSnapshot(reply_to) -> {
-      process.send(reply_to, MetricsSnapshot(
-        subscribers: list.length(subscribers),
-        ticks: sequence,
-        http_requests: http_requests,
-        ws_messages: ws_messages,
-        nats_messages: nats_messages,
-      ))
+      process.send(
+        reply_to,
+        MetricsSnapshot(
+          subscribers: list.length(subscribers),
+          ticks: sequence,
+          http_requests: http_requests,
+          ws_messages: ws_messages,
+          nats_messages: nats_messages,
+        ),
+      )
       actor.continue(State(
         control_subject: control_subject,
         subscribers: subscribers,
@@ -227,10 +233,10 @@ fn should_broadcast(
     Ok(message_id) -> {
       case list.any(active_seen, fn(message) { message.id == message_id }) {
         True -> #(False, active_seen)
-        False -> #(
-          True,
-          [SeenMessage(id: message_id, expires_at_ms: now + dedupe_ttl_ms), ..active_seen],
-        )
+        False -> #(True, [
+          SeenMessage(id: message_id, expires_at_ms: now + dedupe_ttl_ms),
+          ..active_seen
+        ])
       }
     }
     Error(_) -> #(True, active_seen)

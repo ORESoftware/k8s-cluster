@@ -292,11 +292,7 @@ host_command(Runtime) ->
     {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.
 
 host_command_from_env(Name, Default) ->
-    case os:getenv(Name) of
-        false -> {ok, Default};
-        "" -> {ok, Default};
-        Value -> {ok, to_binary(Value)}
-    end.
+    {ok, dd_cli_config_client_ffi:getenv(Name, Default)}.
 
 host_runtime_allowed(Runtime) ->
     lists:member(Runtime, csv_env("LAMBDA_ALLOW_HOST_RUNTIMES", <<"nodejs">>)).
@@ -517,10 +513,9 @@ collect_port(Port, Chunks, Size, TimeoutMs) ->
     end.
 
 database_url() ->
-    case os:getenv("LAMBDA_DATABASE_URL") of
-        false -> {error, <<"LAMBDA_DATABASE_URL is required">>};
-        "" -> {error, <<"LAMBDA_DATABASE_URL is required">>};
-        Value -> {ok, Value}
+    case dd_cli_config_client_ffi:getenv(<<"LAMBDA_DATABASE_URL">>, <<>>) of
+        <<>> -> {error, <<"LAMBDA_DATABASE_URL is required">>};
+        Value -> {ok, binary_to_list(Value)}
     end.
 
 identifier_kind(Identifier) ->
@@ -954,11 +949,7 @@ json_unescape_string(Value0) ->
     Value2.
 
 env_binary(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Default).
 
 csv_env(Name, Default) ->
     Raw = env_binary(Name, Default),

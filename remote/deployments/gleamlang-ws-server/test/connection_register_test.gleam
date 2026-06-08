@@ -10,7 +10,6 @@ import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleeunit/should
 import gleamlang_ws_server/connection.{ConvScope, UserScope}
 import gleamlang_ws_server/fanout
 import gleamlang_ws_server/groups.{
@@ -18,6 +17,7 @@ import gleamlang_ws_server/groups.{
 }
 import gleamlang_ws_server/pg_groups
 import gleamlang_ws_server/registry.{type Registry}
+import gleeunit/should
 
 pub fn user_scope_without_device_registers_only_by_user_test() -> Nil {
   let reg = setup()
@@ -59,11 +59,7 @@ pub fn conv_scope_with_device_also_registers_by_user_device_test() -> Nil {
   let reg = setup()
   let subj = process.new_subject()
 
-  connection.register_for_scope(
-    reg,
-    ConvScope("alice", "c1", Some("d1")),
-    subj,
-  )
+  connection.register_for_scope(reg, ConvScope("alice", "c1", Some("d1")), subj)
 
   members_include(reg, ByConv("c1"), subj) |> should.be_true
   members_include(reg, ByUserConv("alice", "c1"), subj) |> should.be_true

@@ -329,23 +329,15 @@ json_escape(Value0) ->
     binary:replace(Return, <<"\t">>, <<"\\t">>, [global]).
 
 env_binary(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Default).
 
 env_integer(Name, Default, Min, Max) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value ->
-            case string:to_integer(Value) of
-                {Int, _Rest} when is_integer(Int), Int >= Min ->
-                    min(Int, Max);
-                _ ->
-                    Default
-            end
+    Value = dd_cli_config_client_ffi:getenv(Name, <<>>),
+    case string:to_integer(binary_to_list(Value)) of
+        {Int, _Rest} when is_integer(Int), Int >= Min ->
+            min(Int, Max);
+        _ ->
+            Default
     end.
 
 http_timeout_ms() ->

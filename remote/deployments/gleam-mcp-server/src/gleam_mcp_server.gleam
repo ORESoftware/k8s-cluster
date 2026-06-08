@@ -1,3 +1,4 @@
+import dd_cli_config_client
 import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/int
@@ -9,6 +10,7 @@ import gleam_mcp_server/metrics
 import gleam_mcp_server/pg_contract
 
 pub fn main() -> Nil {
+  let _ = dd_cli_config_client.load_once()
   let metrics_name = process.new_name(prefix: "dd_gleam_mcp_metrics")
 
   let _ = pg_contract.app_config_table()

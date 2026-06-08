@@ -11,13 +11,16 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import gleeunit/should
 import gleamlang_ws_server/groups.{AddedToConv, RemovedFromConv}
 import gleamlang_ws_server/wire
+import gleeunit/should
 
 pub fn membership_changed_added_carries_members_test() -> Nil {
   let body =
-    wire.encode_membership_changed("conv-1", AddedToConv(["alice", "bob", "carol"]))
+    wire.encode_membership_changed(
+      "conv-1",
+      AddedToConv(["alice", "bob", "carol"]),
+    )
 
   let pairs = parse_object(body)
   string_field(pairs, "type") |> should.equal("membership-changed")

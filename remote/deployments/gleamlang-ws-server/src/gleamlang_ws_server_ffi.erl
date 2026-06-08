@@ -38,10 +38,7 @@
 %% Read an environment variable as a UTF-8 binary, returning `{ok, Value}`
 %% or `{error, nil}`.
 env(Name) when is_binary(Name) ->
-    case os:getenv(binary_to_list(Name)) of
-        false -> {error, nil};
-        Value -> {ok, unicode:characters_to_binary(Value)}
-    end.
+    dd_cli_config_client_ffi:env(Name).
 
 %% Alias kept for backwards compatibility with the legacy
 %% `gleamlang_server_env:getenv/1` call sites in `broadcaster.gleam`
@@ -73,23 +70,30 @@ json_message_id(Payload) when is_binary(Payload) ->
 %% talks NATS directly via `dd_nats.erl`, but we keep this helper for
 %% deployments that still use the sidecar.
 publish_nats(Payload) when is_binary(Payload) ->
-    case os:getenv("GLEAM_BROADCAST_SECRET") of
-        false ->
+    case dd_cli_config_client_ffi:env(<<"GLEAM_BROADCAST_SECRET">>) of
+        {error, nil} ->
             {error, nil};
-        "" ->
+        {ok, <<>>} ->
             {error, nil};
-        Secret ->
-            Url = os:getenv("GLEAM_NATS_PUBLISH_URL", "http://127.0.0.1:8083/publish"),
+        {ok, SecretBin} ->
+            Secret = binary_to_list(SecretBin),
+            Url = binary_to_list(
+                dd_cli_config_client_ffi:getenv(
+                    <<"GLEAM_NATS_PUBLISH_URL">>,
+                    <<"http://127.0.0.1:8083/publish">>
+                )
+            ),
             %% NATS_PUBLISH_SUBJECT default comes from dd_nats_subject_consts
             %% (auto-generated from remote/libs/nats/subject-defs/schema/
             %% runtime-events.schema.json) so a schema rename surfaces at
             %% build time instead of silently drifting between Erlang FFI
             %% and the rest of the codebase.
-            Subject = case os:getenv("NATS_PUBLISH_SUBJECT") of
-                false -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
-                "" -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
-                Override -> Override
-            end,
+            Subject = binary_to_list(
+                dd_cli_config_client_ffi:getenv(
+                    <<"NATS_PUBLISH_SUBJECT">>,
+                    dd_nats_subject_consts:websocket_events_subject()
+                )
+            ),
             spawn(fun() -> post_nats_publish(Url, Secret, Subject, Payload) end),
             {ok, nil}
     end.

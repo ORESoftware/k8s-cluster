@@ -1,0 +1,75 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+
+[parse]
+allow_unknown = true
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "http-port"]
+short = "p"
+type = "integer"
+default = 8081
+
+[flags.pg_database_url]
+env = "PG_DATABASE_URL"
+aliases = ["pg-database-url"]
+type = "string"
+
+[flags.nats_url]
+env = "NATS_URL"
+aliases = ["nats-url"]
+type = "string"
+
+[flags.presence_notify_shards]
+env = "PRESENCE_NOTIFY_SHARDS"
+aliases = ["presence-notify-shards"]
+type = "integer"
+default = 256
+
+[flags.presence_wal_enabled]
+env = "PRESENCE_WAL_ENABLED"
+aliases = ["presence-wal-enabled"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+
+[flags.presence_wal_tick_ms]
+env = "PRESENCE_WAL_TICK_MS"
+aliases = ["presence-wal-tick-ms"]
+type = "integer"
+default = 1000
+
+[flags.presence_outbox_tick_ms]
+env = "PRESENCE_OUTBOX_TICK_MS"
+aliases = ["presence-outbox-tick-ms"]
+type = "integer"
+default = 5000
+
+[flags.runtime_config_service_name]
+env = "RUNTIME_CONFIG_SERVICE_NAME"
+aliases = ["runtime-config-service-name"]
+type = "string"
+
+[flags.runtime_config_scope]
+env = "RUNTIME_CONFIG_SCOPE"
+aliases = ["runtime-config-scope"]
+type = "string"
+
+[flags.runtime_config_env]
+env = "RUNTIME_CONFIG_ENV"
+aliases = ["runtime-config-env"]
+type = "string"
+
+[flags.runtime_config_register_url]
+env = "RUNTIME_CONFIG_REGISTER_URL"
+aliases = ["runtime-config-register-url"]
+type = "string"
+
+[flags.runtime_config_apply_url]
+env = "RUNTIME_CONFIG_APPLY_URL"
+aliases = ["runtime-config-apply-url"]
+type = "string"

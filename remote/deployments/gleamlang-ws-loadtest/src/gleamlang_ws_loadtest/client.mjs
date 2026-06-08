@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_WS_URL = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
@@ -11,6 +13,170 @@ const LOAD_MODE_GCS = "gcs";
 const DEFAULT_MESSAGE_ENCODINGS = Object.freeze(["json"]);
 const DEFAULT_LOADTEST_TRANSPORTS = "http,tcp,websocket";
 const SUPPORTED_MESSAGE_ENCODINGS = new Set(["json", "msgpack", "protobuf", "flatbuffers"]);
+
+function applyCliFlagsToEnv(argv = process.argv.slice(2), cwd = process.cwd()) {
+  const configPath = process.env.FLAGS2ENV_CONFIG || findCliFlagsConfig(cwd);
+  if (!configPath) return;
+  const flags = parseCliFlagsToml(readFileSync(configPath, "utf8"));
+  const parsed = parseArgvFlags(argv, flags);
+  for (const flag of flags) {
+    if (flag.defaultValue !== undefined && !process.env[flag.env]) {
+      process.env[flag.env] = flag.defaultValue;
+    }
+  }
+  Object.assign(process.env, parsed);
+}
+
+function findCliFlagsConfig(startDir) {
+  let current = startDir;
+  const home = process.env.HOME || "";
+  for (;;) {
+    const candidate = join(current, ".cli-flags.toml");
+    if (current !== home && existsSync(candidate)) return candidate;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function parseCliFlagsToml(text) {
+  const flags = [];
+  let current = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (!line) continue;
+    const table = line.match(/^\[flags\.([^\]]+)\]$/);
+    if (table) {
+      if (current?.env) flags.push(current);
+      current = {
+        id: table[1],
+        env: "",
+        aliases: [],
+        short: "",
+        type: "string",
+        defaultValue: undefined,
+        trueAliases: [],
+        falseAliases: [],
+      };
+      continue;
+    }
+    if (line.startsWith("[")) {
+      if (current?.env) flags.push(current);
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim();
+    if (key === "env") current.env = parseTomlScalar(value);
+    else if (key === "aliases") current.aliases = parseTomlList(value);
+    else if (key === "short") current.short = parseTomlScalar(value);
+    else if (key === "type") current.type = parseTomlScalar(value).toLowerCase();
+    else if (key === "default") current.defaultValue = parseTomlScalar(value);
+    else if (key === "true_aliases") current.trueAliases = parseTomlList(value);
+    else if (key === "false_aliases") current.falseAliases = parseTomlList(value);
+  }
+  if (current?.env) flags.push(current);
+  return flags;
+}
+
+function parseTomlScalar(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+function parseTomlList(value) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [];
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner.split(",").map(parseTomlScalar).map((item) => item.trim());
+}
+
+function parseArgvFlags(argv, flags) {
+  const byLong = new Map();
+  const byShort = new Map();
+  for (const flag of flags) {
+    byLong.set(flag.id, flag);
+    for (const alias of flag.aliases) byLong.set(alias, flag);
+    if (flag.short) byShort.set(flag.short, flag);
+  }
+  const out = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--") break;
+    if (token.startsWith("--no-")) {
+      const flag = byLong.get(token.slice(5));
+      if (flag?.type === "bool") out[flag.env] = "false";
+      continue;
+    }
+    if (token.startsWith("--")) {
+      const [name, inline] = splitInline(token.slice(2));
+      const flag = byLong.get(name);
+      if (!flag) continue;
+      if (flag.type === "bool") {
+        const accepted = validateFlagValue(flag, inline ?? argv[i + 1]);
+        if (accepted !== null) {
+          out[flag.env] = accepted;
+          if (inline === undefined && accepted !== "true") i += 1;
+        } else if (inline === undefined) {
+          out[flag.env] = "true";
+        }
+        continue;
+      }
+      const value = inline ?? argv[i + 1];
+      if (inline === undefined && isOptionToken(value, flag)) continue;
+      const accepted = validateFlagValue(flag, value);
+      if (accepted !== null) {
+        out[flag.env] = accepted;
+        if (inline === undefined) i += 1;
+      }
+      continue;
+    }
+    if (token.startsWith("-") && token.length > 1) {
+      const flag = byShort.get(token.slice(1, 2));
+      if (!flag) continue;
+      const rest = token.slice(2).replace(/^=/, "");
+      if (flag.type === "bool") {
+        out[flag.env] = rest ? (validateFlagValue(flag, rest) ?? "true") : "true";
+      } else {
+        const value = rest || argv[i + 1];
+        const accepted = validateFlagValue(flag, value);
+        if (accepted !== null) {
+          out[flag.env] = accepted;
+          if (!rest) i += 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function splitInline(value) {
+  const eq = value.indexOf("=");
+  return eq < 0 ? [value, undefined] : [value.slice(0, eq), value.slice(eq + 1)];
+}
+
+function isOptionToken(value, flag) {
+  if (!value?.startsWith("-")) return false;
+  return !(flag.type === "integer" && /^-?\d+$/.test(value));
+}
+
+function validateFlagValue(flag, value) {
+  if (value == null) return null;
+  const raw = String(value);
+  if (flag.type === "bool") {
+    const lower = raw.toLowerCase();
+    if (lower === "true" || flag.trueAliases.includes(lower)) return "true";
+    if (lower === "false" || flag.falseAliases.includes(lower)) return "false";
+    return null;
+  }
+  if (flag.type === "integer" && !/^-?\d+$/.test(raw)) return null;
+  return raw;
+}
 
 function parsePositiveInt(name, fallback) {
   const raw = process.env[name];
@@ -50,6 +216,8 @@ function parseMessageEncodings(raw) {
 }
 
 export function run() {
+  applyCliFlagsToEnv();
+
   if (process.env.CONTAINER_POOL_URL) {
     runContainerPoolSmoke().catch((error) => {
       console.error(`gleamlang-container-pool-smoke failed: ${error?.stack || error}`);

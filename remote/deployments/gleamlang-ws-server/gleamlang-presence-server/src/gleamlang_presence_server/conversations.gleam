@@ -202,8 +202,7 @@ fn stable_name(s: String) -> process.Name(msg)
 fn gossip_peers(kind: PeerEchoKind, conv_id: ConvId, user_id: UserId) -> Nil {
   let peers = pg_groups.remote_members(group: mesh_group())
   list.each(peers, fn(pid: Pid) {
-    let _ =
-      erlang_send(pid, #(mesh_name(), PeerEcho(kind, conv_id, user_id)))
+    let _ = erlang_send(pid, #(mesh_name(), PeerEcho(kind, conv_id, user_id)))
     Nil
   })
 }
@@ -228,10 +227,7 @@ pub fn remove_member(
 
 /// List the conversations a user belongs to. The first call for a given
 /// user reads from Postgres; subsequent calls are served from cache.
-pub fn convs_of(
-  convs: Conversations,
-  user_id user_id: UserId,
-) -> List(ConvId) {
+pub fn convs_of(convs: Conversations, user_id user_id: UserId) -> List(ConvId) {
   actor.call(convs, waiting: 500, sending: ConvsOf(user_id, _))
 }
 
@@ -245,10 +241,7 @@ pub fn members_of(
 /// Force a (possibly redundant) cache hydration for the given user. Called
 /// after the connection actor re-registers — the in-memory cache for that
 /// user might not exist if the conversations actor was restarted.
-pub fn hydrate(
-  convs: Conversations,
-  user_id user_id: UserId,
-) -> Nil {
+pub fn hydrate(convs: Conversations, user_id user_id: UserId) -> Nil {
   process.send(convs, Hydrate(user_id))
 }
 
@@ -267,10 +260,7 @@ pub fn attach_pg_listen(
 /// from this point on every shard subscribe/unsubscribe is mirrored to
 /// the outbox actor so the durable poll path filters on the same set
 /// of shards as the LISTEN path.
-pub fn attach_pg_outbox(
-  convs: Conversations,
-  pg_outbox: PgOutbox,
-) -> Nil {
+pub fn attach_pg_outbox(convs: Conversations, pg_outbox: PgOutbox) -> Nil {
   process.send(convs, AttachPgOutbox(option.Some(pg_outbox)))
 }
 
@@ -346,17 +336,11 @@ pub fn unregister_user_interest(
 /// Called by `connection.gleam`'s ConvScope open hook. Hydrates the
 /// conv into the in-memory cache (cheap one-time PG read) and subscribes
 /// to its conv-axis LISTEN shard.
-pub fn touch_conv(
-  convs: Conversations,
-  conv_id conv_id: ConvId,
-) -> Nil {
+pub fn touch_conv(convs: Conversations, conv_id conv_id: ConvId) -> Nil {
   process.send(convs, TouchConv(conv_id))
 }
 
-pub fn untouch_conv(
-  convs: Conversations,
-  conv_id conv_id: ConvId,
-) -> Nil {
+pub fn untouch_conv(convs: Conversations, conv_id conv_id: ConvId) -> Nil {
   process.send(convs, UntouchConv(conv_id))
 }
 
@@ -399,7 +383,8 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           // Record this dispatch so a subsequent IncomingPgEvent from the
           // matching PG NOTIFY (we just wrote to PG, so the trigger will
           // also fire) is dropped by `should_dispatch`.
-          let final_state = record_dispatch(new_state, conv_id, user_id, AddedAt)
+          let final_state =
+            record_dispatch(new_state, conv_id, user_id, AddedAt)
           actor.continue(final_state)
         }
       }
@@ -443,11 +428,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           )
           gossip_peers(RemovedAt, conv_id, user_id)
           let cached =
-            State(
-              ..state,
-              conv_members: conv_members,
-              user_convs: user_convs,
-            )
+            State(..state, conv_members: conv_members, user_convs: user_convs)
           actor.continue(record_dispatch(cached, conv_id, user_id, RemovedAt))
         }
       }
@@ -610,15 +591,17 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
               )
           }
         })
-      actor.continue(State(
-        ..state,
-        user_convs: dict.insert(
-          state.user_convs,
-          user_id,
-          set.from_list(from_pg),
+      actor.continue(
+        State(
+          ..state,
+          user_convs: dict.insert(
+            state.user_convs,
+            user_id,
+            set.from_list(from_pg),
+          ),
+          conv_members: conv_members,
         ),
-        conv_members: conv_members,
-      ))
+      )
     }
   }
 }
@@ -649,8 +632,7 @@ fn record_dispatch(
     False -> State(..state, last_dispatched_ms: updated)
     True -> {
       let cutoff = now_ms() - { dedup_window_ms * 8 }
-      let gced =
-        dict.filter(updated, fn(_key, t) { t > cutoff })
+      let gced = dict.filter(updated, fn(_key, t) { t > cutoff })
       State(..state, last_dispatched_ms: gced)
     }
   }

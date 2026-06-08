@@ -30,7 +30,10 @@ import gleamlang_ws_server/groups.{
 /// The `members` array on `AddedToConv` is the conv's full current
 /// member list (including the just-added user). The client can use it
 /// directly instead of a follow-up `GET /conv/<id>/members` round-trip.
-pub fn encode_membership_changed(conv_id: ConvId, change: MembershipChange) -> String {
+pub fn encode_membership_changed(
+  conv_id: ConvId,
+  change: MembershipChange,
+) -> String {
   case change {
     AddedToConv(members) ->
       json.object([

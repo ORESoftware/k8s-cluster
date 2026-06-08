@@ -41,6 +41,7 @@
 //// }
 //// ```
 
+import dd_cli_config_client
 import dd_rust_network_mutex_client as nm
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
@@ -50,9 +51,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 
-/// Read an env var as String with a fallback. Erlang's
-/// `os:getenv/1` returns `false` for missing vars; we wrap it in a
-/// tiny FFI helper to keep the pattern match in one place.
+/// Read a reconciled CLI/env value as String with a fallback.
 @external(erlang, "lock_loadtest_gleam_env_ffi", "getenv")
 fn ffi_getenv(name: String, fallback: String) -> String
 
@@ -97,6 +96,7 @@ pub type WorkerStats {
 const sample_cap: Int = 10_000
 
 pub fn main() -> Nil {
+  let _ = dd_cli_config_client.load_once()
   let config = read_config()
   io.println(format_startup(config))
 
@@ -366,7 +366,10 @@ fn aggregate(
   format_json_object(json_pairs)
 }
 
-fn merge_tokens(a: Dict(String, Int), b: Dict(String, Int)) -> Dict(String, Int) {
+fn merge_tokens(
+  a: Dict(String, Int),
+  b: Dict(String, Int),
+) -> Dict(String, Int) {
   // Per-key: keep the high-water across workers.
   dict.fold(b, a, fn(acc, k, v) {
     case dict.get(acc, k) {
@@ -469,4 +472,3 @@ fn format_startup(config: Config) -> String {
     #("ttlMs", int.to_string(config.ttl_ms)),
   ])
 }
-

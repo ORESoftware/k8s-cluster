@@ -34,9 +34,10 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import gleam/string
 import gleam/string_tree
-import mist.{type Connection, type ResponseData, Bytes}
 import gleamlang_presence_server/api_docs
-import gleamlang_presence_server/connection.{type ConnScope, ConvScope, UserScope}
+import gleamlang_presence_server/connection.{
+  type ConnScope, ConvScope, UserScope,
+}
 import gleamlang_presence_server/conversations.{type Conversations}
 import gleamlang_presence_server/fanout.{type Fanout}
 import gleamlang_presence_server/groups.{
@@ -46,6 +47,7 @@ import gleamlang_presence_server/groups.{
 import gleamlang_presence_server/nats_transport.{type Nats}
 import gleamlang_presence_server/registry.{type Registry}
 import gleamlang_presence_server/store.{type Store}
+import mist.{type Connection, type ResponseData, Bytes}
 
 pub type Deps {
   Deps(
@@ -204,9 +206,7 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
         ByUserDevice(user_id, device_id),
         Kick(reason),
       )
-      ok_text(
-        "logout queued for user=" <> user_id <> " device=" <> device_id,
-      )
+      ok_text("logout queued for user=" <> user_id <> " device=" <> device_id)
     }
 
     Get, ["internal", "runtime-config"] ->
@@ -247,8 +247,7 @@ fn handle_ws_upgrade(
   case conv_id {
     Some(cid) ->
       case is_member(deps, cid, user_id) {
-        True ->
-          upgrade(deps, req, ConvScope(user_id, cid, device_id))
+        True -> upgrade(deps, req, ConvScope(user_id, cid, device_id))
         False -> forbidden("user is not a member of conv " <> cid)
       }
     None -> upgrade(deps, req, UserScope(user_id, device_id))

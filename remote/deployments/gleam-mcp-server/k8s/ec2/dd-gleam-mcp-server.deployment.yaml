@@ -52,6 +52,7 @@ spec:
               for path in \
                 "$PROJ/gleam.toml" \
                 "$PROJ/manifest.toml" \
+                /opt/dd-next-1/remote/libs/cli-config-client-gleam/gleam.toml \
                 /opt/dd-next-1/remote/libs/pg-defs/generated/gleam/gleam.toml \
                 /opt/dd-next-1/remote/libs/runtime-config-client-gleam/gleam.toml; do
                 if [ ! -e "$path" ]; then
@@ -180,9 +181,11 @@ spec:
               rm -rf "$WORK_ROOT"
               mkdir -p \
                 "$WORK_ROOT/remote/deployments/gleam-mcp-server" \
+                "$WORK_ROOT/remote/libs/cli-config-client-gleam" \
                 "$WORK_ROOT/remote/libs/pg-defs/generated" \
                 "$WORK_ROOT/remote/libs/runtime-config-client-gleam"
               cp -R "$SRC_ROOT/remote/deployments/gleam-mcp-server"/. "$WORK_ROOT/remote/deployments/gleam-mcp-server"/
+              cp -R "$SRC_ROOT/remote/libs/cli-config-client-gleam"/. "$WORK_ROOT/remote/libs/cli-config-client-gleam"/
               cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
               cp -R "$SRC_ROOT/remote/libs/runtime-config-client-gleam"/. "$WORK_ROOT/remote/libs/runtime-config-client-gleam"/
               cd "$WORK_ROOT/remote/deployments/gleam-mcp-server"
@@ -349,7 +352,7 @@ spec:
             type: Directory
         # Explicit, bounded scratch space for the boot-time copy of the
         # project + local-path deps. Sized large enough to hold the
-        # gleam-mcp-server project plus pg-defs and runtime-config-client
+        # gleam-mcp-server project plus pg-defs, cli-config-client, and runtime-config-client
         # generated Gleam sources and a single Erlang build tree (~hundreds
         # of MB), with headroom for an incremental rebuild on container
         # restart. emptyDir gives the kernel-level page cache benefits of a

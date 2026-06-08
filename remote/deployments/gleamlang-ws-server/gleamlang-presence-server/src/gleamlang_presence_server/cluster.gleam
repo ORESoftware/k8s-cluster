@@ -146,7 +146,9 @@ fn tick(state: State) -> Nil {
     [_, ..] -> {
       let known = erlang_nodes() |> list.map(atom.to_string)
       list.each(state.static_peers, fn(node_name) {
-        case list.contains(known, node_name) || node_name == current_node_string() {
+        case
+          list.contains(known, node_name) || node_name == current_node_string()
+        {
           True -> Nil
           False -> {
             let _ = net_kernel_connect_node(atom.create(node_name))
@@ -177,7 +179,15 @@ fn tick_k8s(state: State) -> Nil {
       io.println("cluster: serviceaccount token unreadable: " <> reason)
     }
     host, Ok(token) -> {
-      case fetch_pods(host, state.api_port, state.namespace, state.label_selector, token) {
+      case
+        fetch_pods(
+          host,
+          state.api_port,
+          state.namespace,
+          state.label_selector,
+          token,
+        )
+      {
         Error(reason) -> {
           io.println("cluster: pod list failed: " <> reason)
         }
@@ -292,4 +302,3 @@ fn percent_encode(s: String) -> String {
   |> string.replace(each: "=", with: "%3D")
   |> string.replace(each: ",", with: "%2C")
 }
-

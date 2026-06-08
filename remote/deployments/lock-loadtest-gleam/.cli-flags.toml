@@ -1,0 +1,50 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+
+[parse]
+allow_unknown = true
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+
+[flags.broker_host]
+env = "BROKER_HOST"
+aliases = ["broker-host"]
+type = "string"
+default = "dd-rust-network-mutex.default.svc.cluster.local"
+
+[flags.broker_port]
+env = "BROKER_PORT"
+aliases = ["broker-port"]
+short = "p"
+type = "integer"
+default = 6970
+
+[flags.bench_workers]
+env = "BENCH_WORKERS"
+aliases = ["bench-workers", "workers"]
+type = "integer"
+default = 16
+
+[flags.bench_keys]
+env = "BENCH_KEYS"
+aliases = ["bench-keys", "keys"]
+type = "integer"
+default = 32
+
+[flags.bench_duration_ms]
+env = "BENCH_DURATION_MS"
+aliases = ["bench-duration-ms", "duration-ms"]
+type = "integer"
+default = 10000
+
+[flags.bench_interval_ms]
+env = "BENCH_INTERVAL_MS"
+aliases = ["bench-interval-ms", "interval-ms"]
+type = "integer"
+default = 30000
+
+[flags.bench_ttl_ms]
+env = "BENCH_TTL_MS"
+aliases = ["bench-ttl-ms", "ttl-ms"]
+type = "integer"
+default = 4000

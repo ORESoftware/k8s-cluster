@@ -2,6 +2,7 @@
 # You typically do not need to edit this file
 
 packages = [
+  { name = "dd_cli_config_client", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], source = "local", path = "../../libs/cli-config-client-gleam" },
   { name = "dd_nats_subject_defs", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], source = "local", path = "../../libs/nats/subject-defs/generated/gleam" },
   { name = "dd_pg_defs", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], source = "local", path = "../../libs/pg-defs/generated/gleam" },
   { name = "dd_runtime_config_client", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_erlang", "gleam_http", "gleam_stdlib", "mist"], source = "local", path = "../../libs/runtime-config-client-gleam" },
@@ -20,6 +21,7 @@ packages = [
 ]
 
 [requirements]
+dd_cli_config_client = { path = "../../libs/cli-config-client-gleam" }
 dd_nats_subject_defs = { path = "../../libs/nats/subject-defs/generated/gleam" }
 dd_pg_defs = { path = "../../libs/pg-defs/generated/gleam" }
 dd_runtime_config_client = { path = "../../libs/runtime-config-client-gleam" }

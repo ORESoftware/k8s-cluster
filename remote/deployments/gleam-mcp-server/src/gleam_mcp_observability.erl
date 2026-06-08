@@ -263,22 +263,14 @@ body_limit_bytes() ->
     env_pos_int("MCP_OBSERVABILITY_BODY_LIMIT_BYTES", 20000).
 
 env_pos_int(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Raw ->
-            case string:to_integer(Raw) of
-                {Value, _} when Value > 0 -> Value;
-                _ -> Default
-            end
+    Raw = dd_cli_config_client_ffi:getenv(Name, <<>>),
+    case string:to_integer(binary_to_list(Raw)) of
+        {Value, _} when Value > 0 -> Value;
+        _ -> Default
     end.
 
 env_bin(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> unicode:characters_to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Default).
 
 clip(Bin, Limit) when byte_size(Bin) =< Limit -> Bin;
 clip(Bin, Limit) when Limit > 32 ->

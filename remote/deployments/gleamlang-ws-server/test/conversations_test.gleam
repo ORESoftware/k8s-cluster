@@ -17,7 +17,6 @@ import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/string
-import gleeunit/should
 import gleamlang_ws_server/conversations.{type Conversations}
 import gleamlang_ws_server/fanout
 import gleamlang_ws_server/groups.{
@@ -27,6 +26,7 @@ import gleamlang_ws_server/groups.{
 import gleamlang_ws_server/pg_groups
 import gleamlang_ws_server/registry.{type Registry}
 import gleamlang_ws_server/store
+import gleeunit/should
 
 pub fn add_member_notifies_user_ws_with_full_member_list_test() -> Nil {
   let #(reg, convs) = setup()
@@ -103,8 +103,7 @@ pub fn remove_member_notifies_user_ws_and_kicks_conv_ws_test() -> Nil {
 
   // Conv-ws of alice gets kicked.
   case process.receive(alice_conv_ws, 500) {
-    Ok(Kick(reason)) ->
-      reason |> should.equal("removed from conv c1")
+    Ok(Kick(reason)) -> reason |> should.equal("removed from conv c1")
     other -> {
       let _ = other
       should.fail()

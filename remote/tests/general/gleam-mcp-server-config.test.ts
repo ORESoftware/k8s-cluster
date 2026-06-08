@@ -40,6 +40,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
 
   assert.match(gleamToml, /name = "gleam_mcp_server"/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
+  assert.match(gleamToml, /dd_cli_config_client/);
   assert.match(main, /supervisor\.new\(supervisor\.OneForOne\)/);
   assert.match(main, /metrics\.start\(named_as: metrics_name\)/);
   assert.match(main, /http_server\.supervised\(metrics_name\)/);
@@ -52,7 +53,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(main, /http_server\.bind_host\(\)/);
   assert.match(main, /http_server\.bind_port\(\)/);
   assert.match(runtimeEnv, /-module\(gleam_mcp_runtime_env\)/);
-  assert.match(runtimeEnv, /os:getenv\(Name\)/);
+  assert.match(runtimeEnv, /dd_cli_config_client_ffi:getenv\(Name, <<>>\)/);
   assert.match(jsonFfi, /-module\(gleam_mcp_json\)/);
   assert.match(jsonFfi, /request_id\/1/);
   assert.match(jsonFfi, /re:run\(Body, Pattern/);
@@ -154,7 +155,7 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   // for the failure mode.
   assert.match(
     ec2Deployment,
-    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/cli-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/cli-config-client-gleam"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
   );
   assert.doesNotMatch(
     ec2Deployment,
@@ -257,7 +258,7 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   // into a visible `kubectl describe pod` error.
   assert.match(
     ec2Deployment,
-    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\$PROJ\/gleam\.toml[\s\S]*\$PROJ\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
+    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\$PROJ\/gleam\.toml[\s\S]*\$PROJ\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/cli-config-client-gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
   );
   // Preflight must also fail fast when the host's build/packages exists
   // but is missing entries for packages listed in manifest.toml (the
@@ -414,7 +415,7 @@ test('Gleam MCP server is exposed through gateway and observability', async () =
   assert.match(collector, /job_name: dd-gleam-mcp-server/);
   assert.match(collector, /job_name: dd-gleam-mcp-server[\s\S]*metrics_path: \/metrics/);
   assert.match(collector, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
-  assert.match(dashboard, /Gleam MCP Runtime/);
+  assert.match(dashboard, /Cluster MCP Runtime/);
   assert.match(dashboard, /dd_gleam_mcp_rpc_requests_total/);
 });
 
