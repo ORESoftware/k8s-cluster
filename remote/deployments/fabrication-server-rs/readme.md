@@ -35,6 +35,8 @@ outcomes.
 - `GET /fabrication/printers/catalog`
 - `GET /fdm-printer/catalog`
 - `GET /fabrication/fdm-printer/catalog`
+- `GET /resin-printer/catalog`
+- `GET /fabrication/resin-printer/catalog`
 - `GET /printers/preflight/catalog`
 - `GET /fabrication/printers/preflight/catalog`
 - `GET /subtractive/catalog`
@@ -959,6 +961,25 @@ multi-material map or purge/resume gaps, and bound-metal FFF debind/sinter gaps.
 FDM outcomes should feed slicer, material, telemetry, quality, costing, and
 learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
 combine, reorient, reroute, or require human intervention.
+
+## `GET /fabrication/resin-printer/catalog`
+
+`GET /resin-printer/catalog` and the gateway-prefixed
+`GET /fabrication/resin-printer/catalog` return the
+`dd.fabrication.resin-printer-catalog.v1` discovery view for SLA/MSLA
+photopolymer printer profiles. It narrows the additive printer catalog to
+resin machines and lists the release evidence needed before exposure and
+machine-ready handoff: resin lot, expiration, mix/agitation, viscosity, vat
+level, refill state, slicer exposure profile, layer height, anti-aliasing,
+lift speed, peel/recoat, support, hollowing, drain, island review, build-plate
+leveling, first-layer exposure, screen/projector calibration, release-film/FEP
+condition, wash, drain, UV cure, PPE, waste handling, dimensional inspection,
+and postprocess traveler evidence. The payload also names resin-specific
+boundary families such as profile, island/support, layer-manifest,
+vat-capacity, and postprocess gates. Resin outcomes should feed slicer,
+material, postprocess, quality, telemetry, costing, and learning routes so DES,
+MDP/POMDP, and neural workers can learn when to reorient, hollow, split,
+reroute, or require human intervention.
 
 ## `GET /fabrication/subtractive/catalog`
 
@@ -6421,7 +6442,12 @@ MDP/POMDP worker can revise programs, split/combine choices, tooling, and
 quality gates before retry. Those learned remediation risks also contribute
 machine-failure hidden-state evidence and add a
 `learned-remediation-risk:review-prior-failure-outcome-before-release`
-required-before-release action in `releaseProbePlan`.
+required-before-release action in `releaseProbePlan`. When an applicable
+high-severity risk recommends a split route, future unconstrained
+single-risk-method requests can be rewritten into learned split parts before
+machine selection, allowing the planner to avoid repeating a known risky
+one-piece route while retaining the risk observations, release probes, and neural
+training examples.
 Outcome observations that identify validation or execution boundaries, such as
 `boundary-kind:*`, `boundary-severity:*`, `resolution-action:*`,
 machine-failure, or human-intervention-required signals, are also retained in

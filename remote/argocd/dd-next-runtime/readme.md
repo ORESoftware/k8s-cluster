@@ -99,7 +99,7 @@ Gateway path map:
   `/fabrication/how-it-works`, `/fabrication/healthz`, `/fabrication/metrics`,
   `/fabrication/docs/api`, `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
-  `/fabrication/fdm-printer/catalog`,
+  `/fabrication/fdm-printer/catalog`, `/fabrication/resin-printer/catalog`,
   `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
   `/fabrication/mill-router/catalog`, `/fabrication/vertical-mill/catalog`,
   `/fabrication/horizontal-mill/catalog`,

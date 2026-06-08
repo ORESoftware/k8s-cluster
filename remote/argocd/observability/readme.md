@@ -187,7 +187,7 @@ Currently opted-in:
   `/fabrication/design/formats`, `/fabrication/design/preflight/catalog`,
   `/fabrication/machines/catalog`,
   `/fabrication/printers/catalog`, `/fabrication/fdm-printer/catalog`,
-  `/fabrication/subtractive/catalog`,
+  `/fabrication/resin-printer/catalog`, `/fabrication/subtractive/catalog`,
   `/fabrication/subtractive/preflight/catalog`,
   `/fabrication/mill-router/catalog`,
   `/fabrication/vertical-mill/catalog`,

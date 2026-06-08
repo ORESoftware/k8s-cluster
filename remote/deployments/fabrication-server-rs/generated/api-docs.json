@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 443,
+  "routeCount": 447,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 433,
+    "user-generated": 437,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -1988,6 +1988,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/fdm-printer/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fdm_printer_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/formats/catalog",
       "methods": [
         "GET"
@@ -3860,6 +3877,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/resin-printer/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resin_printer_catalog_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/results/catalog",
       "methods": [
         "GET"
@@ -4737,6 +4771,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "failure_mode_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fdm-printer/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fdm_printer_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -6711,6 +6762,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "boundary_remediation_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/resin-printer/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resin_printer_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

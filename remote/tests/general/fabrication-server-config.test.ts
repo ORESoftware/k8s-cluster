@@ -423,6 +423,8 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /fn learned_preferred_methods/);
   assert.match(source, /fn learned_preferred_assembly_strategy/);
   assert.match(source, /fn learned_remediation_risks/);
+  assert.match(source, /fn learned_methods_from_remediation_action/);
+  assert.match(source, /fn learned_parts_for_remediation_split/);
   assert.match(source, /fn learned_boundary_memory/);
   assert.match(source, /learned-remediation-risk/);
   assert.match(source, /avoid-learned-risk/);
@@ -2734,6 +2736,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /learned_parts_for_operation_sequence/);
   assert.match(source, /learned_operation_sequence_preferences_order_future_hybrid_parts/);
   assert.match(source, /learned_parts_for_method_combination/);
+  assert.match(source, /learned-additive-print-part/);
+  assert.match(source, /learned-milling-part/);
   assert.match(source, /prefer-learned-method-combination/);
   assert.match(source, /learned_horizontal_mill_turning_combinations_decompose_future_open_requests/);
   assert.match(source, /prefer-learned-method-combination-additive-print-horizontal-milling-turning/);
@@ -3140,6 +3144,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fdm_printer_catalog_endpoint_exposes_extrusion_family_release_contract/);
   assert.match(source, /additive-extrusion-calibration-missing/);
   assert.match(source, /bound-metal-fff-debind-sinter-boundary/);
+  assert.match(source, /async fn resin_printer_catalog_http/);
+  assert.match(source, /fn resin_printer_catalog_response/);
+  assert.match(source, /dd\.fabrication\.resin-printer-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/resin-printer\/catalog"/);
+  assert.match(source, /"resinPrinterCatalog": \["GET \/resin-printer\/catalog", "GET \/fabrication\/resin-printer\/catalog"\]/);
+  assert.match(source, /resin_printer_catalog_endpoint_exposes_exposure_wash_cure_release_contract/);
+  assert.match(source, /resin-layer-manifest-boundary/);
+  assert.match(source, /resin-vat-capacity-boundary/);
   assert.match(source, /async fn printer_preflight_catalog_http/);
   assert.match(source, /fn printer_preflight_catalog_response/);
   assert.match(source, /dd\.fabrication\.printer-preflight-catalog\.v1/);
@@ -8531,6 +8543,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /learned-machine-kind-preference/);
   assert.match(readme, /prefer-learned-machine-kind/);
   assert.match(readme, /machine-failure hidden-state evidence/);
+  assert.match(readme, /single-risk-method requests can be rewritten into learned split parts/);
   assert.match(
     readme,
     /learned-remediation-risk:review-prior-failure-outcome-before-release/,
@@ -9701,6 +9714,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /extrusion-style\s+additive machines/);
   assert.match(readme, /hotend and bed temperature waits/);
   assert.match(readme, /DES, MDP\/POMDP, and neural workers/);
+  assert.match(readme, /`GET \/resin-printer\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/resin-printer\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.resin-printer-catalog\.v1/);
+  assert.match(readme, /SLA\/MSLA\s+photopolymer printer profiles/);
+  assert.match(readme, /resin lot, expiration, mix\/agitation/);
+  assert.match(readme, /vat-capacity, and postprocess gates/);
   assert.match(readme, /`GET \/cells\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/cells\/catalog`/);
   assert.match(readme, /dd\.fabrication\.cell-catalog\.v1/);
@@ -10689,6 +10708,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /printer catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/fdm-printer\/catalog/);
   assert.match(grafanaDashboards, /FDM printer catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/resin-printer\/catalog/);
+  assert.match(grafanaDashboards, /resin printer catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/printers\/preflight\/catalog/);
   assert.match(grafanaDashboards, /printer preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/subtractive\/catalog/);
@@ -11032,6 +11053,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /strategy and calibration catalog discovery/);
   assert.match(runtimeReadme, /\/fabrication\/printers\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/fdm-printer\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/resin-printer\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/mill-router\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/vertical-mill\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/horizontal-mill\/catalog/);
@@ -11257,6 +11279,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/machines\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/printers\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/fdm-printer\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/resin-printer\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/mill-router\/catalog/);

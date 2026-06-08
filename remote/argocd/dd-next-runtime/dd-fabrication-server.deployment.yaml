@@ -150,6 +150,7 @@ spec:
                 '"path": "/fabrication/machines/catalog"' \
                 '"path": "/fabrication/printers/catalog"' \
                 '"path": "/fabrication/fdm-printer/catalog"' \
+                '"path": "/fabrication/resin-printer/catalog"' \
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
