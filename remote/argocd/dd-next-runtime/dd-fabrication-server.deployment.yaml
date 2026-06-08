@@ -131,6 +131,7 @@ spec:
                 fi
               done
               for route in \
+                '"path": "/fabrication"' \
                 '"path": "/fabrication/capabilities"' \
                 '"path": "/fabrication/schema"' \
                 '"path": "/fabrication/examples"' \
@@ -156,6 +157,7 @@ spec:
                 '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \
                 '"path": "/fabrication/controllers/preflight/catalog"' \
+                '"path": "/fabrication/controllers/plan"' \
                 '"path": "/fabrication/controllers/result"' \
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \

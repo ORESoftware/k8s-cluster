@@ -183,6 +183,7 @@ Currently opted-in:
   `body_bytes_sent` for generated design, machine-code, and artifact responses, a catalog
   discovery, CAD intake, design export, instruction review, validation-result,
   and worker result review panel for
+  `/fabrication`, `/fabrication/landing`, `/fabrication/how-it-works`,
   `/fabrication/design/formats`, `/fabrication/design/preflight/catalog`,
   `/fabrication/machines/catalog`,
   `/fabrication/printers/catalog`, `/fabrication/subtractive/catalog`,
@@ -194,7 +195,7 @@ Currently opted-in:
   `/fabrication/hybrid/catalog`,
   `/fabrication/cells/catalog`,
   `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
-  `/fabrication/controllers/result`,
+  `/fabrication/controllers/plan`, `/fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `/fabrication/materials/plan`,
   `/fabrication/materials/result`,
   `/fabrication/slicers/catalog`, `/fabrication/slicers/result`,

@@ -95,8 +95,9 @@ Gateway path map:
   (gateway auth required)
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
-- `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
-  `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
+- `/fabrication/`, `/fabrication`, `/fabrication/landing`,
+  `/fabrication/how-it-works`, `/fabrication/healthz`, `/fabrication/metrics`,
+  `/fabrication/docs/api`, `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
   `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
   `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
   `/fabrication/turning/preflight/catalog`,
@@ -104,7 +105,8 @@ Gateway path map:
   `/fabrication/interfaces/preflight/catalog`, `/fabrication/cnc/catalog`,
   `/fabrication/hybrid/catalog`, `/fabrication/cells/catalog`,
   `POST /fabrication/machines/select`,
-  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/result`,
+  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/plan`,
+  `POST /fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `POST /fabrication/materials/plan`,
   `POST /fabrication/materials/result`,
   `/fabrication/design/formats`, `/fabrication/slicers/catalog`,

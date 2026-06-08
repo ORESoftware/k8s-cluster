@@ -3159,6 +3159,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"offset-and-setup-state"/);
   assert.match(source, /"program-dependency-state"/);
   assert.match(source, /controller_preflight_catalog_endpoint_exposes_modal_offset_and_macro_gates/);
+  assert.match(source, /async fn controller_plan_http/);
+  assert.match(source, /fn controller_planning_response/);
+  assert.match(source, /dd\.fabrication\.controller-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/controllers\/plan"/);
+  assert.match(source, /fabrication\.controllers\.planned/);
+  assert.match(source, /"controllerPlanning"/);
+  assert.match(source, /"controllerPlan\.compatibilityTargets"/);
+  assert.match(source, /"postprocessPlan\.controllerTargets"/);
   assert.match(source, /struct ControllerPostprocessorResultReviewRequest/);
   assert.match(source, /async fn controller_postprocessor_result_http/);
   assert.match(source, /fn controller_postprocessor_result_review_response/);
@@ -5765,6 +5773,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(
     source,
+    /\.route\("\/controllers\/plan", post\(controller_plan_http\)\)/,
+  );
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/controllers\/plan", post\(controller_plan_http\)\)/,
+  );
+  assert.match(
+    source,
     /\.route\(\s*"\/controllers\/result",\s*post\(controller_postprocessor_result_http\),\s*\)/,
   );
   assert.match(
@@ -6595,6 +6611,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.controller-preflight-catalog\.v1/);
   assert.match(readme, /modal-state, offset\/setup-state, and program-dependency evidence/);
   assert.match(readme, /postprocessor-version, tool map, and\s+dry-run\/simulation evidence/);
+  assert.match(readme, /`POST \/controllers\/plan`/);
+  assert.match(readme, /`POST \/fabrication\/controllers\/plan`/);
+  assert.match(readme, /dd\.fabrication\.controller-planning\.v1/);
+  assert.match(readme, /controllerPlanning\.controllerPlan/);
+  assert.match(readme, /postprocessors are unknown/);
   assert.match(readme, /`POST \/controllers\/result`/);
   assert.match(readme, /`POST \/fabrication\/controllers\/result`/);
   assert.match(readme, /controller\/postprocessor\s+review, draft machine-code\s+generation/);
@@ -9618,6 +9639,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/machines\/select"/);
   assert.match(docs, /"path": "\/controllers\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/controllers\/catalog"/);
+  assert.match(docs, /"path": "\/controllers\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/controllers\/plan"/);
   assert.match(docs, /"path": "\/controllers\/result"/);
   assert.match(docs, /"path": "\/fabrication\/controllers\/result"/);
   assert.match(docs, /"path": "\/materials\/catalog"/);
@@ -10001,6 +10024,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /"path": "\/fabrication"/);
   assert.match(deployment, /"path": "\/fabrication\/capabilities"/);
   assert.match(deployment, /"path": "\/fabrication\/schema"/);
   assert.match(deployment, /"path": "\/fabrication\/examples"/);
@@ -10017,8 +10041,10 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/hybrid\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/cells\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/machines\/select"/);
+  assert.match(deployment, /"path": "\/fabrication\/controllers\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/controllers\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/controllers\/preflight\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/controllers\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/materials\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/materials\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/formats\/catalog"/);
@@ -10244,6 +10270,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /Catalog Discovery, CAD Intake, Design Export, and Instruction Review/);
   assert.match(grafanaDashboards, /CAD Intake, Design Export, and Instruction Review/);
   assert.match(grafanaDashboards, /Worker Result Review/);
+  assert.match(grafanaDashboards, /\/fabrication/);
+  assert.match(grafanaDashboards, /landing root/);
   assert.match(grafanaDashboards, /\/fabrication\/landing/);
   assert.match(grafanaDashboards, /landing page/);
   assert.match(grafanaDashboards, /\/fabrication\/intake\/catalog/);
@@ -10287,6 +10315,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/controllers\/catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/controllers\/preflight\/catalog/);
   assert.match(grafanaDashboards, /controller preflight catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/controllers\/plan/);
+  assert.match(grafanaDashboards, /controller planning/);
   assert.match(grafanaDashboards, /\/fabrication\/controllers\/result/);
   assert.match(grafanaDashboards, /controller postprocessor result review/);
   assert.match(grafanaDashboards, /\/fabrication\/materials\/catalog/);
@@ -10575,6 +10605,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(home, /label: FABRICATION_REQUESTS_SUBJECT/);
   assert.match(home, /label: FABRICATION_RESULTS_SUBJECT/);
   assert.match(runtimeReadme, /dd-fabrication-server/);
+  assert.match(runtimeReadme, /\/fabrication\/landing/);
+  assert.match(runtimeReadme, /\/fabrication\/how-it-works/);
   assert.match(runtimeReadme, /\/fabrication\/capabilities/);
   assert.match(runtimeReadme, /\/fabrication\/schema/);
   assert.match(runtimeReadme, /\/fabrication\/examples/);
@@ -10585,6 +10617,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cells\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machines\/select/);
+  assert.match(runtimeReadme, /POST \/fabrication\/controllers\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/controllers\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/materials\/result/);
@@ -10789,6 +10822,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
     observabilityReadme,
     /catalog\s+discovery,\s+CAD intake,\s+design export,\s+instruction review,\s+validation-result,\s+and worker result\s+review panel/,
   );
+  assert.match(observabilityReadme, /\/fabrication\/landing/);
+  assert.match(observabilityReadme, /\/fabrication\/how-it-works/);
   assert.match(observabilityReadme, /worker result\s+review panel/);
   assert.match(observabilityReadme, /\/fabrication\/machines\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/printers\/catalog/);
@@ -10800,6 +10835,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/hybrid\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cells\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/controllers\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/boundaries\/result/);
   assert.match(observabilityReadme, /\/fabrication\/machines\/select/);
   assert.match(observabilityReadme, /\/fabrication\/controllers\/catalog/);

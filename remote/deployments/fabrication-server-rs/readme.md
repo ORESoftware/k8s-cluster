@@ -54,6 +54,8 @@ outcomes.
 - `GET /fabrication/controllers/catalog`
 - `GET /controllers/preflight/catalog`
 - `GET /fabrication/controllers/preflight/catalog`
+- `POST /controllers/plan`
+- `POST /fabrication/controllers/plan`
 - `POST /controllers/result`
 - `POST /fabrication/controllers/result`
 - `GET /process/catalog`
@@ -1089,6 +1091,26 @@ tool-length/tool-radius, macro/subprogram, postprocessor-version, tool map, and
 dry-run/simulation evidence. Failed preflight checks should be retained through
 `POST /fabrication/controllers/result` and `POST /fabrication/machine-code/result`
 so MDP/POMDP/neural workers can learn which controller routes are reliable.
+
+## `POST /fabrication/controllers/plan`
+
+`POST /controllers/plan` and the gateway-prefixed
+`POST /fabrication/controllers/plan` return
+`dd.fabrication.controller-planning.v1` planning evidence for controller,
+postprocessor, dialect, modal-state, offset-table, macro/subprogram, dry-run,
+and release-gate readiness before generated or imported machine code is treated
+as machine-ready. The response surfaces `controllerPlanning.controllerPlan`,
+`controllerPlan.compatibilityTargets`, `controllerPlan.dialectSummaries`,
+`controllerPlan.releaseGates`, `postprocessPlan.controllerTargets`,
+`simulation.riskProfile`, `releasePackagePlan.packages`, and
+`machineRelease.blockers`.
+
+The endpoint keeps `machineReady=false` while controller targets are blocked,
+postprocessors are unknown, dry-run or operator signoff is required, high-risk
+dialects remain unresolved, or release gates still block. It also carries a
+`learningPolicySnapshot` so MDP/POMDP/neural workers can learn which
+postprocessors, controller dialects, dry-run outcomes, split/combine routes, or
+human-review gates should be preferred on later jobs.
 
 ## `POST /fabrication/controllers/result`
 
