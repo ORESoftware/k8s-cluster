@@ -4524,6 +4524,8 @@ struct FabricationJobDetail {
     plan: Option<FabricationPlanResponse>,
     analysis: Option<InstructionAnalysisResponse>,
     learning: Option<FabricationLearningResponse>,
+    release_gate_summary: Value,
+    release_bundle_route: String,
     artifacts: Vec<FabricationArtifactSummary>,
 }
 
@@ -7013,16 +7015,24 @@ impl FabricationJobStore {
     }
 
     fn detail(&self, job_id: &str) -> Option<FabricationJobDetail> {
-        self.jobs.get(job_id).map(|job| FabricationJobDetail {
-            record: job.record.clone(),
-            plan: job.plan.clone(),
-            analysis: job.analysis.clone(),
-            learning: job.learning.clone(),
-            artifacts: job
-                .artifacts
-                .values()
-                .map(FabricationArtifact::summary)
-                .collect(),
+        self.jobs.get(job_id).map(|job| {
+            let release_bundle = job_release_bundle_response(job);
+            FabricationJobDetail {
+                record: job.record.clone(),
+                plan: job.plan.clone(),
+                analysis: job.analysis.clone(),
+                learning: job.learning.clone(),
+                release_gate_summary: release_bundle
+                    .get("releaseGateSummary")
+                    .cloned()
+                    .unwrap_or_else(|| json!({})),
+                release_bundle_route: format!("/fabrication/jobs/{job_id}/release-bundle"),
+                artifacts: job
+                    .artifacts
+                    .values()
+                    .map(FabricationArtifact::summary)
+                    .collect(),
+            }
         })
     }
 
@@ -75660,6 +75670,199 @@ fn setup_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn setup_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "setup-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn setup_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    check_blocker_count: usize,
+    datum_transfer_blocker_count: usize,
+    monitoring_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    checks: &[Value],
+    datum_transfers: &[Value],
+    monitoring_channels: &[Value],
+) -> Vec<Value> {
+    let split_or_interface_setup_review = values_contain_review_tokens(
+        checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "datum",
+            "workholding",
+            "fixture",
+            "setup",
+            "transfer",
+        ],
+    ) || values_contain_review_tokens(
+        datum_transfers,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "datum",
+            "workholding",
+            "fixture",
+            "setup",
+            "transfer",
+        ],
+    ) || values_contain_review_tokens(
+        monitoring_channels,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "datum",
+            "workholding",
+            "fixture",
+            "setup",
+            "unattended",
+        ],
+    );
+
+    vec![
+        setup_priority_disposition(
+            "machine-failure-boundary-first",
+            if check_blocker_count > 0
+                || datum_transfer_blocker_count > 0
+                || monitoring_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("checkBlockerCount:{check_blocker_count}"),
+                format!("datumTransferBlockerCount:{datum_transfer_blocker_count}"),
+                format!("monitoringBlockerCount:{monitoring_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/setup/result",
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/release/result",
+            ],
+            if check_blocker_count > 0
+                || datum_transfer_blocker_count > 0
+                || monitoring_blocker_count > 0
+            {
+                "machineReady remains blocked by setup, datum-transfer, or monitoring failure boundaries"
+            } else {
+                "setup result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        setup_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/setup/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until setup workholding, datum, monitoring, or operator signoff evidence is retained"
+            } else {
+                "setup result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        setup_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_setup_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceSetupReview:{split_or_interface_setup_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/setup/result",
+            ],
+            if split_or_interface_setup_review {
+                "machineReady remains blocked until split/combine, datum-transfer, workholding, or interface setup evidence is dispositioned"
+            } else {
+                "setup result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        setup_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/setup/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until setup, fixture, workholding, monitoring, or operator-signoff artifacts retain URI, checksum, and evidence"
+            } else {
+                "setup result artifacts include release evidence for downstream review"
+            },
+        ),
+        setup_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked setup priority lanes before advisory promotion"
+            } else {
+                "setup result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn setup_result_review_response(request: SetupResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "setup-result");
     let generated_at_ms = now_ms();
@@ -75774,6 +75977,24 @@ fn setup_result_review_response(request: SetupResultReviewRequest) -> Result<Val
     if artifact_evidence_missing {
         learning_observations.push("setup:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = setup_priority_dispositions(
+        request.success,
+        release_blocked,
+        check_blocker_count,
+        datum_transfer_blocker_count,
+        monitoring_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &checks,
+        &datum_transfers,
+        &monitoring_channels,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(checks.iter().filter_map(|check| {
         check
             .get("checkKind")
@@ -75879,6 +76100,7 @@ fn setup_result_review_response(request: SetupResultReviewRequest) -> Result<Val
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "setupResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -75951,6 +76173,7 @@ fn setup_result_review_response(request: SetupResultReviewRequest) -> Result<Val
                     format!("unattended-ready:{unattended_ready}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -75960,6 +76183,7 @@ fn setup_result_review_response(request: SetupResultReviewRequest) -> Result<Val
             "setup-datum-transfers",
             "setup-monitoring-channels",
             "setup-artifacts",
+            "setup-priority-dispositions",
             "setup-learning-observations",
             "tooling-proof",
             "fixture-proof",
@@ -76027,6 +76251,10 @@ fn stored_setup_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "setup-result".to_string(),
@@ -76062,6 +76290,12 @@ fn stored_setup_result_job(response: &Value) -> StoredFabricationJob {
             "setup-learning-observations".to_string(),
             "setup-learning-observations",
             learning_observations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "setup-priority-dispositions".to_string(),
+            "setup-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
     ]
@@ -137652,6 +137886,10 @@ mod tests {
             "setup-artifact:fixture-setup-record",
             "setup:human-intervention-required",
             "setup:unattended-blocked",
+            "setup-priority:machine-failure-boundary-first:blocked",
+            "setup-priority:human-intervention-required:blocked",
+            "setup-priority:split-combine-or-interface-review:blocked",
+            "setup-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
@@ -137660,6 +137898,25 @@ mod tests {
                 "missing setup observation {observation}"
             );
         }
+
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("setup priority dispositions should be present");
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some("setup-priority:machine-failure-boundary-first:blocked")
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("split-combine-or-interface-review")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+        }));
 
         let outcome_draft = payload
             .pointer("/learning/outcomeDraft")
@@ -137706,6 +137963,15 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("human-intervention-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("learning-feedback-after-disposition")
+                    && disposition.get("disposition").and_then(Value::as_str)
+                        == Some("pending-blocker-resolution")
+            })));
 
         let job = stored_setup_result_job(&payload);
         assert!(job
@@ -137722,6 +137988,7 @@ mod tests {
             "setup-datum-transfers",
             "setup-monitoring-channels",
             "setup-artifacts",
+            "setup-priority-dispositions",
             "setup-learning-observations",
         ] {
             assert!(
@@ -163976,6 +164243,20 @@ mod tests {
                             .any(|gate_id| gate_id.as_str() == Some("learning-disposition"))
                     })
         }));
+        let detail = store
+            .detail(&response.job_id)
+            .expect("stored plan detail should be retrievable");
+        assert_eq!(
+            detail
+                .release_gate_summary
+                .get("blockedGateCount")
+                .and_then(Value::as_u64),
+            Some(6)
+        );
+        assert_eq!(
+            detail.release_bundle_route,
+            format!("/fabrication/jobs/{}/release-bundle", response.job_id)
+        );
         assert_eq!(
             summary
                 .get("releaseGateBlockedCount")
