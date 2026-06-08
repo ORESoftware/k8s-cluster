@@ -160,11 +160,13 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "dataset association graph endpoint",
                 "categorical co-occurrence planner",
                 "field cardinality profiles",
+                "multi-dataset associative selection endpoint",
+                "green/white/gray selection-state model",
             ],
             next_engine_work: vec![
-                "multi-dataset associative index",
-                "green/white/gray selection state engine",
                 "relationship confidence scoring",
+                "persisted selection sessions",
+                "field alias and semantic relationship inference",
             ],
         },
         ProductParity {

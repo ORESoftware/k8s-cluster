@@ -129,7 +129,7 @@ impl Permission {
             Self::EvolutionRun => "Run evolutionary visualization searches.",
             Self::DashboardRead => "Read saved dashboard definitions.",
             Self::DashboardWrite => "Create or replace saved dashboard definitions.",
-            Self::AssociationRead => "Read Qlik-style associative graphs.",
+            Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
             Self::PresentationExport => "Generate presentation/export layers.",
         }
     }

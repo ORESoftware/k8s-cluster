@@ -8,10 +8,10 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Current proof points
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
-  `src/platform.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives in
-  `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
-  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
-  server wires those modules through route handlers.
+  `src/platform.rs`, Qlik-style selection state lives in `src/associative.rs`, hardening posture
+  lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard validation lives
+  in `src/dashboard.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
+  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -26,6 +26,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Qlik-style associative exploration has a concrete first slice through
   `GET /associations/:dataset_id`, which emits co-occurrence support and confidence edges across
   categorical fields.
+- Qlik-style multi-dataset selection is exposed through `POST /associations/select`, including
+  selected, possible, alternative, and excluded categorical values propagated by shared field/value
+  relationships.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -36,7 +39,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Tableau parity still needs persisted dashboard layouts, renderer screenshots, interaction tests,
   and workbook publishing.
 - Power BI parity still needs DAX and Power Query M parsers plus incremental refresh partitions.
-- Qlik parity still needs a multi-dataset associative index and selection-state engine.
+- Qlik parity still needs persisted selection sessions, field-alias inference, and richer
+  relationship confidence scoring.
 - Looker parity still needs LookML parsing, semantic-model validation, and SQL compilation targets.
 - Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
   result sets.

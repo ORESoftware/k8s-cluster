@@ -128,6 +128,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/sql_frontend.rs accepts one SELECT AST and rejects joins, CTEs, set operations, unsupported predicates, and unsupported aggregates fail-closed.",
         },
         ControlDescriptor {
+            id: "bounded-associative-selection",
+            status: "implemented",
+            description: "Cross-dataset associative selection requests bound dataset count, selection count, and values returned per field.",
+            evidence: "src/associative.rs enforces max dataset, selection, and field-value limits before computing Qlik-style state.",
+        },
+        ControlDescriptor {
             id: "route-derived-docs",
             status: "implemented",
             description: "API documentation is served by the same route catalog used by the router.",

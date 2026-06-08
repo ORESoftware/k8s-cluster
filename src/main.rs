@@ -18,6 +18,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod associative;
 mod dashboard;
 mod hardening;
 mod platform;
@@ -498,6 +499,7 @@ fn app_router(state: AppState) -> Router {
         .route("/security/policy", get(security_policy))
         .route("/security/rbac", get(rbac_policy))
         .route("/associations/:dataset_id", get(association_graph))
+        .route("/associations/select", post(association_selection))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
         .route("/dashboards/:dashboard_id", get(get_dashboard))
         .route("/datasets", get(list_datasets).post(ingest_dataset))
@@ -677,7 +679,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         },
         "paritySurfaces": {
             "semanticLayer": "LookML/Power BI inspired dimensions, measures, and calculations",
-            "associativeEngine": "Qlik-style categorical co-occurrence graph over ingested datasets",
+            "associativeEngine": "Qlik-style categorical co-occurrence graph plus multi-dataset selection state over ingested datasets",
             "workbooks": "Sigma-style live-grid and executive-card blueprints",
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
@@ -1060,6 +1062,30 @@ async fn association_graph(
         .association_requests_total
         .fetch_add(1, Ordering::Relaxed);
     Ok(Json(dataset_association_graph(&dataset)))
+}
+
+async fn association_selection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<associative::AssociativeSelectionRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AssociationRead)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    let datasets = state
+        .datasets
+        .read()
+        .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+    associative::selection_payload(&datasets, request)
+        .map(Json)
+        .map_err(ApiError::bad_request)
 }
 
 async fn save_dashboard(
@@ -2960,6 +2986,12 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/associations/select",
+            auth: "association-read",
+            description: "Qlik-style multi-dataset associative selection state with possible, selected, alternative, and excluded values.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/dashboards",
             auth: "dashboard-write",
             description: "Create or replace a saved dashboard definition backed by visualization specs.",
@@ -3732,6 +3764,7 @@ mod tests {
         assert!(paths.contains(&"/security/rbac"));
         assert!(paths.contains(&"/dashboards"));
         assert!(paths.contains(&"/dashboards/:dashboard_id"));
+        assert!(paths.contains(&"/associations/select"));
     }
 
     #[test]
