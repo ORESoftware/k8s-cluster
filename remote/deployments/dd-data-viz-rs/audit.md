@@ -8,12 +8,15 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Current proof points
 
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
-  `src/platform.rs`, hardening posture lives in `src/hardening.rs`, and the HTTP server wires those
-  modules through route handlers.
+  `src/platform.rs`, hardening posture lives in `src/hardening.rs`, parser-backed SQL compilation
+  lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires
+  those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Dataset ingestion is bounded by HTTP body bytes, dataset count, row count, and column count.
 - Query responses are bounded by `MAX_QUERY_ROWS`.
+- SQL requests are parsed through `sqlparser` and fail closed on joins, CTEs, set operations,
+  unsupported predicates, and unsupported aggregate shapes.
 - Categorical columns are dictionary encoded and exposed through profiles.
 - Qlik-style associative exploration has a concrete first slice through
   `GET /associations/:dataset_id`, which emits co-occurrence support and confidence edges across
@@ -42,8 +45,8 @@ This audit tracks the current hardening and visualization-platform parity postur
 ## Hardening gaps
 
 - The current auth model is shared-secret operator auth, not enterprise RBAC.
-- Dialect parsing is subset-oriented. Full compatibility requires parser crates and stricter AST
-  validation.
+- Non-SQL dialect parsing is subset-oriented. Full compatibility requires GraphQL, PromQL/LogQL,
+  Flux, Cypher, Gremlin, Mongo, JMESPath, Lucene, and SPL parser crates or stricter AST validation.
 - Datasets and evolution runs are in-memory only; durable Arrow/Parquet spill and TTL cleanup are
   required before long-running multi-tenant use.
 - Presentation export returns inert package layers and API blueprints; final `.pptx` generation and
