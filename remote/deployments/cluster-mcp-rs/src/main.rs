@@ -11,7 +11,7 @@ use std::{
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -30,6 +30,12 @@ const SERVICE_SCOPE: &str = "cluster-mcp-rs";
 const RESOURCE_NAMESPACE: &str = "remote-dev";
 const PROTOCOL_VERSION: &str = "2025-11-25";
 const DEFAULT_PORT: u16 = 8091;
+const MAX_RPC_BODY_BYTES: usize = 1_000_000;
+const MAX_TIMEOUT_MS: u64 = 5_000;
+const MAX_KUBERNETES_BODY_LIMIT_BYTES: usize = 262_144;
+const MAX_KUBERNETES_ITEMS_LIMIT: usize = 500;
+const MAX_OBSERVABILITY_BODY_LIMIT_BYTES: usize = 262_144;
+const REDACTED: &str = "<redacted>";
 
 const TOOL_NAMES: &[&str] = &[
     "cluster_status",
@@ -97,6 +103,7 @@ struct Metrics {
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
+    jsonrpc: Option<String>,
     id: Option<Value>,
     method: String,
     params: Option<Value>,
@@ -147,23 +154,59 @@ fn env_bool(key: &str, fallback: bool) -> bool {
         .unwrap_or(fallback)
 }
 
-fn env_u64(key: &str, fallback: u64) -> u64 {
+fn env_u64_bounded(key: &str, fallback: u64, min: u64, max: u64) -> u64 {
     env::var(key)
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0)
+        .filter(|value| *value >= min && *value <= max)
         .unwrap_or(fallback)
 }
 
-fn env_usize(key: &str, fallback: usize) -> usize {
+fn env_usize_bounded(key: &str, fallback: usize, min: usize, max: usize) -> usize {
     env::var(key)
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value > 0)
+        .filter(|value| *value >= min && *value <= max)
         .unwrap_or(fallback)
 }
 
+fn env_mcp_base_url(key: &str, fallback: &str, allow_external: bool) -> String {
+    let value = env_string(key, fallback);
+    if allow_external || allowed_mcp_base_url(&value) {
+        value
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn allowed_mcp_base_url(raw: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1") {
+        return true;
+    }
+    host == "kubernetes.default.svc"
+        || host.ends_with(".svc")
+        || host.ends_with(".svc.cluster.local")
+}
+
 fn config_from_env() -> Config {
+    let allow_external_mcp_urls = env_bool("MCP_ALLOW_EXTERNAL_URLS", false);
     let otlp_endpoint = if env_bool("OTEL_TRACES_ENABLED", true) {
         env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
             .ok()
@@ -182,8 +225,12 @@ fn config_from_env() -> Config {
 
     Config {
         host: env_string("HOST", "0.0.0.0"),
-        port: env_u64("PORT", DEFAULT_PORT as u64) as u16,
-        kubernetes_api_url: env_string("MCP_KUBERNETES_API_URL", "https://kubernetes.default.svc"),
+        port: env_u64_bounded("PORT", DEFAULT_PORT as u64, 1, u16::MAX as u64) as u16,
+        kubernetes_api_url: env_mcp_base_url(
+            "MCP_KUBERNETES_API_URL",
+            "https://kubernetes.default.svc",
+            allow_external_mcp_urls,
+        ),
         kubernetes_token_path: env_string(
             "MCP_KUBERNETES_TOKEN_PATH",
             "/var/run/secrets/kubernetes.io/serviceaccount/token",
@@ -192,49 +239,89 @@ fn config_from_env() -> Config {
             "MCP_KUBERNETES_CA_PATH",
             "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
         ),
-        kubernetes_timeout: Duration::from_millis(env_u64("MCP_KUBERNETES_TIMEOUT_MS", 1500)),
-        kubernetes_body_limit_bytes: env_usize("MCP_KUBERNETES_BODY_LIMIT_BYTES", 262_144),
-        kubernetes_inventory_body_limit_bytes: env_usize(
+        kubernetes_timeout: Duration::from_millis(env_u64_bounded(
+            "MCP_KUBERNETES_TIMEOUT_MS",
+            1500,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
+        kubernetes_body_limit_bytes: env_usize_bounded(
+            "MCP_KUBERNETES_BODY_LIMIT_BYTES",
+            262_144,
+            1024,
+            MAX_KUBERNETES_BODY_LIMIT_BYTES,
+        ),
+        kubernetes_inventory_body_limit_bytes: env_usize_bounded(
             "MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES",
             32_768,
+            1024,
+            MAX_KUBERNETES_BODY_LIMIT_BYTES,
         ),
-        kubernetes_items_limit: env_usize("MCP_KUBERNETES_ITEMS_LIMIT", 200),
-        prometheus_url: env_string(
+        kubernetes_items_limit: env_usize_bounded(
+            "MCP_KUBERNETES_ITEMS_LIMIT",
+            200,
+            1,
+            MAX_KUBERNETES_ITEMS_LIMIT,
+        ),
+        prometheus_url: env_mcp_base_url(
             "MCP_PROMETHEUS_URL",
             "http://dd-prometheus.observability.svc.cluster.local:9090",
+            allow_external_mcp_urls,
         ),
-        loki_url: env_string(
+        loki_url: env_mcp_base_url(
             "MCP_LOKI_URL",
             "http://dd-loki.observability.svc.cluster.local:3100",
+            allow_external_mcp_urls,
         ),
-        grafana_url: env_string(
+        grafana_url: env_mcp_base_url(
             "MCP_GRAFANA_URL",
             "http://dd-grafana.observability.svc.cluster.local:3000",
+            allow_external_mcp_urls,
         ),
-        tempo_url: env_string(
+        tempo_url: env_mcp_base_url(
             "MCP_TEMPO_URL",
             "http://dd-tempo.observability.svc.cluster.local:3200",
+            allow_external_mcp_urls,
         ),
-        jaeger_url: env_string(
+        jaeger_url: env_mcp_base_url(
             "MCP_JAEGER_URL",
             "http://dd-jaeger.observability.svc.cluster.local:16686",
+            allow_external_mcp_urls,
         ),
-        otel_collector_metrics_url: env_string(
+        otel_collector_metrics_url: env_mcp_base_url(
             "MCP_OTEL_COLLECTOR_URL",
             "http://dd-otel-collector.observability.svc.cluster.local:8889",
+            allow_external_mcp_urls,
         ),
-        nats_monitor_url: env_string(
+        nats_monitor_url: env_mcp_base_url(
             "MCP_NATS_MONITOR_URL",
             "http://dd-nats.messaging.svc.cluster.local:8222",
+            allow_external_mcp_urls,
         ),
-        nats_metrics_url: env_string(
+        nats_metrics_url: env_mcp_base_url(
             "MCP_NATS_METRICS_URL",
             "http://dd-nats.messaging.svc.cluster.local:7777",
+            allow_external_mcp_urls,
         ),
-        observability_timeout: Duration::from_millis(env_u64("MCP_OBSERVABILITY_TIMEOUT_MS", 1200)),
-        observability_body_limit_bytes: env_usize("MCP_OBSERVABILITY_BODY_LIMIT_BYTES", 32_768),
+        observability_timeout: Duration::from_millis(env_u64_bounded(
+            "MCP_OBSERVABILITY_TIMEOUT_MS",
+            1200,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
+        observability_body_limit_bytes: env_usize_bounded(
+            "MCP_OBSERVABILITY_BODY_LIMIT_BYTES",
+            32_768,
+            1024,
+            MAX_OBSERVABILITY_BODY_LIMIT_BYTES,
+        ),
         otlp_endpoint,
-        otlp_timeout: Duration::from_millis(env_u64("OTEL_EXPORT_TIMEOUT_MS", 800)),
+        otlp_timeout: Duration::from_millis(env_u64_bounded(
+            "OTEL_EXPORT_TIMEOUT_MS",
+            800,
+            100,
+            MAX_TIMEOUT_MS,
+        )),
     }
 }
 
@@ -462,7 +549,16 @@ fn otlp_attributes(attributes: Value) -> Vec<Value> {
 }
 
 fn id_value(request: &JsonRpcRequest) -> Value {
-    request.id.clone().unwrap_or(Value::Null)
+    sanitize_rpc_id(request.id.as_ref())
+}
+
+fn sanitize_rpc_id(id: Option<&Value>) -> Value {
+    match id {
+        Some(Value::String(_)) | Some(Value::Number(_)) | Some(Value::Null) => {
+            id.cloned().unwrap_or(Value::Null)
+        }
+        _ => Value::Null,
+    }
 }
 
 fn json_response(status: StatusCode, payload: Value) -> Response {
@@ -678,7 +774,7 @@ async fn rpc(State(state): State<AppState>, body: Bytes) -> Response {
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    if body.len() > 1_000_000 {
+    if body.len() > MAX_RPC_BODY_BYTES {
         state
             .metrics
             .rpc_errors_total
@@ -719,7 +815,34 @@ async fn rpc(State(state): State<AppState>, body: Bytes) -> Response {
         }
     };
 
-    let method = request.method.clone();
+    let id = id_value(&request);
+    if request.jsonrpc.as_deref() != Some("2.0") || request.method.trim().is_empty() {
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_dd_event(
+            "WARN",
+            13,
+            "MCP JSON-RPC invalid request",
+            "cluster_mcp.rpc.invalid_request",
+            json!({ "rpc.method": sanitize_text(&request.method) }),
+            Some(&trace),
+        );
+        finish_span(
+            state,
+            trace,
+            "mcp.rpc.invalid_request",
+            false,
+            json!({ "rpc.method": sanitize_text(&request.method) }),
+        );
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            rpc_error(id, -32600, "invalid request"),
+        );
+    }
+
+    let method = request.method.trim().to_string();
     state.metrics.record_rpc(&method);
     log_dd_event(
         "INFO",
@@ -741,7 +864,6 @@ async fn rpc(State(state): State<AppState>, body: Bytes) -> Response {
         return empty_response(StatusCode::ACCEPTED);
     }
 
-    let id = id_value(&request);
     let response = match method.as_str() {
         "initialize" => initialize_result(id),
         "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
@@ -964,17 +1086,22 @@ fn cluster_status_json(state: &AppState) -> Value {
         "telemetry": {
             "prometheusMetrics": "/metrics",
             "structuredLogs": "dd.log.v1 stdout collected by promtail",
-            "otlpTraces": state.config.otlp_endpoint.as_deref().unwrap_or("disabled")
+            "otlpTraces": state
+                .config
+                .otlp_endpoint
+                .as_deref()
+                .map(sanitize_url_for_output)
+                .unwrap_or_else(|| "disabled".to_string())
         },
         "observability": {
             "grafana": "/telemetry/",
             "prometheus": "/prometheus/",
-            "loki": state.config.loki_url,
-            "tempo": state.config.tempo_url,
-            "jaeger": state.config.jaeger_url,
-            "otelCollectorMetrics": state.config.otel_collector_metrics_url,
-            "natsMonitor": state.config.nats_monitor_url,
-            "natsMetrics": state.config.nats_metrics_url
+            "loki": sanitize_url_for_output(&state.config.loki_url),
+            "tempo": sanitize_url_for_output(&state.config.tempo_url),
+            "jaeger": sanitize_url_for_output(&state.config.jaeger_url),
+            "otelCollectorMetrics": sanitize_url_for_output(&state.config.otel_collector_metrics_url),
+            "natsMonitor": sanitize_url_for_output(&state.config.nats_monitor_url),
+            "natsMetrics": sanitize_url_for_output(&state.config.nats_metrics_url)
         }
     })
 }
@@ -1204,7 +1331,7 @@ async fn kubernetes_resource_entry(
         "name": target.name,
         "scope": target.scope,
         "path": target.path,
-        "url": join_url(&state.config.kubernetes_api_url, target.path),
+        "url": sanitize_url_for_output(&join_url(&state.config.kubernetes_api_url, target.path)),
         "response": kubernetes_get(state, target.path, limit, metadata_only).await
     })
 }
@@ -1221,7 +1348,7 @@ async fn kubernetes_resource_json(
         "source": "kubernetes-api",
         "resource": name,
         "scope": scope,
-        "url": join_url(&state.config.kubernetes_api_url, path),
+        "url": sanitize_url_for_output(&join_url(&state.config.kubernetes_api_url, path)),
         "readOnly": true,
         "metadataOnlyRequest": metadata_only,
         "response": kubernetes_get(state, path, limit, metadata_only).await
@@ -1266,8 +1393,7 @@ async fn kubernetes_get(state: &AppState, path: &str, limit: usize, metadata_onl
             match response.bytes().await {
                 Ok(bytes) => {
                     let body = String::from_utf8_lossy(&bytes).to_string();
-                    let sample = clip_string(&body, limit);
-                    let truncated = body.len() > limit;
+                    let (sample, truncated) = response_sample(&body, limit);
                     let (item_count, items) = summarize_kubernetes_items(
                         &body,
                         state.config.kubernetes_items_limit,
@@ -1289,14 +1415,14 @@ async fn kubernetes_get(state: &AppState, path: &str, limit: usize, metadata_onl
                     "status": status.as_u16(),
                     "reason": reason,
                     "durationMs": elapsed_ms(started),
-                    "error": error.to_string()
+                    "error": sanitize_text(&error.to_string())
                 }),
             }
         }
         Err(error) => json!({
             "ok": false,
             "durationMs": elapsed_ms(started),
-            "error": error.to_string()
+            "error": sanitize_text(&error.to_string())
         }),
     }
 }
@@ -1348,7 +1474,10 @@ fn summarize_kubernetes_item(item: &Value, metadata_only: bool) -> Value {
     );
     output.insert(
         "labels".to_string(),
-        metadata.get("labels").cloned().unwrap_or_else(|| json!({})),
+        metadata
+            .get("labels")
+            .map(redacted_json_clone)
+            .unwrap_or_else(|| json!({})),
     );
     if !metadata_only {
         if let Some(spec) = item.get("spec") {
@@ -1451,7 +1580,7 @@ fn telemetry_targets_json(state: &AppState) -> Value {
 }
 
 fn target_obj(name: &str, url: &str, role: &str) -> Value {
-    json!({ "name": name, "url": url, "role": role })
+    json!({ "name": name, "url": sanitize_url_for_output(url), "role": role })
 }
 
 async fn observability_health_json(state: &AppState) -> Value {
@@ -1667,7 +1796,10 @@ async fn parallel_http_checks(
         let state = state.clone();
         futures.push(async move {
             let result = http_result(&state, &url, limit).await;
-            (index, json!({ "name": name, "url": url, "result": result }))
+            (
+                index,
+                json!({ "name": name, "url": sanitize_url_for_output(&url), "result": result }),
+            )
         });
     }
 
@@ -1699,13 +1831,14 @@ async fn http_result(state: &AppState, url: &str, limit: usize) -> Value {
             match response.bytes().await {
                 Ok(bytes) => {
                     let body = String::from_utf8_lossy(&bytes).to_string();
+                    let (sample, truncated) = response_sample(&body, limit);
                     json!({
                         "ok": status.is_success(),
                         "status": status.as_u16(),
                         "reason": reason,
                         "durationMs": elapsed_ms(started),
-                        "truncated": body.len() > limit,
-                        "sample": clip_string(&body, limit)
+                        "truncated": truncated,
+                        "sample": sample
                     })
                 }
                 Err(error) => json!({
@@ -1713,14 +1846,14 @@ async fn http_result(state: &AppState, url: &str, limit: usize) -> Value {
                     "status": status.as_u16(),
                     "reason": reason,
                     "durationMs": elapsed_ms(started),
-                    "error": error.to_string()
+                    "error": sanitize_text(&error.to_string())
                 }),
             }
         }
         Err(error) => json!({
             "ok": false,
             "durationMs": elapsed_ms(started),
-            "error": error.to_string()
+            "error": sanitize_text(&error.to_string())
         }),
     }
 }
@@ -1756,6 +1889,106 @@ fn clip_string(value: &str, limit: usize) -> String {
     }
     clipped.push_str("\n... clipped ...");
     clipped
+}
+
+fn response_sample(body: &str, limit: usize) -> (String, bool) {
+    let sanitized = sanitize_response_body(body);
+    let truncated = sanitized.len() > limit;
+    (clip_string(&sanitized, limit), truncated)
+}
+
+fn sanitize_response_body(body: &str) -> String {
+    match serde_json::from_str::<Value>(body) {
+        Ok(mut value) => {
+            redact_json_value(&mut value);
+            value.to_string()
+        }
+        Err(_) => sanitize_text(body),
+    }
+}
+
+fn redacted_json_clone(value: &Value) -> Value {
+    let mut value = value.clone();
+    redact_json_value(&mut value);
+    value
+}
+
+fn redact_json_value(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map.iter_mut() {
+                if is_secret_like_key(key) {
+                    *value = json!(REDACTED);
+                } else {
+                    redact_json_value(value);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_json_value(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_secret_like_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    let normalized = key.replace(['-', '_', '.'], "");
+    key.contains("authorization")
+        || key.contains("cookie")
+        || key.contains("credential")
+        || key.contains("password")
+        || key.contains("secret")
+        || key.contains("session")
+        || key.contains("token")
+        || normalized.contains("apikey")
+        || normalized.contains("accesskey")
+        || normalized.contains("privatekey")
+        || normalized.contains("clientsecret")
+}
+
+fn sanitize_text(value: &str) -> String {
+    value
+        .lines()
+        .map(redact_sensitive_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_sensitive_line(line: &str) -> String {
+    if !line
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-')
+        .any(is_secret_like_key)
+    {
+        return line.to_string();
+    }
+
+    if let Some(index) = line.find('=').or_else(|| line.find(':')) {
+        format!("{}{}", &line[..=index], REDACTED)
+    } else {
+        REDACTED.to_string()
+    }
+}
+
+fn sanitize_url_for_output(raw: &str) -> String {
+    match reqwest::Url::parse(raw) {
+        Ok(mut url) => {
+            if !url.username().is_empty() {
+                let _ = url.set_username("redacted");
+            }
+            if url.password().is_some() {
+                let _ = url.set_password(Some("redacted"));
+            }
+            if url.query().is_some() {
+                url.set_query(Some("redacted=1"));
+            }
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => sanitize_text(raw),
+    }
 }
 
 async fn api_docs_html() -> Html<&'static str> {
@@ -1795,6 +2028,7 @@ async fn main() {
         .route("/api/docs.json", get(api_docs_json))
         .route("/mcp", get(mcp_get).post(rpc))
         .with_state(state.clone())
+        .layer(DefaultBodyLimit::max(MAX_RPC_BODY_BYTES))
         .merge(dd_runtime_config_client::router());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
@@ -1873,6 +2107,67 @@ mod tests {
     }
 
     #[test]
+    fn response_sample_redacts_secret_like_json_fields() {
+        let body = json!({
+            "ok": true,
+            "token": "abc123",
+            "nested": {
+                "client_secret": "shh",
+                "safe": "visible"
+            },
+            "items": [{ "authorization": "Bearer secret-token" }]
+        })
+        .to_string();
+        let (sample, truncated) = response_sample(&body, 10_000);
+        assert!(!truncated);
+        assert!(sample.contains(REDACTED));
+        assert!(sample.contains("visible"));
+        assert!(!sample.contains("abc123"));
+        assert!(!sample.contains("secret-token"));
+    }
+
+    #[test]
+    fn response_sample_redacts_secret_like_text_lines() {
+        let (sample, _) = response_sample("ready\napi_key=super-secret\nconnections 3", 10_000);
+        assert!(sample.contains("ready"));
+        assert!(sample.contains(&format!("api_key={REDACTED}")));
+        assert!(!sample.contains("super-secret"));
+    }
+
+    #[test]
+    fn allowed_mcp_base_url_stays_inside_cluster_or_loopback() {
+        assert!(allowed_mcp_base_url(
+            "http://dd-prometheus.observability.svc.cluster.local:9090"
+        ));
+        assert!(allowed_mcp_base_url("http://127.0.0.1:19090"));
+        assert!(!allowed_mcp_base_url("https://example.com"));
+        assert!(!allowed_mcp_base_url(
+            "http://dd-prometheus.observability.svc.cluster.local:9090?token=abc"
+        ));
+        assert!(!allowed_mcp_base_url("file:///var/run/secrets/token"));
+    }
+
+    #[test]
+    fn sanitize_url_for_output_removes_url_credentials_and_query() {
+        assert_eq!(
+            sanitize_url_for_output("https://user:pass@example.test/path?token=abc#frag"),
+            "https://redacted:redacted@example.test/path?redacted=1"
+        );
+    }
+
+    #[test]
+    fn json_rpc_ids_are_scalar_only() {
+        assert_eq!(sanitize_rpc_id(Some(&json!("abc"))), json!("abc"));
+        assert_eq!(sanitize_rpc_id(Some(&json!(42))), json!(42));
+        assert_eq!(sanitize_rpc_id(Some(&json!(null))), json!(null));
+        assert_eq!(
+            sanitize_rpc_id(Some(&json!({ "not": "allowed" }))),
+            json!(null)
+        );
+        assert_eq!(sanitize_rpc_id(None), json!(null));
+    }
+
+    #[test]
     fn service_summary_omits_annotations() {
         let item = json!({
             "apiVersion": "v1",
@@ -1881,7 +2176,7 @@ mod tests {
                 "name": "dd-example",
                 "namespace": "default",
                 "annotations": { "kubectl.kubernetes.io/last-applied-configuration": "large" },
-                "labels": { "app": "dd-example" }
+                "labels": { "app": "dd-example", "token": "abc123" }
             },
             "spec": {
                 "type": "ClusterIP",
@@ -1893,6 +2188,7 @@ mod tests {
         let summary = summarize_kubernetes_item(&item, false);
         assert!(summary.get("annotations").is_none());
         assert_eq!(summary["specSummary"]["ports"][0]["port"], json!(8080));
+        assert_eq!(summary["labels"]["token"], json!(REDACTED));
     }
 
     #[test]

@@ -46,6 +46,25 @@ and mutation verbs. `service_directory` augments the static gateway directory
 with live Kubernetes Service summaries so agents can see service ports,
 selectors, and cluster-local DNS names without reading secret-bearing objects.
 
+## Boundary Hardening
+
+The JSON-RPC HTTP body is capped at 1 MiB by Axum before handler extraction and
+again in the MCP handler. Requests must be JSON-RPC 2.0 objects; batch arrays,
+empty methods, malformed JSON, and structured/non-scalar ids are rejected or
+normalized to a `null` response id.
+
+Environment-driven timeout, body-size, and item-count knobs are clamped in
+process. MCP target URL overrides are accepted only for loopback hosts or
+cluster service DNS (`*.svc` / `*.svc.cluster.local`) unless
+`MCP_ALLOW_EXTERNAL_URLS=true` is set for a deliberate local/operator test.
+Returned target URLs are stripped of userinfo, query strings, and fragments.
+
+Kubernetes and observability response samples are redacted before being returned
+to MCP clients. JSON bodies are parsed and secret-like keys such as `token`,
+`secret`, `password`, `authorization`, `api_key`, and `client_secret` are
+replaced with `<redacted>`; plain-text samples get a conservative line-level
+fallback.
+
 ## Telemetry
 
 The service emits explicit telemetry only:

@@ -133,6 +133,21 @@ legacy `Auth` header or the `dd_auth` HttpOnly cookie from `dd-remote-auth`; con
 `DD_AUTH_TOTP_SECRET_BASE32` on that auth service to require passphrase plus a six-digit TOTP code at
 the beginning of a browser session.
 
+The legacy server parses JSON-RPC requests through the Erlang runtime JSON
+decoder. Tool routing uses only the decoded `method` and `params.name` fields;
+malformed JSON, batch arrays, missing `jsonrpc: "2.0"`, and missing methods are
+rejected instead of being routed by incidental text in the request body. Response
+ids are echoed only for JSON-RPC scalar ids and otherwise normalize to `null`.
+
+Timeouts, body-size limits, and Kubernetes item limits are clamped in process.
+MCP target URL overrides are accepted only for loopback hosts or cluster service
+DNS (`*.svc` / `*.svc.cluster.local`) unless `MCP_ALLOW_EXTERNAL_URLS=true` is
+set for a deliberate local/operator test. Kubernetes and observability samples
+are redacted before being returned to clients; JSON samples replace secret-like
+keys such as `token`, `secret`, `password`, `authorization`, `api_key`, and
+`client_secret` with `<redacted>`, while plain text receives a conservative
+line-level fallback.
+
 | Env var | Default |
 | --- | --- |
 | `MCP_KUBERNETES_API_URL` | `https://kubernetes.default.svc` |
@@ -142,6 +157,7 @@ the beginning of a browser session.
 | `MCP_KUBERNETES_TIMEOUT_MS` | `1500` |
 | `MCP_KUBERNETES_BODY_LIMIT_BYTES` | `262144` |
 | `MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES` | `32768` |
+| `MCP_ALLOW_EXTERNAL_URLS` | `false` |
 
 `telemetry_summary`, `observability_health`, `prometheus_up`, `loki_labels`,
 `grafana_inventory`, `nats_metrics`, and `trace_backends` make bounded

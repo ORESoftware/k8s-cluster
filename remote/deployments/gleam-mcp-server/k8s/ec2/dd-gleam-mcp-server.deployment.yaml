@@ -225,6 +225,8 @@ spec:
               value: '262144'
             - name: MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES
               value: '32768'
+            - name: MCP_ALLOW_EXTERNAL_URLS
+              value: 'false'
             # dd-runtime-config subscriber wiring (Gleam helper:
             # `dd_runtime_config_client.start_registration_loop`).
             - name: RUNTIME_CONFIG_SERVICE_NAME

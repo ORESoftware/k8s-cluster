@@ -114,6 +114,8 @@ spec:
               value: '32768'
             - name: MCP_KUBERNETES_ITEMS_LIMIT
               value: '200'
+            - name: MCP_ALLOW_EXTERNAL_URLS
+              value: 'false'
             - name: OTEL_SERVICE_NAME
               value: dd-cluster-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

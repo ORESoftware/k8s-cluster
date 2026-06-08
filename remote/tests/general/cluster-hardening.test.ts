@@ -100,6 +100,28 @@ test("gateway defers optional cluster MCP DNS resolution until request time", as
   assert.doesNotMatch(gateway, /proxy_pass\s+http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local/);
 });
 
+test("cluster MCP Rust server hardens MCP request and response boundaries", async () => {
+  const source = await readRepoFile("remote/deployments/cluster-mcp-rs/src/main.rs");
+  const deployment = await readRepoFile(
+    "remote/deployments/cluster-mcp-rs/k8s/ec2/dd-cluster-mcp-rs.deployment.yaml",
+  );
+  const pdb = await readRepoFile(
+    "remote/deployments/cluster-mcp-rs/k8s/ec2/dd-cluster-mcp-rs.pdb.yaml",
+  );
+
+  assert.match(source, /const MAX_RPC_BODY_BYTES:\s*usize\s*=\s*1_000_000/);
+  assert.match(source, /DefaultBodyLimit::max\(MAX_RPC_BODY_BYTES\)/);
+  assert.match(source, /request\.jsonrpc\.as_deref\(\)\s*!=\s*Some\("2\.0"\)/);
+  assert.match(source, /fn sanitize_rpc_id/);
+  assert.match(source, /fn allowed_mcp_base_url/);
+  assert.match(source, /\.ends_with\("\.svc\.cluster\.local"\)/);
+  assert.match(source, /fn response_sample/);
+  assert.match(source, /fn redact_json_value/);
+  assert.match(source, /fn sanitize_url_for_output/);
+  assert.match(deployment, /name:\s*MCP_ALLOW_EXTERNAL_URLS[\s\S]*value:\s*'false'/);
+  assert.match(pdb, /minAvailable:\s*1/);
+});
+
 test("dd-idle-reaper has additive baseline securityContext", async () => {
   const reaper = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-idle-reaper.deployment.yaml",

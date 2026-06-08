@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-cluster-mcp-rs
 spec:
-  minAvailable: 0
+  minAvailable: 1
   selector:
     matchLabels:
       app: dd-cluster-mcp-rs

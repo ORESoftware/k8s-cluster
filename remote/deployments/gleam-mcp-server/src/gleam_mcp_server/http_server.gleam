@@ -21,6 +21,12 @@ fn env_get(name: String) -> String
 @external(erlang, "gleam_mcp_json", "request_id")
 fn json_request_id(body: String) -> String
 
+@external(erlang, "gleam_mcp_json", "method")
+fn json_method(body: String) -> String
+
+@external(erlang, "gleam_mcp_json", "tool_name")
+fn json_tool_name(body: String) -> String
+
 const default_host = "0.0.0.0"
 
 const default_port = 8090
@@ -92,127 +98,36 @@ fn rpc(
       req_with_body.body
       |> bit_array.to_string
       |> result.unwrap("")
-    let method = method_from_body(body)
+    let method = json_method(body)
+    let request_id = json_request_id(body)
     record_rpc(metrics_name, method)
     io.println("dd-gleam-mcp-server rpc method=" <> method)
 
     case method {
+      "parse_error" ->
+        json_response(
+          400,
+          json_rpc_error_with_id("parse error", -32_700, "null"),
+        )
+      "invalid_request" ->
+        json_response(
+          400,
+          json_rpc_error_with_id("invalid request", -32_600, request_id),
+        )
       "notifications/initialized" -> empty_response(202)
-      _ -> json_response(200, rpc_payload(method, body, json_request_id(body)))
+      _ -> json_response(200, rpc_payload(method, body, request_id))
     }
   })
   |> result.unwrap(json_response(400, json_rpc_error("parse error", -32_700)))
-}
-
-fn method_from_body(body: String) -> String {
-  case string.contains(body, "\"tools/call\"") {
-    True -> "tools/call"
-    False ->
-      case string.contains(body, "\"tools/list\"") {
-        True -> "tools/list"
-        False ->
-          case string.contains(body, "\"initialize\"") {
-            True -> "initialize"
-            False ->
-              case string.contains(body, "\"ping\"") {
-                True -> "ping"
-                False ->
-                  case string.contains(body, "\"notifications/initialized\"") {
-                    True -> "notifications/initialized"
-                    False -> "unknown"
-                  }
-              }
-          }
-      }
-  }
 }
 
 fn rpc_payload(method: String, body: String, request_id: String) -> String {
   case method {
     "initialize" -> initialize_result(request_id)
     "tools/list" -> tools_list_result(request_id)
-    "tools/call" -> tools_call_result(tool_from_body(body), request_id)
+    "tools/call" -> tools_call_result(json_tool_name(body), request_id)
     "ping" -> "{\"jsonrpc\":\"2.0\",\"id\":" <> request_id <> ",\"result\":{}}"
     _ -> json_rpc_error_with_id("method not found", -32_601, request_id)
-  }
-}
-
-fn tool_from_body(body: String) -> String {
-  case string.contains(body, "\"kubernetes_inventory\"") {
-    True -> "kubernetes_inventory"
-    False ->
-      case string.contains(body, "\"kubernetes_deployments\"") {
-        True -> "kubernetes_deployments"
-        False ->
-          case string.contains(body, "\"human_access_policy\"") {
-            True -> "human_access_policy"
-            False ->
-              case string.contains(body, "\"telemetry_summary\"") {
-                True -> "telemetry_summary"
-                False ->
-                  case string.contains(body, "\"observability_health\"") {
-                    True -> "observability_health"
-                    False ->
-                      case string.contains(body, "\"prometheus_up\"") {
-                        True -> "prometheus_up"
-                        False ->
-                          case string.contains(body, "\"loki_labels\"") {
-                            True -> "loki_labels"
-                            False ->
-                              case
-                                string.contains(body, "\"grafana_inventory\"")
-                              {
-                                True -> "grafana_inventory"
-                                False ->
-                                  case
-                                    string.contains(body, "\"nats_metrics\"")
-                                  {
-                                    True -> "nats_metrics"
-                                    False ->
-                                      case
-                                        string.contains(
-                                          body,
-                                          "\"trace_backends\"",
-                                        )
-                                      {
-                                        True -> "trace_backends"
-                                        False ->
-                                          case
-                                            string.contains(
-                                              body,
-                                              "\"telemetry_targets\"",
-                                            )
-                                          {
-                                            True -> "telemetry_targets"
-                                            False ->
-                                              case
-                                                string.contains(
-                                                  body,
-                                                  "\"service_directory\"",
-                                                )
-                                              {
-                                                True -> "service_directory"
-                                                False ->
-                                                  case
-                                                    string.contains(
-                                                      body,
-                                                      "\"cluster_status\"",
-                                                    )
-                                                  {
-                                                    True -> "cluster_status"
-                                                    False -> "unknown"
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-      }
   }
 }
 
@@ -365,7 +280,7 @@ fn service_directory_result(request_id: String) -> String {
 }
 
 fn json_rpc_error(message: String, code: Int) -> String {
-  json_rpc_error_with_id(message, code, "1")
+  json_rpc_error_with_id(message, code, "null")
 }
 
 fn json_rpc_error_with_id(
