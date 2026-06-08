@@ -264,6 +264,9 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   const simulationCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/simulation_catalog_content.rs',
   );
+  const simulationPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/simulation_preflight_content.rs',
+  );
   const toolpathCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/toolpath_catalog_content.rs',
   );
@@ -4839,11 +4842,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /simulation_catalog_endpoint_exposes_dry_run_and_risk_contract/);
   assert.match(source, /async fn simulation_preflight_catalog_http/);
   assert.match(source, /fn simulation_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.simulation-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/simulation\/preflight\/catalog"/);
-  assert.match(source, /machine-envelope-fixture-and-datum-state/);
-  assert.match(source, /controller-process-and-program-state/);
-  assert.match(source, /dry-run-release-and-learning-state/);
+  assert.match(source, /mod simulation_preflight_content;/);
+  assert.match(source, /simulation_preflight_content::response\(/);
+  assert.match(
+    simulationPreflightContentSource,
+    /pub\(super\) fn response\(\s*risk_contracts: Vec<Value>,\s*dry_run_contracts: Vec<Value>,\s*risk_types: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(simulationPreflightContentSource, /dd\.fabrication\.simulation-preflight-catalog\.v1/);
+  assert.match(simulationPreflightContentSource, /"GET \/fabrication\/simulation\/preflight\/catalog"/);
+  assert.match(simulationPreflightContentSource, /machine-envelope-fixture-and-datum-state/);
+  assert.match(simulationPreflightContentSource, /controller-process-and-program-state/);
+  assert.match(simulationPreflightContentSource, /dry-run-release-and-learning-state/);
   assert.match(source, /simulation_preflight_catalog_endpoint_exposes_release_gates/);
   assert.match(source, /async fn simulation_run_http/);
   assert.match(source, /fn simulation_run_response/);
