@@ -62378,6 +62378,158 @@ fn decomposition_result_artifact_missing_release_evidence(artifact: &Value) -> b
             .is_none_or(Vec::is_empty)
 }
 
+fn decomposition_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "decomposition-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn decomposition_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    target_blocker_count: usize,
+    route_blocker_count: usize,
+    interface_blocker_count: usize,
+    split_combine_blocker_count: usize,
+    redesign_required_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    let split_combine_blocked = target_blocker_count > 0
+        || route_blocker_count > 0
+        || interface_blocker_count > 0
+        || split_combine_blocker_count > 0;
+
+    vec![
+        decomposition_priority_disposition(
+            "split-combine-boundary-first",
+            if split_combine_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("targetBlockerCount:{target_blocker_count}"),
+                format!("routeBlockerCount:{route_blocker_count}"),
+                format!("interfaceBlockerCount:{interface_blocker_count}"),
+                format!("splitCombineBlockerCount:{split_combine_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/decomposition/result",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/release/result",
+            ],
+            if split_combine_blocked {
+                "machineReady remains blocked until split/combine targets, routes, interfaces, and recomposition decisions are dispositioned"
+            } else {
+                "decomposition result did not report an open split/combine machine-failure boundary"
+            },
+        ),
+        decomposition_priority_disposition(
+            "redesign-or-reroute-required",
+            if redesign_required_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("redesignRequiredCount:{redesign_required_count}")],
+            vec![
+                "POST /fabrication/design/generate",
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/machine-code/generate",
+            ],
+            if redesign_required_count > 0 {
+                "machineReady remains blocked until child geometry, datum strategy, or alternate route evidence is regenerated"
+            } else {
+                "decomposition result did not require redesign or alternate routing"
+            },
+        ),
+        decomposition_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/decomposition/result",
+                "POST /fabrication/assembly/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until an operator or automation lane signs off split/combine, interface, route, or recomposition evidence"
+            } else {
+                "decomposition result did not report an open human-intervention priority blocker"
+            },
+        ),
+        decomposition_priority_disposition(
+            "result-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until decomposition result artifacts retain URI, checksum, and split/combine evidence"
+            } else {
+                "decomposition result artifacts include retained release evidence for downstream review"
+            },
+        ),
+        decomposition_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked decomposition priorities before advisory promotion"
+            } else {
+                "decomposition result can be submitted as positive split/combine learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn decomposition_result_review_response(
     request: DecompositionResultReviewRequest,
 ) -> Result<Value, String> {
@@ -62562,6 +62714,23 @@ fn decomposition_result_review_response(
     if redesign_required_count > 0 {
         learning_observations.push("decomposition:redesign-required".to_string());
     }
+    let priority_dispositions = decomposition_priority_dispositions(
+        request.success,
+        release_blocked,
+        target_blocker_count,
+        route_blocker_count,
+        interface_blocker_count,
+        split_combine_blocker_count,
+        redesign_required_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(targets.iter().filter_map(|target| {
         target
             .get("targetKind")
@@ -62679,6 +62848,7 @@ fn decomposition_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "decompositionResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -62772,6 +62942,7 @@ fn decomposition_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -62782,6 +62953,7 @@ fn decomposition_result_review_response(
             "decomposition-interfaces",
             "decomposition-split-combine-decisions",
             "decomposition-artifacts",
+            "decomposition-priority-dispositions",
             "decomposition-learning-observations",
             "decomposition-plan",
             "interface-control-plan",
@@ -62855,6 +63027,10 @@ fn stored_decomposition_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "decomposition-result".to_string(),
@@ -62890,6 +63066,12 @@ fn stored_decomposition_result_job(response: &Value) -> StoredFabricationJob {
             "decomposition-artifacts".to_string(),
             "decomposition-artifacts",
             decomposition_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "decomposition-priority-dispositions".to_string(),
+            "decomposition-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -81375,6 +81557,213 @@ fn workholding_result_artifact_missing_release_evidence(artifact: &Value) -> boo
             .is_none_or(Vec::is_empty)
 }
 
+fn workholding_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "workholding-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn workholding_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    fixture_blocker_count: usize,
+    datum_blocker_count: usize,
+    clearance_blocker_count: usize,
+    split_combine_blocker_count: usize,
+    split_combine_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    fixture_checks: &[Value],
+    datum_transfers: &[Value],
+    clearance_checks: &[Value],
+    split_combine_holds: &[Value],
+) -> Vec<Value> {
+    let split_or_interface_review = split_combine_required
+        || values_contain_review_tokens(
+            fixture_checks,
+            &[
+                "split",
+                "combine",
+                "interface",
+                "hybrid",
+                "fixture",
+                "workholding",
+                "recomposition",
+            ],
+        )
+        || values_contain_review_tokens(
+            datum_transfers,
+            &[
+                "split",
+                "combine",
+                "interface",
+                "datum",
+                "transfer",
+                "reprobe",
+                "work-offset",
+            ],
+        )
+        || values_contain_review_tokens(
+            clearance_checks,
+            &[
+                "split",
+                "combine",
+                "interface",
+                "clearance",
+                "collision",
+                "clamp",
+                "toolpath",
+            ],
+        )
+        || values_contain_review_tokens(
+            split_combine_holds,
+            &[
+                "split",
+                "combine",
+                "interface",
+                "recomposition",
+                "assembly",
+                "fixture",
+                "datum",
+            ],
+        );
+    let machine_boundary_blocked = fixture_blocker_count > 0
+        || datum_blocker_count > 0
+        || clearance_blocker_count > 0
+        || split_combine_blocker_count > 0;
+
+    vec![
+        workholding_priority_disposition(
+            "machine-failure-boundary-first",
+            if machine_boundary_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("fixtureBlockerCount:{fixture_blocker_count}"),
+                format!("datumBlockerCount:{datum_blocker_count}"),
+                format!("clearanceBlockerCount:{clearance_blocker_count}"),
+                format!("splitCombineBlockerCount:{split_combine_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/workholding/result",
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/release/result",
+            ],
+            if machine_boundary_blocked {
+                "machineReady remains blocked by fixture, datum, clearance, or split/combine workholding failure boundaries"
+            } else {
+                "workholding result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        workholding_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/workholding/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until fixture, datum, clearance, recomposition, or operator signoff evidence is retained"
+            } else {
+                "workholding result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        workholding_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceReview:{split_or_interface_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/workholding/result",
+            ],
+            if split_or_interface_review {
+                "machineReady remains blocked until split/combine, interface, recomposition, fixture, or datum-transfer evidence is dispositioned"
+            } else {
+                "workholding result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        workholding_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/workholding/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until fixture, datum-transfer, clearance, recomposition, or operator-signoff artifacts retain URI, checksum, and evidence"
+            } else {
+                "workholding result artifacts include release evidence for downstream review"
+            },
+        ),
+        workholding_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked workholding priority lanes before advisory promotion"
+            } else {
+                "workholding result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn workholding_result_review_response(
     request: WorkholdingResultReviewRequest,
 ) -> Result<Value, String> {
@@ -81492,6 +81881,27 @@ fn workholding_result_review_response(
     if human_intervention_required {
         learning_observations.push("workholding:human-intervention-required".to_string());
     }
+    let priority_dispositions = workholding_priority_dispositions(
+        request.success,
+        release_blocked,
+        fixture_blocker_count,
+        datum_blocker_count,
+        clearance_blocker_count,
+        split_combine_blocker_count,
+        split_combine_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &fixture_checks,
+        &datum_transfers,
+        &clearance_checks,
+        &split_combine_holds,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(fixture_checks.iter().filter_map(|check| {
         check
             .get("workholdingFamily")
@@ -81552,6 +81962,7 @@ fn workholding_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "workholdingResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -81629,6 +82040,7 @@ fn workholding_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -81639,6 +82051,7 @@ fn workholding_result_review_response(
             "workholding-clearance-checks",
             "workholding-split-combine-holds",
             "workholding-artifacts",
+            "workholding-priority-dispositions",
             "workholding-learning-observations",
             "mdp-request.artifacts.workholdingResult"
         ],
@@ -81712,6 +82125,10 @@ fn stored_workholding_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "workholding-result".to_string(),
@@ -81753,6 +82170,12 @@ fn stored_workholding_result_job(response: &Value) -> StoredFabricationJob {
             "workholding-learning-observations".to_string(),
             "workholding-learning-observations",
             learning_observations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "workholding-priority-dispositions".to_string(),
+            "workholding-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
     ]
@@ -126825,12 +127248,56 @@ mod tests {
             "decomposition:redesign-required",
             "decomposition:human-intervention-required",
             "decomposition:release-blocked",
+            "decomposition-priority:split-combine-boundary-first:blocked",
+            "decomposition-priority:redesign-or-reroute-required:blocked",
+            "decomposition-priority:human-intervention-required:blocked",
+            "decomposition-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
                     .iter()
                     .any(|observation| observation.as_str() == Some(expected)),
                 "missing decomposition learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("decomposition priority dispositions should be present");
+        for expected in [
+            (
+                "split-combine-boundary-first",
+                "blocked",
+                "decomposition-priority:split-combine-boundary-first:blocked",
+            ),
+            (
+                "redesign-or-reroute-required",
+                "blocked",
+                "decomposition-priority:redesign-or-reroute-required:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "decomposition-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "decomposition-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing decomposition priority disposition {}",
+                expected.0
             );
         }
 
@@ -126880,6 +127347,13 @@ mod tests {
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-and-recompose"))));
         assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-boundary-first")
+            })));
+        assert!(outcome_draft
             .get("featureHints")
             .and_then(Value::as_array)
             .is_some_and(|hints| hints.iter().any(|hint| {
@@ -126909,6 +127383,7 @@ mod tests {
             "decomposition-interfaces",
             "decomposition-split-combine-decisions",
             "decomposition-artifacts",
+            "decomposition-priority-dispositions",
             "decomposition-learning-observations",
         ] {
             assert!(
@@ -135019,6 +135494,64 @@ mod tests {
                 .iter()
                 .any(|observation| observation.as_str()
                     == Some("workholding-family:mill-router-fixture-clamp-and-vacuum"))));
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("workholding learning observations should be present");
+        for observation in [
+            "workholding-priority:machine-failure-boundary-first:blocked",
+            "workholding-priority:human-intervention-required:blocked",
+            "workholding-priority:split-combine-or-interface-review:blocked",
+            "workholding-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing workholding priority observation {observation}"
+            );
+        }
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("workholding priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "workholding-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "workholding-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "workholding-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "workholding-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing workholding priority disposition {}",
+                expected.0
+            );
+        }
         assert!(response
             .get("artifactSurfaces")
             .and_then(Value::as_array)
@@ -135077,6 +135610,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let stored = stored_workholding_result_job(&response);
         assert_eq!(stored.record.kind, "workholding-result");
@@ -135091,6 +135631,9 @@ mod tests {
         assert!(stored
             .artifacts
             .contains_key("workholding-split-combine-holds"));
+        assert!(stored
+            .artifacts
+            .contains_key("workholding-priority-dispositions"));
         assert!(stored
             .artifacts
             .contains_key("workholding-learning-observations"));
