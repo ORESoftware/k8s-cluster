@@ -62791,6 +62791,8 @@ fn root_response() -> Value {
         "GET /fabrication/material-jetting/catalog",
         "GET /robotic-additive/catalog",
         "GET /fabrication/robotic-additive/catalog",
+        "GET /sheet-lamination/catalog",
+        "GET /fabrication/sheet-lamination/catalog",
         "GET /directed-energy-deposition/catalog",
         "GET /fabrication/directed-energy-deposition/catalog",
         "GET /composite-fiber/catalog",
@@ -62813,6 +62815,8 @@ fn root_response() -> Value {
         "GET /fabrication/horizontal-mill/catalog",
         "GET /sheet-cutting/catalog",
         "GET /fabrication/sheet-cutting/catalog",
+        "GET /hot-wire-foam/catalog",
+        "GET /fabrication/hot-wire-foam/catalog",
         "GET /edm/catalog",
         "GET /fabrication/edm/catalog",
         "GET /turning/catalog",
@@ -110631,6 +110635,124 @@ async fn robotic_additive_catalog_http() -> impl IntoResponse {
     Json(robotic_additive_catalog_response())
 }
 
+fn sheet_lamination_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let sheet_lamination_printers = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_sheet_lamination_printer_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let printer_kinds = unique_sorted(sheet_lamination_printers.iter().filter_map(|printer| {
+        printer
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let operations = unique_sorted(sheet_lamination_printers.iter().flat_map(|printer| {
+        printer
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(sheet_lamination_printers.iter().flat_map(|printer| {
+        printer
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.sheet-lamination-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /sheet-lamination/catalog", "GET /fabrication/sheet-lamination/catalog"],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog",
+            "GET /workholding/catalog",
+            "GET /fabrication/workholding/catalog",
+            "GET /quality/catalog",
+            "GET /fabrication/quality/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "sheetLaminationPrinterCount": sheet_lamination_printers.len(),
+        "sheetLaminationPrinterKinds": printer_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "sheet or foil stock lot, thickness or gauge, grain or fiber direction, storage condition, surface prep, cleaning, adhesive lot, ultrasonic energy profile, and stack-order evidence",
+            "layer registration, fiducials, datum pins, vacuum or hold-down, blade or laser trim path, kerf or offset, interlayer alignment, and registration preview evidence",
+            "adhesive cure or press cycle, ultrasonic weld amplitude/force/speed, consolidation coupon, peel or lap-shear result, delamination inspection, and dimensional release evidence",
+            "generated sheet-lamination job package, LOAD_SHEET_STACK, REGISTER_LAYER_STACK, CUT_OR_TRIM_LAYERS, BOND_OR_CONSOLIDATE_LAYERS, INSPECT_LAMINATION, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "sheet-lamination-stock-boundary",
+            "sheet-lamination-registration-boundary",
+            "sheet-lamination-bond-boundary",
+            "sheet-lamination-stock-evidence-missing",
+            "sheet-lamination-bond-evidence-missing",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/quality/plan"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "sheet-lamination catalog entries are LOM/UAM/sheet-stack planning profiles, not certified live printer approval",
+            "machine-ready release remains blocked until sheet/foil lot, stack order, registration, hold-down, trim path, adhesive or ultrasonic bond, coupon, delamination, dimensional, telemetry, and signoff evidence are retained",
+            "sheet-lamination outcomes should feed material, tooling, workholding, toolpath, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to resequence layers, split stacks, reroute, change bond strategy, or require human intervention"
+        ],
+        "sheetLaminationPrinters": sheet_lamination_printers
+    })
+}
+
+async fn sheet_lamination_catalog_http() -> impl IntoResponse {
+    Json(sheet_lamination_catalog_response())
+}
+
 fn directed_energy_deposition_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let ded_cells = printer_payload
@@ -111840,6 +111962,128 @@ fn sheet_cutting_catalog_response() -> Value {
 
 async fn sheet_cutting_catalog_http() -> impl IntoResponse {
     Json(sheet_cutting_catalog_response())
+}
+
+fn hot_wire_foam_catalog_response() -> Value {
+    let machine_payload = machine_catalog_response();
+    let hot_wire_foam_cutters = machine_payload
+        .get("machines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_hot_wire_foam_cutter_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let cutter_kinds = unique_sorted(hot_wire_foam_cutters.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(hot_wire_foam_cutters.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(hot_wire_foam_cutters.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(hot_wire_foam_cutters.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.hot-wire-foam-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /hot-wire-foam/catalog", "GET /fabrication/hot-wire-foam/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /sheet-cutting/catalog",
+            "GET /fabrication/sheet-cutting/catalog",
+            "GET /process-recipes/catalog",
+            "GET /fabrication/process-recipes/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /cleanliness/preflight/catalog",
+            "GET /fabrication/cleanliness/preflight/catalog",
+            "GET /support-strategies/catalog",
+            "GET /fabrication/support-strategies/catalog",
+            "GET /quality/preflight/catalog",
+            "GET /fabrication/quality/preflight/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "hotWireFoamCutterCount": hot_wire_foam_cutters.len(),
+        "hotWireFoamCutterKinds": cutter_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "foam blank density, blank thickness, template or CNC profile, fixture/support, bow or wire tension, fume extraction, PPE, and fire-watch evidence",
+            "wire heat or current, feed rate, kerf coupon, wire-lag or taper compensation, synchronized-axis state, surface-melt review, and dimensional inspection evidence",
+            "FOAM_BLANK_SETUP, WIRE_HEAT_TENSION_CHECK, KERF_COUPON, HOT_WIRE_CUT, fume/fire, taper, airfoil thickness, release inspection, and retained hot-wire foam job package evidence"
+        ],
+        "boundaryFamilies": [
+            "hot-wire-foam-setup-boundary",
+            "hot-wire-foam-process-boundary",
+            "sheet-cutting-material-boundary",
+            "quality-dimensional-inspection-boundary",
+            "human-intervention-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/process-recipes/result",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/release/preview"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/instructions/validation/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/release/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "hot-wire foam catalog entries are foam-core, airfoil, lost-foam, pattern, and packaging-insert planning profiles, not certified live cutter approval",
+            "machine-ready release remains blocked until foam density/thickness, profile/template, fixture/support, wire tension, heat/current, feed, kerf coupon, wire-lag/taper, fume extraction, PPE, fire watch, surface, dimensional, and signoff evidence are retained",
+            "hot-wire foam outcomes should feed material, profile, process-recipe, support-strategy, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, compensate taper, reroute, or require human intervention"
+        ],
+        "hotWireFoamCutters": hot_wire_foam_cutters
+    })
+}
+
+async fn hot_wire_foam_catalog_http() -> impl IntoResponse {
+    Json(hot_wire_foam_catalog_response())
 }
 
 fn edm_catalog_response() -> Value {
@@ -122014,6 +122258,7 @@ async fn request_schema() -> impl IntoResponse {
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
             "roboticAdditiveCatalog": ["GET /robotic-additive/catalog", "GET /fabrication/robotic-additive/catalog"],
+            "sheetLaminationCatalog": ["GET /sheet-lamination/catalog", "GET /fabrication/sheet-lamination/catalog"],
             "directedEnergyDepositionCatalog": ["GET /directed-energy-deposition/catalog", "GET /fabrication/directed-energy-deposition/catalog"],
             "compositeFiberCatalog": ["GET /composite-fiber/catalog", "GET /fabrication/composite-fiber/catalog"],
             "compositeLayupCatalog": ["GET /composite-layup/catalog", "GET /fabrication/composite-layup/catalog"],
@@ -122022,6 +122267,7 @@ async fn request_schema() -> impl IntoResponse {
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
             "horizontalMillCatalog": ["GET /horizontal-mill/catalog", "GET /fabrication/horizontal-mill/catalog"],
             "sheetCuttingCatalog": ["GET /sheet-cutting/catalog", "GET /fabrication/sheet-cutting/catalog"],
+            "hotWireFoamCatalog": ["GET /hot-wire-foam/catalog", "GET /fabrication/hot-wire-foam/catalog"],
             "edmCatalog": ["GET /edm/catalog", "GET /fabrication/edm/catalog"],
             "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "latheCatalog": ["GET /lathe/catalog", "GET /fabrication/lathe/catalog"],
@@ -125230,6 +125476,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             get(robotic_additive_catalog_http),
         )
         .route(
+            "/sheet-lamination/catalog",
+            get(sheet_lamination_catalog_http),
+        )
+        .route(
+            "/fabrication/sheet-lamination/catalog",
+            get(sheet_lamination_catalog_http),
+        )
+        .route(
             "/directed-energy-deposition/catalog",
             get(directed_energy_deposition_catalog_http),
         )
@@ -125301,6 +125555,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/sheet-cutting/catalog",
             get(sheet_cutting_catalog_http),
+        )
+        .route("/hot-wire-foam/catalog", get(hot_wire_foam_catalog_http))
+        .route(
+            "/fabrication/hot-wire-foam/catalog",
+            get(hot_wire_foam_catalog_http),
         )
         .route("/edm/catalog", get(edm_catalog_http))
         .route("/fabrication/edm/catalog", get(edm_catalog_http))
@@ -152807,6 +153066,91 @@ mod tests {
     }
 
     #[test]
+    fn sheet_lamination_catalog_endpoint_exposes_stack_registration_bond_and_release_contract() {
+        let payload = sheet_lamination_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.sheet-lamination-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/sheet-lamination/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/workholding/catalog"))));
+        assert_eq!(
+            payload
+                .get("sheetLaminationPrinterCount")
+                .and_then(Value::as_u64),
+            Some(1)
+        );
+
+        let printer_kinds = payload
+            .get("sheetLaminationPrinterKinds")
+            .and_then(Value::as_array)
+            .expect("sheet-lamination printer kinds should be present");
+        assert!(printer_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("sheet-lamination-printer")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("sheet-lamination setup evidence should be present");
+        for expected in [
+            "sheet or foil stock lot",
+            "layer registration, fiducials",
+            "adhesive cure or press cycle",
+            "LOAD_SHEET_STACK, REGISTER_LAYER_STACK, CUT_OR_TRIM_LAYERS",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing sheet-lamination setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("sheet-lamination boundary families should be present");
+        for boundary in [
+            "sheet-lamination-stock-boundary",
+            "sheet-lamination-registration-boundary",
+            "sheet-lamination-bond-boundary",
+            "sheet-lamination-bond-evidence-missing",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing sheet-lamination boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/sheet-lamination/catalog")
+            })));
+    }
+
+    #[test]
     fn directed_energy_deposition_catalog_endpoint_exposes_feedstock_energy_and_thermal_release_contract(
     ) {
         let payload = directed_energy_deposition_catalog_response();
@@ -153500,6 +153844,89 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
+    fn hot_wire_foam_catalog_endpoint_exposes_setup_process_and_release_contract() {
+        let payload = hot_wire_foam_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.hot-wire-foam-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/hot-wire-foam/catalog")
+            })));
+        assert!(payload
+            .get("hotWireFoamCutterCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let kinds = payload
+            .get("hotWireFoamCutterKinds")
+            .and_then(Value::as_array)
+            .expect("hot-wire foam cutter kinds should be present");
+        assert!(kinds
+            .iter()
+            .any(|item| item.as_str() == Some("hot-wire-foam-cutter")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("hot-wire foam setup evidence should be present");
+        for expected in [
+            "foam blank density",
+            "wire heat or current",
+            "KERF_COUPON",
+            "HOT_WIRE_CUT",
+            "fire-watch evidence",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing hot-wire foam setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("hot-wire foam boundary families should be present");
+        for boundary in [
+            "hot-wire-foam-setup-boundary",
+            "hot-wire-foam-process-boundary",
+            "quality-dimensional-inspection-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing hot-wire foam boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machine-ready release remains blocked")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/hot-wire-foam/catalog")
+            })));
     }
 
     #[test]
