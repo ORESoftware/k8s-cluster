@@ -2270,11 +2270,16 @@ Machine-ready release remains blocked while worker failure, blocking findings,
 machine-failure or human-intervention boundaries, split/combine decisions, or
 artifact evidence gaps remain. The response stores a boundary-analysis result job
 with separate artifacts for findings, boundaries, split/combine decisions,
-retained analyzer artifacts, and learning observations. It also drafts
+retained analyzer artifacts, priority dispositions, and learning observations. It
+also drafts
 `dd.fabrication.boundary-analysis-learning-outcome-draft.v1` feedback for
 MDP/POMDP/neural learners so future plans can split work earlier, combine parts
 deliberately, choose safer machine routes, or insert operator checkpoints before
-the failure boundary.
+the failure boundary. `priorityDispositions` covers machine-failure boundaries,
+split/combine disposition, finding review closure, human-intervention gates,
+retained artifact evidence, and learning-feedback lanes, with
+`boundary-analysis-priority:<priority>:<disposition>` observations mirrored into
+the learning draft.
 
 ## `GET /fabrication/remediation/catalog`
 

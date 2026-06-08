@@ -17745,6 +17745,177 @@ fn boundary_analysis_result_artifact_missing_evidence(artifact: &Value) -> bool 
             .is_none_or(Vec::is_empty)
 }
 
+fn boundary_analysis_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "boundary-analysis-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn boundary_analysis_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    blocking_finding_count: usize,
+    boundary_blocker_count: usize,
+    decision_blocker_count: usize,
+    machine_failure_boundary_count: usize,
+    human_intervention_count: usize,
+    split_required_count: usize,
+    combine_required_count: usize,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    let split_combine_pressure = split_required_count + combine_required_count;
+
+    vec![
+        boundary_analysis_priority_disposition(
+            "machine-failure-boundary-first",
+            if machine_failure_boundary_count > 0 || boundary_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("machineFailureBoundaryCount:{machine_failure_boundary_count}"),
+                format!("boundaryBlockerCount:{boundary_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/simulation/result",
+            ],
+            if machine_failure_boundary_count > 0 || boundary_blocker_count > 0 {
+                "machineReady remains blocked until machine-failure boundaries are remediated or converted into explicit release gates"
+            } else {
+                "boundary analysis did not report an open machine-failure priority blocker"
+            },
+        ),
+        boundary_analysis_priority_disposition(
+            "split-combine-boundary-disposition",
+            if split_combine_pressure > 0 || decision_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("splitRequiredCount:{split_required_count}"),
+                format!("combineRequiredCount:{combine_required_count}"),
+                format!("decisionBlockerCount:{decision_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/interfaces/result",
+            ],
+            if split_combine_pressure > 0 || decision_blocker_count > 0 {
+                "machineReady remains blocked until split/combine boundaries have retained decomposition, interface, or assembly disposition"
+            } else {
+                "boundary analysis did not report open split/combine pressure"
+            },
+        ),
+        boundary_analysis_priority_disposition(
+            "finding-review-closure",
+            if blocking_finding_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("blockingFindingCount:{blocking_finding_count}")],
+            vec![
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/instructions/review/result",
+                "POST /fabrication/remediation/result",
+            ],
+            if blocking_finding_count > 0 {
+                "machineReady remains blocked until blocking analyzer findings have validation or remediation evidence"
+            } else {
+                "boundary analysis findings did not retain open release blockers"
+            },
+        ),
+        boundary_analysis_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("humanInterventionCount:{human_intervention_count}")],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_count > 0 {
+                "machineReady remains blocked until human-intervention boundaries become signed operator or automation checkpoints"
+            } else {
+                "boundary analysis did not report an open human-intervention priority blocker"
+            },
+        ),
+        boundary_analysis_priority_disposition(
+            "result-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until boundary-analysis artifacts retain URI, checksum, and boundary evidence"
+            } else {
+                "boundary-analysis artifacts include retained release evidence"
+            },
+        ),
+        boundary_analysis_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked boundary-analysis priorities before advisory promotion"
+            } else {
+                "boundary analysis can be submitted as positive machine-boundary learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn boundary_analysis_result_review_response(
     request: BoundaryAnalysisResultReviewRequest,
 ) -> Result<Value, String> {
@@ -17915,6 +18086,24 @@ fn boundary_analysis_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("boundary-analysis:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = boundary_analysis_priority_dispositions(
+        request.success,
+        release_blocked,
+        blocking_finding_count,
+        boundary_blocker_count,
+        decision_blocker_count,
+        machine_failure_boundary_count,
+        human_intervention_count,
+        split_required_count,
+        combine_required_count,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(failure_boundaries.iter().filter_map(|boundary| {
         boundary
             .get("boundaryKind")
@@ -17978,6 +18167,7 @@ fn boundary_analysis_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "boundaryAnalysisResult": {
             "planRequestId": plan_request_id,
             "analysisJobId": analysis_job_id,
@@ -18046,6 +18236,7 @@ fn boundary_analysis_result_review_response(
                     format!("decision-blockers:{decision_blocker_count}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -18055,6 +18246,7 @@ fn boundary_analysis_result_review_response(
             "boundary-analysis-failure-boundaries",
             "boundary-analysis-split-combine-decisions",
             "boundary-analysis-artifacts",
+            "boundary-analysis-priority-dispositions",
             "boundary-analysis-learning-observations",
             "mdp-request.artifacts.boundaryAnalysisResult"
         ],
@@ -18115,6 +18307,10 @@ fn stored_boundary_analysis_result_job(response: &Value) -> StoredFabricationJob
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -18149,6 +18345,12 @@ fn stored_boundary_analysis_result_job(response: &Value) -> StoredFabricationJob
             "boundary-analysis-artifacts".to_string(),
             "boundary-analysis-artifacts",
             boundary_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "boundary-analysis-priority-dispositions".to_string(),
+            "boundary-analysis-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -127122,6 +127324,77 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|entry| entry
                 .as_str()
                 .is_some_and(|entry| entry == "boundary-kind:machine-failure"))));
+        let observations = payload
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("boundary analysis learning observations should be retained");
+        for expected in [
+            "boundary-analysis-priority:machine-failure-boundary-first:blocked",
+            "boundary-analysis-priority:split-combine-boundary-disposition:blocked",
+            "boundary-analysis-priority:finding-review-closure:blocked",
+            "boundary-analysis-priority:human-intervention-required:blocked",
+            "boundary-analysis-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|observation| observation.as_str() == Some(expected)),
+                "missing boundary analysis learning observation {expected}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("boundary analysis priority dispositions should be retained");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "boundary-analysis-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "split-combine-boundary-disposition",
+                "blocked",
+                "boundary-analysis-priority:split-combine-boundary-disposition:blocked",
+            ),
+            (
+                "finding-review-closure",
+                "blocked",
+                "boundary-analysis-priority:finding-review-closure:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "boundary-analysis-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "boundary-analysis-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing boundary analysis priority disposition {}",
+                expected.0
+            );
+        }
+        assert!(payload
+            .pointer("/learning/outcomeDraft/priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
 
         let job = stored_boundary_analysis_result_job(&payload);
         assert_eq!(job.record.kind, "boundary-analysis-result");
@@ -127129,6 +127402,9 @@ mod tests {
         assert!(job
             .artifacts
             .contains_key("boundary-analysis-split-combine-decisions"));
+        assert!(job
+            .artifacts
+            .contains_key("boundary-analysis-priority-dispositions"));
     }
 
     #[test]
@@ -162706,14 +162982,17 @@ mod tests {
             .packages
             .iter()
             .all(|package| {
+                let is_imported_instruction =
+                    package.package_kind == "imported-instruction-release";
                 !package.required_artifacts.is_empty()
                     && (!package.instruction_program_ids.is_empty()
                         || package.package_kind == "assembly-recomposition-release")
                     && (!package.design_export_ids.is_empty()
-                        || package.package_kind == "assembly-recomposition-release")
-                    && !package.fixture_setup_ids.is_empty()
-                    && !package.monitoring_point_ids.is_empty()
-                    && !package.quality_inspection_ids.is_empty()
+                        || package.package_kind == "assembly-recomposition-release"
+                        || is_imported_instruction)
+                    && (!package.fixture_setup_ids.is_empty() || is_imported_instruction)
+                    && (!package.monitoring_point_ids.is_empty() || is_imported_instruction)
+                    && (!package.quality_inspection_ids.is_empty() || is_imported_instruction)
             }));
         assert!(response
             .release_package_plan
