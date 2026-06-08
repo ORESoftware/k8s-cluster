@@ -4,6 +4,8 @@ Rust backend for a mobile sound-recorder "dashcam" product. It serves the public
 device registration, rolling audio segment upload sessions, S3 presigned upload URLs, and
 short-lived evidence export download links. Users can also link user-owned cloud storage
 destinations so completed segments are mirrored out of the centralized S3 bucket.
+It also accepts mobile alert events and can email a timestamped listening link that starts before
+the event.
 
 ## Shape
 
@@ -30,6 +32,7 @@ destinations so completed segments are mirrored out of the centralized S3 bucket
 
 - `GET /` — public product page.
 - `GET /privacy` — privacy posture page.
+- `GET /listen/:alert_id` — short-lived audio alert listening page.
 - `GET /download/ios` — redirects to `SOUND_RECORDER_IOS_APP_STORE_URL`.
 - `GET /download/android` — redirects to `SOUND_RECORDER_ANDROID_PLAY_STORE_URL`.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
@@ -45,6 +48,9 @@ destinations so completed segments are mirrored out of the centralized S3 bucket
   window.
 - `POST /api/mobile/v1/evidence-exports` — returns short-lived download links for an account/time
   range and writes an audit row.
+- `POST /api/mobile/v1/alerts` — creates a short evidence export around a mobile trigger and
+  optionally posts an email payload to `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL`. Alerts are
+  accepted only when uploaded retained segments overlap the requested listening window.
 - `GET /api/mobile/v1/cloud-connections` — lists linked user cloud destinations.
 - `POST /api/mobile/v1/cloud-connections/oauth/start` — starts a Google Drive, OneDrive, or
   client-managed iCloud link flow.
@@ -72,6 +78,9 @@ destinations so completed segments are mirrored out of the centralized S3 bucket
 | `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Required for presigned upload/download URLs. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
 | `SOUND_RECORDER_CDN_BASE_URL` | unset | Optional CloudFront/base URL returned as `cdnUrl`. |
+| `SOUND_RECORDER_PUBLIC_BASE_URL` | unset | HTTPS base URL used to build `/listen/:alert_id` links in alert emails. HTTP is allowed only for localhost development. |
+| `SOUND_RECORDER_ALERT_EMAIL_TO` | `alexander.d.mills@gmail.com` | Server-controlled alert recipient. Client-supplied recipients are ignored. |
+| `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL` | unset | Optional webhook that receives `{ to, subject, text, html }` for alert emails. |
 | `SOUND_RECORDER_DEVICE_TOKEN_PEPPER` | local random fallback | Required for durable device-token verification. |
 | `SOUND_RECORDER_REGISTRATION_BEARER` | unset | Optional bearer required by device registration. |
 | `SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION` | `false` | Explicitly opens registration when no bearer is configured. |
@@ -109,6 +118,10 @@ On Android, the recorder will likely need a microphone foreground service. On iO
 capture must fit Apple's background-audio rules and review expectations. For iCloud mirroring, the
 iOS client must use Apple-approved iCloud/CloudKit APIs and report copy completion back to the
 backend because the server cannot directly write to a user's arbitrary iCloud Drive account.
+
+Alert listen pages include all matching segment download URLs and advance through them in order.
+The mobile app should still be treated as the primary smooth playback surface because it has the
+sample-counted segment timeline and can trim intentional overlap with a gapless playlist.
 
 ## Local Smoke
 

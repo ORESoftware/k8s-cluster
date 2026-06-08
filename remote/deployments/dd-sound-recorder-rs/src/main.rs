@@ -134,6 +134,9 @@ struct Config {
     microsoft_oauth: OAuthProviderConfig,
     google_drive_upload_url: String,
     microsoft_graph_base_url: String,
+    public_base_url: Option<String>,
+    alert_email_to: String,
+    alert_email_webhook_url: Option<String>,
 }
 
 #[derive(Clone)]
@@ -399,6 +402,31 @@ struct EvidenceExportResponse {
     expires_at: DateTime<Utc>,
     segment_count: usize,
     segments: Vec<EvidenceSegmentLink>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AlertRequest {
+    trigger: String,
+    occurred_at: DateTime<Utc>,
+    listen_offset_seconds: Option<i64>,
+    email_to: Option<String>,
+    segment_id: Option<String>,
+    sequence_number: Option<i32>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AlertResponse {
+    ok: bool,
+    alert_id: String,
+    emailed: bool,
+    email_to: String,
+    listen_url: Option<String>,
+    listen_from: DateTime<Utc>,
+    listen_to: DateTime<Utc>,
+    segment_count: usize,
 }
 
 #[derive(Serialize)]
@@ -852,6 +880,10 @@ fn config_from_env() -> Config {
             .unwrap_or_else(|| "https://www.googleapis.com/upload/drive/v3/files".to_string()),
         microsoft_graph_base_url: first_env(&["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"])
             .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string()),
+        public_base_url: first_env(&["SOUND_RECORDER_PUBLIC_BASE_URL"]),
+        alert_email_to: first_env(&["SOUND_RECORDER_ALERT_EMAIL_TO"])
+            .unwrap_or_else(|| "alexander.d.mills@gmail.com".to_string()),
+        alert_email_webhook_url: first_env(&["SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL"]),
     }
 }
 
@@ -1253,6 +1285,17 @@ fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
     }
 }
 
+fn validate_alert_trigger(value: &str) -> Result<String, ServiceError> {
+    let trigger = value.trim().to_ascii_lowercase();
+    if matches!(trigger.as_str(), "manual" | "commotion" | "magic_phrase") {
+        Ok(trigger)
+    } else {
+        Err(ServiceError::BadRequest(
+            "trigger must be manual, commotion, or magic_phrase".to_string(),
+        ))
+    }
+}
+
 fn validate_redirect_uri(
     provider: CloudProvider,
     value: Option<String>,
@@ -1365,6 +1408,137 @@ fn graph_path_escape(path: &str) -> String {
 fn append_query(base_url: &str, query: &str) -> String {
     let separator = if base_url.contains('?') { '&' } else { '?' };
     format!("{base_url}{separator}{query}")
+}
+
+fn listen_url_for_alert(config: &Config, alert_id: &str) -> Option<String> {
+    config.public_base_url.as_ref().and_then(|base| {
+        let base = base.trim().trim_end_matches('/');
+        if !is_safe_public_url(base) {
+            return None;
+        }
+        Some(format!("{}/listen/{}", base, query_escape(alert_id)))
+    })
+}
+
+fn render_listen_alert(alert_id: &str, manifest: &Value) -> String {
+    let trigger = manifest
+        .get("trigger")
+        .and_then(Value::as_str)
+        .unwrap_or("alert");
+    let download_urls = listen_download_urls(manifest);
+    let start_offset = manifest
+        .get("startOffsetSeconds")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0);
+    let occurred_at = manifest
+        .get("occurredAt")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if download_urls.is_empty() {
+        return format!(
+            r#"<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Audio alert</title></head>
+<body style="font:16px system-ui,sans-serif;margin:32px;max-width:720px">
+<h1>Audio alert</h1>
+<p>No uploaded audio segment is available yet for alert <code>{}</code>.</p>
+<p>Trigger: <strong>{}</strong><br>Occurred: <strong>{}</strong></p>
+</body></html>"#,
+            html_escape(alert_id),
+            html_escape(trigger),
+            html_escape(occurred_at)
+        );
+    }
+    let download_urls_json = serde_json::to_string(&download_urls)
+        .unwrap_or_else(|_| "[]".to_string())
+        .replace('<', "\\u003c");
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Audio alert</title></head>
+<body style="font:16px system-ui,sans-serif;margin:32px;max-width:720px">
+<h1>Audio alert</h1>
+<p>Trigger: <strong>{}</strong><br>Occurred: <strong>{}</strong></p>
+<p>Segment <span id="segment-index">1</span> of {}</p>
+<audio id="audio" controls preload="metadata" style="width:100%"></audio>
+<script>
+const urls = {};
+const startOffset = {};
+const audio = document.getElementById('audio');
+const segmentIndex = document.getElementById('segment-index');
+let currentIndex = 0;
+function loadSegment(offsetSeconds) {{
+  if (!urls[currentIndex]) return;
+  segmentIndex.textContent = String(currentIndex + 1);
+  audio.src = urls[currentIndex];
+  audio.addEventListener('loadedmetadata', () => {{
+    audio.currentTime = Math.max(0, offsetSeconds);
+    audio.play().catch(() => {{}});
+  }}, {{ once: true }});
+}}
+audio.addEventListener('ended', () => {{
+  if (currentIndex + 1 < urls.length) {{
+    currentIndex += 1;
+    loadSegment(0);
+  }}
+}});
+loadSegment(startOffset);
+</script>
+</body></html>"#,
+        html_escape(trigger),
+        html_escape(occurred_at),
+        download_urls.len(),
+        download_urls_json,
+        start_offset
+    )
+}
+
+fn listen_download_urls(manifest: &Value) -> Vec<String> {
+    let mut urls = manifest
+        .get("downloadUrls")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|url| is_safe_public_url(url))
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if urls.is_empty() {
+        if let Some(url) = manifest
+            .get("downloadUrl")
+            .and_then(Value::as_str)
+            .filter(|url| is_safe_public_url(url))
+        {
+            urls.push(url.to_string());
+        }
+    }
+    urls
+}
+
+fn is_safe_public_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value.trim()) else {
+        return false;
+    };
+    match url.scheme() {
+        "https" => url.host_str().is_some(),
+        "http" => matches!(
+            url.host_str(),
+            Some("localhost") | Some("127.0.0.1") | Some("::1")
+        ),
+        _ => false,
+    }
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn google_drive_file_name(destination_key: &str) -> String {
@@ -2534,6 +2708,265 @@ async fn create_evidence_export(
         segment_count: links.len(),
         segments: links,
     }))
+}
+
+async fn create_alert(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<AlertRequest>,
+) -> Result<Json<AlertResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let trigger = validate_alert_trigger(&req.trigger)?;
+    let now = Utc::now();
+    let max_future_capture = now
+        .checked_add_signed(ChronoDuration::seconds(MAX_CAPTURE_CLOCK_SKEW_SECONDS))
+        .unwrap_or(now);
+    if req.occurred_at > max_future_capture {
+        return Err(ServiceError::BadRequest(
+            "occurredAt is too far in the future".to_string(),
+        ));
+    }
+    let retention_cutoff = now
+        .checked_sub_signed(ChronoDuration::hours(auth.retention_hours as i64))
+        .unwrap_or(now);
+    if req.occurred_at < retention_cutoff {
+        return Err(ServiceError::BadRequest(
+            "occurredAt is outside the rolling retention window".to_string(),
+        ));
+    }
+    let offset_seconds = req.listen_offset_seconds.unwrap_or(20).clamp(0, 300);
+    let listen_from = req
+        .occurred_at
+        .checked_sub_signed(ChronoDuration::seconds(offset_seconds))
+        .unwrap_or(req.occurred_at);
+    let listen_to = req
+        .occurred_at
+        .checked_add_signed(ChronoDuration::seconds(90))
+        .unwrap_or(req.occurred_at);
+    let meta_data = validate_meta(req.meta_data)?;
+    let requested_email_to = clean_string(req.email_to, 320);
+    let client_segment_id = clean_string(req.segment_id, 160);
+    let email_to = state.config.alert_email_to.clone();
+    let rows = client
+        .query(
+            "select id::text, account_id::text, device_id::text, session_id::text,
+                    sequence_number, status, storage_provider, storage_bucket, storage_key,
+                    content_type, codec, captured_started_at, captured_ended_at,
+                    duration_millis, byte_count, sha256_hex, upload_url_expires_at,
+                    uploaded_at, expires_at
+             from sound_recorder_segments
+             where account_id = $1::uuid
+               and device_id = $2::uuid
+               and status = 'uploaded'
+               and captured_started_at <= $4
+               and coalesce(captured_ended_at, captured_started_at + (duration_millis * interval '1 millisecond')) >= $3
+               and expires_at > now()
+             order by captured_started_at asc
+             limit 8",
+            &[&auth.account_id, &auth.device_id, &listen_from, &listen_to],
+        )
+        .await
+        .map_err(db_error)?;
+    if rows.is_empty() {
+        return Err(ServiceError::Conflict(
+            "no uploaded audio segment is available for that alert window".to_string(),
+        ));
+    }
+    let download_expires_at = Utc::now()
+        .checked_add_signed(chrono_duration_from_std(state.config.download_url_ttl)?)
+        .unwrap_or_else(Utc::now);
+    let mut links = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let segment = segment_from_row(&state.config, row);
+        let download = presign_get(
+            &state,
+            &segment.storage_bucket,
+            &segment.storage_key,
+            download_expires_at,
+        )
+        .await?;
+        SEGMENT_PRESIGNS
+            .with_label_values(&["download", "ok"])
+            .inc();
+        links.push(EvidenceSegmentLink { segment, download });
+    }
+    let alert_id = Uuid::new_v4().to_string();
+    let listen_url = listen_url_for_alert(&state.config, &alert_id);
+    let start_offset_seconds = links
+        .first()
+        .map(|link| {
+            listen_from
+                .signed_duration_since(link.segment.captured_started_at)
+                .num_seconds()
+                .max(0)
+        })
+        .unwrap_or(0);
+    let download_urls = links
+        .iter()
+        .map(|link| link.download.url.clone())
+        .collect::<Vec<_>>();
+    let first_download_url = download_urls.first().cloned();
+    let manifest = json!({
+        "kind": "alert",
+        "trigger": trigger,
+        "occurredAt": req.occurred_at,
+        "listenFrom": listen_from,
+        "listenTo": listen_to,
+        "listenUrl": listen_url.clone(),
+        "downloadUrl": first_download_url.clone(),
+        "downloadUrls": download_urls,
+        "startOffsetSeconds": start_offset_seconds,
+        "segmentIds": links.iter().map(|link| link.segment.id.clone()).collect::<Vec<_>>(),
+        "clientSegmentId": client_segment_id,
+        "sequenceNumber": req.sequence_number,
+        "requestedEmailTo": requested_email_to,
+        "emailTo": email_to,
+        "metaData": meta_data,
+    });
+    client
+        .execute(
+            "insert into sound_recorder_evidence_exports
+              (id, account_id, device_id, created_by_device_id, status, requested_from,
+               requested_to, segment_count, manifest, download_url_expires_at, ready_at, expires_at)
+             values
+              ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'ready', $5,
+               $6, $7, $8, $9, now(), $9)",
+            &[
+                &alert_id,
+                &auth.account_id,
+                &auth.device_id,
+                &auth.device_id,
+                &listen_from,
+                &listen_to,
+                &(links.len() as i32),
+                &manifest,
+                &download_expires_at,
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+    let emailed = send_alert_email(
+        &state,
+        &email_to,
+        &trigger,
+        req.occurred_at,
+        listen_url.as_deref().or(first_download_url.as_deref()),
+        links.len(),
+    )
+    .await;
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.alert.created",
+        json!({
+            "alertId": alert_id,
+            "trigger": trigger,
+            "occurredAt": req.occurred_at,
+            "listenFrom": listen_from,
+            "segmentCount": links.len(),
+            "emailed": emailed,
+        }),
+    )
+    .await;
+    record_request("POST", "/api/mobile/v1/alerts", StatusCode::OK);
+    Ok(Json(AlertResponse {
+        ok: true,
+        alert_id,
+        emailed,
+        email_to,
+        listen_url: listen_url.or(first_download_url),
+        listen_from,
+        listen_to,
+        segment_count: links.len(),
+    }))
+}
+
+async fn listen_alert(
+    State(state): State<AppState>,
+    Path(alert_id): Path<String>,
+) -> Result<Html<String>, ServiceError> {
+    let alert_id = validate_uuid(&alert_id, "alertId")?;
+    let database_url = state
+        .config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| ServiceError::Unavailable("database is not configured".to_string()))?;
+    let (client, connection) = tokio_postgres::connect(database_url, tokio_postgres::NoTls)
+        .await
+        .map_err(db_error)?;
+    tokio::spawn(async move {
+        if let Err(err) = connection.await {
+            warn!(error = %err, "listen alert postgres connection closed");
+        }
+    });
+    let row = client
+        .query_opt(
+            "select manifest, requested_from, requested_to, expires_at
+             from sound_recorder_evidence_exports
+             where id = $1::uuid and status = 'ready' and expires_at > now()",
+            &[&alert_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(row) = row else {
+        return Err(ServiceError::NotFound(
+            "listen link expired or missing".to_string(),
+        ));
+    };
+    let manifest: Value = row.get("manifest");
+    record_request("GET", "/listen/:alert_id", StatusCode::OK);
+    Ok(Html(render_listen_alert(&alert_id, &manifest)))
+}
+
+async fn send_alert_email(
+    state: &AppState,
+    to: &str,
+    trigger: &str,
+    occurred_at: DateTime<Utc>,
+    listen_url: Option<&str>,
+    segment_count: usize,
+) -> bool {
+    let Some(webhook_url) = state.config.alert_email_webhook_url.as_deref() else {
+        info!(
+            to,
+            trigger,
+            %occurred_at,
+            segment_count,
+            "alert email webhook is not configured"
+        );
+        return false;
+    };
+    let subject = format!("Audio dashcam alert: {trigger}");
+    let link_text = listen_url.unwrap_or("No uploaded audio segment is available yet.");
+    let body = format!(
+        "Audio dashcam alert\n\nTrigger: {trigger}\nOccurred: {occurred_at}\nSegments: {segment_count}\nListen: {link_text}\n"
+    );
+    let payload = json!({
+        "to": to,
+        "subject": subject,
+        "text": body,
+        "html": format!(
+            "<p><strong>Trigger:</strong> {}</p><p><strong>Occurred:</strong> {}</p><p><a href=\"{}\">Listen from 20 seconds before</a></p>",
+            html_escape(trigger),
+            occurred_at,
+            html_escape(link_text)
+        ),
+    });
+    match state.http.post(webhook_url).json(&payload).send().await {
+        Ok(response) if response.status().is_success() => true,
+        Ok(response) => {
+            warn!(
+                status = %response.status(),
+                "alert email webhook returned non-success status"
+            );
+            false
+        }
+        Err(err) => {
+            warn!(error = %err, "alert email webhook request failed");
+            false
+        }
+    }
 }
 
 async fn list_cloud_connections(
@@ -4154,6 +4587,7 @@ fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
         .route("/privacy", get(privacy))
+        .route("/listen/:alert_id", get(listen_alert))
         .route("/download/ios", get(download_ios))
         .route("/download/android", get(download_android))
         .route("/api/mobile/v1/devices/register", post(register_device))
@@ -4182,6 +4616,7 @@ fn app(state: AppState) -> Router {
             "/api/mobile/v1/evidence-exports",
             post(create_evidence_export),
         )
+        .route("/api/mobile/v1/alerts", post(create_alert))
         .route(
             "/api/mobile/v1/cloud-connections",
             get(list_cloud_connections),
@@ -4363,6 +4798,9 @@ mod tests {
             },
             google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
+            public_base_url: Some("https://sound.example".to_string()),
+            alert_email_to: "alexander.d.mills@gmail.com".to_string(),
+            alert_email_webhook_url: None,
         }
     }
 
@@ -4575,6 +5013,40 @@ mod tests {
         let oversized = json!({ "x": "a".repeat(MAX_META_BYTES + 1) });
         assert!(validate_meta(Some(oversized)).is_err());
         assert!(validate_meta(Some(json!({ "ok": true }))).is_ok());
+    }
+
+    #[test]
+    fn public_url_allowlist_requires_real_https_or_loopback() {
+        assert!(is_safe_public_url("https://sound.example/listen/abc"));
+        assert!(is_safe_public_url("http://localhost:8126/listen/abc"));
+        assert!(is_safe_public_url("http://127.0.0.1:8126/listen/abc"));
+        assert!(!is_safe_public_url(
+            "http://localhost.evil.example/listen/abc"
+        ));
+        assert!(!is_safe_public_url("http://sound.example/listen/abc"));
+        assert!(!is_safe_public_url("javascript:alert(1)"));
+    }
+
+    #[test]
+    fn listen_alert_renders_chained_segment_urls() {
+        let html = render_listen_alert(
+            "alert-1",
+            &json!({
+                "trigger": "manual",
+                "occurredAt": "2026-01-02T03:04:05Z",
+                "startOffsetSeconds": 20,
+                "downloadUrls": [
+                    "https://downloads.example/segment-1.wav",
+                    "https://downloads.example/segment-2.wav",
+                    "http://localhost.evil.example/segment-3.wav"
+                ]
+            }),
+        );
+        assert!(html.contains("Segment <span id=\"segment-index\">1</span> of 2"));
+        assert!(html.contains("https://downloads.example/segment-1.wav"));
+        assert!(html.contains("https://downloads.example/segment-2.wav"));
+        assert!(!html.contains("localhost.evil.example"));
+        assert!(html.contains("loadSegment(startOffset)"));
     }
 }
 
