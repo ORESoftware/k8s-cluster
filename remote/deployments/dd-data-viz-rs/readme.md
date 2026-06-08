@@ -51,6 +51,8 @@ concept in `main.rs`:
   Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
+- `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
+- `src/dashboard.rs` owns saved dashboard request validation and in-memory dashboard metadata.
 - `src/sql_frontend.rs` owns parser-backed SQL-to-`LogicalPlan` compilation.
 - `src/util.rs` owns shared identifier, escaping, timestamp, header, and scalar-label helpers.
 
@@ -62,7 +64,8 @@ Current first-class parity surfaces:
   ingested dataset.
 - Sigma: workbook blueprints for live-grid and executive-card workflows.
 - Domo / Power Query: connector catalog plus ETL planner primitives.
-- Superset / Metabase: SQL lab and visual query-builder/self-service contracts.
+- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, and
+  saved dashboard catalog.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, and metrics route.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
   blueprint posture, and Markdown-plus-SQL report blueprint.
@@ -81,6 +84,7 @@ Current first-class parity surfaces:
 - `GET /renderers/contracts` - D3, Plotly/Dash, Evidence, and Office renderer/export contracts.
 - `GET /reports/evidence` - Evidence.dev-style Markdown plus SQL report blueprint.
 - `GET /security/policy` - hardening controls, limits, and residual-risk report.
+- `GET /security/rbac` - role and permission policy for protected routes.
 - `GET /schema` - request/response contract summary.
 - `GET /example` - sample dataset, query, visualization, and evolution payloads.
 - `GET /healthz` - liveness probe.
@@ -91,6 +95,9 @@ Current first-class parity surfaces:
 - `GET /datasets/:dataset_id` - authenticated dataset profile.
 - `GET /associations/:dataset_id` - authenticated Qlik-style associative graph over categorical
   fields.
+- `POST /dashboards` - authenticated saved dashboard create/replace.
+- `GET /dashboards` - authenticated saved dashboard catalog.
+- `GET /dashboards/:dashboard_id` - authenticated saved dashboard definition.
 - `POST /query` - authenticated query translation and execution.
 - `POST /visualizations/suggest` - authenticated visualization spec synthesis.
 - `POST /evolution/run` - authenticated evolutionary visualization search.
@@ -101,6 +108,8 @@ Current first-class parity surfaces:
 
 Authenticated endpoints require `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...` to match
 `SERVER_AUTH_SECRET`, unless `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is set for local development.
+Protected routes also enforce `X-Data-Viz-Role` / `X-DD-Role`; a valid operator request with no
+role header defaults to `admin` for backward compatibility.
 
 ## Example flow
 

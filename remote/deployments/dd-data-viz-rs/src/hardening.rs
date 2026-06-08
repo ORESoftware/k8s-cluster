@@ -1,6 +1,8 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::rbac;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitDescriptor {
@@ -41,9 +43,14 @@ pub fn hardening_payload(
         "schemaVersion": "data-viz.hardening.v1",
         "auth": {
             "operatorHeaders": ["X-Server-Auth", "Auth", "Authorization: Bearer ..."],
+            "roleHeaders": ["X-Data-Viz-Role", "X-DD-Role"],
             "serverAuthSecretConfigured": auth_configured,
             "allowUnauthenticated": allow_unauthenticated,
             "localBypassEnv": "DATA_VIZ_ALLOW_UNAUTHENTICATED"
+        },
+        "rbac": {
+            "schemaVersion": "data-viz.rbac.v1",
+            "roles": rbac::policy_catalog()
         },
         "limits": limit_catalog(max_datasets, max_records, max_columns, max_query_rows, max_body_bytes),
         "controls": control_catalog(),
@@ -100,7 +107,13 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             id: "operator-auth",
             status: "implemented",
             description: "Mutating and data-bearing endpoints require an operator secret.",
-            evidence: "require_operator_auth checks X-Server-Auth, Auth, and bearer authorization.",
+            evidence: "authorize checks X-Server-Auth, Auth, and bearer authorization before role checks.",
+        },
+        ControlDescriptor {
+            id: "role-based-access-control",
+            status: "implemented",
+            description: "Protected routes enforce role permissions after operator auth succeeds.",
+            evidence: "authorize checks X-Data-Viz-Role / X-DD-Role against data-viz.rbac.v1 policy.",
         },
         ControlDescriptor {
             id: "identifier-validation",
@@ -157,9 +170,9 @@ pub fn residual_risks() -> Vec<ResidualRisk> {
         },
         ResidualRisk {
             id: "shared-secret-auth",
-            severity: "medium",
-            risk: "A single operator secret is coarse compared with enterprise RBAC.",
-            planned_mitigation: "Integrate gateway identity, roles, audit logs, and per-resource policies.",
+            severity: "low",
+            risk: "Role checks are implemented, but identity still enters through a shared operator secret rather than gateway-backed user identity.",
+            planned_mitigation: "Integrate gateway identity, audit logs, and per-resource policies.",
         },
         ResidualRisk {
             id: "presentation-blueprints",

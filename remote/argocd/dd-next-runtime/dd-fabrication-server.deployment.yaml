@@ -168,6 +168,21 @@ spec:
                 '"path": "/fabrication/horizontal-mill/catalog"' \
                 '"path": "/fabrication/sheet-cutting/catalog"' \
                 '"path": "/fabrication/hot-wire-foam/catalog"' \
+                '"path": "/fabrication/sheet-forming/catalog"' \
+                '"path": "/fabrication/gear-cutting/catalog"' \
+                '"path": "/fabrication/precision-grinding/catalog"' \
+                '"path": "/fabrication/dimensional-inspection/catalog"' \
+                '"path": "/fabrication/thermal-postprocess/catalog"' \
+                '"path": "/fabrication/surface-finishing/catalog"' \
+                '"path": "/fabrication/metal-joining/catalog"' \
+                '"path": "/fabrication/molding-casting/catalog"' \
+                '"path": "/fabrication/pcb-electronics/catalog"' \
+                '"path": "/fabrication/bonding-joining/catalog"' \
+                '"path": "/fabrication/fixture-adaptive/catalog"' \
+                '"path": "/fabrication/mechanical-installation/catalog"' \
+                '"path": "/fabrication/balancing-marking/catalog"' \
+                '"path": "/fabrication/packaging-labeling/catalog"' \
+                '"path": "/fabrication/part-separation/catalog"' \
                 '"path": "/fabrication/edm/catalog"' \
                 '"path": "/fabrication/turning/catalog"' \
                 '"path": "/fabrication/lathe/catalog"' \

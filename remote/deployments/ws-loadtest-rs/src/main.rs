@@ -1008,6 +1008,14 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+fn reported_received_count(load_mode: &str, messages: usize, latency_samples: usize) -> usize {
+    if load_mode == LOAD_MODE_GCS {
+        messages
+    } else {
+        latency_samples
+    }
+}
+
 struct GcsAssignment {
     conv_id: String,
     user_id: String,
@@ -1242,7 +1250,8 @@ async fn report_stats(
                 Err(_) => (0, 0, 0, 0, 0, 0.0),
             };
             let sent = stats.sent.load(Ordering::Relaxed);
-            let received = stats.received.load(Ordering::Relaxed);
+            let latency_samples = stats.received.load(Ordering::Relaxed);
+            let received = reported_received_count(&config.load_mode, messages, latency_samples);
             let receive_errors = stats.receive_errors.load(Ordering::Relaxed);
             let correlation_misses = stats.correlation_misses.load(Ordering::Relaxed);
             let in_flight = stats.in_flight.load(Ordering::Relaxed);
@@ -1250,7 +1259,7 @@ async fn report_stats(
             // received/sent ratio approximates conversation fan-out in gcs mode.
             println!(
                 "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} messages={} \
-                 sent={} received={} in_flight={} correlation_misses={} receive_errors={} \
+                 sent={} received={} latency_samples={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
                 config.load_mode,
                 attempted,
@@ -1260,6 +1269,7 @@ async fn report_stats(
                 messages,
                 sent,
                 received,
+                latency_samples,
                 in_flight,
                 correlation_misses,
                 receive_errors,
@@ -1418,5 +1428,11 @@ mod tests {
         parse_gcs_marker_bytes(b"gcsrt-12-nope-123 gcsrt-12-34-", &mut latencies);
 
         assert!(latencies.is_empty());
+    }
+
+    #[test]
+    fn gcs_report_received_counts_frames_not_latency_samples() {
+        assert_eq!(reported_received_count(LOAD_MODE_GCS, 42, 0), 42);
+        assert_eq!(reported_received_count(LOAD_MODE_PIPELINE, 42, 7), 7);
     }
 }

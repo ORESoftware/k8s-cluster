@@ -128,6 +128,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             implemented_surfaces: vec![
                 "visualization genome",
                 "2d/3d/4d/5d/xd channel encodings",
+                "saved dashboard definitions",
                 "presentation layer export",
             ],
             next_engine_work: vec![
@@ -218,7 +219,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             implemented_surfaces: vec![
                 "parser-backed SQL dialect endpoint",
                 "self-service chart builder contract",
-                "hardening/RBAC policy surface",
+                "enforced RBAC policy surface",
             ],
             next_engine_work: vec![
                 "role-backed chart ownership",
@@ -232,6 +233,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             parity_goal: "simple query builder and natural-language-friendly questions",
             implemented_surfaces: vec![
                 "question builder contract",
+                "saved dashboard catalog",
                 "raw SQL fallback",
                 "dataset profile summaries",
             ],
