@@ -60447,6 +60447,50 @@ fn how_it_works_response() -> Value {
             "laser, waterjet, plasma, wire EDM, sinker EDM, grinding, inspection, postprocess, and assembly cells",
             "hybrid split/combine routes that join printed, milled, turned, cut, inspected, or postprocessed parts"
         ],
+        "releaseGateMatrix": [
+            {
+                "gateId": "source-provenance",
+                "label": "Source provenance",
+                "proves": "CAD, mesh, CAM, slicer, controller, macro, and text job-sheet origins are identified before interpretation.",
+                "blocks": ["translator release", "controller review", "machine-ready release"],
+                "evidenceRoutes": ["POST /fabrication/design/import/review", "POST /fabrication/instructions/import/review"]
+            },
+            {
+                "gateId": "machine-envelope",
+                "label": "Machine envelope",
+                "proves": "machine axes, fixtures, work offsets, tool length, stock, supports, and controller modal state fit the selected route.",
+                "blocks": ["toolpath release", "machine-code release", "unattended run release"],
+                "evidenceRoutes": ["POST /fabrication/machines/select", "POST /fabrication/toolpaths/result", "GET /fabrication/machines/catalog"]
+            },
+            {
+                "gateId": "process-readiness",
+                "label": "Process readiness",
+                "proves": "thermal, extrusion, spindle, feed, coolant, dust, gas, abrasive, resin, powder, or filament state is ready for the operation.",
+                "blocks": ["printer instruction release", "subtractive cutting release", "sheet-cutting release"],
+                "evidenceRoutes": ["POST /fabrication/instructions/validate", "POST /fabrication/materials/result", "POST /fabrication/utilities/result"]
+            },
+            {
+                "gateId": "simulation-evidence",
+                "label": "Simulation evidence",
+                "proves": "dry-run, collision, reach, support, quality, postprocess, and release-bundle reviews cleared known blockers.",
+                "blocks": ["release preview", "machine-ready release", "learning promotion"],
+                "evidenceRoutes": ["POST /fabrication/simulation/run", "POST /fabrication/quality/result", "POST /fabrication/release/preview"]
+            },
+            {
+                "gateId": "human-or-automation-handoff",
+                "label": "Human or automation handoff",
+                "proves": "operator interventions, automation handoffs, split/combine joins, restart steps, and signoffs are retained.",
+                "blocks": ["restart release", "split/combine release", "machine-ready release"],
+                "evidenceRoutes": ["POST /fabrication/interventions/result", "POST /fabrication/assembly/result", "GET /fabrication/jobs/:job_id/release-bundle"]
+            },
+            {
+                "gateId": "learning-disposition",
+                "label": "Learning disposition",
+                "proves": "MDP/POMDP/DES/neural recommendations are tied to retained outcomes and remain advisory until promotion evidence clears.",
+                "blocks": ["policy promotion", "learned-route preference release", "unattended repeat-run release"],
+                "evidenceRoutes": ["POST /fabrication/learning/outcomes", "GET /fabrication/learning/replay/catalog", "GET /fabrication/learning/policy"]
+            }
+        ],
         "learningContract": {
             "preferredPrimitiveSource": "remote/submodules/discrete-event-system.rs des_engine",
             "methods": ["MDP", "POMDP", "DES", "neural policy evidence", "reward replay"],
@@ -87688,6 +87732,153 @@ fn failure_mode_result_artifact_missing_release_evidence(artifact: &Value) -> bo
             .is_none_or(Vec::is_empty)
 }
 
+fn failure_mode_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "failure-mode-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn failure_mode_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    event_blocker_count: usize,
+    recovery_blocker_count: usize,
+    intervention_blocker_count: usize,
+    split_combine_required_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        failure_mode_priority_disposition(
+            "machine-failure-boundary-first",
+            if event_blocker_count > 0 || recovery_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("eventBlockerCount:{event_blocker_count}"),
+                format!("recoveryBlockerCount:{recovery_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/failure-modes/result",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/release/result",
+            ],
+            if event_blocker_count > 0 || recovery_blocker_count > 0 {
+                "machineReady remains blocked until failure-mode events and recovery actions prove the machine-failure boundary is cleared"
+            } else {
+                "failure-mode result did not report an open machine-failure priority blocker"
+            },
+        ),
+        failure_mode_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required || intervention_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("interventionBlockerCount:{intervention_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/telemetry",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required || intervention_blocker_count > 0 {
+                "machineReady remains blocked until operator intervention, stop-point, restart, or automation-handoff evidence clears the failure-mode result"
+            } else {
+                "failure-mode result did not report an open human-intervention priority blocker"
+            },
+        ),
+        failure_mode_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_combine_required_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitCombineRequiredCount:{split_combine_required_count}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_combine_required_count > 0 {
+                "machineReady remains blocked until split/combine, redesign, support, or interface-control evidence resolves the failure-mode boundary"
+            } else {
+                "failure-mode result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        failure_mode_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/failure-modes/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until failure-mode monitor, simulator, operator, or imported-instruction artifacts retain URI, checksum, format, and evidence"
+            } else {
+                "failure-mode artifacts include retained release evidence for downstream review"
+            },
+        ),
+        failure_mode_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked failure-mode priority lanes before advisory promotion"
+            } else {
+                "failure-mode result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn failure_mode_result_review_response(
     request: FailureModeResultReviewRequest,
 ) -> Result<Value, String> {
@@ -87799,6 +87990,22 @@ fn failure_mode_result_review_response(
     if split_combine_required_count > 0 {
         learning_observations.push("failure-mode:split-combine-required".to_string());
     }
+    let priority_dispositions = failure_mode_priority_dispositions(
+        request.success,
+        release_blocked,
+        event_blocker_count,
+        recovery_blocker_count,
+        intervention_blocker_count,
+        split_combine_required_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(failure_events.iter().filter_map(|event| {
         event
             .get("failureFamily")
@@ -87860,6 +88067,7 @@ fn failure_mode_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "failureModeResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -87942,6 +88150,7 @@ fn failure_mode_result_review_response(
                     "humanInterventionRequired": human_intervention_required,
                     "artifactEvidenceMissing": artifact_evidence_missing
                 },
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -87951,6 +88160,7 @@ fn failure_mode_result_review_response(
             "failure-mode-recovery-actions",
             "failure-mode-interventions",
             "failure-mode-artifacts",
+            "failure-mode-priority-dispositions",
             "failure-mode-learning-observations",
             "mdp-request.artifacts.failureModeResult"
         ],
@@ -88014,6 +88224,10 @@ fn stored_failure_mode_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -88048,6 +88262,12 @@ fn stored_failure_mode_result_job(response: &Value) -> StoredFabricationJob {
             "failure-mode-artifacts".to_string(),
             "failure-mode-artifacts",
             failure_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "failure-mode-priority-dispositions".to_string(),
+            "failure-mode-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -115312,6 +115532,25 @@ mod tests {
             );
         }
         let payload_text = payload.to_string();
+        let release_gate_matrix = payload
+            .get("releaseGateMatrix")
+            .and_then(Value::as_array)
+            .expect("how-it-works overview should include release gate matrix");
+        for expected in [
+            "source-provenance",
+            "machine-envelope",
+            "process-readiness",
+            "simulation-evidence",
+            "human-or-automation-handoff",
+            "learning-disposition",
+        ] {
+            assert!(
+                release_gate_matrix
+                    .iter()
+                    .any(|gate| { gate.get("gateId").and_then(Value::as_str) == Some(expected) }),
+                "missing release gate matrix entry {expected}"
+            );
+        }
         for expected in [
             "POST /fabrication/design/generate",
             "POST /fabrication/machine-code/generate",
@@ -115326,6 +115565,8 @@ mod tests {
             "hybrid split/combine routes",
             "remote/submodules/discrete-event-system.rs des_engine",
             "machineReady remains false",
+            "POST /fabrication/interventions/result",
+            "unattended repeat-run release",
         ] {
             assert!(
                 payload_text.contains(expected),
@@ -135820,6 +136061,58 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|observation| {
                 observation.as_str() == Some("failure-mode:support-failure")
             })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("failure-mode-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("failure-mode-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("failure-mode-priority:split-combine-or-interface-review:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+                    && priority.get("disposition").and_then(Value::as_str) == Some("blocked")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("failure-mode-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("failure-mode-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("failure-mode-priority:split-combine-or-interface-review:blocked")
+            })));
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
             .expect("failure mode result should include a learning outcome draft");
@@ -135877,6 +136170,13 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(true)
         );
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let job = stored_failure_mode_result_job(&response);
         assert_eq!(job.record.kind, "failure-mode-result");
@@ -135887,6 +136187,9 @@ mod tests {
         assert_eq!(job.record.severity, "error");
         assert!(job.artifacts.contains_key("failure-mode-result"));
         assert!(job.artifacts.contains_key("failure-mode-events"));
+        assert!(job
+            .artifacts
+            .contains_key("failure-mode-priority-dispositions"));
         assert!(job
             .artifacts
             .contains_key("failure-mode-learning-observations"));
