@@ -14535,6 +14535,8 @@ fn instruction_generation_result_review_response(
         "resultSubject": FABRICATION_INSTRUCTION_GENERATION_RESULTS_SUBJECT,
         "queueGroup": FABRICATION_INSTRUCTION_GENERATION_REQUESTS_QUEUE_GROUP,
         "generationRoutes": [
+            "POST /slicers/plan",
+            "POST /fabrication/slicers/plan",
             "POST /instructions/generate",
             "POST /fabrication/instructions/generate",
             "POST /machine-code/generate",
@@ -61905,6 +61907,10 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/catalog",
         "GET /subtractive/preflight/catalog",
         "GET /fabrication/subtractive/preflight/catalog",
+        "GET /mill-router/catalog",
+        "GET /fabrication/mill-router/catalog",
+        "GET /sheet-cutting/catalog",
+        "GET /fabrication/sheet-cutting/catalog",
         "GET /turning/catalog",
         "GET /fabrication/turning/catalog",
         "GET /turning/preflight/catalog",
@@ -61939,6 +61945,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/design/formats",
         "GET /slicers/catalog",
         "GET /fabrication/slicers/catalog",
+        "POST /slicers/plan",
+        "POST /fabrication/slicers/plan",
         "POST /slicers/result",
         "POST /fabrication/slicers/result",
         "GET /mesh-repair/catalog",
@@ -109101,6 +109109,236 @@ async fn subtractive_preflight_catalog_http() -> impl IntoResponse {
     Json(subtractive_preflight_catalog_response())
 }
 
+fn mill_router_catalog_response() -> Value {
+    let subtractive_payload = subtractive_catalog_response();
+    let mill_router_machines = subtractive_payload
+        .get("subtractiveMachines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    matches!(
+                        machine_class(kind),
+                        MachineClass::Mill | MachineClass::Router
+                    )
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mill_router_machine_kinds =
+        unique_sorted(mill_router_machines.iter().filter_map(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }));
+    let controllers = unique_sorted(mill_router_machines.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(mill_router_machines.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(mill_router_machines.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.mill-router-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /workholding/preflight/catalog",
+            "GET /fabrication/workholding/preflight/catalog",
+            "GET /controllers/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog",
+            "GET /tooling/catalog",
+            "GET /fabrication/tooling/catalog"
+        ],
+        "millRouterMachineCount": mill_router_machines.len(),
+        "millRouterMachineKinds": mill_router_machine_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /fabrication/toolpaths/plan",
+            "POST /fabrication/workholding/plan",
+            "POST /fabrication/setup/plan"
+        ],
+        "instructionAnalysisRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/machines/select",
+            "POST /fabrication/controllers/plan",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/toolpaths/result",
+            "POST /fabrication/workholding/result",
+            "POST /fabrication/simulation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "mill/router catalog entries are default vertical, horizontal, five-axis, indexed, and CNC-router planning profiles, not certified live machine availability",
+            "machine-ready release remains blocked until stock, workholding, datum/work-offset, tool-length/probe, cutter compensation, tool-change, spindle, feed/speed, chip evacuation, dust collection, controller/postprocessor, simulation, quality, and signoff evidence are retained",
+            "mill/router outcomes should feed toolpath, workholding, setup, controller, simulation, quality, telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn safer fixture, index, split, combine, reroute, or human-intervention strategies"
+        ],
+        "millRouterMachines": mill_router_machines
+    })
+}
+
+async fn mill_router_catalog_http() -> impl IntoResponse {
+    Json(mill_router_catalog_response())
+}
+
+fn sheet_cutting_catalog_response() -> Value {
+    let subtractive_payload = subtractive_catalog_response();
+    let sheet_cutting_machines = subtractive_payload
+        .get("subtractiveMachines")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| {
+                    machine_class(kind) == MachineClass::SheetCut
+                        || is_laser_cutter_kind(kind)
+                        || is_waterjet_cutter_kind(kind)
+                        || is_plasma_cutter_kind(kind)
+                        || is_wire_edm_kind(kind)
+                })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let sheet_cutting_machine_kinds =
+        unique_sorted(sheet_cutting_machines.iter().filter_map(|machine| {
+            machine
+                .get("kind")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        }));
+    let controllers = unique_sorted(sheet_cutting_machines.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(sheet_cutting_machines.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(sheet_cutting_machines.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.sheet-cutting-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /sheet-cutting/catalog", "GET /fabrication/sheet-cutting/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /subtractive/preflight/catalog",
+            "GET /fabrication/subtractive/preflight/catalog",
+            "GET /nesting/catalog",
+            "GET /fabrication/nesting/catalog",
+            "GET /support-strategy/catalog",
+            "GET /fabrication/support-strategy/catalog"
+        ],
+        "sheetCuttingMachineCount": sheet_cutting_machines.len(),
+        "sheetCuttingMachineKinds": sheet_cutting_machine_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "planningRoutes": [
+            "POST /plan",
+            "POST /fabrication/plan",
+            "POST /fabrication/nesting/plan",
+            "POST /fabrication/support-strategy/plan"
+        ],
+        "instructionAnalysisRoutes": [
+            "POST /instructions/analyze",
+            "POST /fabrication/instructions/analyze",
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/machines/select",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/simulation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "sheet-cutting catalog entries are default laser, waterjet, plasma, and wire-EDM planning profiles, not certified live machine availability",
+            "machine-ready release remains blocked until sheet material, thickness, nesting, datum, kerf/pierce, assist gas, fume extraction, abrasive/pump, water table, slat/support, wire threading, slug retention, simulation, quality, and signoff evidence are retained",
+            "sheet-cutting outcomes should feed setup, nesting, support-strategy, simulation, quality, telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn safer split, combine, tab, bridge, or human-intervention strategies"
+        ],
+        "sheetCuttingMachines": sheet_cutting_machines
+    })
+}
+
+async fn sheet_cutting_catalog_http() -> impl IntoResponse {
+    Json(sheet_cutting_catalog_response())
+}
+
 fn turning_catalog_response() -> Value {
     let subtractive_payload = subtractive_catalog_response();
     let turning_machines = subtractive_payload
@@ -113187,6 +113425,251 @@ fn slicer_profile_catalog_response() -> Value {
 
 async fn slicer_profile_catalog_http() -> impl IntoResponse {
     Json(slicer_profile_catalog_response())
+}
+
+fn slicer_profile_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let mut object = match machine_code_generation_response(response, policy) {
+        Value::Object(object) => object,
+        _ => Map::new(),
+    };
+    let slicer_profile_entries = slicer_profile_catalog_entries();
+    let additive_program_count = response
+        .generated_programs
+        .iter()
+        .filter(|program| {
+            let machine_kind = normalize_token(&program.machine_kind);
+            let language = normalize_token(&program.language);
+            machine_kind.contains("printer")
+                || machine_kind.contains("additive")
+                || language.contains("gcode")
+        })
+        .count();
+    let support_evidence_gate_count = response
+        .postprocess_plan
+        .controller_targets
+        .iter()
+        .flat_map(|target| target.gates.iter())
+        .filter(|gate| {
+            let gate_type = normalize_token(&gate.gate_type);
+            let evidence = normalize_token(&gate.evidence);
+            gate_type.contains("support")
+                || gate_type.contains("slicer")
+                || gate_type.contains("first-layer")
+                || evidence.contains("support")
+                || evidence.contains("slicer")
+                || evidence.contains("first-layer")
+                || evidence.contains("material")
+        })
+        .count();
+    let dry_run_gate_count = response
+        .postprocess_plan
+        .controller_targets
+        .iter()
+        .filter(|target| {
+            target.requires_dry_run || target.gates.iter().any(|gate| gate.gate_type == "dry-run")
+        })
+        .count();
+    let slicer_blocker_count = response.machine_release.blockers.len()
+        + response.postprocess_plan.blockers.len()
+        + response.controller_plan.release_gates.len()
+        + response.simulation.failure_boundaries.len()
+        + response.release_package_plan.blocked_package_count;
+    let slicer_blocked = response.machine_release.machine_release_blocked
+        || response.postprocess_plan.machine_release_blocked
+        || response.controller_plan.machine_release_blocked
+        || response.simulation.risk_profile.status != "simulation-ready"
+        || response.boundary_summary.human_intervention_required > 0
+        || slicer_blocker_count > 0;
+    let planned_profiles = response
+        .generated_programs
+        .iter()
+        .map(|program| {
+            let process_node = response
+                .process_graph
+                .nodes
+                .iter()
+                .find(|node| node.program_id.as_deref() == Some(program.program_id.as_str()));
+            let controller_target = response
+                .controller_plan
+                .compatibility_targets
+                .iter()
+                .find(|target| target.program_id == program.program_id);
+            let postprocess_target = response
+                .postprocess_plan
+                .controller_targets
+                .iter()
+                .find(|target| target.program_id == program.program_id);
+            let simulation_trace = response
+                .simulation
+                .programs
+                .iter()
+                .find(|trace| trace.program_id == program.program_id);
+            json!({
+                "slicerPlanId": format!("slicer-plan-{}", normalize_token(&program.program_id)),
+                "programId": &program.program_id,
+                "partId": &program.part_id,
+                "machineId": &program.machine_id,
+                "machineKind": &program.machine_kind,
+                "language": &program.language,
+                "draft": program.draft,
+                "machineReady": program.machine_ready && !slicer_blocked,
+                "instructionLineCount": program.instructions.len(),
+                "operation": process_node
+                    .map(|node| node.operation.clone())
+                    .unwrap_or_else(|| "slicer-program-review".to_string()),
+                "profileEvidenceRequired": [
+                    "printer profile checksum",
+                    "filament or resin profile checksum",
+                    "support and orientation review",
+                    "first-layer or exposure coupon",
+                    "simulation and dry-run evidence"
+                ],
+                "controllerTarget": controller_target,
+                "postprocessTarget": postprocess_target,
+                "simulationTrace": simulation_trace,
+                "safetyNotes": &program.safety_notes
+            })
+        })
+        .collect::<Vec<_>>();
+
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.slicer-profile-planning.v1"),
+    );
+    object.insert(
+        "routes".to_string(),
+        json!(["POST /slicers/plan", "POST /fabrication/slicers/plan"]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /slicers/catalog",
+            "GET /fabrication/slicers/catalog",
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /slicers/result",
+            "POST /fabrication/slicers/result",
+            "POST /machine-code/generate",
+            "POST /fabrication/machine-code/generate",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /quality/result",
+            "POST /fabrication/quality/result"
+        ]),
+    );
+    object.insert("slicerPlanning".to_string(), json!(planned_profiles));
+    object.insert(
+        "slicerProfileCatalog".to_string(),
+        json!(slicer_profile_entries),
+    );
+    object.insert(
+        "slicerProfileCount".to_string(),
+        json!(slicer_profile_entries.len()),
+    );
+    object.insert(
+        "generatedProgramCount".to_string(),
+        json!(response.generated_programs.len()),
+    );
+    object.insert(
+        "additiveProgramCount".to_string(),
+        json!(additive_program_count),
+    );
+    object.insert(
+        "controllerTargetCount".to_string(),
+        json!(response.postprocess_plan.controller_targets.len()),
+    );
+    object.insert("dryRunGateCount".to_string(), json!(dry_run_gate_count));
+    object.insert(
+        "supportEvidenceGateCount".to_string(),
+        json!(support_evidence_gate_count),
+    );
+    object.insert(
+        "slicerBlockerCount".to_string(),
+        json!(slicer_blocker_count),
+    );
+    object.insert("slicerBlocked".to_string(), json!(slicer_blocked));
+    object.insert(
+        "machineReady".to_string(),
+        json!(!slicer_blocked && !response.machine_release.machine_release_blocked),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "slicerPlanning",
+            "slicerPlanning.profileEvidenceRequired",
+            "slicerProfileCatalog",
+            "generatedPrograms.instructions",
+            "postprocessPlan.controllerTargets",
+            "controllerPlan.compatibilityTargets",
+            "simulation.riskProfile",
+            "qualityPlan.inspectionPoints",
+            "materialPlan.routeRequirements",
+            "fixturePlan.setups",
+            "machineRelease.blockers",
+            "learning.neuralTrainingCorpus"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "slicer-plan",
+            "slicer-profile-catalog",
+            "slicer-project-package",
+            "printer-gcode-package",
+            "generated-machine-programs",
+            "postprocess-plan",
+            "simulation-report",
+            "quality-plan",
+            "release-package-plan",
+            "mdp-request.artifacts.slicerPlan"
+        ]),
+    );
+    object.insert(
+        "slicerProfilePolicy".to_string(),
+        json!([
+            "slicer planning returns draft profile, orientation, support, thermal, material, and generated machine-code evidence, not certified print parameters",
+            "machine-ready release remains blocked while material conditioning, profile provenance, support or orientation, first-layer, thermal, simulation, machine-code, dry-run, or signoff evidence is unresolved",
+            "slicer profile planning outcomes feed MDP/POMDP/neural workers so future jobs can choose safer profiles, split fragile parts, reroute printers, or require human intervention before release"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert(
+        "controllerPlan".to_string(),
+        json!(&response.controller_plan),
+    );
+    object.insert("qualityPlan".to_string(), json!(&response.quality_plan));
+    object.insert("materialPlan".to_string(), json!(&response.material_plan));
+    object.insert("fixturePlan".to_string(), json!(&response.fixture_plan));
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    Value::Object(object)
 }
 
 fn validate_slicer_profile_result_checks(
@@ -118114,8 +118597,11 @@ async fn request_schema() -> impl IntoResponse {
             "materialResult": ["POST /materials/result", "POST /fabrication/materials/result"],
             "designFormats": ["GET /design/formats", "GET /fabrication/design/formats"],
             "slicerProfileCatalog": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
+            "slicerProfilePlan": ["POST /slicers/plan", "POST /fabrication/slicers/plan"],
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+            "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
+            "sheetCuttingCatalog": ["GET /sheet-cutting/catalog", "GET /fabrication/sheet-cutting/catalog"],
             "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "turningPreflightCatalog": ["GET /turning/preflight/catalog", "GET /fabrication/turning/preflight/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
@@ -119005,6 +119491,54 @@ async fn slicer_profile_result_http(
             Json(json!({ "ok": false, "error": error })),
         )
             .into_response(),
+    }
+}
+
+async fn slicer_profile_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.slicer-profile.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(slicer_profile_planning_response(
+                &response,
+                &policy_snapshot,
+            ))
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -121199,6 +121733,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/subtractive/preflight/catalog",
             get(subtractive_preflight_catalog_http),
         )
+        .route("/mill-router/catalog", get(mill_router_catalog_http))
+        .route(
+            "/fabrication/mill-router/catalog",
+            get(mill_router_catalog_http),
+        )
+        .route("/sheet-cutting/catalog", get(sheet_cutting_catalog_http))
+        .route(
+            "/fabrication/sheet-cutting/catalog",
+            get(sheet_cutting_catalog_http),
+        )
         .route("/turning/catalog", get(turning_catalog_http))
         .route("/fabrication/turning/catalog", get(turning_catalog_http))
         .route(
@@ -121265,6 +121809,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/slicers/catalog",
             get(slicer_profile_catalog_http),
         )
+        .route("/slicers/plan", post(slicer_profile_plan_http))
+        .route("/fabrication/slicers/plan", post(slicer_profile_plan_http))
         .route("/slicers/result", post(slicer_profile_result_http))
         .route(
             "/fabrication/slicers/result",
@@ -128733,6 +129279,114 @@ mod tests {
             .any(|artifact| artifact.kind == "generated-machine-program"));
         assert!(job.artifacts.contains_key("controller-plan"));
         assert!(job.artifacts.contains_key("release-package-plan"));
+    }
+
+    #[test]
+    fn slicer_profile_planning_endpoint_returns_profile_machine_code_and_release_contract() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 0,
+            successes: 0,
+            failures: 0,
+            average_reward: 0.0,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: Vec::new(),
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-slicer-profile-plan".to_string()),
+                objective: "print a PETG-CF electronics bracket with support-critical overhangs"
+                    .to_string(),
+                material: Some(material("PETG-CF", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: None,
+                    allow_human_intervention: Some(true),
+                    allow_multi_part_assembly: Some(false),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec!["fdm-3d-printing".to_string()]),
+                    preferred_assembly_strategy: None,
+                }),
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("slicer profile planning should succeed");
+
+        let payload = slicer_profile_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.slicer-profile-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/slicers/plan"))));
+        assert!(payload
+            .get("slicerProfileCatalog")
+            .and_then(Value::as_array)
+            .is_some_and(|profiles| profiles
+                .iter()
+                .any(
+                    |profile| profile.get("slicer").and_then(Value::as_str) == Some("OrcaSlicer")
+                )));
+        assert!(payload
+            .get("slicerPlanning")
+            .and_then(Value::as_array)
+            .is_some_and(|plans| !plans.is_empty()
+                && plans.iter().any(|plan| plan
+                    .get("profileEvidenceRequired")
+                    .and_then(Value::as_array)
+                    .is_some_and(|evidence| evidence.iter().any(|item| item
+                        .as_str()
+                        .is_some_and(|item| item.contains("support and orientation")))))));
+        assert!(payload
+            .get("additiveProgramCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("generatedPrograms")
+            .and_then(Value::as_array)
+            .is_some_and(|programs| programs.iter().any(|program| program
+                .get("instructions")
+                .and_then(Value::as_array)
+                .is_some_and(|instructions| !instructions.is_empty()))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("generatedPrograms.instructions") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("mdp-request.artifacts.slicerPlan") })));
+        assert!(payload
+            .get("slicerProfilePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("not certified print parameters")))));
     }
 
     #[test]
@@ -147575,6 +148229,125 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("split, combine, reroute")))));
+    }
+
+    #[test]
+    fn sheet_cutting_catalog_endpoint_exposes_laser_waterjet_plasma_and_wire_profiles() {
+        let payload = sheet_cutting_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.sheet-cutting-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/sheet-cutting/catalog")
+            })));
+
+        let kinds = payload
+            .get("sheetCuttingMachineKinds")
+            .and_then(Value::as_array)
+            .expect("sheet-cutting machine kinds should be present");
+        for kind in [
+            "laser-cutter",
+            "waterjet-cutter",
+            "plasma-cutter",
+            "wire-edm",
+        ] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing sheet-cutting kind {kind}"
+            );
+        }
+
+        assert!(payload
+            .get("operations")
+            .and_then(Value::as_array)
+            .is_some_and(|operations| operations
+                .iter()
+                .any(|operation| operation.as_str() == Some("waterjet-cut"))));
+        assert!(payload
+            .get("preflightRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/nesting/catalog"))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("assist gas")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
+    fn mill_router_catalog_endpoint_exposes_vertical_horizontal_five_axis_and_router_profiles() {
+        let payload = mill_router_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.mill-router-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("GET /fabrication/mill-router/catalog") })));
+
+        let kinds = payload
+            .get("millRouterMachineKinds")
+            .and_then(Value::as_array)
+            .expect("mill/router machine kinds should be present");
+        for kind in [
+            "vertical-mill",
+            "horizontal-mill",
+            "five-axis-mill",
+            "rotary-indexer-mill",
+            "cnc-router",
+        ] {
+            assert!(
+                kinds.iter().any(|item| item.as_str() == Some(kind)),
+                "missing mill/router kind {kind}"
+            );
+        }
+
+        assert!(payload
+            .get("controllers")
+            .and_then(Value::as_array)
+            .is_some_and(|controllers| controllers
+                .iter()
+                .any(|controller| controller.as_str() == Some("haas-gcode"))));
+        assert!(payload
+            .get("operations")
+            .and_then(Value::as_array)
+            .is_some_and(|operations| operations
+                .iter()
+                .any(|operation| operation.as_str() == Some("five-axis-milling"))));
+        assert!(payload
+            .get("preflightRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/workholding/preflight/catalog")
+            })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("tool-length/probe")))));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
     }
 
     #[test]
