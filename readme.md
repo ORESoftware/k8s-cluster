@@ -501,6 +501,10 @@ is supplied.
   available. The graph links operations,
   generated programs, sequencing dependencies, assembly interfaces, and release
   gates.
+- An `instructionPrograms` stream retained as the `instruction-programs` artifact
+  that normalizes generated drafts and submitted existing instructions together
+  before validation, simulation, intent mapping, improvement, and MDP/POMDP
+  learning.
 - A `machineSelection` trace for every inferred or requested part, including the
   selected machine, required process class, candidate scores, material/process
   rejection reasons, operation gaps, and fallback warnings.
@@ -2051,20 +2055,25 @@ the selected machine.
 The response exposes `machineCodeResult`, `machineCodeResultJobId`,
 `releaseBlocked`, controller-check, boundary, human-intervention, program, and
 missing-evidence counts plus follow-up toolpath, simulation, release, and
-learning routes. It also includes a
-`dd.fabrication.machine-code-learning-outcome-draft.v1` payload with controller,
-postprocessor, language, boundary, blocker, and recommended-action hints that
-callers can submit to `POST /fabrication/learning/outcomes`. Review jobs retain
+learning routes. It also includes `priorityDispositions` rows for the
+machine-failure, human-intervention, non-G-code or slicer/printer evidence, and
+learning-feedback lanes so generated or imported controller output can close or
+leave open the same release-priority queues as instruction validation. The
+`dd.fabrication.machine-code-learning-outcome-draft.v1` payload carries those
+priority dispositions with controller, postprocessor, language, boundary, blocker,
+and recommended-action hints that callers can submit to
+`POST /fabrication/learning/outcomes`. Review jobs retain
 `machine-code-result`,
 `machine-code-programs`, `machine-code-controller-checks`,
-`machine-code-failure-boundaries`, `machine-code-artifacts`, and
+`machine-code-failure-boundaries`, `machine-code-artifacts`,
+`machine-code-priority-dispositions`, and
 `machine-code-learning-observations` artifacts for `/jobs/:job_id` inspection.
 Machine-ready release stays blocked until controller checks, failure boundaries,
 retained URI/checksum evidence, dry-run or simulation evidence, and operator or
 automation signoff clear. Observations include `machine-code-program-language:*`,
-`machine-code-check:*`, `machine-code-boundary:*`, and
-`machine-code-artifact:*` so MDP/POMDP/neural workers can learn which
-postprocessors, controllers, and review gates block or clear release.
+`machine-code-check:*`, `machine-code-boundary:*`, `machine-code-artifact:*`, and
+`machine-code-priority:<priority>:<disposition>` so MDP/POMDP/neural workers can
+learn which postprocessors, controllers, and review gates block or clear release.
 
 ## `GET /fabrication/toolpaths/catalog`
 

@@ -4348,6 +4348,7 @@ struct FabricationPlanResponse {
     process_graph: ProcessGraph,
     hybrid_make_plan: HybridMakePlan,
     generated_programs: Vec<GeneratedProgram>,
+    instruction_programs: Vec<AnalyzedProgram>,
     validation: ValidationReport,
     boundary_summary: BoundarySummary,
     resolution_plan: BoundaryResolutionPlan,
@@ -14189,6 +14190,146 @@ fn machine_code_result_artifact_missing_release_evidence(artifact: &Value) -> bo
             .is_none_or(Vec::is_empty)
 }
 
+fn machine_code_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    json!({
+        "priorityId": priority_id,
+        "disposition": disposition,
+        "evidence": evidence,
+        "nextRoutes": next_routes,
+        "releaseImpact": release_impact,
+        "learningObservation": format!("machine-code-priority:{priority_id}:{}", normalize_token(disposition))
+    })
+}
+
+fn machine_code_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    program_blocker_count: usize,
+    controller_check_blocker_count: usize,
+    boundary_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    programs: &[Value],
+) -> Vec<Value> {
+    let program_languages = programs
+        .iter()
+        .filter_map(|program| program.get("language").and_then(Value::as_str))
+        .map(normalize_token)
+        .collect::<Vec<_>>();
+    let printer_or_slicer_output = program_languages.iter().any(|language| {
+        language.contains("printer")
+            || language.contains("slicer")
+            || language.contains("marlin")
+            || language.contains("reprap")
+            || language.contains("3mf")
+            || language.contains("resin")
+    });
+
+    vec![
+        machine_code_priority_disposition(
+            "machine-failure-boundary-first",
+            if program_blocker_count > 0
+                || controller_check_blocker_count > 0
+                || boundary_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("programBlockerCount:{program_blocker_count}"),
+                format!("controllerCheckBlockerCount:{controller_check_blocker_count}"),
+                format!("boundaryBlockerCount:{boundary_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/machine-code/result",
+                "POST /fabrication/simulation/run",
+                "POST /fabrication/release/result",
+            ],
+            if program_blocker_count > 0
+                || controller_check_blocker_count > 0
+                || boundary_blocker_count > 0
+            {
+                "machineReady remains blocked by controller, program, or machine-code failure evidence"
+            } else {
+                "machine-code review did not report an open machine-failure priority blocker"
+            },
+        ),
+        machine_code_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator or automation signoff is retained"
+            } else {
+                "machine-code review did not report an open human-intervention priority blocker"
+            },
+        ),
+        machine_code_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing && printer_or_slicer_output {
+                "blocked"
+            } else if artifact_evidence_missing {
+                "partially-reviewed"
+            } else if printer_or_slicer_output {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("printerOrSlicerOutput:{printer_or_slicer_output}"),
+                format!("artifactEvidenceMissing:{artifact_evidence_missing}"),
+            ],
+            vec![
+                "POST /fabrication/instructions/import/review",
+                "POST /fabrication/instructions/validate",
+                "POST /fabrication/machine-code/result",
+                "POST /fabrication/release/result",
+            ],
+            if artifact_evidence_missing {
+                "machine-code evidence remains blocked until retained URI, checksum, and evidence labels are attached"
+            } else {
+                "machine-code artifact evidence is retained for this output stream"
+            },
+        ),
+        machine_code_priority_disposition(
+            "learning-feedback-after-disposition",
+            "ready-to-submit",
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("machineCodeSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/replay/catalog",
+                "GET /fabrication/learning/features/catalog",
+            ],
+            "machine-code disposition is ready for advisory learning, but learning cannot promote machine-ready release without retained validation, simulation, and release evidence",
+        ),
+    ]
+}
+
 fn machine_code_result_review_response(
     request: MachineCodeResultReviewRequest,
 ) -> Result<Value, String> {
@@ -14266,6 +14407,16 @@ fn machine_code_result_review_response(
         || controller_check_blocker_count > 0
         || boundary_blocker_count > 0
         || artifact_evidence_missing;
+    let priority_dispositions = machine_code_priority_dispositions(
+        request.success,
+        release_blocked,
+        program_blocker_count,
+        controller_check_blocker_count,
+        boundary_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &programs,
+    );
     let review_status = if programs.is_empty() {
         "machine-code-result-no-programs-release-blocked"
     } else if !request.success {
@@ -14396,6 +14547,12 @@ fn machine_code_result_review_response(
             .and_then(Value::as_str)
             .map(|kind| format!("machine-code-artifact:{}", normalize_token(kind)))
     }));
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.sort();
     learning_observations.dedup();
 
@@ -14457,6 +14614,7 @@ fn machine_code_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "machineCodeResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -14488,6 +14646,7 @@ fn machine_code_result_review_response(
             "targetSurfaces": [
                 "generatedPrograms",
                 "controllerPlan",
+                "instructionIntentMap.reviewPriorities",
                 "postprocessPlan",
                 "simulation",
                 "executionPlan",
@@ -14523,8 +14682,10 @@ fn machine_code_result_review_response(
                     format!("controller-check-blockers:{controller_check_blocker_count}"),
                     format!("boundary-blockers:{boundary_blocker_count}"),
                     format!("human-intervention-required:{human_intervention_required}"),
-                    format!("artifact-evidence-missing:{artifact_evidence_missing}")
+                    format!("artifact-evidence-missing:{artifact_evidence_missing}"),
+                    format!("priority-dispositions:{}", priority_dispositions.len())
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedActions": failure_boundaries
                     .iter()
                     .filter_map(|boundary| boundary.get("recommendedAction").and_then(Value::as_str))
@@ -14538,6 +14699,7 @@ fn machine_code_result_review_response(
             "machine-code-controller-checks",
             "machine-code-failure-boundaries",
             "machine-code-artifacts",
+            "machine-code-priority-dispositions",
             "machine-code-learning-observations",
             "generated-machine-program",
             "controller-plan",
@@ -14602,6 +14764,10 @@ fn stored_machine_code_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -14636,6 +14802,12 @@ fn stored_machine_code_result_job(response: &Value) -> StoredFabricationJob {
             "machine-code-artifacts".to_string(),
             "machine-code-artifacts",
             machine_code_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "machine-code-priority-dispositions".to_string(),
+            "machine-code-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -43965,6 +44137,12 @@ fn plan_artifacts(response: &FabricationPlanResponse) -> Vec<FabricationArtifact
             response.generated_at_ms,
         ),
         json_artifact(
+            "instruction-programs".to_string(),
+            "instruction-programs",
+            json!(response.instruction_programs),
+            response.generated_at_ms,
+        ),
+        json_artifact(
             "instruction-intent-map".to_string(),
             "instruction-intent-map",
             json!(response.instruction_intent_map),
@@ -48838,6 +49016,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
         process_graph,
         hybrid_make_plan,
         generated_programs,
+        instruction_programs: analyzed_programs,
         validation,
         boundary_summary: summary,
         resolution_plan,
@@ -58791,6 +58970,7 @@ fn fabrication_mdp_request(response: &FabricationPlanResponse) -> Value {
         "controllerPlan": response.controller_plan,
         "releasePackagePlan": response.release_package_plan,
         "simulation": response.simulation,
+        "instructionPrograms": response.instruction_programs,
         "instructionIntentMap": response.instruction_intent_map,
         "strategyCandidates": response.learning.strategy_candidates,
         "interventionSignals": response.learning.intervention_signals,
@@ -119954,6 +120134,50 @@ mod tests {
     }
 
     #[test]
+    fn machine_code_result_endpoint_reviews_priority_dispositions() {
+        let programs = vec![json!({
+            "programId": "printer-job",
+            "language": "marlin-printer-gcode",
+            "status": "complete",
+            "releaseEvidence": {
+                "hasRetainedArtifact": true,
+                "hasChecksum": true,
+                "hasEvidence": true
+            }
+        })];
+        let dispositions =
+            machine_code_priority_dispositions(true, true, 0, 1, 1, true, false, &programs);
+
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some("machine-code-priority:machine-failure-boundary-first:blocked")
+        }));
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("human-intervention-required")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+        }));
+        assert!(dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("ready-to-submit")
+                && disposition
+                    .get("nextRoutes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|routes| {
+                        routes.iter().any(|route| {
+                            route.as_str() == Some("POST /fabrication/learning/outcomes")
+                        })
+                    })
+        }));
+    }
+
+    #[test]
     fn machine_code_result_endpoint_reviews_controller_checks_and_learning() {
         let payload = machine_code_result_review_response(MachineCodeResultReviewRequest {
             request_id: Some("unit-machine-code-result".to_string()),
@@ -120084,6 +120308,33 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(0)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("machine-code priority dispositions should be returned");
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("machine-failure-boundary-first")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+                && disposition
+                    .get("nextRoutes")
+                    .and_then(Value::as_array)
+                    .is_some_and(|routes| {
+                        routes
+                            .iter()
+                            .any(|route| route.as_str() == Some("POST /fabrication/simulation/run"))
+                    })
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("human-intervention-required")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("ready-to-submit")
+        }));
         assert!(payload
             .get("machineCodeResult")
             .and_then(|result| result.get("controllerChecks"))
@@ -120120,6 +120371,7 @@ mod tests {
             "machine-code:boundary-blocked",
             "machine-code:human-intervention-required",
             "machine-code:release-blocked",
+            "machine-code-priority:machine-failure-boundary-first:blocked",
         ] {
             assert!(
                 observations
@@ -120174,6 +120426,19 @@ mod tests {
                 .iter()
                 .any(|hint| hint.as_str() == Some("controller-check-blockers:1"))));
         assert!(outcome_draft
+            .get("featureHints")
+            .and_then(Value::as_array)
+            .is_some_and(|hints| hints
+                .iter()
+                .any(|hint| hint.as_str() == Some("priority-dispositions:4"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+            })));
+        assert!(outcome_draft
             .get("recommendedActions")
             .and_then(Value::as_array)
             .is_some_and(|actions| actions
@@ -120202,6 +120467,7 @@ mod tests {
             "machine-code-controller-checks",
             "machine-code-failure-boundaries",
             "machine-code-artifacts",
+            "machine-code-priority-dispositions",
             "machine-code-learning-observations",
         ] {
             assert!(
@@ -126593,6 +126859,12 @@ mod tests {
                             })
                         })
             })));
+        assert!(response
+            .instruction_programs
+            .iter()
+            .any(|program| program.program_id == "oversize-router"
+                && program.machine_kind == "cnc-router"
+                && program.line_count == 5));
         assert!(payload
             .get("simulation")
             .and_then(|simulation| simulation.get("failureBoundaries"))
@@ -126618,6 +126890,7 @@ mod tests {
         let job = stored_plan_job(&response);
         for artifact in [
             "simulation-report",
+            "instruction-programs",
             "machine-release",
             "execution-plan",
             "postprocess-plan",
@@ -126629,6 +126902,16 @@ mod tests {
                 "missing simulation run artifact {artifact}"
             );
         }
+        let instruction_programs = job
+            .artifacts
+            .get("instruction-programs")
+            .expect("combined instruction programs artifact should be retained");
+        assert!(instruction_programs
+            .content
+            .as_array()
+            .is_some_and(|programs| programs.iter().any(|program| {
+                program.get("programId").and_then(Value::as_str) == Some("oversize-router")
+            })));
     }
 
     #[test]
