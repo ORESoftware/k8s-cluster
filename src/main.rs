@@ -7318,6 +7318,35 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
             ],
         ),
     ];
+    let release_gate_ready_count = release_gate_matrix
+        .iter()
+        .filter(|gate| gate.get("machineReady").and_then(Value::as_bool) == Some(true))
+        .count();
+    let release_gate_blocked_count = release_gate_matrix
+        .len()
+        .saturating_sub(release_gate_ready_count);
+    let release_gate_missing_category_count = release_gate_matrix
+        .iter()
+        .filter(|gate| {
+            gate.get("missingCategoryCount")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 0
+        })
+        .count();
+    let blocked_release_gate_ids = release_gate_matrix
+        .iter()
+        .filter(|gate| gate.get("machineReady").and_then(Value::as_bool) != Some(true))
+        .filter_map(|gate| gate.get("gateId").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    let release_gate_summary = json!({
+        "gateCount": release_gate_matrix.len(),
+        "readyGateCount": release_gate_ready_count,
+        "blockedGateCount": release_gate_blocked_count,
+        "missingCategoryGateCount": release_gate_missing_category_count,
+        "machineReleaseBlocked": machine_release_blocked,
+        "blockedGateIds": blocked_release_gate_ids
+    });
 
     json!({
         "ok": true,
@@ -7340,8 +7369,13 @@ fn job_release_bundle_response(job: &StoredFabricationJob) -> Value {
             "manifestCategoryCount": bundle_manifest.len(),
             "manifestPresentCount": manifest_present_count,
             "manifestMissingCount": manifest_missing_count,
+            "releaseGateCount": release_gate_matrix.len(),
+            "releaseGateReadyCount": release_gate_ready_count,
+            "releaseGateBlockedCount": release_gate_blocked_count,
+            "releaseGateMissingCategoryCount": release_gate_missing_category_count,
             "machineReleaseBlocked": machine_release_blocked
         },
+        "releaseGateSummary": release_gate_summary,
         "releaseSurfaces": [
             "design-package",
             "design-export-bundle",
@@ -91650,6 +91684,155 @@ fn provenance_result_artifact_missing_release_evidence(artifact: &Value) -> bool
             .is_none_or(Vec::is_empty)
 }
 
+fn provenance_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "provenance-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn provenance_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    lineage_blocker_count: usize,
+    artifact_blocker_count: usize,
+    custody_blocker_count: usize,
+    review_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        provenance_priority_disposition(
+            "machine-failure-boundary-first",
+            if lineage_blocker_count > 0 || artifact_blocker_count > 0 || custody_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("lineageBlockerCount:{lineage_blocker_count}"),
+                format!("artifactBlockerCount:{artifact_blocker_count}"),
+                format!("custodyBlockerCount:{custody_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/provenance/result",
+                "POST /fabrication/instructions/import/review",
+                "POST /fabrication/release/result",
+            ],
+            if lineage_blocker_count > 0 || artifact_blocker_count > 0 || custody_blocker_count > 0
+            {
+                "machineReady remains blocked until lineage, digest, custody, and release-bundle provenance clear the machine-failure boundary"
+            } else {
+                "provenance result did not report an open machine-failure priority blocker"
+            },
+        ),
+        provenance_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required || review_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("reviewRequired:{review_required}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/design/import/review",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required || review_required {
+                "machineReady remains blocked until operator lineage review, conversion acceptance, custody signoff, or digest mismatch disposition is retained"
+            } else {
+                "provenance result did not report an open human-intervention priority blocker"
+            },
+        ),
+        provenance_priority_disposition(
+            "split-combine-or-interface-review",
+            if review_required {
+                "needs-review"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("reviewRequired:{review_required}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if review_required {
+                "hybrid split/combine or interface release should review provenance for recomposed CAD, controller, inspection, and release-bundle artifacts"
+            } else {
+                "provenance result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        provenance_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing || artifact_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("artifactEvidenceMissing:{artifact_evidence_missing}"),
+                format!("artifactBlockerCount:{artifact_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/provenance/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing || artifact_blocker_count > 0 {
+                "machineReady remains blocked until CAD, machine-code, inspection, release, and job-sheet artifacts retain URI, checksum, format, and evidence"
+            } else {
+                "provenance artifacts include retained release evidence for downstream review"
+            },
+        ),
+        provenance_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked provenance priority lanes before advisory promotion"
+            } else {
+                "provenance result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn provenance_result_review_response(
     request: ProvenanceResultReviewRequest,
 ) -> Result<Value, String> {
@@ -91754,6 +91937,22 @@ fn provenance_result_review_response(
     if human_intervention_required {
         learning_observations.push("provenance:human-intervention-required".to_string());
     }
+    let priority_dispositions = provenance_priority_dispositions(
+        request.success,
+        release_blocked,
+        lineage_blocker_count,
+        artifact_blocker_count,
+        custody_blocker_count,
+        review_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(lineage_checks.iter().filter_map(|check| {
         check
             .get("provenanceFamily")
@@ -91807,6 +92006,7 @@ fn provenance_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "provenanceResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -91880,6 +92080,7 @@ fn provenance_result_review_response(
                     "humanInterventionRequired": human_intervention_required,
                     "artifactEvidenceMissing": artifact_evidence_missing
                 },
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -91889,6 +92090,7 @@ fn provenance_result_review_response(
             "provenance-artifact-checks",
             "provenance-custody-events",
             "provenance-artifacts",
+            "provenance-priority-dispositions",
             "provenance-learning-observations",
             "mdp-request.artifacts.provenanceResult"
         ]
@@ -91947,6 +92149,10 @@ fn stored_provenance_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -91981,6 +92187,12 @@ fn stored_provenance_result_job(response: &Value) -> StoredFabricationJob {
             "provenance-artifacts".to_string(),
             "provenance-artifacts",
             provenance_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "provenance-priority-dispositions".to_string(),
+            "provenance-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -135881,6 +136093,9 @@ mod tests {
             "provenance-scope:native-cad",
             "provenance-artifact:controller-program",
             "provenance-custody:operator-review",
+            "provenance-priority:machine-failure-boundary-first:blocked",
+            "provenance-priority:human-intervention-required:blocked",
+            "provenance-priority:split-combine-or-interface-review:needs-review",
         ] {
             assert!(
                 observations
@@ -135889,6 +136104,36 @@ mod tests {
                 "missing learning observation {observation}"
             );
         }
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+                    && priority.get("disposition").and_then(Value::as_str) == Some("blocked")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("provenance-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("provenance-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some(
+                            "provenance-priority:split-combine-or-interface-review:needs-review",
+                        )
+            })));
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
             .expect("provenance learning outcome draft should be retained");
@@ -135940,6 +136185,13 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(1)
         );
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let job = stored_provenance_result_job(&response);
         assert_eq!(job.record.kind, "provenance-result");
@@ -135954,6 +136206,7 @@ mod tests {
             "provenance-artifact-checks",
             "provenance-custody-events",
             "provenance-artifacts",
+            "provenance-priority-dispositions",
             "provenance-learning-observations",
         ] {
             assert!(
@@ -163395,6 +163648,33 @@ mod tests {
                         .any(|block| block.as_str() == Some("split/combine release"))
                 })
         }));
+        let release_gate_summary = bundle
+            .get("releaseGateSummary")
+            .expect("release bundle should include release gate summary");
+        assert_eq!(
+            release_gate_summary
+                .get("gateCount")
+                .and_then(Value::as_u64),
+            Some(6)
+        );
+        assert_eq!(
+            release_gate_summary
+                .get("blockedGateCount")
+                .and_then(Value::as_u64),
+            Some(6)
+        );
+        assert!(release_gate_summary
+            .get("blockedGateIds")
+            .and_then(Value::as_array)
+            .is_some_and(|gate_ids| gate_ids
+                .iter()
+                .any(|gate_id| gate_id.as_str() == Some("learning-disposition"))));
+        assert_eq!(
+            summary
+                .get("releaseGateBlockedCount")
+                .and_then(Value::as_u64),
+            Some(6)
+        );
         assert!(bundle
             .get("releaseSurfaces")
             .and_then(Value::as_array)

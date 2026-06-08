@@ -4262,6 +4262,35 @@ dispositions, nonconformance decisions, and learning outcome lineage are
 retained as MDP/POMDP/neural learning signals for future planning and
 instruction repair.
 
+## `POST /fabrication/provenance/result`
+
+`POST /provenance/result` and the gateway-prefixed
+`POST /fabrication/provenance/result` accept retained provenance outcomes from
+design-input, CAD/mesh conversion, material-lot, controller-program,
+inspection/release, custody, and learning-lineage reviewers. The response uses
+`dd.fabrication.provenance-result-review.v1` and captures lineage checks,
+artifact checks, custody events, retained artifacts, release blockers, warning
+counts, and a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface review, non-G-code/job-sheet
+evidence, and learning feedback lanes. The learning section includes a
+`dd.fabrication.provenance-learning-outcome-draft.v1` `outcomeDraft` with
+provenance-family, evidence-scope, artifact-kind, custody-event, artifact,
+priority-disposition, review, human-intervention, and reward hints ready for
+`POST /fabrication/learning/outcomes`. Provenance priority observations such as
+`provenance-priority:<priority>:<disposition>` let MDP/POMDP/neural workers learn
+which lineage, digest, custody, conversion, or release-bundle blockers stopped
+machine release.
+
+Machine-ready and release-ready status remains blocked when lineage is not
+traceable, artifact digests or URIs are missing, custody events are not accepted,
+retained artifact evidence is missing, or human provenance review is still
+required. The result is stored with `provenance-result`,
+`provenance-lineage-checks`, `provenance-artifact-checks`,
+`provenance-custody-events`, `provenance-artifacts`,
+`provenance-priority-dispositions`, and `provenance-learning-observations`
+artifacts so future planners can learn which source, controller, release, and
+custody evidence made generated/imported instructions trustworthy.
+
 ## `GET /fabrication/as-built/catalog`
 
 `GET /as-built/catalog` and the gateway-prefixed
@@ -5806,7 +5835,11 @@ runtime inspection boundary while the database contract is still being designed.
   source-provenance, machine-envelope, process-readiness, simulation-evidence,
   human-or-automation-handoff, and learning-disposition gates to the retained
   manifest categories, present/missing counts, blocked release surfaces, and
-  evidence routes for that specific job. `GET /fabrication/jobs/:job_id/release-bundle`
+  evidence routes for that specific job. `releaseGateSummary` and the `summary`
+  release-gate counts report gate count, ready gate count, blocked gate count,
+  missing-category gate count, machine-release-blocked state, and blocked gate
+  IDs so clients can triage a retained bundle without scanning every matrix row.
+  `GET /fabrication/jobs/:job_id/release-bundle`
   is the prefixed alias. Bundles are draft operator/worker evidence packets and
   remain blocked until release gates clear.
 - `GET /jobs/:job_id/artifacts/:artifact_id` returns one full artifact payload,
