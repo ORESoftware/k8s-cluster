@@ -38,6 +38,8 @@ outcomes.
 - `GET /fabrication/subtractive/catalog`
 - `GET /subtractive/preflight/catalog`
 - `GET /fabrication/subtractive/preflight/catalog`
+- `GET /turning/catalog`
+- `GET /fabrication/turning/catalog`
 - `GET /turning/preflight/catalog`
 - `GET /fabrication/turning/preflight/catalog`
 - `GET /cleanliness/preflight/catalog`
@@ -947,6 +949,24 @@ Subtractive preflight entries are release evidence contracts, not live machine
 approvals. Failed checks should be retained through setup, simulation, quality,
 telemetry, and learning outcome routes so DES, MDP/POMDP, and neural workers can
 learn safer split/combine and machine-routing strategies.
+
+## `GET /fabrication/turning/catalog`
+
+`GET /turning/catalog` and the gateway-prefixed
+`GET /fabrication/turning/catalog` return the live
+`dd.fabrication.turning-catalog.v1` catalog for lathe, mill-turn, Swiss, and
+bar-fed turning profiles derived from `default_machines()`. The catalog exposes
+turning machine kinds, controllers, materials, operations, accepted instruction
+languages, release gates, and links to the turning preflight checklist.
+
+The catalog is intentionally advisory: entries are default planning profiles,
+not certified live shop availability. Machine-ready release still requires
+workholding, bar-stock/support, turret/tooling, offsets, controller or
+postprocessor, feed/speed, threading, part-off, transfer, simulation, quality,
+and operator or automation signoff evidence. Turning outcomes should be retained
+through controller, setup, simulation, quality, telemetry, and learning routes so
+DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, or
+require human intervention.
 
 ## `GET /fabrication/turning/preflight/catalog`
 

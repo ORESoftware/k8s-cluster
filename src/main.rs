@@ -61905,6 +61905,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/subtractive/catalog",
         "GET /subtractive/preflight/catalog",
         "GET /fabrication/subtractive/preflight/catalog",
+        "GET /turning/catalog",
+        "GET /fabrication/turning/catalog",
         "GET /turning/preflight/catalog",
         "GET /fabrication/turning/preflight/catalog",
         "GET /cleanliness/preflight/catalog",
@@ -109099,7 +109101,7 @@ async fn subtractive_preflight_catalog_http() -> impl IntoResponse {
     Json(subtractive_preflight_catalog_response())
 }
 
-fn turning_preflight_catalog_response() -> Value {
+fn turning_catalog_response() -> Value {
     let subtractive_payload = subtractive_catalog_response();
     let turning_machines = subtractive_payload
         .get("subtractiveMachines")
@@ -109120,6 +109122,91 @@ fn turning_preflight_catalog_response() -> Value {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let turning_machine_kinds = unique_sorted(turning_machines.iter().filter_map(|machine| {
+        machine
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let controllers = unique_sorted(turning_machines.iter().filter_map(|machine| {
+        machine
+            .get("controller")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
+    let materials = unique_sorted(turning_machines.iter().flat_map(|machine| {
+        machine
+            .get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let operations = unique_sorted(turning_machines.iter().flat_map(|machine| {
+        machine
+            .get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.turning-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
+        "machineCatalogRoutes": [
+            "GET /machines/catalog",
+            "GET /fabrication/machines/catalog",
+            "GET /subtractive/catalog",
+            "GET /fabrication/subtractive/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /turning/preflight/catalog",
+            "GET /fabrication/turning/preflight/catalog"
+        ],
+        "turningMachineCount": turning_machines.len(),
+        "turningMachineKinds": turning_machine_kinds,
+        "controllers": controllers,
+        "materials": materials,
+        "operations": operations,
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
+        "resultReviewRoutes": [
+            "POST /fabrication/machines/select",
+            "POST /fabrication/controllers/plan",
+            "POST /fabrication/controllers/result",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/simulation/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "turning catalog entries are default lathe, mill-turn, Swiss, and bar-fed planning profiles, not certified live machine availability",
+            "machine-ready release remains blocked until workholding, bar-stock/support, turret/tooling, offsets, controller/postprocessor, feed/speed, threading, part-off, transfer, simulation, quality, and signoff evidence are retained",
+            "turning outcomes should feed setup, controller, simulation, quality, telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, or require human intervention"
+        ],
+        "turningMachines": turning_machines
+    })
+}
+
+async fn turning_catalog_http() -> impl IntoResponse {
+    Json(turning_catalog_response())
+}
+
+fn turning_preflight_catalog_response() -> Value {
+    let turning_payload = turning_catalog_response();
+    let turning_machines = turning_payload
+        .get("turningMachines")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
     json!({
         "ok": true,
@@ -109131,6 +109218,7 @@ fn turning_preflight_catalog_response() -> Value {
             "GET /fabrication/turning/preflight/catalog"
         ],
         "relatedRoutes": [
+            "GET /fabrication/turning/catalog",
             "GET /fabrication/subtractive/catalog",
             "GET /fabrication/subtractive/preflight/catalog",
             "GET /fabrication/machine-code/preflight/catalog",
@@ -109141,10 +109229,11 @@ fn turning_preflight_catalog_response() -> Value {
             "POST /fabrication/learning/outcomes"
         ],
         "turningMachineCount": turning_machines.len(),
-        "turningMachineKinds": turning_machines
-            .iter()
-            .filter_map(|machine| machine.get("kind").and_then(Value::as_str))
-            .collect::<Vec<_>>(),
+        "turningMachineKinds": turning_payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
         "preflightGroups": [
             {
                 "group": "chuck-collet-bar-stock-and-support-state",
@@ -118027,6 +118116,7 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfileCatalog": ["GET /slicers/catalog", "GET /fabrication/slicers/catalog"],
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+            "turningCatalog": ["GET /turning/catalog", "GET /fabrication/turning/catalog"],
             "turningPreflightCatalog": ["GET /turning/preflight/catalog", "GET /fabrication/turning/preflight/catalog"],
             "designImportCatalog": ["GET /design/import/catalog", "GET /fabrication/design/import/catalog"],
             "handoffCatalog": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
@@ -121109,6 +121199,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/subtractive/preflight/catalog",
             get(subtractive_preflight_catalog_http),
         )
+        .route("/turning/catalog", get(turning_catalog_http))
+        .route("/fabrication/turning/catalog", get(turning_catalog_http))
         .route(
             "/turning/preflight/catalog",
             get(turning_preflight_catalog_http),
@@ -147434,6 +147526,55 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural")))));
+    }
+
+    #[test]
+    fn turning_catalog_endpoint_exposes_lathe_mill_turn_and_swiss_profiles() {
+        let payload = turning_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.turning-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/turning/catalog"))));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some("lathe"))));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("mill-turn-center"))));
+        assert!(payload
+            .get("turningMachineKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds
+                .iter()
+                .any(|kind| kind.as_str() == Some("swiss-turning-center"))));
+        assert!(payload
+            .get("controllers")
+            .and_then(Value::as_array)
+            .is_some_and(|controllers| controllers
+                .iter()
+                .any(|controller| controller.as_str() == Some("fanuc-gcode"))));
+        assert!(payload
+            .get("resultReviewRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| { route.as_str() == Some("POST /fabrication/controllers/plan") })));
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("split, combine, reroute")))));
     }
 
     #[test]
