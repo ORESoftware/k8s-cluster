@@ -3241,3 +3241,334 @@ export class BenefactorMarketingTeamAllocationsEntity {
   updatedAt!: Date;
 
 }
+
+// benefactor_marketing_integration_sync_runs_integration_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// benefactor_marketing_integration_sync_runs_client_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "benefactor_marketing_integration_sync_runs" })
+export class BenefactorMarketingIntegrationSyncRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "integration_id", type: "uuid" })
+  integrationId!: string;
+
+  @Column({ name: "client_id", type: "uuid", nullable: true })
+  clientId!: string | null;
+
+  @Column({ name: "sync_kind", type: "varchar", length: 48, default: () => "'incremental'" })
+  syncKind!: string;
+
+  @Column({ name: "direction", type: "varchar", length: 24, default: () => "'import'" })
+  direction!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'queued'" })
+  status!: string;
+
+  @Column({ name: "records_seen", type: "integer", default: () => "0" })
+  recordsSeen!: number;
+
+  @Column({ name: "records_changed", type: "integer", default: () => "0" })
+  recordsChanged!: number;
+
+  @Column({ name: "cursor_before", type: "text", nullable: true })
+  cursorBefore!: string | null;
+
+  @Column({ name: "cursor_after", type: "text", nullable: true })
+  cursorAfter!: string | null;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "error_summary", type: "text", nullable: true })
+  errorSummary!: string | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "completed_at", type: "timestamptz", nullable: true })
+  completedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// benefactor_marketing_outreach_sequences_client_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "benefactor_marketing_outreach_sequences" })
+export class BenefactorMarketingOutreachSequencesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "client_id", type: "uuid" })
+  clientId!: string;
+
+  @Column({ name: "campaign_id", type: "uuid", nullable: true })
+  campaignId!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "channel", type: "varchar", length: 32, default: () => "'email'" })
+  channel!: string;
+
+  @Column({ name: "name", type: "varchar", length: 220 })
+  name!: string;
+
+  @Column({ name: "audience_filter", type: "jsonb", default: () => "'{}'::jsonb" })
+  audienceFilter!: Record<string, unknown>;
+
+  @Column({ name: "cadence", type: "jsonb", default: () => "'{}'::jsonb" })
+  cadence!: Record<string, unknown>;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("benefactor_marketing_outreach_steps_sequence_order_uq", ["sequenceId", "stepOrder"], { unique: true })
+@Entity({ name: "benefactor_marketing_outreach_steps" })
+export class BenefactorMarketingOutreachStepsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "sequence_id", type: "uuid" })
+  sequenceId!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "step_order", type: "integer" })
+  stepOrder!: number;
+
+  @Column({ name: "channel", type: "varchar", length: 32 })
+  channel!: string;
+
+  @Column({ name: "delay_minutes", type: "integer", default: () => "0" })
+  delayMinutes!: number;
+
+  @Column({ name: "subject", type: "varchar", length: 240, nullable: true })
+  subject!: string | null;
+
+  @Column({ name: "body_template", type: "text", nullable: true })
+  bodyTemplate!: string | null;
+
+  @Column({ name: "personalization_hints", type: "jsonb", default: () => "'[]'::jsonb" })
+  personalizationHints!: unknown[];
+
+  @Column({ name: "experiment_key", type: "varchar", length: 120, nullable: true })
+  experimentKey!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("benefactor_marketing_outreach_enrollments_sequence_idx", ["sequenceId", "status", "nextTouchAt"])
+// benefactor_marketing_outreach_enrollments_client_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "benefactor_marketing_outreach_enrollments" })
+export class BenefactorMarketingOutreachEnrollmentsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "client_id", type: "uuid" })
+  clientId!: string;
+
+  @Column({ name: "sequence_id", type: "uuid" })
+  sequenceId!: string;
+
+  @Column({ name: "lead_id", type: "uuid", nullable: true })
+  leadId!: string | null;
+
+  @Column({ name: "contact_id", type: "uuid", nullable: true })
+  contactId!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "current_step_order", type: "integer", default: () => "1" })
+  currentStepOrder!: number;
+
+  @Column({ name: "enrollment_context", type: "jsonb", default: () => "'{}'::jsonb" })
+  enrollmentContext!: Record<string, unknown>;
+
+  @Column({ name: "last_touch_at", type: "timestamptz", nullable: true })
+  lastTouchAt!: Date | null;
+
+  @Column({ name: "next_touch_at", type: "timestamptz", nullable: true })
+  nextTouchAt!: Date | null;
+
+  @Column({ name: "outcome", type: "varchar", length: 64, nullable: true })
+  outcome!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// benefactor_marketing_outreach_touchpoints_client_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("benefactor_marketing_outreach_touchpoints_external_uq", ["channel", "externalMessageId"], { unique: true, where: "external_message_id is not null" })
+@Entity({ name: "benefactor_marketing_outreach_touchpoints" })
+export class BenefactorMarketingOutreachTouchpointsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "client_id", type: "uuid" })
+  clientId!: string;
+
+  @Column({ name: "sequence_id", type: "uuid", nullable: true })
+  sequenceId!: string | null;
+
+  @Column({ name: "enrollment_id", type: "uuid", nullable: true })
+  enrollmentId!: string | null;
+
+  @Column({ name: "campaign_id", type: "uuid", nullable: true })
+  campaignId!: string | null;
+
+  @Column({ name: "lead_id", type: "uuid", nullable: true })
+  leadId!: string | null;
+
+  @Column({ name: "contact_id", type: "uuid", nullable: true })
+  contactId!: string | null;
+
+  @Column({ name: "channel", type: "varchar", length: 32 })
+  channel!: string;
+
+  @Column({ name: "direction", type: "varchar", length: 24, default: () => "'outbound'" })
+  direction!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'planned'" })
+  status!: string;
+
+  @Column({ name: "subject", type: "varchar", length: 240, nullable: true })
+  subject!: string | null;
+
+  @Column({ name: "body_excerpt", type: "text", nullable: true })
+  bodyExcerpt!: string | null;
+
+  @Column({ name: "external_message_id", type: "varchar", length: 200, nullable: true })
+  externalMessageId!: string | null;
+
+  @Column({ name: "occurred_at", type: "timestamptz", default: () => "now()" })
+  occurredAt!: Date;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+// benefactor_marketing_prospect_research_briefs_client_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// benefactor_marketing_prospect_research_briefs_lead_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "benefactor_marketing_prospect_research_briefs" })
+export class BenefactorMarketingProspectResearchBriefsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "client_id", type: "uuid" })
+  clientId!: string;
+
+  @Column({ name: "lead_id", type: "uuid", nullable: true })
+  leadId!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "research_kind", type: "varchar", length: 48, default: () => "'account_research'" })
+  researchKind!: string;
+
+  @Column({ name: "source", type: "varchar", length: 48, default: () => "'ai_assisted'" })
+  source!: string;
+
+  @Column({ name: "summary", type: "text", nullable: true })
+  summary!: string | null;
+
+  @Column({ name: "findings", type: "jsonb", default: () => "'[]'::jsonb" })
+  findings!: unknown[];
+
+  @Column({ name: "recommended_actions", type: "jsonb", default: () => "'[]'::jsonb" })
+  recommendedActions!: unknown[];
+
+  @Column({ name: "confidence_micros", type: "integer", default: () => "0" })
+  confidenceMicros!: number;
+
+  @Column({ name: "model_name", type: "varchar", length: 120, nullable: true })
+  modelName!: string | null;
+
+  @Column({ name: "generated_at", type: "timestamptz", nullable: true })
+  generatedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// benefactor_marketing_conversion_events_client_type_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("benefactor_marketing_conversion_events_source_uq", ["sourcePlatform", "sourceEventId"], { unique: true, where: "source_platform is not null and source_event_id is not null" })
+@Entity({ name: "benefactor_marketing_conversion_events" })
+export class BenefactorMarketingConversionEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "client_id", type: "uuid" })
+  clientId!: string;
+
+  @Column({ name: "campaign_id", type: "uuid", nullable: true })
+  campaignId!: string | null;
+
+  @Column({ name: "lead_id", type: "uuid", nullable: true })
+  leadId!: string | null;
+
+  @Column({ name: "content_asset_id", type: "uuid", nullable: true })
+  contentAssetId!: string | null;
+
+  @Column({ name: "event_type", type: "varchar", length: 64 })
+  eventType!: string;
+
+  @Column({ name: "source_platform", type: "varchar", length: 64, nullable: true })
+  sourcePlatform!: string | null;
+
+  @Column({ name: "source_event_id", type: "varchar", length: 200, nullable: true })
+  sourceEventId!: string | null;
+
+  @Column({ name: "session_id", type: "varchar", length: 200, nullable: true })
+  sessionId!: string | null;
+
+  @Column({ name: "visitor_key", type: "varchar", length: 200, nullable: true })
+  visitorKey!: string | null;
+
+  @Column({ name: "occurred_at", type: "timestamptz", default: () => "now()" })
+  occurredAt!: Date;
+
+  @Column({ name: "value_cents", type: "integer", default: () => "0" })
+  valueCents!: number;
+
+  @Column({ name: "utm", type: "jsonb", default: () => "'{}'::jsonb" })
+  utm!: Record<string, unknown>;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}

@@ -3786,6 +3786,400 @@ func (value BenefactorMarketingTeamAllocationsGorm) Validate() error {
 	return nil
 }
 
+const BenefactorMarketingIntegrationSyncRunsTable = "benefactor_marketing_integration_sync_runs"
+const BenefactorMarketingIntegrationSyncRunsSelectSQL = `select
+      id::text as id,
+      integration_id::text as integration_id,
+      client_id::text as client_id,
+      sync_kind,
+      direction,
+      status,
+      records_seen,
+      records_changed,
+      cursor_before,
+      cursor_after,
+      payload,
+      error_summary,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_integration_sync_runs`
+
+var BenefactorMarketingIntegrationSyncRunsSyncKindValues = []string{"incremental", "full", "webhook", "backfill", "export"}
+var BenefactorMarketingIntegrationSyncRunsDirectionValues = []string{"import", "export", "bidirectional"}
+var BenefactorMarketingIntegrationSyncRunsStatusValues = []string{"queued", "running", "succeeded", "failed", "canceled"}
+
+type BenefactorMarketingIntegrationSyncRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	IntegrationId uuid.UUID `gorm:"column:integration_id;type:uuid;not null" json:"integrationId"`
+	ClientId *uuid.UUID `gorm:"column:client_id;type:uuid" json:"clientId,omitempty"`
+	SyncKind string `gorm:"column:sync_kind;type:varchar(48);default:'incremental';not null" json:"syncKind"`
+	Direction string `gorm:"column:direction;type:varchar(24);default:'import';not null" json:"direction"`
+	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
+	RecordsSeen int32 `gorm:"column:records_seen;type:integer;default:0;not null" json:"recordsSeen"`
+	RecordsChanged int32 `gorm:"column:records_changed;type:integer;default:0;not null" json:"recordsChanged"`
+	CursorBefore *string `gorm:"column:cursor_before;type:text" json:"cursorBefore,omitempty"`
+	CursorAfter *string `gorm:"column:cursor_after;type:text" json:"cursorAfter,omitempty"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	ErrorSummary *string `gorm:"column:error_summary;type:text" json:"errorSummary,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	CompletedAt *time.Time `gorm:"column:completed_at;type:timestamptz" json:"completedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingIntegrationSyncRunsGorm) TableName() string { return BenefactorMarketingIntegrationSyncRunsTable }
+
+func (value BenefactorMarketingIntegrationSyncRunsGorm) Validate() error {
+	if !containsString(BenefactorMarketingIntegrationSyncRunsSyncKindValues, value.SyncKind) { return errors.New("unsupported benefactor_marketing_integration_sync_runs.sync_kind") }
+	if !containsString(BenefactorMarketingIntegrationSyncRunsDirectionValues, value.Direction) { return errors.New("unsupported benefactor_marketing_integration_sync_runs.direction") }
+	if !containsString(BenefactorMarketingIntegrationSyncRunsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_integration_sync_runs.status") }
+	if value.RecordsSeen < 0 { return errors.New("benefactor_marketing_integration_sync_runs.records_seen is below the minimum") }
+	if value.RecordsChanged < 0 { return errors.New("benefactor_marketing_integration_sync_runs.records_changed is below the minimum") }
+	if value.CursorBefore != nil {
+		if len([]byte(*value.CursorBefore)) > 4000 { return errors.New("benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes") }
+	}
+	if value.CursorAfter != nil {
+		if len([]byte(*value.CursorAfter)) > 4000 { return errors.New("benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes") }
+	}
+	if !validateJSONString(value.Payload) { return errors.New("benefactor_marketing_integration_sync_runs.payload must be valid JSON") }
+	if value.ErrorSummary != nil {
+		if len([]byte(*value.ErrorSummary)) > 4000 { return errors.New("benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes") }
+	}
+	return nil
+}
+
+const BenefactorMarketingOutreachSequencesTable = "benefactor_marketing_outreach_sequences"
+const BenefactorMarketingOutreachSequencesSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      status,
+      channel,
+      name,
+      audience_filter,
+      cadence,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_sequences`
+
+var BenefactorMarketingOutreachSequencesStatusValues = []string{"draft", "active", "paused", "completed", "archived"}
+var BenefactorMarketingOutreachSequencesChannelValues = []string{"email", "linkedin", "sms", "phone", "multi_channel"}
+
+type BenefactorMarketingOutreachSequencesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'draft';not null" json:"status"`
+	Channel string `gorm:"column:channel;type:varchar(32);default:'email';not null" json:"channel"`
+	Name string `gorm:"column:name;type:varchar(220);not null" json:"name"`
+	AudienceFilter datatypes.JSON `gorm:"column:audience_filter;type:jsonb;default:'{}'::jsonb;not null" json:"audienceFilter"`
+	Cadence datatypes.JSON `gorm:"column:cadence;type:jsonb;default:'{}'::jsonb;not null" json:"cadence"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingOutreachSequencesGorm) TableName() string { return BenefactorMarketingOutreachSequencesTable }
+
+func (value BenefactorMarketingOutreachSequencesGorm) Validate() error {
+	if !containsString(BenefactorMarketingOutreachSequencesStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_outreach_sequences.status") }
+	if !containsString(BenefactorMarketingOutreachSequencesChannelValues, value.Channel) { return errors.New("unsupported benefactor_marketing_outreach_sequences.channel") }
+	if len([]byte(value.Name)) > 220 { return errors.New("benefactor_marketing_outreach_sequences.name exceeds 220 bytes") }
+	if len([]byte(value.Name)) < 1 { return errors.New("benefactor_marketing_outreach_sequences.name is below 1 bytes") }
+	if !validateJSONString(value.AudienceFilter) { return errors.New("benefactor_marketing_outreach_sequences.audience_filter must be valid JSON") }
+	if !validateJSONString(value.Cadence) { return errors.New("benefactor_marketing_outreach_sequences.cadence must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_marketing_outreach_sequences.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingOutreachStepsTable = "benefactor_marketing_outreach_steps"
+const BenefactorMarketingOutreachStepsSelectSQL = `select
+      id::text as id,
+      sequence_id::text as sequence_id,
+      status,
+      step_order,
+      channel,
+      delay_minutes,
+      subject,
+      body_template,
+      personalization_hints,
+      experiment_key,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_steps`
+
+var BenefactorMarketingOutreachStepsStatusValues = []string{"active", "disabled", "archived"}
+var BenefactorMarketingOutreachStepsChannelValues = []string{"email", "linkedin", "sms", "phone", "task"}
+
+type BenefactorMarketingOutreachStepsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	SequenceId uuid.UUID `gorm:"column:sequence_id;type:uuid;not null" json:"sequenceId"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	StepOrder int32 `gorm:"column:step_order;type:integer;not null" json:"stepOrder"`
+	Channel string `gorm:"column:channel;type:varchar(32);not null" json:"channel"`
+	DelayMinutes int32 `gorm:"column:delay_minutes;type:integer;default:0;not null" json:"delayMinutes"`
+	Subject *string `gorm:"column:subject;type:varchar(240)" json:"subject,omitempty"`
+	BodyTemplate *string `gorm:"column:body_template;type:text" json:"bodyTemplate,omitempty"`
+	PersonalizationHints datatypes.JSON `gorm:"column:personalization_hints;type:jsonb;default:'[]'::jsonb;not null" json:"personalizationHints"`
+	ExperimentKey *string `gorm:"column:experiment_key;type:varchar(120)" json:"experimentKey,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingOutreachStepsGorm) TableName() string { return BenefactorMarketingOutreachStepsTable }
+
+func (value BenefactorMarketingOutreachStepsGorm) Validate() error {
+	if !containsString(BenefactorMarketingOutreachStepsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_outreach_steps.status") }
+	if value.StepOrder < 1 { return errors.New("benefactor_marketing_outreach_steps.step_order is below the minimum") }
+	if value.StepOrder > 100 { return errors.New("benefactor_marketing_outreach_steps.step_order is above the maximum") }
+	if !containsString(BenefactorMarketingOutreachStepsChannelValues, value.Channel) { return errors.New("unsupported benefactor_marketing_outreach_steps.channel") }
+	if value.DelayMinutes < 0 { return errors.New("benefactor_marketing_outreach_steps.delay_minutes is below the minimum") }
+	if value.DelayMinutes > 525600 { return errors.New("benefactor_marketing_outreach_steps.delay_minutes is above the maximum") }
+	if value.Subject != nil {
+		if len([]byte(*value.Subject)) > 240 { return errors.New("benefactor_marketing_outreach_steps.subject exceeds 240 bytes") }
+	}
+	if value.BodyTemplate != nil {
+		if len([]byte(*value.BodyTemplate)) > 100000 { return errors.New("benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes") }
+	}
+	if !validateJSONString(value.PersonalizationHints) { return errors.New("benefactor_marketing_outreach_steps.personalization_hints must be valid JSON") }
+	if value.ExperimentKey != nil {
+		if len([]byte(*value.ExperimentKey)) > 120 { return errors.New("benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes") }
+	}
+	return nil
+}
+
+const BenefactorMarketingOutreachEnrollmentsTable = "benefactor_marketing_outreach_enrollments"
+const BenefactorMarketingOutreachEnrollmentsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      sequence_id::text as sequence_id,
+      lead_id::text as lead_id,
+      contact_id::text as contact_id,
+      status,
+      current_step_order,
+      enrollment_context,
+      to_char(last_touch_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_touch_at,
+      to_char(next_touch_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_touch_at,
+      outcome,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_enrollments`
+
+var BenefactorMarketingOutreachEnrollmentsStatusValues = []string{"active", "paused", "completed", "bounced", "unsubscribed", "failed"}
+
+type BenefactorMarketingOutreachEnrollmentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	SequenceId uuid.UUID `gorm:"column:sequence_id;type:uuid;not null" json:"sequenceId"`
+	LeadId *uuid.UUID `gorm:"column:lead_id;type:uuid" json:"leadId,omitempty"`
+	ContactId *uuid.UUID `gorm:"column:contact_id;type:uuid" json:"contactId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	CurrentStepOrder int32 `gorm:"column:current_step_order;type:integer;default:1;not null" json:"currentStepOrder"`
+	EnrollmentContext datatypes.JSON `gorm:"column:enrollment_context;type:jsonb;default:'{}'::jsonb;not null" json:"enrollmentContext"`
+	LastTouchAt *time.Time `gorm:"column:last_touch_at;type:timestamptz" json:"lastTouchAt,omitempty"`
+	NextTouchAt *time.Time `gorm:"column:next_touch_at;type:timestamptz" json:"nextTouchAt,omitempty"`
+	Outcome *string `gorm:"column:outcome;type:varchar(64)" json:"outcome,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingOutreachEnrollmentsGorm) TableName() string { return BenefactorMarketingOutreachEnrollmentsTable }
+
+func (value BenefactorMarketingOutreachEnrollmentsGorm) Validate() error {
+	if !containsString(BenefactorMarketingOutreachEnrollmentsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_outreach_enrollments.status") }
+	if value.CurrentStepOrder < 1 { return errors.New("benefactor_marketing_outreach_enrollments.current_step_order is below the minimum") }
+	if value.CurrentStepOrder > 100 { return errors.New("benefactor_marketing_outreach_enrollments.current_step_order is above the maximum") }
+	if !validateJSONString(value.EnrollmentContext) { return errors.New("benefactor_marketing_outreach_enrollments.enrollment_context must be valid JSON") }
+	if value.Outcome != nil {
+		if len([]byte(*value.Outcome)) > 64 { return errors.New("benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes") }
+	}
+	return nil
+}
+
+const BenefactorMarketingOutreachTouchpointsTable = "benefactor_marketing_outreach_touchpoints"
+const BenefactorMarketingOutreachTouchpointsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      sequence_id::text as sequence_id,
+      enrollment_id::text as enrollment_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      contact_id::text as contact_id,
+      channel,
+      direction,
+      status,
+      subject,
+      body_excerpt,
+      external_message_id,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as occurred_at,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_outreach_touchpoints`
+
+var BenefactorMarketingOutreachTouchpointsChannelValues = []string{"email", "linkedin", "sms", "phone", "task", "meeting"}
+var BenefactorMarketingOutreachTouchpointsDirectionValues = []string{"outbound", "inbound", "internal"}
+var BenefactorMarketingOutreachTouchpointsStatusValues = []string{"planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"}
+
+type BenefactorMarketingOutreachTouchpointsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	SequenceId *uuid.UUID `gorm:"column:sequence_id;type:uuid" json:"sequenceId,omitempty"`
+	EnrollmentId *uuid.UUID `gorm:"column:enrollment_id;type:uuid" json:"enrollmentId,omitempty"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	LeadId *uuid.UUID `gorm:"column:lead_id;type:uuid" json:"leadId,omitempty"`
+	ContactId *uuid.UUID `gorm:"column:contact_id;type:uuid" json:"contactId,omitempty"`
+	Channel string `gorm:"column:channel;type:varchar(32);not null" json:"channel"`
+	Direction string `gorm:"column:direction;type:varchar(24);default:'outbound';not null" json:"direction"`
+	Status string `gorm:"column:status;type:varchar(32);default:'planned';not null" json:"status"`
+	Subject *string `gorm:"column:subject;type:varchar(240)" json:"subject,omitempty"`
+	BodyExcerpt *string `gorm:"column:body_excerpt;type:text" json:"bodyExcerpt,omitempty"`
+	ExternalMessageId *string `gorm:"column:external_message_id;type:varchar(200)" json:"externalMessageId,omitempty"`
+	OccurredAt time.Time `gorm:"column:occurred_at;type:timestamptz;default:now();not null" json:"occurredAt"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (BenefactorMarketingOutreachTouchpointsGorm) TableName() string { return BenefactorMarketingOutreachTouchpointsTable }
+
+func (value BenefactorMarketingOutreachTouchpointsGorm) Validate() error {
+	if !containsString(BenefactorMarketingOutreachTouchpointsChannelValues, value.Channel) { return errors.New("unsupported benefactor_marketing_outreach_touchpoints.channel") }
+	if !containsString(BenefactorMarketingOutreachTouchpointsDirectionValues, value.Direction) { return errors.New("unsupported benefactor_marketing_outreach_touchpoints.direction") }
+	if !containsString(BenefactorMarketingOutreachTouchpointsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_outreach_touchpoints.status") }
+	if value.Subject != nil {
+		if len([]byte(*value.Subject)) > 240 { return errors.New("benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes") }
+	}
+	if value.BodyExcerpt != nil {
+		if len([]byte(*value.BodyExcerpt)) > 4000 { return errors.New("benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes") }
+	}
+	if value.ExternalMessageId != nil {
+		if len([]byte(*value.ExternalMessageId)) > 200 { return errors.New("benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes") }
+	}
+	if !validateJSONString(value.Payload) { return errors.New("benefactor_marketing_outreach_touchpoints.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingProspectResearchBriefsTable = "benefactor_marketing_prospect_research_briefs"
+const BenefactorMarketingProspectResearchBriefsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      status,
+      research_kind,
+      source,
+      summary,
+      findings,
+      recommended_actions,
+      confidence_micros,
+      model_name,
+      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as generated_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_prospect_research_briefs`
+
+var BenefactorMarketingProspectResearchBriefsStatusValues = []string{"draft", "ready", "stale", "failed"}
+var BenefactorMarketingProspectResearchBriefsResearchKindValues = []string{"account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"}
+var BenefactorMarketingProspectResearchBriefsSourceValues = []string{"ai_assisted", "analyst", "scraper", "integration"}
+
+type BenefactorMarketingProspectResearchBriefsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	LeadId *uuid.UUID `gorm:"column:lead_id;type:uuid" json:"leadId,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'draft';not null" json:"status"`
+	ResearchKind string `gorm:"column:research_kind;type:varchar(48);default:'account_research';not null" json:"researchKind"`
+	Source string `gorm:"column:source;type:varchar(48);default:'ai_assisted';not null" json:"source"`
+	Summary *string `gorm:"column:summary;type:text" json:"summary,omitempty"`
+	Findings datatypes.JSON `gorm:"column:findings;type:jsonb;default:'[]'::jsonb;not null" json:"findings"`
+	RecommendedActions datatypes.JSON `gorm:"column:recommended_actions;type:jsonb;default:'[]'::jsonb;not null" json:"recommendedActions"`
+	ConfidenceMicros int32 `gorm:"column:confidence_micros;type:integer;default:0;not null" json:"confidenceMicros"`
+	ModelName *string `gorm:"column:model_name;type:varchar(120)" json:"modelName,omitempty"`
+	GeneratedAt *time.Time `gorm:"column:generated_at;type:timestamptz" json:"generatedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (BenefactorMarketingProspectResearchBriefsGorm) TableName() string { return BenefactorMarketingProspectResearchBriefsTable }
+
+func (value BenefactorMarketingProspectResearchBriefsGorm) Validate() error {
+	if !containsString(BenefactorMarketingProspectResearchBriefsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_prospect_research_briefs.status") }
+	if !containsString(BenefactorMarketingProspectResearchBriefsResearchKindValues, value.ResearchKind) { return errors.New("unsupported benefactor_marketing_prospect_research_briefs.research_kind") }
+	if !containsString(BenefactorMarketingProspectResearchBriefsSourceValues, value.Source) { return errors.New("unsupported benefactor_marketing_prospect_research_briefs.source") }
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 20000 { return errors.New("benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes") }
+	}
+	if !validateJSONString(value.Findings) { return errors.New("benefactor_marketing_prospect_research_briefs.findings must be valid JSON") }
+	if !validateJSONString(value.RecommendedActions) { return errors.New("benefactor_marketing_prospect_research_briefs.recommended_actions must be valid JSON") }
+	if value.ConfidenceMicros < 0 { return errors.New("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum") }
+	if value.ConfidenceMicros > 1000000 { return errors.New("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum") }
+	if value.ModelName != nil {
+		if len([]byte(*value.ModelName)) > 120 { return errors.New("benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes") }
+	}
+	return nil
+}
+
+const BenefactorMarketingConversionEventsTable = "benefactor_marketing_conversion_events"
+const BenefactorMarketingConversionEventsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      content_asset_id::text as content_asset_id,
+      event_type,
+      source_platform,
+      source_event_id,
+      session_id,
+      visitor_key,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as occurred_at,
+      value_cents,
+      utm,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_conversion_events`
+
+var BenefactorMarketingConversionEventsEventTypeValues = []string{"landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"}
+
+type BenefactorMarketingConversionEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `gorm:"column:client_id;type:uuid;not null" json:"clientId"`
+	CampaignId *uuid.UUID `gorm:"column:campaign_id;type:uuid" json:"campaignId,omitempty"`
+	LeadId *uuid.UUID `gorm:"column:lead_id;type:uuid" json:"leadId,omitempty"`
+	ContentAssetId *uuid.UUID `gorm:"column:content_asset_id;type:uuid" json:"contentAssetId,omitempty"`
+	EventType string `gorm:"column:event_type;type:varchar(64);not null" json:"eventType"`
+	SourcePlatform *string `gorm:"column:source_platform;type:varchar(64)" json:"sourcePlatform,omitempty"`
+	SourceEventId *string `gorm:"column:source_event_id;type:varchar(200)" json:"sourceEventId,omitempty"`
+	SessionId *string `gorm:"column:session_id;type:varchar(200)" json:"sessionId,omitempty"`
+	VisitorKey *string `gorm:"column:visitor_key;type:varchar(200)" json:"visitorKey,omitempty"`
+	OccurredAt time.Time `gorm:"column:occurred_at;type:timestamptz;default:now();not null" json:"occurredAt"`
+	ValueCents int32 `gorm:"column:value_cents;type:integer;default:0;not null" json:"valueCents"`
+	Utm datatypes.JSON `gorm:"column:utm;type:jsonb;default:'{}'::jsonb;not null" json:"utm"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (BenefactorMarketingConversionEventsGorm) TableName() string { return BenefactorMarketingConversionEventsTable }
+
+func (value BenefactorMarketingConversionEventsGorm) Validate() error {
+	if !containsString(BenefactorMarketingConversionEventsEventTypeValues, value.EventType) { return errors.New("unsupported benefactor_marketing_conversion_events.event_type") }
+	if value.SourcePlatform != nil {
+		if len([]byte(*value.SourcePlatform)) > 64 { return errors.New("benefactor_marketing_conversion_events.source_platform exceeds 64 bytes") }
+	}
+	if value.SourceEventId != nil {
+		if len([]byte(*value.SourceEventId)) > 200 { return errors.New("benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes") }
+	}
+	if value.SessionId != nil {
+		if len([]byte(*value.SessionId)) > 200 { return errors.New("benefactor_marketing_conversion_events.session_id exceeds 200 bytes") }
+	}
+	if value.VisitorKey != nil {
+		if len([]byte(*value.VisitorKey)) > 200 { return errors.New("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes") }
+	}
+	if value.ValueCents < 0 { return errors.New("benefactor_marketing_conversion_events.value_cents is below the minimum") }
+	if !validateJSONString(value.Utm) { return errors.New("benefactor_marketing_conversion_events.utm must be valid JSON") }
+	if !validateJSONString(value.Payload) { return errors.New("benefactor_marketing_conversion_events.payload must be valid JSON") }
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true
