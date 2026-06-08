@@ -147,6 +147,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "validated semantic model registry",
                 "ETL planner primitives",
                 "bounded ETL flow validation endpoint",
+                "secretRef-backed warehouse connection metadata",
             ],
             next_engine_work: vec![
                 "DAX-compatible expression parser",
@@ -182,6 +183,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "SQL compilation target",
                 "route-derived API docs",
                 "centralized metric definitions",
+                "secretRef-backed warehouse connection metadata",
             ],
             next_engine_work: vec![
                 "full LookML project parser",
@@ -197,10 +199,11 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "workbook blueprint",
                 "cell formula planning",
                 "live-query result grid contract",
+                "warehouse connection metadata for live-query planning",
             ],
             next_engine_work: vec![
                 "columnar virtual sheet engine",
-                "warehouse-backed lazy paging",
+                "warehouse-backed lazy paging and execution",
                 "collaborative workbook state",
             ],
         },
@@ -230,9 +233,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "self-service chart builder contract",
                 "enforced RBAC policy surface",
                 "saved question and chart registry",
+                "database connection registry",
             ],
             next_engine_work: vec![
-                "database connection registry",
                 "SQL Lab history",
                 "dataset-level chart publishing approvals",
             ],
@@ -247,6 +250,7 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "saved dashboard catalog",
                 "raw SQL fallback",
                 "dataset profile summaries",
+                "database connection registry metadata",
             ],
             next_engine_work: vec![
                 "visual query builder execution against live warehouses",

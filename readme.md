@@ -58,6 +58,8 @@ concept in `main.rs`:
   target compilation.
 - `src/etl.rs` owns Domo Magic ETL/Power Query-style metadata flow validation, lineage, and
   connector pushdown hints.
+- `src/connections.rs` owns secretRef-backed data connection metadata and dry-run connection test
+  plans for warehouse and BI planner surfaces.
 - `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
   Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus Mermaid, Graphviz, PlantUML,
   D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
@@ -74,15 +76,18 @@ concept in `main.rs`:
 Current first-class parity surfaces:
 
 - Power BI / Looker: governed semantic model descriptors, LookML-like registry ingestion,
-  dataset-backed validation, SQL compile targets, DAX analogs, and calculated fields.
+  dataset-backed validation, SQL compile targets, warehouse connection metadata, DAX analogs, and
+  calculated fields.
 - Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
   selection state.
-- Sigma: workbook blueprints for live-grid and executive-card workflows.
+- Sigma: workbook blueprints for live-grid and executive-card workflows plus warehouse connection
+  metadata for live-query planning.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
-- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy, saved
-  dashboard catalog, saved questions, and saved chart bindings.
+- Superset / Metabase: SQL lab, visual query-builder/self-service contracts, RBAC policy,
+  secretRef-backed database connection registry, saved dashboard catalog, saved questions, and
+  saved chart bindings.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
   rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
@@ -95,6 +100,10 @@ Current first-class parity surfaces:
 - `GET /dialects` - query dialect catalog.
 - `GET /capabilities/parity` - BI and visualization tool parity matrix.
 - `GET /connectors/catalog` - connector catalog and ETL planner primitives.
+- `POST /connections` - authenticated secretRef-backed data connection create/replace.
+- `GET /connections` - authenticated data connection catalog.
+- `GET /connections/:connection_id` - authenticated data connection definition.
+- `POST /connections/:connection_id/test-plan` - authenticated dry-run connection test plan.
 - `GET /semantic/models` - governed semantic models, dimensions, measures, and calculations.
 - `POST /semantic/registry` - authenticated LookML-like semantic model create/replace.
 - `GET /semantic/registry` - authenticated semantic model registry.

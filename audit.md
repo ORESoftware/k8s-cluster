@@ -11,12 +11,12 @@ This audit tracks the current hardening and visualization-platform parity postur
   `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, alert notification policy
   validation lives in `src/notifications.rs`, Qlik-style selection state lives in
   `src/associative.rs`, semantic model parsing and compilation lives in `src/semantic.rs`, ETL flow
-  planning lives in `src/etl.rs`, infrastructure diagram extraction lives in
-  `src/infra_diagrams.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives in
-  `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, self-service
-  question/chart validation lives in `src/self_service.rs`, parser-backed SQL compilation lives in
-  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
-  modules through route handlers.
+  planning lives in `src/etl.rs`, secretRef-backed data connection metadata lives in
+  `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
+  hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard
+  validation lives in `src/dashboard.rs`, self-service question/chart validation lives in
+  `src/self_service.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
+  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -50,6 +50,10 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Domo Magic ETL/Power Query-style flows are validated through `POST /etl/plans` against ingested
   dataset schemas, producing lineage, materialization, and connector pushdown hints without
   executing user formulas.
+- SecretRef-backed data connection metadata is validated through `POST /connections` and exposed
+  through `GET /connections`, `GET /connections/:connection_id`, and
+  `POST /connections/:connection_id/test-plan`; dry-run test plans do not open sockets or call cloud
+  APIs.
 - Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource Explorer, GCP inventory, and GCP
   Cloud Asset inputs can generate neutral infrastructure graphs and Mermaid, Graphviz, PlantUML,
   D2, Structurizr, Cytoscape, Draw.io, Excalidraw, Vega force, NetworkX, GEXF, Markmap, and
@@ -67,14 +71,14 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Qlik parity still needs persisted selection sessions, field-alias inference, and richer
   relationship confidence scoring.
 - Looker parity still needs full LookML project parsing, multi-view joins, Git-backed validation
-  workflows, and warehouse-specific SQL dialect targets.
+  workflows, and live warehouse-specific SQL execution targets.
 - Sigma parity still needs a virtual spreadsheet engine with lazy paging over warehouse-backed
   result sets.
 - Domo parity still needs a connector SDK, streaming checkpoints, durable ETL job execution, and a
   drag-and-drop visual flow builder.
-- Superset and Metabase parity still need database connection registries, SQL Lab history, natural
-  language question generation, and durable ownership beyond the current in-memory role-gated
-  question/chart catalog.
+- Superset and Metabase parity still need SQL Lab history, natural language question generation,
+  actual external connector execution, and durable ownership beyond the current in-memory
+  role-gated connection/question/chart catalog.
 - Grafana parity still needs a real notification dispatcher worker, Loki log frames, and live
   WebSocket panel streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
