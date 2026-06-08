@@ -3762,3 +3762,393 @@ alter table if exists benefactor_marketing_conversion_events
 alter table if exists benefactor_marketing_conversion_events
   add constraint benefactor_marketing_conversion_events_content_asset_fk
   foreign key (content_asset_id) references benefactor_marketing_content_assets(id);
+
+create table if not exists benefactor_marketing_portal_members (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  contact_id uuid,
+  user_id uuid,
+  email varchar(240) not null,
+  status varchar(32) default 'invited' not null,
+  role varchar(32) default 'viewer' not null,
+  access_scope jsonb default '{}'::jsonb not null,
+  last_seen_at timestamptz,
+  invited_at timestamptz default now() not null,
+  accepted_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_portal_members_email_size_chk
+    check (octet_length(email) between 3 and 240),
+  constraint benefactor_marketing_portal_members_status_chk
+    check (status in ('invited', 'active', 'disabled', 'revoked')),
+  constraint benefactor_marketing_portal_members_role_chk
+    check (role in ('owner', 'approver', 'viewer', 'billing', 'collaborator')),
+  constraint benefactor_marketing_portal_members_access_scope_object_chk
+    check (jsonb_typeof(access_scope) = 'object')
+);
+
+create unique index if not exists benefactor_marketing_portal_members_client_email_uq
+  on benefactor_marketing_portal_members (client_id, email);
+
+alter table if exists benefactor_marketing_portal_members
+  add constraint benefactor_marketing_portal_members_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_portal_members
+  add constraint benefactor_marketing_portal_members_contact_fk
+  foreign key (contact_id) references benefactor_marketing_contacts(id);
+
+create table if not exists benefactor_marketing_shared_documents (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  campaign_id uuid,
+  content_asset_id uuid,
+  status varchar(32) default 'active' not null,
+  document_kind varchar(48) not null,
+  title varchar(240) not null,
+  storage_uri text not null,
+  mime_type varchar(120),
+  visibility varchar(32) default 'client_portal' not null,
+  uploaded_by uuid,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_shared_documents_status_chk
+    check (status in ('active', 'archived', 'deleted')),
+  constraint benefactor_marketing_shared_documents_kind_chk
+    check (document_kind in ('contract', 'invoice', 'report', 'creative', 'brand_asset', 'proposal', 'meeting_notes', 'other')),
+  constraint benefactor_marketing_shared_documents_title_size_chk
+    check (octet_length(title) between 1 and 240),
+  constraint benefactor_marketing_shared_documents_uri_size_chk
+    check (octet_length(storage_uri) between 1 and 2048),
+  constraint benefactor_marketing_shared_documents_mime_size_chk
+    check (mime_type is null or octet_length(mime_type) <= 120),
+  constraint benefactor_marketing_shared_documents_visibility_chk
+    check (visibility in ('internal', 'client_portal', 'public_link')),
+  constraint benefactor_marketing_shared_documents_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_shared_documents_client_idx
+  on benefactor_marketing_shared_documents (client_id, status, updated_at desc);
+
+alter table if exists benefactor_marketing_shared_documents
+  add constraint benefactor_marketing_shared_documents_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_shared_documents
+  add constraint benefactor_marketing_shared_documents_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+alter table if exists benefactor_marketing_shared_documents
+  add constraint benefactor_marketing_shared_documents_content_asset_fk
+  foreign key (content_asset_id) references benefactor_marketing_content_assets(id);
+
+create table if not exists benefactor_marketing_collaboration_comments (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  parent_comment_id uuid,
+  resource_type varchar(64) not null,
+  resource_id uuid,
+  author_user_id uuid,
+  author_contact_id uuid,
+  body text not null,
+  status varchar(32) default 'open' not null,
+  visibility varchar(32) default 'client_portal' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_collaboration_comments_resource_type_chk
+    check (resource_type in ('client', 'campaign', 'content_asset', 'approval', 'ticket', 'document', 'report', 'meeting')),
+  constraint benefactor_marketing_collaboration_comments_body_size_chk
+    check (octet_length(body) between 1 and 20000),
+  constraint benefactor_marketing_collaboration_comments_status_chk
+    check (status in ('open', 'resolved', 'archived')),
+  constraint benefactor_marketing_collaboration_comments_visibility_chk
+    check (visibility in ('internal', 'client_portal')),
+  constraint benefactor_marketing_collaboration_comments_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_collaboration_comments_client_idx
+  on benefactor_marketing_collaboration_comments (client_id, resource_type, updated_at desc);
+
+alter table if exists benefactor_marketing_collaboration_comments
+  add constraint benefactor_marketing_collaboration_comments_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_collaboration_comments
+  add constraint benefactor_marketing_collaboration_comments_parent_fk
+  foreign key (parent_comment_id) references benefactor_marketing_collaboration_comments(id);
+
+alter table if exists benefactor_marketing_collaboration_comments
+  add constraint benefactor_marketing_collaboration_comments_author_contact_fk
+  foreign key (author_contact_id) references benefactor_marketing_contacts(id);
+
+create table if not exists benefactor_marketing_notifications (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  recipient_user_id uuid,
+  recipient_contact_id uuid,
+  channel varchar(32) default 'email' not null,
+  status varchar(32) default 'queued' not null,
+  notification_kind varchar(64) not null,
+  title varchar(240) not null,
+  body text,
+  payload jsonb default '{}'::jsonb not null,
+  scheduled_at timestamptz,
+  sent_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_notifications_recipient_chk
+    check (recipient_user_id is not null or recipient_contact_id is not null),
+  constraint benefactor_marketing_notifications_channel_chk
+    check (channel in ('email', 'sms', 'portal', 'slack', 'webhook')),
+  constraint benefactor_marketing_notifications_status_chk
+    check (status in ('queued', 'scheduled', 'sent', 'failed', 'canceled')),
+  constraint benefactor_marketing_notifications_kind_chk
+    check (notification_kind in ('approval_request', 'comment', 'report_ready', 'ticket_update', 'meeting_reminder', 'budget_alert', 'custom')),
+  constraint benefactor_marketing_notifications_title_size_chk
+    check (octet_length(title) between 1 and 240),
+  constraint benefactor_marketing_notifications_body_size_chk
+    check (body is null or octet_length(body) <= 20000),
+  constraint benefactor_marketing_notifications_payload_object_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create index if not exists benefactor_marketing_notifications_client_status_idx
+  on benefactor_marketing_notifications (client_id, status, scheduled_at desc);
+
+alter table if exists benefactor_marketing_notifications
+  add constraint benefactor_marketing_notifications_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_notifications
+  add constraint benefactor_marketing_notifications_contact_fk
+  foreign key (recipient_contact_id) references benefactor_marketing_contacts(id);
+
+create table if not exists benefactor_marketing_time_entries (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid,
+  campaign_id uuid,
+  project_task_id uuid,
+  user_id uuid not null,
+  entry_date varchar(10) not null,
+  minutes integer not null,
+  billable boolean default true not null,
+  rate_cents integer default 0 not null,
+  cost_cents integer default 0 not null,
+  notes text,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_time_entries_date_chk
+    check (entry_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint benefactor_marketing_time_entries_minutes_chk
+    check (minutes between 1 and 1440),
+  constraint benefactor_marketing_time_entries_money_chk
+    check (rate_cents >= 0 and cost_cents >= 0),
+  constraint benefactor_marketing_time_entries_notes_size_chk
+    check (notes is null or octet_length(notes) <= 4000),
+  constraint benefactor_marketing_time_entries_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_time_entries_client_date_idx
+  on benefactor_marketing_time_entries (client_id, entry_date desc)
+  where client_id is not null;
+
+alter table if exists benefactor_marketing_time_entries
+  add constraint benefactor_marketing_time_entries_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_time_entries
+  add constraint benefactor_marketing_time_entries_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+alter table if exists benefactor_marketing_time_entries
+  add constraint benefactor_marketing_time_entries_task_fk
+  foreign key (project_task_id) references benefactor_marketing_project_tasks(id);
+
+create table if not exists benefactor_marketing_vendor_costs (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid,
+  campaign_id uuid,
+  vendor_name varchar(200) not null,
+  category varchar(64) not null,
+  status varchar(32) default 'planned' not null,
+  amount_cents integer not null,
+  incurred_on varchar(10),
+  invoice_ref varchar(120),
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_vendor_costs_vendor_size_chk
+    check (octet_length(vendor_name) between 1 and 200),
+  constraint benefactor_marketing_vendor_costs_category_chk
+    check (category in ('ads', 'creative', 'data', 'software', 'contractor', 'events', 'other')),
+  constraint benefactor_marketing_vendor_costs_status_chk
+    check (status in ('planned', 'approved', 'incurred', 'invoiced', 'paid', 'canceled')),
+  constraint benefactor_marketing_vendor_costs_amount_chk
+    check (amount_cents >= 0),
+  constraint benefactor_marketing_vendor_costs_incurred_on_chk
+    check (incurred_on is null or incurred_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint benefactor_marketing_vendor_costs_invoice_ref_size_chk
+    check (invoice_ref is null or octet_length(invoice_ref) <= 120),
+  constraint benefactor_marketing_vendor_costs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_vendor_costs_client_idx
+  on benefactor_marketing_vendor_costs (client_id, status, updated_at desc)
+  where client_id is not null;
+
+alter table if exists benefactor_marketing_vendor_costs
+  add constraint benefactor_marketing_vendor_costs_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_vendor_costs
+  add constraint benefactor_marketing_vendor_costs_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+create table if not exists benefactor_marketing_commission_entries (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid,
+  opportunity_id uuid,
+  user_id uuid not null,
+  status varchar(32) default 'pending' not null,
+  commission_kind varchar(48) default 'deal' not null,
+  basis_cents integer default 0 not null,
+  rate_micros integer default 0 not null,
+  amount_cents integer default 0 not null,
+  earned_on varchar(10),
+  paid_at timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_commission_entries_status_chk
+    check (status in ('pending', 'approved', 'paid', 'void')),
+  constraint benefactor_marketing_commission_entries_kind_chk
+    check (commission_kind in ('deal', 'retainer', 'renewal', 'upsell', 'appointment')),
+  constraint benefactor_marketing_commission_entries_money_chk
+    check (basis_cents >= 0 and amount_cents >= 0),
+  constraint benefactor_marketing_commission_entries_rate_chk
+    check (rate_micros between 0 and 1000000),
+  constraint benefactor_marketing_commission_entries_earned_on_chk
+    check (earned_on is null or earned_on ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint benefactor_marketing_commission_entries_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists benefactor_marketing_commission_entries_user_idx
+  on benefactor_marketing_commission_entries (user_id, status, updated_at desc);
+
+create index if not exists benefactor_marketing_commission_entries_client_idx
+  on benefactor_marketing_commission_entries (client_id, status, updated_at desc)
+  where client_id is not null;
+
+alter table if exists benefactor_marketing_commission_entries
+  add constraint benefactor_marketing_commission_entries_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_commission_entries
+  add constraint benefactor_marketing_commission_entries_opportunity_fk
+  foreign key (opportunity_id) references benefactor_marketing_opportunities(id);
+
+create table if not exists benefactor_marketing_budget_forecasts (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  campaign_id uuid,
+  forecast_kind varchar(48) default 'monthly' not null,
+  period_start varchar(10) not null,
+  period_end varchar(10) not null,
+  status varchar(32) default 'draft' not null,
+  revenue_cents integer default 0 not null,
+  media_spend_cents integer default 0 not null,
+  labor_cost_cents integer default 0 not null,
+  vendor_cost_cents integer default 0 not null,
+  gross_margin_cents integer default 0 not null,
+  assumptions jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_budget_forecasts_kind_chk
+    check (forecast_kind in ('monthly', 'quarterly', 'campaign', 'annual')),
+  constraint benefactor_marketing_budget_forecasts_period_start_chk
+    check (period_start ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint benefactor_marketing_budget_forecasts_period_end_chk
+    check (period_end ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint benefactor_marketing_budget_forecasts_status_chk
+    check (status in ('draft', 'approved', 'locked', 'archived')),
+  constraint benefactor_marketing_budget_forecasts_money_chk
+    check (revenue_cents >= 0 and media_spend_cents >= 0 and labor_cost_cents >= 0 and vendor_cost_cents >= 0),
+  constraint benefactor_marketing_budget_forecasts_assumptions_object_chk
+    check (jsonb_typeof(assumptions) = 'object')
+);
+
+create index if not exists benefactor_marketing_budget_forecasts_client_period_idx
+  on benefactor_marketing_budget_forecasts (client_id, period_start desc, status);
+
+alter table if exists benefactor_marketing_budget_forecasts
+  add constraint benefactor_marketing_budget_forecasts_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_budget_forecasts
+  add constraint benefactor_marketing_budget_forecasts_campaign_fk
+  foreign key (campaign_id) references benefactor_marketing_campaigns(id);
+
+create table if not exists benefactor_marketing_call_insights (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null,
+  meeting_id uuid,
+  lead_id uuid,
+  opportunity_id uuid,
+  status varchar(32) default 'ready' not null,
+  provider varchar(64),
+  transcript_uri text,
+  summary text,
+  sentiment varchar(32),
+  action_items jsonb default '[]'::jsonb not null,
+  objections jsonb default '[]'::jsonb not null,
+  next_steps jsonb default '[]'::jsonb not null,
+  confidence_micros integer default 0 not null,
+  analyzed_at timestamptz default now() not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint benefactor_marketing_call_insights_status_chk
+    check (status in ('processing', 'ready', 'failed', 'archived')),
+  constraint benefactor_marketing_call_insights_provider_size_chk
+    check (provider is null or octet_length(provider) <= 64),
+  constraint benefactor_marketing_call_insights_transcript_uri_size_chk
+    check (transcript_uri is null or octet_length(transcript_uri) <= 2048),
+  constraint benefactor_marketing_call_insights_summary_size_chk
+    check (summary is null or octet_length(summary) <= 20000),
+  constraint benefactor_marketing_call_insights_sentiment_chk
+    check (sentiment is null or sentiment in ('positive', 'neutral', 'negative', 'mixed')),
+  constraint benefactor_marketing_call_insights_action_items_array_chk
+    check (jsonb_typeof(action_items) = 'array'),
+  constraint benefactor_marketing_call_insights_objections_array_chk
+    check (jsonb_typeof(objections) = 'array'),
+  constraint benefactor_marketing_call_insights_next_steps_array_chk
+    check (jsonb_typeof(next_steps) = 'array'),
+  constraint benefactor_marketing_call_insights_confidence_chk
+    check (confidence_micros between 0 and 1000000)
+);
+
+create index if not exists benefactor_marketing_call_insights_client_idx
+  on benefactor_marketing_call_insights (client_id, analyzed_at desc);
+
+alter table if exists benefactor_marketing_call_insights
+  add constraint benefactor_marketing_call_insights_client_fk
+  foreign key (client_id) references benefactor_marketing_clients(id);
+
+alter table if exists benefactor_marketing_call_insights
+  add constraint benefactor_marketing_call_insights_meeting_fk
+  foreign key (meeting_id) references benefactor_marketing_meetings(id);
+
+alter table if exists benefactor_marketing_call_insights
+  add constraint benefactor_marketing_call_insights_lead_fk
+  foreign key (lead_id) references benefactor_marketing_leads(id);
+
+alter table if exists benefactor_marketing_call_insights
+  add constraint benefactor_marketing_call_insights_opportunity_fk
+  foreign key (opportunity_id) references benefactor_marketing_opportunities(id);

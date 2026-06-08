@@ -4303,3 +4303,525 @@ pub struct BenefactorMarketingConversionEventsDieselInsert {
     pub payload: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_portal_members (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        contact_id -> Nullable<Uuid>,
+        user_id -> Nullable<Uuid>,
+        email -> Varchar,
+        status -> Varchar,
+        role -> Varchar,
+        access_scope -> Jsonb,
+        last_seen_at -> Nullable<Timestamptz>,
+        invited_at -> Timestamptz,
+        accepted_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_portal_members)]
+pub struct BenefactorMarketingPortalMembersDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub contact_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub email: String,
+    pub status: String,
+    pub role: String,
+    pub access_scope: Value,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub invited_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_portal_members)]
+pub struct BenefactorMarketingPortalMembersDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub contact_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub email: Option<String>,
+    pub status: Option<String>,
+    pub role: Option<String>,
+    pub access_scope: Option<Value>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub invited_at: Option<DateTime<Utc>>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_shared_documents (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        campaign_id -> Nullable<Uuid>,
+        content_asset_id -> Nullable<Uuid>,
+        status -> Varchar,
+        document_kind -> Varchar,
+        title -> Varchar,
+        storage_uri -> Text,
+        mime_type -> Nullable<Varchar>,
+        visibility -> Varchar,
+        uploaded_by -> Nullable<Uuid>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_shared_documents)]
+pub struct BenefactorMarketingSharedDocumentsDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub campaign_id: Option<Uuid>,
+    pub content_asset_id: Option<Uuid>,
+    pub status: String,
+    pub document_kind: String,
+    pub title: String,
+    pub storage_uri: String,
+    pub mime_type: Option<String>,
+    pub visibility: String,
+    pub uploaded_by: Option<Uuid>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_shared_documents)]
+pub struct BenefactorMarketingSharedDocumentsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub content_asset_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub document_kind: Option<String>,
+    pub title: Option<String>,
+    pub storage_uri: Option<String>,
+    pub mime_type: Option<String>,
+    pub visibility: Option<String>,
+    pub uploaded_by: Option<Uuid>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_collaboration_comments (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        parent_comment_id -> Nullable<Uuid>,
+        resource_type -> Varchar,
+        resource_id -> Nullable<Uuid>,
+        author_user_id -> Nullable<Uuid>,
+        author_contact_id -> Nullable<Uuid>,
+        body -> Text,
+        status -> Varchar,
+        visibility -> Varchar,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_collaboration_comments)]
+pub struct BenefactorMarketingCollaborationCommentsDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub parent_comment_id: Option<Uuid>,
+    pub resource_type: String,
+    pub resource_id: Option<Uuid>,
+    pub author_user_id: Option<Uuid>,
+    pub author_contact_id: Option<Uuid>,
+    pub body: String,
+    pub status: String,
+    pub visibility: String,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_collaboration_comments)]
+pub struct BenefactorMarketingCollaborationCommentsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub parent_comment_id: Option<Uuid>,
+    pub resource_type: Option<String>,
+    pub resource_id: Option<Uuid>,
+    pub author_user_id: Option<Uuid>,
+    pub author_contact_id: Option<Uuid>,
+    pub body: Option<String>,
+    pub status: Option<String>,
+    pub visibility: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_notifications (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        recipient_user_id -> Nullable<Uuid>,
+        recipient_contact_id -> Nullable<Uuid>,
+        channel -> Varchar,
+        status -> Varchar,
+        notification_kind -> Varchar,
+        title -> Varchar,
+        body -> Nullable<Text>,
+        payload -> Jsonb,
+        scheduled_at -> Nullable<Timestamptz>,
+        sent_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_notifications)]
+pub struct BenefactorMarketingNotificationsDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub recipient_user_id: Option<Uuid>,
+    pub recipient_contact_id: Option<Uuid>,
+    pub channel: String,
+    pub status: String,
+    pub notification_kind: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub payload: Value,
+    pub scheduled_at: Option<DateTime<Utc>>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_notifications)]
+pub struct BenefactorMarketingNotificationsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub recipient_user_id: Option<Uuid>,
+    pub recipient_contact_id: Option<Uuid>,
+    pub channel: Option<String>,
+    pub status: Option<String>,
+    pub notification_kind: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub payload: Option<Value>,
+    pub scheduled_at: Option<DateTime<Utc>>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_time_entries (id) {
+        id -> Uuid,
+        client_id -> Nullable<Uuid>,
+        campaign_id -> Nullable<Uuid>,
+        project_task_id -> Nullable<Uuid>,
+        user_id -> Uuid,
+        entry_date -> Varchar,
+        minutes -> Int4,
+        billable -> Bool,
+        rate_cents -> Int4,
+        cost_cents -> Int4,
+        notes -> Nullable<Text>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_time_entries)]
+pub struct BenefactorMarketingTimeEntriesDieselRow {
+    pub id: Uuid,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub project_task_id: Option<Uuid>,
+    pub user_id: Uuid,
+    pub entry_date: String,
+    pub minutes: i32,
+    pub billable: bool,
+    pub rate_cents: i32,
+    pub cost_cents: i32,
+    pub notes: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_time_entries)]
+pub struct BenefactorMarketingTimeEntriesDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub project_task_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub entry_date: Option<String>,
+    pub minutes: Option<i32>,
+    pub billable: Option<bool>,
+    pub rate_cents: Option<i32>,
+    pub cost_cents: Option<i32>,
+    pub notes: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_vendor_costs (id) {
+        id -> Uuid,
+        client_id -> Nullable<Uuid>,
+        campaign_id -> Nullable<Uuid>,
+        vendor_name -> Varchar,
+        category -> Varchar,
+        status -> Varchar,
+        amount_cents -> Int4,
+        incurred_on -> Nullable<Varchar>,
+        invoice_ref -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_vendor_costs)]
+pub struct BenefactorMarketingVendorCostsDieselRow {
+    pub id: Uuid,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub vendor_name: String,
+    pub category: String,
+    pub status: String,
+    pub amount_cents: i32,
+    pub incurred_on: Option<String>,
+    pub invoice_ref: Option<String>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_vendor_costs)]
+pub struct BenefactorMarketingVendorCostsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub vendor_name: Option<String>,
+    pub category: Option<String>,
+    pub status: Option<String>,
+    pub amount_cents: Option<i32>,
+    pub incurred_on: Option<String>,
+    pub invoice_ref: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_commission_entries (id) {
+        id -> Uuid,
+        client_id -> Nullable<Uuid>,
+        opportunity_id -> Nullable<Uuid>,
+        user_id -> Uuid,
+        status -> Varchar,
+        commission_kind -> Varchar,
+        basis_cents -> Int4,
+        rate_micros -> Int4,
+        amount_cents -> Int4,
+        earned_on -> Nullable<Varchar>,
+        paid_at -> Nullable<Timestamptz>,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_commission_entries)]
+pub struct BenefactorMarketingCommissionEntriesDieselRow {
+    pub id: Uuid,
+    pub client_id: Option<Uuid>,
+    pub opportunity_id: Option<Uuid>,
+    pub user_id: Uuid,
+    pub status: String,
+    pub commission_kind: String,
+    pub basis_cents: i32,
+    pub rate_micros: i32,
+    pub amount_cents: i32,
+    pub earned_on: Option<String>,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_commission_entries)]
+pub struct BenefactorMarketingCommissionEntriesDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub opportunity_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub commission_kind: Option<String>,
+    pub basis_cents: Option<i32>,
+    pub rate_micros: Option<i32>,
+    pub amount_cents: Option<i32>,
+    pub earned_on: Option<String>,
+    pub paid_at: Option<DateTime<Utc>>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_budget_forecasts (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        campaign_id -> Nullable<Uuid>,
+        forecast_kind -> Varchar,
+        period_start -> Varchar,
+        period_end -> Varchar,
+        status -> Varchar,
+        revenue_cents -> Int4,
+        media_spend_cents -> Int4,
+        labor_cost_cents -> Int4,
+        vendor_cost_cents -> Int4,
+        gross_margin_cents -> Int4,
+        assumptions -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_budget_forecasts)]
+pub struct BenefactorMarketingBudgetForecastsDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub campaign_id: Option<Uuid>,
+    pub forecast_kind: String,
+    pub period_start: String,
+    pub period_end: String,
+    pub status: String,
+    pub revenue_cents: i32,
+    pub media_spend_cents: i32,
+    pub labor_cost_cents: i32,
+    pub vendor_cost_cents: i32,
+    pub gross_margin_cents: i32,
+    pub assumptions: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_budget_forecasts)]
+pub struct BenefactorMarketingBudgetForecastsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub campaign_id: Option<Uuid>,
+    pub forecast_kind: Option<String>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub status: Option<String>,
+    pub revenue_cents: Option<i32>,
+    pub media_spend_cents: Option<i32>,
+    pub labor_cost_cents: Option<i32>,
+    pub vendor_cost_cents: Option<i32>,
+    pub gross_margin_cents: Option<i32>,
+    pub assumptions: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_marketing_call_insights (id) {
+        id -> Uuid,
+        client_id -> Uuid,
+        meeting_id -> Nullable<Uuid>,
+        lead_id -> Nullable<Uuid>,
+        opportunity_id -> Nullable<Uuid>,
+        status -> Varchar,
+        provider -> Nullable<Varchar>,
+        transcript_uri -> Nullable<Text>,
+        summary -> Nullable<Text>,
+        sentiment -> Nullable<Varchar>,
+        action_items -> Jsonb,
+        objections -> Jsonb,
+        next_steps -> Jsonb,
+        confidence_micros -> Int4,
+        analyzed_at -> Timestamptz,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_call_insights)]
+pub struct BenefactorMarketingCallInsightsDieselRow {
+    pub id: Uuid,
+    pub client_id: Uuid,
+    pub meeting_id: Option<Uuid>,
+    pub lead_id: Option<Uuid>,
+    pub opportunity_id: Option<Uuid>,
+    pub status: String,
+    pub provider: Option<String>,
+    pub transcript_uri: Option<String>,
+    pub summary: Option<String>,
+    pub sentiment: Option<String>,
+    pub action_items: Value,
+    pub objections: Value,
+    pub next_steps: Value,
+    pub confidence_micros: i32,
+    pub analyzed_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_marketing_call_insights)]
+pub struct BenefactorMarketingCallInsightsDieselInsert {
+    pub id: Option<Uuid>,
+    pub client_id: Option<Uuid>,
+    pub meeting_id: Option<Uuid>,
+    pub lead_id: Option<Uuid>,
+    pub opportunity_id: Option<Uuid>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    pub transcript_uri: Option<String>,
+    pub summary: Option<String>,
+    pub sentiment: Option<String>,
+    pub action_items: Option<Value>,
+    pub objections: Option<Value>,
+    pub next_steps: Option<Value>,
+    pub confidence_micros: Option<i32>,
+    pub analyzed_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}

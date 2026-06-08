@@ -4,7 +4,9 @@ Rust Axum backend for a B2B marketing agency platform. The service covers client
 contacts, packages, contracts, invoices, lead imports, enrichment/scraper handoffs, lead scoring,
 CRM sync runs, campaigns, channel plans, A/B experiments, outreach sequences, prospect research,
 conversion tracking, automation workflows, attribution events, reports, opportunities, content
-assets, project tasks, team allocations, approvals, tickets, and meetings.
+assets, project tasks, team allocations, approvals, tickets, meetings, portal members, shared
+documents, collaboration comments, client notifications, time/cost/commission records, budget
+forecasts, profitability summaries, and call insights.
 
 ## Database Contract
 
@@ -48,8 +50,8 @@ Web scraping is intentionally offloaded. `POST /leads/{lead_id}/enrichment-jobs`
 handoff job and, when `BENEFACTOR_MARKETING_SCRAPER_BASE_URL` is set, stamps a deterministic
 external handoff URL for the scraper service. When Redis is configured, lead imports, enrichment
 handoffs, CRM sync runs, outreach events, prospect research briefs, conversion events, automation
-events, report snapshots, and attribution events are also published to the configured Redis stream
-for workers or ETL services.
+events, report snapshots, attribution events, portal collaboration events, finance records, and
+call insights are also published to the configured Redis stream for workers or ETL services.
 
 Redis is used for:
 
@@ -80,7 +82,17 @@ Core domain routes include:
 - `GET /clients/{client_id}/lead-intelligence`
 - `GET /clients/{client_id}/revenue-attribution`
 - `GET /clients/{client_id}/operations`
+- `GET /clients/{client_id}/profitability`
 - `GET|POST /clients/{client_id}/team-allocations`
+- `GET|POST /clients/{client_id}/portal/members`
+- `GET|POST /clients/{client_id}/documents`
+- `GET|POST /clients/{client_id}/comments`
+- `GET|POST /clients/{client_id}/notifications`
+- `GET|POST /clients/{client_id}/time-entries`
+- `GET|POST /clients/{client_id}/vendor-costs`
+- `GET|POST /clients/{client_id}/commissions`
+- `GET|POST /clients/{client_id}/budget-forecasts`
+- `GET|POST /clients/{client_id}/call-insights`
 - `GET /clients/{client_id}/sync-runs`
 - `GET /clients/{client_id}/outreach`
 - `GET /clients/{client_id}/outreach/sequences`
@@ -111,6 +123,7 @@ Core domain routes include:
 - `PATCH /approvals/{approval_id}/decision`
 - `POST /tickets`
 - `POST /meetings`
+- `POST /meetings/{meeting_id}/call-insights`
 
 Domain routes require either `Authorization: Bearer <token>` or the legacy `Auth` header matching
 `BENEFACTOR_MARKETING_API_AUTH_BEARER`.

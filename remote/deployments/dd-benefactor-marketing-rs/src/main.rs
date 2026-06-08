@@ -22,11 +22,16 @@ use dd_pg_defs_sea_orm::{
     benefactor_marketing_attribution_events as attribution_events,
     benefactor_marketing_automation_events as automation_events,
     benefactor_marketing_automation_workflows as automation_workflows,
+    benefactor_marketing_budget_forecasts as budget_forecasts,
+    benefactor_marketing_call_insights as call_insights,
     benefactor_marketing_campaign_channels as campaign_channels,
     benefactor_marketing_campaign_experiments as campaign_experiments,
     benefactor_marketing_campaigns as campaigns,
     benefactor_marketing_client_approvals as client_approvals,
-    benefactor_marketing_clients as clients, benefactor_marketing_contacts as contacts,
+    benefactor_marketing_clients as clients,
+    benefactor_marketing_collaboration_comments as collaboration_comments,
+    benefactor_marketing_commission_entries as commission_entries,
+    benefactor_marketing_contacts as contacts,
     benefactor_marketing_content_assets as content_assets,
     benefactor_marketing_contracts as contracts,
     benefactor_marketing_conversion_events as conversion_events,
@@ -34,17 +39,21 @@ use dd_pg_defs_sea_orm::{
     benefactor_marketing_integration_sync_runs as integration_sync_runs,
     benefactor_marketing_integrations as integrations, benefactor_marketing_invoices as invoices,
     benefactor_marketing_leads as leads, benefactor_marketing_meetings as meetings,
+    benefactor_marketing_notifications as notifications,
     benefactor_marketing_opportunities as opportunities,
     benefactor_marketing_outreach_enrollments as outreach_enrollments,
     benefactor_marketing_outreach_sequences as outreach_sequences,
     benefactor_marketing_outreach_steps as outreach_steps,
     benefactor_marketing_outreach_touchpoints as outreach_touchpoints,
+    benefactor_marketing_portal_members as portal_members,
     benefactor_marketing_project_tasks as project_tasks,
     benefactor_marketing_prospect_research_briefs as research_briefs,
     benefactor_marketing_reports as reports,
     benefactor_marketing_service_packages as service_packages,
+    benefactor_marketing_shared_documents as shared_documents,
     benefactor_marketing_team_allocations as team_allocations,
-    benefactor_marketing_tickets as tickets,
+    benefactor_marketing_tickets as tickets, benefactor_marketing_time_entries as time_entries,
+    benefactor_marketing_vendor_costs as vendor_costs,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection,
@@ -113,6 +122,9 @@ struct Metrics {
     outreach_touchpoints_total: AtomicU64,
     research_briefs_total: AtomicU64,
     conversion_events_total: AtomicU64,
+    client_collaboration_events_total: AtomicU64,
+    agency_finance_records_total: AtomicU64,
+    call_insights_total: AtomicU64,
 }
 
 #[derive(Debug, Error)]
@@ -592,6 +604,140 @@ struct CreateTeamAllocationRequest {
     billable: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePortalMemberRequest {
+    contact_id: Option<Uuid>,
+    user_id: Option<Uuid>,
+    email: String,
+    status: Option<String>,
+    role: Option<String>,
+    access_scope: Option<Value>,
+    last_seen_at: Option<DateTime<FixedOffset>>,
+    accepted_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateSharedDocumentRequest {
+    campaign_id: Option<Uuid>,
+    content_asset_id: Option<Uuid>,
+    status: Option<String>,
+    document_kind: String,
+    title: String,
+    storage_uri: String,
+    mime_type: Option<String>,
+    visibility: Option<String>,
+    uploaded_by: Option<Uuid>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateCommentRequest {
+    parent_comment_id: Option<Uuid>,
+    resource_type: String,
+    resource_id: Option<Uuid>,
+    author_user_id: Option<Uuid>,
+    author_contact_id: Option<Uuid>,
+    body: String,
+    status: Option<String>,
+    visibility: Option<String>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateNotificationRequest {
+    recipient_user_id: Option<Uuid>,
+    recipient_contact_id: Option<Uuid>,
+    channel: Option<String>,
+    status: Option<String>,
+    notification_kind: String,
+    title: String,
+    body: Option<String>,
+    payload: Option<Value>,
+    scheduled_at: Option<DateTime<FixedOffset>>,
+    sent_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateTimeEntryRequest {
+    campaign_id: Option<Uuid>,
+    project_task_id: Option<Uuid>,
+    user_id: Uuid,
+    entry_date: String,
+    minutes: i32,
+    billable: Option<bool>,
+    rate_cents: Option<i32>,
+    cost_cents: Option<i32>,
+    notes: Option<String>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateVendorCostRequest {
+    campaign_id: Option<Uuid>,
+    vendor_name: String,
+    category: String,
+    status: Option<String>,
+    amount_cents: i32,
+    incurred_on: Option<String>,
+    invoice_ref: Option<String>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateCommissionEntryRequest {
+    opportunity_id: Option<Uuid>,
+    user_id: Uuid,
+    status: Option<String>,
+    commission_kind: Option<String>,
+    basis_cents: Option<i32>,
+    rate_micros: Option<i32>,
+    amount_cents: Option<i32>,
+    earned_on: Option<String>,
+    paid_at: Option<DateTime<FixedOffset>>,
+    meta_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateBudgetForecastRequest {
+    campaign_id: Option<Uuid>,
+    forecast_kind: Option<String>,
+    period_start: String,
+    period_end: String,
+    status: Option<String>,
+    revenue_cents: Option<i32>,
+    media_spend_cents: Option<i32>,
+    labor_cost_cents: Option<i32>,
+    vendor_cost_cents: Option<i32>,
+    gross_margin_cents: Option<i32>,
+    assumptions: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateCallInsightRequest {
+    meeting_id: Option<Uuid>,
+    lead_id: Option<Uuid>,
+    opportunity_id: Option<Uuid>,
+    status: Option<String>,
+    provider: Option<String>,
+    transcript_uri: Option<String>,
+    summary: Option<String>,
+    sentiment: Option<String>,
+    action_items: Option<Value>,
+    objections: Option<Value>,
+    next_steps: Option<Value>,
+    confidence_micros: Option<i32>,
+    analyzed_at: Option<DateTime<FixedOffset>>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LeadImportResponse {
@@ -661,8 +807,48 @@ fn build_router(state: AppState) -> Router {
             get(client_operations_summary),
         )
         .route(
+            "/clients/{client_id}/profitability",
+            get(client_profitability_summary),
+        )
+        .route(
             "/clients/{client_id}/team-allocations",
             get(list_client_team_allocations).post(create_team_allocation),
+        )
+        .route(
+            "/clients/{client_id}/portal/members",
+            get(list_client_portal_members).post(create_portal_member),
+        )
+        .route(
+            "/clients/{client_id}/documents",
+            get(list_client_documents).post(create_shared_document),
+        )
+        .route(
+            "/clients/{client_id}/comments",
+            get(list_client_comments).post(create_comment),
+        )
+        .route(
+            "/clients/{client_id}/notifications",
+            get(list_client_notifications).post(create_notification),
+        )
+        .route(
+            "/clients/{client_id}/time-entries",
+            get(list_client_time_entries).post(create_time_entry),
+        )
+        .route(
+            "/clients/{client_id}/vendor-costs",
+            get(list_client_vendor_costs).post(create_vendor_cost),
+        )
+        .route(
+            "/clients/{client_id}/commissions",
+            get(list_client_commissions).post(create_commission_entry),
+        )
+        .route(
+            "/clients/{client_id}/budget-forecasts",
+            get(list_client_budget_forecasts).post(create_budget_forecast),
+        )
+        .route(
+            "/clients/{client_id}/call-insights",
+            get(list_client_call_insights).post(create_client_call_insight),
         )
         .route("/clients/{client_id}/sync-runs", get(list_client_sync_runs))
         .route(
@@ -729,6 +915,10 @@ fn build_router(state: AppState) -> Router {
         .route("/approvals/{approval_id}/decision", patch(decide_approval))
         .route("/tickets", post(create_ticket))
         .route("/meetings", post(create_meeting))
+        .route(
+            "/meetings/{meeting_id}/call-insights",
+            post(create_meeting_call_insight),
+        )
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -845,7 +1035,11 @@ async fn capabilities() -> Json<Value> {
             "contentOperations",
             "projectManagement",
             "clientCommunication",
-            "agencyOperations"
+            "clientPortal",
+            "documentSharing",
+            "agencyOperations",
+            "profitabilityTracking",
+            "callIntelligence"
         ],
         "channels": ["socialMedia", "seoAeo", "email", "linkedin", "sms", "paidAds", "content"],
         "integrations": [
@@ -978,7 +1172,16 @@ benefactor_marketing_auth_failures_total {}\n\
 		benefactor_marketing_research_briefs_total {}\n\
 		# HELP benefactor_marketing_conversion_events_total Conversion events recorded.\n\
 		# TYPE benefactor_marketing_conversion_events_total counter\n\
-		benefactor_marketing_conversion_events_total {}\n",
+		benefactor_marketing_conversion_events_total {}\n\
+		# HELP benefactor_marketing_client_collaboration_events_total Portal, document, comment, and notification records accepted.\n\
+		# TYPE benefactor_marketing_client_collaboration_events_total counter\n\
+		benefactor_marketing_client_collaboration_events_total {}\n\
+		# HELP benefactor_marketing_agency_finance_records_total Time, cost, commission, and budget records accepted.\n\
+		# TYPE benefactor_marketing_agency_finance_records_total counter\n\
+		benefactor_marketing_agency_finance_records_total {}\n\
+		# HELP benefactor_marketing_call_insights_total Call insight records accepted.\n\
+		# TYPE benefactor_marketing_call_insights_total counter\n\
+		benefactor_marketing_call_insights_total {}\n",
         uptime,
         state.metrics.mutations_total.load(Ordering::Relaxed),
         state.metrics.enrichment_jobs_total.load(Ordering::Relaxed),
@@ -1015,6 +1218,18 @@ benefactor_marketing_auth_failures_total {}\n\
         state
             .metrics
             .conversion_events_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .client_collaboration_events_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .agency_finance_records_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .call_insights_total
             .load(Ordering::Relaxed)
     );
     ([("content-type", "text/plain; version=0.0.4")], body)
@@ -1161,6 +1376,28 @@ async fn client_dashboard(
         .filter(conversion_events::Column::ClientId.eq(client_id))
         .count(&state.db)
         .await?;
+    let portal_member_count = portal_members::Entity::find()
+        .filter(portal_members::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let document_count = shared_documents::Entity::find()
+        .filter(shared_documents::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
+    let open_comment_count = collaboration_comments::Entity::find()
+        .filter(collaboration_comments::Column::ClientId.eq(client_id))
+        .filter(collaboration_comments::Column::Status.eq("open"))
+        .count(&state.db)
+        .await?;
+    let queued_notification_count = notifications::Entity::find()
+        .filter(notifications::Column::ClientId.eq(client_id))
+        .filter(notifications::Column::Status.eq("queued"))
+        .count(&state.db)
+        .await?;
+    let call_insight_count = call_insights::Entity::find()
+        .filter(call_insights::Column::ClientId.eq(client_id))
+        .count(&state.db)
+        .await?;
     let recent_campaigns = campaigns::Entity::find()
         .filter(campaigns::Column::ClientId.eq(client_id))
         .order_by_desc(campaigns::Column::UpdatedAt)
@@ -1186,6 +1423,24 @@ async fn client_dashboard(
         .limit(8)
         .all(&state.db)
         .await?;
+    let recent_documents = shared_documents::Entity::find()
+        .filter(shared_documents::Column::ClientId.eq(client_id))
+        .order_by_desc(shared_documents::Column::UpdatedAt)
+        .limit(8)
+        .all(&state.db)
+        .await?;
+    let recent_comments = collaboration_comments::Entity::find()
+        .filter(collaboration_comments::Column::ClientId.eq(client_id))
+        .order_by_desc(collaboration_comments::Column::UpdatedAt)
+        .limit(8)
+        .all(&state.db)
+        .await?;
+    let recent_call_insights = call_insights::Entity::find()
+        .filter(call_insights::Column::ClientId.eq(client_id))
+        .order_by_desc(call_insights::Column::AnalyzedAt)
+        .limit(5)
+        .all(&state.db)
+        .await?;
     let payload = json!({
         "client": client,
         "counts": {
@@ -1196,13 +1451,21 @@ async fn client_dashboard(
             "pendingApprovals": pending_approval_count,
             "outreachSequences": outreach_sequence_count,
             "researchBriefs": research_brief_count,
-            "conversionEvents": conversion_event_count
+            "conversionEvents": conversion_event_count,
+            "portalMembers": portal_member_count,
+            "documents": document_count,
+            "openComments": open_comment_count,
+            "queuedNotifications": queued_notification_count,
+            "callInsights": call_insight_count
         },
         "recent": {
             "campaigns": recent_campaigns,
             "reports": recent_reports,
             "openTasks": open_tasks,
-            "conversions": recent_conversions
+            "conversions": recent_conversions,
+            "documents": recent_documents,
+            "comments": recent_comments,
+            "callInsights": recent_call_insights
         }
     });
     cache_set_json(&state, &cache_key, &payload).await;
@@ -1363,6 +1626,21 @@ async fn client_operations_summary(
         .count(&state.db)
         .await?;
     let open_ticket_count = tickets_count(&state.db, client_id).await?;
+    let open_comment_count = collaboration_comments::Entity::find()
+        .filter(collaboration_comments::Column::ClientId.eq(client_id))
+        .filter(collaboration_comments::Column::Status.eq("open"))
+        .count(&state.db)
+        .await?;
+    let queued_notification_count = notifications::Entity::find()
+        .filter(notifications::Column::ClientId.eq(client_id))
+        .filter(notifications::Column::Status.eq("queued"))
+        .count(&state.db)
+        .await?;
+    let document_review_count = shared_documents::Entity::find()
+        .filter(shared_documents::Column::ClientId.eq(client_id))
+        .filter(shared_documents::Column::Status.is_in(["draft", "review"]))
+        .count(&state.db)
+        .await?;
     let recent_tasks = project_tasks::Entity::find()
         .filter(project_tasks::Column::ClientId.eq(client_id))
         .order_by_desc(project_tasks::Column::UpdatedAt)
@@ -1375,6 +1653,18 @@ async fn client_operations_summary(
         .limit(limit(query.limit))
         .all(&state.db)
         .await?;
+    let recent_comments = collaboration_comments::Entity::find()
+        .filter(collaboration_comments::Column::ClientId.eq(client_id))
+        .order_by_desc(collaboration_comments::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    let recent_documents = shared_documents::Entity::find()
+        .filter(shared_documents::Column::ClientId.eq(client_id))
+        .order_by_desc(shared_documents::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
     Ok(Json(json!({
         "clientId": client_id,
         "counts": {
@@ -1382,11 +1672,16 @@ async fn client_operations_summary(
             "blockedTasks": blocked_task_count,
             "slaRiskTasks": sla_risk_task_count,
             "pendingApprovals": pending_approval_count,
-            "openTickets": open_ticket_count
+            "openTickets": open_ticket_count,
+            "openComments": open_comment_count,
+            "queuedNotifications": queued_notification_count,
+            "documentsInReview": document_review_count
         },
         "recent": {
             "tasks": recent_tasks,
-            "tickets": recent_tickets
+            "tickets": recent_tickets,
+            "comments": recent_comments,
+            "documents": recent_documents
         }
     })))
 }
@@ -1438,6 +1733,688 @@ async fn create_team_allocation(
     .insert(&state.db)
     .await?;
     record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_portal_members(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = portal_members::Entity::find()
+        .filter(portal_members::Column::ClientId.eq(client_id))
+        .order_by_desc(portal_members::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "portalMembers": rows })))
+}
+
+async fn create_portal_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreatePortalMemberRequest>,
+) -> AppResult<(StatusCode, Json<portal_members::Model>)> {
+    require_write_access(&state, &headers, "portal.members.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_contact(&state.db, client_id, req.contact_id).await?;
+    let model = portal_members::ActiveModel {
+        client_id: Set(client_id),
+        contact_id: Set(req.contact_id),
+        user_id: Set(req.user_id),
+        email: Set(req.email),
+        status: Set(req.status.unwrap_or_else(|| "invited".to_string())),
+        role: Set(req.role.unwrap_or_else(|| "viewer".to_string())),
+        access_scope: Set(object_or_default(req.access_scope, "accessScope")?),
+        last_seen_at: Set(req.last_seen_at),
+        accepted_at: Set(req.accepted_at),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .client_collaboration_events_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "portal_member_created",
+        json!({
+            "clientId": client_id,
+            "portalMemberId": model.id,
+            "contactId": model.contact_id,
+            "userId": model.user_id,
+            "role": &model.role,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_documents(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = shared_documents::Entity::find()
+        .filter(shared_documents::Column::ClientId.eq(client_id))
+        .order_by_desc(shared_documents::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "documents": rows })))
+}
+
+async fn create_shared_document(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateSharedDocumentRequest>,
+) -> AppResult<(StatusCode, Json<shared_documents::Model>)> {
+    require_write_access(&state, &headers, "documents.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_campaign_for_client(&state.db, client_id, req.campaign_id).await?;
+    ensure_optional_content_asset(&state.db, client_id, req.content_asset_id).await?;
+    let model = shared_documents::ActiveModel {
+        client_id: Set(client_id),
+        campaign_id: Set(req.campaign_id),
+        content_asset_id: Set(req.content_asset_id),
+        status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
+        document_kind: Set(req.document_kind),
+        title: Set(req.title),
+        storage_uri: Set(req.storage_uri),
+        mime_type: Set(req.mime_type),
+        visibility: Set(req.visibility.unwrap_or_else(|| "client".to_string())),
+        uploaded_by: Set(req.uploaded_by),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .client_collaboration_events_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "shared_document_created",
+        json!({
+            "clientId": client_id,
+            "documentId": model.id,
+            "campaignId": model.campaign_id,
+            "contentAssetId": model.content_asset_id,
+            "documentKind": &model.document_kind,
+            "visibility": &model.visibility,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_comments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = collaboration_comments::Entity::find()
+        .filter(collaboration_comments::Column::ClientId.eq(client_id))
+        .order_by_desc(collaboration_comments::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "comments": rows })))
+}
+
+async fn create_comment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateCommentRequest>,
+) -> AppResult<(StatusCode, Json<collaboration_comments::Model>)> {
+    require_write_access(&state, &headers, "comments.create").await?;
+    if req.author_user_id.is_none() && req.author_contact_id.is_none() {
+        return Err(AppError::BadRequest(
+            "authorUserId or authorContactId is required".to_string(),
+        ));
+    }
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_contact(&state.db, client_id, req.author_contact_id).await?;
+    ensure_optional_parent_comment(&state.db, client_id, req.parent_comment_id).await?;
+    let model = collaboration_comments::ActiveModel {
+        client_id: Set(client_id),
+        parent_comment_id: Set(req.parent_comment_id),
+        resource_type: Set(req.resource_type),
+        resource_id: Set(req.resource_id),
+        author_user_id: Set(req.author_user_id),
+        author_contact_id: Set(req.author_contact_id),
+        body: Set(req.body),
+        status: Set(req.status.unwrap_or_else(|| "open".to_string())),
+        visibility: Set(req.visibility.unwrap_or_else(|| "client".to_string())),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .client_collaboration_events_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "collaboration_comment_created",
+        json!({
+            "clientId": client_id,
+            "commentId": model.id,
+            "parentCommentId": model.parent_comment_id,
+            "resourceType": &model.resource_type,
+            "resourceId": model.resource_id,
+            "visibility": &model.visibility,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = notifications::Entity::find()
+        .filter(notifications::Column::ClientId.eq(client_id))
+        .order_by_desc(notifications::Column::ScheduledAt)
+        .order_by_desc(notifications::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "notifications": rows })))
+}
+
+async fn create_notification(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateNotificationRequest>,
+) -> AppResult<(StatusCode, Json<notifications::Model>)> {
+    require_write_access(&state, &headers, "notifications.create").await?;
+    if req.recipient_user_id.is_none() && req.recipient_contact_id.is_none() {
+        return Err(AppError::BadRequest(
+            "recipientUserId or recipientContactId is required".to_string(),
+        ));
+    }
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_contact(&state.db, client_id, req.recipient_contact_id).await?;
+    let model = notifications::ActiveModel {
+        client_id: Set(client_id),
+        recipient_user_id: Set(req.recipient_user_id),
+        recipient_contact_id: Set(req.recipient_contact_id),
+        channel: Set(req.channel.unwrap_or_else(|| "email".to_string())),
+        status: Set(req.status.unwrap_or_else(|| "queued".to_string())),
+        notification_kind: Set(req.notification_kind),
+        title: Set(req.title),
+        body: Set(req.body),
+        payload: Set(object_or_default(req.payload, "payload")?),
+        scheduled_at: Set(req.scheduled_at),
+        sent_at: Set(req.sent_at),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .client_collaboration_events_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "client_notification_queued",
+        json!({
+            "clientId": client_id,
+            "notificationId": model.id,
+            "recipientUserId": model.recipient_user_id,
+            "recipientContactId": model.recipient_contact_id,
+            "channel": &model.channel,
+            "notificationKind": &model.notification_kind,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_time_entries(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = time_entries::Entity::find()
+        .filter(time_entries::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(time_entries::Column::EntryDate)
+        .order_by_desc(time_entries::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "timeEntries": rows })))
+}
+
+async fn create_time_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateTimeEntryRequest>,
+) -> AppResult<(StatusCode, Json<time_entries::Model>)> {
+    require_write_access(&state, &headers, "time-entries.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_campaign_for_client(&state.db, client_id, req.campaign_id).await?;
+    ensure_optional_project_task(&state.db, client_id, req.project_task_id).await?;
+    let model = time_entries::ActiveModel {
+        client_id: Set(Some(client_id)),
+        campaign_id: Set(req.campaign_id),
+        project_task_id: Set(req.project_task_id),
+        user_id: Set(req.user_id),
+        entry_date: Set(iso_date(req.entry_date, "entryDate")?),
+        minutes: Set(minutes_in_day(req.minutes)?),
+        billable: Set(req.billable.unwrap_or(true)),
+        rate_cents: Set(non_negative(req.rate_cents.unwrap_or(0), "rateCents")?),
+        cost_cents: Set(non_negative(req.cost_cents.unwrap_or(0), "costCents")?),
+        notes: Set(req.notes),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .agency_finance_records_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "time_entry_recorded",
+        json!({
+            "clientId": client_id,
+            "timeEntryId": model.id,
+            "campaignId": model.campaign_id,
+            "projectTaskId": model.project_task_id,
+            "userId": model.user_id,
+            "minutes": model.minutes,
+            "billable": model.billable
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_vendor_costs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = vendor_costs::Entity::find()
+        .filter(vendor_costs::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(vendor_costs::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "vendorCosts": rows })))
+}
+
+async fn create_vendor_cost(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateVendorCostRequest>,
+) -> AppResult<(StatusCode, Json<vendor_costs::Model>)> {
+    require_write_access(&state, &headers, "vendor-costs.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_campaign_for_client(&state.db, client_id, req.campaign_id).await?;
+    let model = vendor_costs::ActiveModel {
+        client_id: Set(Some(client_id)),
+        campaign_id: Set(req.campaign_id),
+        vendor_name: Set(req.vendor_name),
+        category: Set(req.category),
+        status: Set(req.status.unwrap_or_else(|| "planned".to_string())),
+        amount_cents: Set(non_negative(req.amount_cents, "amountCents")?),
+        incurred_on: Set(optional_iso_date(req.incurred_on, "incurredOn")?),
+        invoice_ref: Set(req.invoice_ref),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .agency_finance_records_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "vendor_cost_recorded",
+        json!({
+            "clientId": client_id,
+            "vendorCostId": model.id,
+            "campaignId": model.campaign_id,
+            "vendorName": &model.vendor_name,
+            "category": &model.category,
+            "amountCents": model.amount_cents,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_commissions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = commission_entries::Entity::find()
+        .filter(commission_entries::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(commission_entries::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "commissions": rows })))
+}
+
+async fn create_commission_entry(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateCommissionEntryRequest>,
+) -> AppResult<(StatusCode, Json<commission_entries::Model>)> {
+    require_write_access(&state, &headers, "commissions.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_opportunity(&state.db, client_id, req.opportunity_id).await?;
+    let basis_cents = non_negative(req.basis_cents.unwrap_or(0), "basisCents")?;
+    let rate_micros = probability(req.rate_micros.unwrap_or(0))?;
+    let amount_cents = match req.amount_cents {
+        Some(value) => non_negative(value, "amountCents")?,
+        None => computed_commission_amount(basis_cents, rate_micros)?,
+    };
+    let model = commission_entries::ActiveModel {
+        client_id: Set(Some(client_id)),
+        opportunity_id: Set(req.opportunity_id),
+        user_id: Set(req.user_id),
+        status: Set(req.status.unwrap_or_else(|| "pending".to_string())),
+        commission_kind: Set(req.commission_kind.unwrap_or_else(|| "deal".to_string())),
+        basis_cents: Set(basis_cents),
+        rate_micros: Set(rate_micros),
+        amount_cents: Set(amount_cents),
+        earned_on: Set(optional_iso_date(req.earned_on, "earnedOn")?),
+        paid_at: Set(req.paid_at),
+        meta_data: Set(object_or_default(req.meta_data, "metaData")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .agency_finance_records_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "commission_entry_recorded",
+        json!({
+            "clientId": client_id,
+            "commissionEntryId": model.id,
+            "opportunityId": model.opportunity_id,
+            "userId": model.user_id,
+            "commissionKind": &model.commission_kind,
+            "amountCents": model.amount_cents,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn list_client_budget_forecasts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = budget_forecasts::Entity::find()
+        .filter(budget_forecasts::Column::ClientId.eq(client_id))
+        .order_by_desc(budget_forecasts::Column::PeriodStart)
+        .order_by_desc(budget_forecasts::Column::UpdatedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "budgetForecasts": rows })))
+}
+
+async fn create_budget_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateBudgetForecastRequest>,
+) -> AppResult<(StatusCode, Json<budget_forecasts::Model>)> {
+    require_write_access(&state, &headers, "budget-forecasts.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    ensure_optional_campaign_for_client(&state.db, client_id, req.campaign_id).await?;
+    let revenue_cents = non_negative(req.revenue_cents.unwrap_or(0), "revenueCents")?;
+    let media_spend_cents = non_negative(req.media_spend_cents.unwrap_or(0), "mediaSpendCents")?;
+    let labor_cost_cents = non_negative(req.labor_cost_cents.unwrap_or(0), "laborCostCents")?;
+    let vendor_cost_cents = non_negative(req.vendor_cost_cents.unwrap_or(0), "vendorCostCents")?;
+    let gross_margin_cents = req
+        .gross_margin_cents
+        .unwrap_or(revenue_cents - media_spend_cents - labor_cost_cents - vendor_cost_cents);
+    let model = budget_forecasts::ActiveModel {
+        client_id: Set(client_id),
+        campaign_id: Set(req.campaign_id),
+        forecast_kind: Set(req.forecast_kind.unwrap_or_else(|| "monthly".to_string())),
+        period_start: Set(iso_date(req.period_start, "periodStart")?),
+        period_end: Set(iso_date(req.period_end, "periodEnd")?),
+        status: Set(req.status.unwrap_or_else(|| "draft".to_string())),
+        revenue_cents: Set(revenue_cents),
+        media_spend_cents: Set(media_spend_cents),
+        labor_cost_cents: Set(labor_cost_cents),
+        vendor_cost_cents: Set(vendor_cost_cents),
+        gross_margin_cents: Set(gross_margin_cents),
+        assumptions: Set(object_or_default(req.assumptions, "assumptions")?),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .agency_finance_records_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        &state,
+        "budget_forecast_recorded",
+        json!({
+            "clientId": client_id,
+            "budgetForecastId": model.id,
+            "campaignId": model.campaign_id,
+            "forecastKind": &model.forecast_kind,
+            "periodStart": &model.period_start,
+            "periodEnd": &model.period_end,
+            "grossMarginCents": model.gross_margin_cents,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(&state, client_id).await;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn client_profitability_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let row_limit = limit(query.limit);
+    let recent_invoices = invoices::Entity::find()
+        .filter(invoices::Column::ClientId.eq(client_id))
+        .order_by_desc(invoices::Column::UpdatedAt)
+        .limit(row_limit)
+        .all(&state.db)
+        .await?;
+    let recent_time_entries = time_entries::Entity::find()
+        .filter(time_entries::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(time_entries::Column::EntryDate)
+        .order_by_desc(time_entries::Column::UpdatedAt)
+        .limit(row_limit)
+        .all(&state.db)
+        .await?;
+    let recent_vendor_costs = vendor_costs::Entity::find()
+        .filter(vendor_costs::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(vendor_costs::Column::UpdatedAt)
+        .limit(row_limit)
+        .all(&state.db)
+        .await?;
+    let recent_commissions = commission_entries::Entity::find()
+        .filter(commission_entries::Column::ClientId.eq(Some(client_id)))
+        .order_by_desc(commission_entries::Column::UpdatedAt)
+        .limit(row_limit)
+        .all(&state.db)
+        .await?;
+    let recent_budget_forecasts = budget_forecasts::Entity::find()
+        .filter(budget_forecasts::Column::ClientId.eq(client_id))
+        .order_by_desc(budget_forecasts::Column::PeriodStart)
+        .limit(row_limit)
+        .all(&state.db)
+        .await?;
+
+    let invoice_revenue_cents: i64 = recent_invoices
+        .iter()
+        .map(|invoice| i64::from(invoice.amount_cents))
+        .sum();
+    let labor_cost_cents: i64 = recent_time_entries
+        .iter()
+        .map(|entry| i64::from(entry.cost_cents))
+        .sum();
+    let billable_value_cents: i64 = recent_time_entries
+        .iter()
+        .filter(|entry| entry.billable)
+        .map(|entry| i64::from(entry.rate_cents) * i64::from(entry.minutes) / 60)
+        .sum();
+    let vendor_cost_cents: i64 = recent_vendor_costs
+        .iter()
+        .map(|cost| i64::from(cost.amount_cents))
+        .sum();
+    let commission_cents: i64 = recent_commissions
+        .iter()
+        .map(|commission| i64::from(commission.amount_cents))
+        .sum();
+    let forecast_revenue_cents: i64 = recent_budget_forecasts
+        .iter()
+        .map(|forecast| i64::from(forecast.revenue_cents))
+        .sum();
+    let forecast_gross_margin_cents: i64 = recent_budget_forecasts
+        .iter()
+        .map(|forecast| i64::from(forecast.gross_margin_cents))
+        .sum();
+    let estimated_gross_margin_cents =
+        invoice_revenue_cents - labor_cost_cents - vendor_cost_cents - commission_cents;
+
+    Ok(Json(json!({
+        "clientId": client_id,
+        "recentTotals": {
+            "invoiceRevenueCents": invoice_revenue_cents,
+            "billableValueCents": billable_value_cents,
+            "laborCostCents": labor_cost_cents,
+            "vendorCostCents": vendor_cost_cents,
+            "commissionCents": commission_cents,
+            "estimatedGrossMarginCents": estimated_gross_margin_cents,
+            "forecastRevenueCents": forecast_revenue_cents,
+            "forecastGrossMarginCents": forecast_gross_margin_cents
+        },
+        "recent": {
+            "invoices": recent_invoices,
+            "timeEntries": recent_time_entries,
+            "vendorCosts": recent_vendor_costs,
+            "commissions": recent_commissions,
+            "budgetForecasts": recent_budget_forecasts
+        }
+    })))
+}
+
+async fn list_client_call_insights(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    require_auth(&state, &headers)?;
+    ensure_client(&state.db, client_id).await?;
+    let rows = call_insights::Entity::find()
+        .filter(call_insights::Column::ClientId.eq(client_id))
+        .order_by_desc(call_insights::Column::AnalyzedAt)
+        .limit(limit(query.limit))
+        .all(&state.db)
+        .await?;
+    Ok(Json(json!({ "callInsights": rows })))
+}
+
+async fn create_client_call_insight(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(client_id): Path<Uuid>,
+    Json(req): Json<CreateCallInsightRequest>,
+) -> AppResult<(StatusCode, Json<call_insights::Model>)> {
+    require_write_access(&state, &headers, "call-insights.create").await?;
+    ensure_client(&state.db, client_id).await?;
+    let meeting_id = req.meeting_id;
+    let model = create_call_insight_for_client(&state, client_id, meeting_id, req).await?;
+    Ok((StatusCode::CREATED, Json(model)))
+}
+
+async fn create_meeting_call_insight(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(meeting_id): Path<Uuid>,
+    Json(mut req): Json<CreateCallInsightRequest>,
+) -> AppResult<(StatusCode, Json<call_insights::Model>)> {
+    require_write_access(&state, &headers, "meetings.call-insights.create").await?;
+    if req.meeting_id.is_some() && req.meeting_id != Some(meeting_id) {
+        return Err(AppError::BadRequest(
+            "meetingId must match the route meeting".to_string(),
+        ));
+    }
+    let meeting = ensure_meeting(&state.db, meeting_id).await?;
+    req.lead_id = req.lead_id.or(meeting.lead_id);
+    req.opportunity_id = req.opportunity_id.or(meeting.opportunity_id);
+    let model =
+        create_call_insight_for_client(&state, meeting.client_id, Some(meeting_id), req).await?;
     Ok((StatusCode::CREATED, Json(model)))
 }
 
@@ -2643,6 +3620,57 @@ async fn create_meeting(
     Ok((StatusCode::CREATED, Json(model)))
 }
 
+async fn create_call_insight_for_client(
+    state: &AppState,
+    client_id: Uuid,
+    meeting_id: Option<Uuid>,
+    req: CreateCallInsightRequest,
+) -> AppResult<call_insights::Model> {
+    ensure_optional_meeting_for_client(&state.db, client_id, meeting_id).await?;
+    ensure_optional_lead(&state.db, client_id, req.lead_id).await?;
+    ensure_optional_opportunity(&state.db, client_id, req.opportunity_id).await?;
+    let model = call_insights::ActiveModel {
+        client_id: Set(client_id),
+        meeting_id: Set(meeting_id),
+        lead_id: Set(req.lead_id),
+        opportunity_id: Set(req.opportunity_id),
+        status: Set(req.status.unwrap_or_else(|| "ready".to_string())),
+        provider: Set(req.provider),
+        transcript_uri: Set(req.transcript_uri),
+        summary: Set(req.summary),
+        sentiment: Set(req.sentiment),
+        action_items: Set(array_or_default(req.action_items, "actionItems")?),
+        objections: Set(array_or_default(req.objections, "objections")?),
+        next_steps: Set(array_or_default(req.next_steps, "nextSteps")?),
+        confidence_micros: Set(probability(req.confidence_micros.unwrap_or(0))?),
+        analyzed_at: Set(req.analyzed_at.unwrap_or_else(now_fixed)),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await?;
+    state
+        .metrics
+        .call_insights_total
+        .fetch_add(1, Ordering::Relaxed);
+    publish_job_event(
+        state,
+        "call_insight_recorded",
+        json!({
+            "clientId": client_id,
+            "callInsightId": model.id,
+            "meetingId": model.meeting_id,
+            "leadId": model.lead_id,
+            "opportunityId": model.opportunity_id,
+            "provider": &model.provider,
+            "sentiment": &model.sentiment,
+            "status": &model.status
+        }),
+    )
+    .await;
+    record_client_mutation(state, client_id).await;
+    Ok(model)
+}
+
 async fn api_docs_html() -> Html<&'static str> {
     Html(include_str!("../generated/api-docs.html"))
 }
@@ -2691,6 +3719,30 @@ async fn ensure_outreach_sequence(
         .ok_or(AppError::NotFound("outreach sequence"))
 }
 
+async fn ensure_meeting(db: &DatabaseConnection, meeting_id: Uuid) -> AppResult<meetings::Model> {
+    meetings::Entity::find_by_id(meeting_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("meeting"))
+}
+
+async fn ensure_optional_campaign_for_client(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    campaign_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(campaign_id) = campaign_id else {
+        return Ok(());
+    };
+    let campaign = ensure_campaign(db, campaign_id).await?;
+    if campaign.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "campaignId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn ensure_optional_lead(
     db: &DatabaseConnection,
     client_id: Uuid,
@@ -2706,6 +3758,83 @@ async fn ensure_optional_lead(
     if lead.client_id != client_id {
         return Err(AppError::BadRequest(
             "leadId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_opportunity(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    opportunity_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(opportunity_id) = opportunity_id else {
+        return Ok(());
+    };
+    let opportunity = opportunities::Entity::find_by_id(opportunity_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("opportunity"))?;
+    if opportunity.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "opportunityId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_project_task(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    project_task_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(project_task_id) = project_task_id else {
+        return Ok(());
+    };
+    let task = project_tasks::Entity::find_by_id(project_task_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("project task"))?;
+    if task.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "projectTaskId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_meeting_for_client(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    meeting_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(meeting_id) = meeting_id else {
+        return Ok(());
+    };
+    let meeting = ensure_meeting(db, meeting_id).await?;
+    if meeting.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "meetingId must belong to the request client".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn ensure_optional_parent_comment(
+    db: &DatabaseConnection,
+    client_id: Uuid,
+    parent_comment_id: Option<Uuid>,
+) -> AppResult<()> {
+    let Some(parent_comment_id) = parent_comment_id else {
+        return Ok(());
+    };
+    let comment = collaboration_comments::Entity::find_by_id(parent_comment_id)
+        .one(db)
+        .await?
+        .ok_or(AppError::NotFound("parent comment"))?;
+    if comment.client_id != client_id {
+        return Err(AppError::BadRequest(
+            "parentCommentId must belong to the request client".to_string(),
         ));
     }
     Ok(())
@@ -3160,6 +4289,49 @@ fn non_negative(value: i32, field: &str) -> AppResult<i32> {
         Err(AppError::BadRequest(format!(
             "{field} must be non-negative"
         )))
+    }
+}
+
+fn minutes_in_day(value: i32) -> AppResult<i32> {
+    if (1..=1440).contains(&value) {
+        Ok(value)
+    } else {
+        Err(AppError::BadRequest(
+            "minutes must be between 1 and 1440".to_string(),
+        ))
+    }
+}
+
+fn iso_date(value: String, field: &str) -> AppResult<String> {
+    let bytes = value.as_bytes();
+    let valid = bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(idx, byte)| idx == 4 || idx == 7 || byte.is_ascii_digit());
+    if valid {
+        Ok(value)
+    } else {
+        Err(AppError::BadRequest(format!(
+            "{field} must use YYYY-MM-DD format"
+        )))
+    }
+}
+
+fn optional_iso_date(value: Option<String>, field: &str) -> AppResult<Option<String>> {
+    value.map(|value| iso_date(value, field)).transpose()
+}
+
+fn computed_commission_amount(basis_cents: i32, rate_micros: i32) -> AppResult<i32> {
+    let amount = i64::from(basis_cents) * i64::from(rate_micros) / 1_000_000;
+    if amount <= i64::from(i32::MAX) {
+        Ok(amount as i32)
+    } else {
+        Err(AppError::BadRequest(
+            "computed commission amount exceeds supported range".to_string(),
+        ))
     }
 }
 

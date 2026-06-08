@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-benefactor-marketing-rs",
   "language": "rust",
-  "routeCount": 53,
+  "routeCount": 64,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 46
+    "user-generated": 57
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -238,6 +238,44 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/budget-forecasts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_budget_forecast",
+        "list_client_budget_forecasts"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/call-insights",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_client_call_insight",
+        "list_client_call_insights"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/campaigns",
       "methods": [
         "GET"
@@ -248,6 +286,44 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "list_client_campaigns"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/comments",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_comment",
+        "list_client_comments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/commissions",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_commission_entry",
+        "list_client_commissions"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -323,6 +399,25 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/documents",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_shared_document",
+        "list_client_documents"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/integrations",
       "methods": [
         "POST"
@@ -384,6 +479,25 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "list_client_leads"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/notifications",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_notification",
+        "list_client_notifications"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -459,6 +573,42 @@
       "notes": ""
     },
     {
+      "path": "/clients/{client_id}/portal/members",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_portal_member",
+        "list_client_portal_members"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/profitability",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "client_profitability_summary"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/clients/{client_id}/research/briefs",
       "methods": [
         "GET"
@@ -522,6 +672,44 @@
       "handlers": [
         "create_team_allocation",
         "list_client_team_allocations"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/time-entries",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_time_entry",
+        "list_client_time_entries"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/clients/{client_id}/vendor-costs",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_vendor_cost",
+        "list_client_vendor_costs"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
@@ -692,6 +880,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "create_meeting"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/meetings/{meeting_id}/call-insights",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_meeting_call_insight"
       ],
       "sourceFiles": [
         "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"

@@ -86,6 +86,15 @@ defmodule DdPgDefs do
     DdPgDefs.BenefactorMarketingOutreachTouchpoints,
     DdPgDefs.BenefactorMarketingProspectResearchBriefs,
     DdPgDefs.BenefactorMarketingConversionEvents,
+    DdPgDefs.BenefactorMarketingPortalMembers,
+    DdPgDefs.BenefactorMarketingSharedDocuments,
+    DdPgDefs.BenefactorMarketingCollaborationComments,
+    DdPgDefs.BenefactorMarketingNotifications,
+    DdPgDefs.BenefactorMarketingTimeEntries,
+    DdPgDefs.BenefactorMarketingVendorCosts,
+    DdPgDefs.BenefactorMarketingCommissionEntries,
+    DdPgDefs.BenefactorMarketingBudgetForecasts,
+    DdPgDefs.BenefactorMarketingCallInsights,
   ]
 
   @spec tables() :: [module()]

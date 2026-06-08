@@ -74,6 +74,11 @@ var benefactorMarketingOpportunitiesExpectedCloseOnPattern = regexp.MustCompile(
 var benefactorMarketingProjectTasksDueOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingTeamAllocationsStartsOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 var benefactorMarketingTeamAllocationsEndsOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingTimeEntriesEntryDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingVendorCostsIncurredOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingCommissionEntriesEarnedOnPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingBudgetForecastsPeriodStartPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var benefactorMarketingBudgetForecastsPeriodEndPattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -4102,6 +4107,482 @@ func (value BenefactorMarketingConversionEventsBun) Validate() error {
 	if value.ValueCents < 0 { return errors.New("benefactor_marketing_conversion_events.value_cents is below the minimum") }
 	if !validateRawJSON(value.Utm) { return errors.New("benefactor_marketing_conversion_events.utm must be valid JSON") }
 	if !validateRawJSON(value.Payload) { return errors.New("benefactor_marketing_conversion_events.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingPortalMembersTable = "benefactor_marketing_portal_members"
+const BenefactorMarketingPortalMembersSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      contact_id::text as contact_id,
+      user_id::text as user_id,
+      email,
+      status,
+      role,
+      access_scope,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(invited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as invited_at,
+      to_char(accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as accepted_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_portal_members`
+
+var BenefactorMarketingPortalMembersStatusValues = []string{"invited", "active", "disabled", "revoked"}
+var BenefactorMarketingPortalMembersRoleValues = []string{"owner", "approver", "viewer", "billing", "collaborator"}
+
+type BenefactorMarketingPortalMembersBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_portal_members"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	ContactId *uuid.UUID `bun:"contact_id,type:uuid,nullzero" json:"contactId,omitempty"`
+	UserId *uuid.UUID `bun:"user_id,type:uuid,nullzero" json:"userId,omitempty"`
+	Email string `bun:"email,type:varchar(240)" json:"email"`
+	Status string `bun:"status,type:varchar(32),default:'invited'" json:"status"`
+	Role string `bun:"role,type:varchar(32),default:'viewer'" json:"role"`
+	AccessScope json.RawMessage `bun:"access_scope,type:jsonb,default:'{}'::jsonb" json:"accessScope"`
+	LastSeenAt *time.Time `bun:"last_seen_at,type:timestamptz,nullzero" json:"lastSeenAt,omitempty"`
+	InvitedAt time.Time `bun:"invited_at,type:timestamptz,default:now()" json:"invitedAt"`
+	AcceptedAt *time.Time `bun:"accepted_at,type:timestamptz,nullzero" json:"acceptedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingPortalMembersBun) Validate() error {
+	if len([]byte(value.Email)) > 240 { return errors.New("benefactor_marketing_portal_members.email exceeds 240 bytes") }
+	if len([]byte(value.Email)) < 3 { return errors.New("benefactor_marketing_portal_members.email is below 3 bytes") }
+	if !containsString(BenefactorMarketingPortalMembersStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_portal_members.status") }
+	if !containsString(BenefactorMarketingPortalMembersRoleValues, value.Role) { return errors.New("unsupported benefactor_marketing_portal_members.role") }
+	if !validateRawJSON(value.AccessScope) { return errors.New("benefactor_marketing_portal_members.access_scope must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingSharedDocumentsTable = "benefactor_marketing_shared_documents"
+const BenefactorMarketingSharedDocumentsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      status,
+      document_kind,
+      title,
+      storage_uri,
+      mime_type,
+      visibility,
+      uploaded_by::text as uploaded_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_shared_documents`
+
+var BenefactorMarketingSharedDocumentsStatusValues = []string{"active", "archived", "deleted"}
+var BenefactorMarketingSharedDocumentsDocumentKindValues = []string{"contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"}
+var BenefactorMarketingSharedDocumentsVisibilityValues = []string{"internal", "client_portal", "public_link"}
+
+type BenefactorMarketingSharedDocumentsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_shared_documents"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	CampaignId *uuid.UUID `bun:"campaign_id,type:uuid,nullzero" json:"campaignId,omitempty"`
+	ContentAssetId *uuid.UUID `bun:"content_asset_id,type:uuid,nullzero" json:"contentAssetId,omitempty"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	DocumentKind string `bun:"document_kind,type:varchar(48)" json:"documentKind"`
+	Title string `bun:"title,type:varchar(240)" json:"title"`
+	StorageUri string `bun:"storage_uri,type:text" json:"storageUri"`
+	MimeType *string `bun:"mime_type,type:varchar(120),nullzero" json:"mimeType,omitempty"`
+	Visibility string `bun:"visibility,type:varchar(32),default:'client_portal'" json:"visibility"`
+	UploadedBy *uuid.UUID `bun:"uploaded_by,type:uuid,nullzero" json:"uploadedBy,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingSharedDocumentsBun) Validate() error {
+	if !containsString(BenefactorMarketingSharedDocumentsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_shared_documents.status") }
+	if !containsString(BenefactorMarketingSharedDocumentsDocumentKindValues, value.DocumentKind) { return errors.New("unsupported benefactor_marketing_shared_documents.document_kind") }
+	if len([]byte(value.Title)) > 240 { return errors.New("benefactor_marketing_shared_documents.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("benefactor_marketing_shared_documents.title is below 1 bytes") }
+	if len([]byte(value.StorageUri)) > 2048 { return errors.New("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes") }
+	if len([]byte(value.StorageUri)) < 1 { return errors.New("benefactor_marketing_shared_documents.storage_uri is below 1 bytes") }
+	if value.MimeType != nil {
+		if len([]byte(*value.MimeType)) > 120 { return errors.New("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes") }
+	}
+	if !containsString(BenefactorMarketingSharedDocumentsVisibilityValues, value.Visibility) { return errors.New("unsupported benefactor_marketing_shared_documents.visibility") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_marketing_shared_documents.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCollaborationCommentsTable = "benefactor_marketing_collaboration_comments"
+const BenefactorMarketingCollaborationCommentsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      parent_comment_id::text as parent_comment_id,
+      resource_type,
+      resource_id::text as resource_id,
+      author_user_id::text as author_user_id,
+      author_contact_id::text as author_contact_id,
+      body,
+      status,
+      visibility,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_collaboration_comments`
+
+var BenefactorMarketingCollaborationCommentsResourceTypeValues = []string{"client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"}
+var BenefactorMarketingCollaborationCommentsStatusValues = []string{"open", "resolved", "archived"}
+var BenefactorMarketingCollaborationCommentsVisibilityValues = []string{"internal", "client_portal"}
+
+type BenefactorMarketingCollaborationCommentsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_collaboration_comments"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	ParentCommentId *uuid.UUID `bun:"parent_comment_id,type:uuid,nullzero" json:"parentCommentId,omitempty"`
+	ResourceType string `bun:"resource_type,type:varchar(64)" json:"resourceType"`
+	ResourceId *uuid.UUID `bun:"resource_id,type:uuid,nullzero" json:"resourceId,omitempty"`
+	AuthorUserId *uuid.UUID `bun:"author_user_id,type:uuid,nullzero" json:"authorUserId,omitempty"`
+	AuthorContactId *uuid.UUID `bun:"author_contact_id,type:uuid,nullzero" json:"authorContactId,omitempty"`
+	Body string `bun:"body,type:text" json:"body"`
+	Status string `bun:"status,type:varchar(32),default:'open'" json:"status"`
+	Visibility string `bun:"visibility,type:varchar(32),default:'client_portal'" json:"visibility"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingCollaborationCommentsBun) Validate() error {
+	if !containsString(BenefactorMarketingCollaborationCommentsResourceTypeValues, value.ResourceType) { return errors.New("unsupported benefactor_marketing_collaboration_comments.resource_type") }
+	if len([]byte(value.Body)) > 20000 { return errors.New("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes") }
+	if len([]byte(value.Body)) < 1 { return errors.New("benefactor_marketing_collaboration_comments.body is below 1 bytes") }
+	if !containsString(BenefactorMarketingCollaborationCommentsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_collaboration_comments.status") }
+	if !containsString(BenefactorMarketingCollaborationCommentsVisibilityValues, value.Visibility) { return errors.New("unsupported benefactor_marketing_collaboration_comments.visibility") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_marketing_collaboration_comments.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingNotificationsTable = "benefactor_marketing_notifications"
+const BenefactorMarketingNotificationsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      recipient_user_id::text as recipient_user_id,
+      recipient_contact_id::text as recipient_contact_id,
+      channel,
+      status,
+      notification_kind,
+      title,
+      body,
+      payload,
+      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scheduled_at,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_notifications`
+
+var BenefactorMarketingNotificationsChannelValues = []string{"email", "sms", "portal", "slack", "webhook"}
+var BenefactorMarketingNotificationsStatusValues = []string{"queued", "scheduled", "sent", "failed", "canceled"}
+var BenefactorMarketingNotificationsNotificationKindValues = []string{"approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"}
+
+type BenefactorMarketingNotificationsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_notifications"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	RecipientUserId *uuid.UUID `bun:"recipient_user_id,type:uuid,nullzero" json:"recipientUserId,omitempty"`
+	RecipientContactId *uuid.UUID `bun:"recipient_contact_id,type:uuid,nullzero" json:"recipientContactId,omitempty"`
+	Channel string `bun:"channel,type:varchar(32),default:'email'" json:"channel"`
+	Status string `bun:"status,type:varchar(32),default:'queued'" json:"status"`
+	NotificationKind string `bun:"notification_kind,type:varchar(64)" json:"notificationKind"`
+	Title string `bun:"title,type:varchar(240)" json:"title"`
+	Body *string `bun:"body,type:text,nullzero" json:"body,omitempty"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	ScheduledAt *time.Time `bun:"scheduled_at,type:timestamptz,nullzero" json:"scheduledAt,omitempty"`
+	SentAt *time.Time `bun:"sent_at,type:timestamptz,nullzero" json:"sentAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingNotificationsBun) Validate() error {
+	if !containsString(BenefactorMarketingNotificationsChannelValues, value.Channel) { return errors.New("unsupported benefactor_marketing_notifications.channel") }
+	if !containsString(BenefactorMarketingNotificationsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_notifications.status") }
+	if !containsString(BenefactorMarketingNotificationsNotificationKindValues, value.NotificationKind) { return errors.New("unsupported benefactor_marketing_notifications.notification_kind") }
+	if len([]byte(value.Title)) > 240 { return errors.New("benefactor_marketing_notifications.title exceeds 240 bytes") }
+	if len([]byte(value.Title)) < 1 { return errors.New("benefactor_marketing_notifications.title is below 1 bytes") }
+	if value.Body != nil {
+		if len([]byte(*value.Body)) > 20000 { return errors.New("benefactor_marketing_notifications.body exceeds 20000 bytes") }
+	}
+	if !validateRawJSON(value.Payload) { return errors.New("benefactor_marketing_notifications.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingTimeEntriesTable = "benefactor_marketing_time_entries"
+const BenefactorMarketingTimeEntriesSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      project_task_id::text as project_task_id,
+      user_id::text as user_id,
+      entry_date,
+      minutes,
+      billable,
+      rate_cents,
+      cost_cents,
+      notes,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_time_entries`
+
+type BenefactorMarketingTimeEntriesBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_time_entries"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `bun:"client_id,type:uuid,nullzero" json:"clientId,omitempty"`
+	CampaignId *uuid.UUID `bun:"campaign_id,type:uuid,nullzero" json:"campaignId,omitempty"`
+	ProjectTaskId *uuid.UUID `bun:"project_task_id,type:uuid,nullzero" json:"projectTaskId,omitempty"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	EntryDate string `bun:"entry_date,type:varchar(10)" json:"entryDate"`
+	Minutes int32 `bun:"minutes,type:integer" json:"minutes"`
+	Billable bool `bun:"billable,type:boolean,default:true" json:"billable"`
+	RateCents int32 `bun:"rate_cents,type:integer,default:0" json:"rateCents"`
+	CostCents int32 `bun:"cost_cents,type:integer,default:0" json:"costCents"`
+	Notes *string `bun:"notes,type:text,nullzero" json:"notes,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingTimeEntriesBun) Validate() error {
+	if !benefactorMarketingTimeEntriesEntryDatePattern.MatchString(value.EntryDate) { return errors.New("benefactor_marketing_time_entries.entry_date does not match the required pattern") }
+	if value.Minutes < 1 { return errors.New("benefactor_marketing_time_entries.minutes is below the minimum") }
+	if value.Minutes > 1440 { return errors.New("benefactor_marketing_time_entries.minutes is above the maximum") }
+	if value.RateCents < 0 { return errors.New("benefactor_marketing_time_entries.rate_cents is below the minimum") }
+	if value.CostCents < 0 { return errors.New("benefactor_marketing_time_entries.cost_cents is below the minimum") }
+	if value.Notes != nil {
+		if len([]byte(*value.Notes)) > 4000 { return errors.New("benefactor_marketing_time_entries.notes exceeds 4000 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_marketing_time_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingVendorCostsTable = "benefactor_marketing_vendor_costs"
+const BenefactorMarketingVendorCostsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      vendor_name,
+      category,
+      status,
+      amount_cents,
+      incurred_on,
+      invoice_ref,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_vendor_costs`
+
+var BenefactorMarketingVendorCostsCategoryValues = []string{"ads", "creative", "data", "software", "contractor", "events", "other"}
+var BenefactorMarketingVendorCostsStatusValues = []string{"planned", "approved", "incurred", "invoiced", "paid", "canceled"}
+
+type BenefactorMarketingVendorCostsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_vendor_costs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `bun:"client_id,type:uuid,nullzero" json:"clientId,omitempty"`
+	CampaignId *uuid.UUID `bun:"campaign_id,type:uuid,nullzero" json:"campaignId,omitempty"`
+	VendorName string `bun:"vendor_name,type:varchar(200)" json:"vendorName"`
+	Category string `bun:"category,type:varchar(64)" json:"category"`
+	Status string `bun:"status,type:varchar(32),default:'planned'" json:"status"`
+	AmountCents int32 `bun:"amount_cents,type:integer" json:"amountCents"`
+	IncurredOn *string `bun:"incurred_on,type:varchar(10),nullzero" json:"incurredOn,omitempty"`
+	InvoiceRef *string `bun:"invoice_ref,type:varchar(120),nullzero" json:"invoiceRef,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingVendorCostsBun) Validate() error {
+	if len([]byte(value.VendorName)) > 200 { return errors.New("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes") }
+	if len([]byte(value.VendorName)) < 1 { return errors.New("benefactor_marketing_vendor_costs.vendor_name is below 1 bytes") }
+	if !containsString(BenefactorMarketingVendorCostsCategoryValues, value.Category) { return errors.New("unsupported benefactor_marketing_vendor_costs.category") }
+	if !containsString(BenefactorMarketingVendorCostsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_vendor_costs.status") }
+	if value.AmountCents < 0 { return errors.New("benefactor_marketing_vendor_costs.amount_cents is below the minimum") }
+	if value.IncurredOn != nil {
+		if !benefactorMarketingVendorCostsIncurredOnPattern.MatchString(*value.IncurredOn) { return errors.New("benefactor_marketing_vendor_costs.incurred_on does not match the required pattern") }
+	}
+	if value.InvoiceRef != nil {
+		if len([]byte(*value.InvoiceRef)) > 120 { return errors.New("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_marketing_vendor_costs.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCommissionEntriesTable = "benefactor_marketing_commission_entries"
+const BenefactorMarketingCommissionEntriesSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      opportunity_id::text as opportunity_id,
+      user_id::text as user_id,
+      status,
+      commission_kind,
+      basis_cents,
+      rate_micros,
+      amount_cents,
+      earned_on,
+      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as paid_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_commission_entries`
+
+var BenefactorMarketingCommissionEntriesStatusValues = []string{"pending", "approved", "paid", "void"}
+var BenefactorMarketingCommissionEntriesCommissionKindValues = []string{"deal", "retainer", "renewal", "upsell", "appointment"}
+
+type BenefactorMarketingCommissionEntriesBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_commission_entries"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId *uuid.UUID `bun:"client_id,type:uuid,nullzero" json:"clientId,omitempty"`
+	OpportunityId *uuid.UUID `bun:"opportunity_id,type:uuid,nullzero" json:"opportunityId,omitempty"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	CommissionKind string `bun:"commission_kind,type:varchar(48),default:'deal'" json:"commissionKind"`
+	BasisCents int32 `bun:"basis_cents,type:integer,default:0" json:"basisCents"`
+	RateMicros int32 `bun:"rate_micros,type:integer,default:0" json:"rateMicros"`
+	AmountCents int32 `bun:"amount_cents,type:integer,default:0" json:"amountCents"`
+	EarnedOn *string `bun:"earned_on,type:varchar(10),nullzero" json:"earnedOn,omitempty"`
+	PaidAt *time.Time `bun:"paid_at,type:timestamptz,nullzero" json:"paidAt,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingCommissionEntriesBun) Validate() error {
+	if !containsString(BenefactorMarketingCommissionEntriesStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_commission_entries.status") }
+	if !containsString(BenefactorMarketingCommissionEntriesCommissionKindValues, value.CommissionKind) { return errors.New("unsupported benefactor_marketing_commission_entries.commission_kind") }
+	if value.BasisCents < 0 { return errors.New("benefactor_marketing_commission_entries.basis_cents is below the minimum") }
+	if value.RateMicros < 0 { return errors.New("benefactor_marketing_commission_entries.rate_micros is below the minimum") }
+	if value.RateMicros > 1000000 { return errors.New("benefactor_marketing_commission_entries.rate_micros is above the maximum") }
+	if value.AmountCents < 0 { return errors.New("benefactor_marketing_commission_entries.amount_cents is below the minimum") }
+	if value.EarnedOn != nil {
+		if !benefactorMarketingCommissionEntriesEarnedOnPattern.MatchString(*value.EarnedOn) { return errors.New("benefactor_marketing_commission_entries.earned_on does not match the required pattern") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_marketing_commission_entries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingBudgetForecastsTable = "benefactor_marketing_budget_forecasts"
+const BenefactorMarketingBudgetForecastsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      forecast_kind,
+      period_start,
+      period_end,
+      status,
+      revenue_cents,
+      media_spend_cents,
+      labor_cost_cents,
+      vendor_cost_cents,
+      gross_margin_cents,
+      assumptions,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_budget_forecasts`
+
+var BenefactorMarketingBudgetForecastsForecastKindValues = []string{"monthly", "quarterly", "campaign", "annual"}
+var BenefactorMarketingBudgetForecastsStatusValues = []string{"draft", "approved", "locked", "archived"}
+
+type BenefactorMarketingBudgetForecastsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_budget_forecasts"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	CampaignId *uuid.UUID `bun:"campaign_id,type:uuid,nullzero" json:"campaignId,omitempty"`
+	ForecastKind string `bun:"forecast_kind,type:varchar(48),default:'monthly'" json:"forecastKind"`
+	PeriodStart string `bun:"period_start,type:varchar(10)" json:"periodStart"`
+	PeriodEnd string `bun:"period_end,type:varchar(10)" json:"periodEnd"`
+	Status string `bun:"status,type:varchar(32),default:'draft'" json:"status"`
+	RevenueCents int32 `bun:"revenue_cents,type:integer,default:0" json:"revenueCents"`
+	MediaSpendCents int32 `bun:"media_spend_cents,type:integer,default:0" json:"mediaSpendCents"`
+	LaborCostCents int32 `bun:"labor_cost_cents,type:integer,default:0" json:"laborCostCents"`
+	VendorCostCents int32 `bun:"vendor_cost_cents,type:integer,default:0" json:"vendorCostCents"`
+	GrossMarginCents int32 `bun:"gross_margin_cents,type:integer,default:0" json:"grossMarginCents"`
+	Assumptions json.RawMessage `bun:"assumptions,type:jsonb,default:'{}'::jsonb" json:"assumptions"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingBudgetForecastsBun) Validate() error {
+	if !containsString(BenefactorMarketingBudgetForecastsForecastKindValues, value.ForecastKind) { return errors.New("unsupported benefactor_marketing_budget_forecasts.forecast_kind") }
+	if !benefactorMarketingBudgetForecastsPeriodStartPattern.MatchString(value.PeriodStart) { return errors.New("benefactor_marketing_budget_forecasts.period_start does not match the required pattern") }
+	if !benefactorMarketingBudgetForecastsPeriodEndPattern.MatchString(value.PeriodEnd) { return errors.New("benefactor_marketing_budget_forecasts.period_end does not match the required pattern") }
+	if !containsString(BenefactorMarketingBudgetForecastsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_budget_forecasts.status") }
+	if value.RevenueCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum") }
+	if value.MediaSpendCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum") }
+	if value.LaborCostCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum") }
+	if value.VendorCostCents < 0 { return errors.New("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum") }
+	if !validateRawJSON(value.Assumptions) { return errors.New("benefactor_marketing_budget_forecasts.assumptions must be valid JSON") }
+	return nil
+}
+
+const BenefactorMarketingCallInsightsTable = "benefactor_marketing_call_insights"
+const BenefactorMarketingCallInsightsSelectSQL = `select
+      id::text as id,
+      client_id::text as client_id,
+      meeting_id::text as meeting_id,
+      lead_id::text as lead_id,
+      opportunity_id::text as opportunity_id,
+      status,
+      provider,
+      transcript_uri,
+      summary,
+      sentiment,
+      action_items,
+      objections,
+      next_steps,
+      confidence_micros,
+      to_char(analyzed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as analyzed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_call_insights`
+
+var BenefactorMarketingCallInsightsStatusValues = []string{"processing", "ready", "failed", "archived"}
+var BenefactorMarketingCallInsightsSentimentValues = []string{"positive", "neutral", "negative", "mixed"}
+
+type BenefactorMarketingCallInsightsBun struct {
+	bun.BaseModel `bun:"table:benefactor_marketing_call_insights"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ClientId uuid.UUID `bun:"client_id,type:uuid" json:"clientId"`
+	MeetingId *uuid.UUID `bun:"meeting_id,type:uuid,nullzero" json:"meetingId,omitempty"`
+	LeadId *uuid.UUID `bun:"lead_id,type:uuid,nullzero" json:"leadId,omitempty"`
+	OpportunityId *uuid.UUID `bun:"opportunity_id,type:uuid,nullzero" json:"opportunityId,omitempty"`
+	Status string `bun:"status,type:varchar(32),default:'ready'" json:"status"`
+	Provider *string `bun:"provider,type:varchar(64),nullzero" json:"provider,omitempty"`
+	TranscriptUri *string `bun:"transcript_uri,type:text,nullzero" json:"transcriptUri,omitempty"`
+	Summary *string `bun:"summary,type:text,nullzero" json:"summary,omitempty"`
+	Sentiment *string `bun:"sentiment,type:varchar(32),nullzero" json:"sentiment,omitempty"`
+	ActionItems json.RawMessage `bun:"action_items,type:jsonb,default:'[]'::jsonb" json:"actionItems"`
+	Objections json.RawMessage `bun:"objections,type:jsonb,default:'[]'::jsonb" json:"objections"`
+	NextSteps json.RawMessage `bun:"next_steps,type:jsonb,default:'[]'::jsonb" json:"nextSteps"`
+	ConfidenceMicros int32 `bun:"confidence_micros,type:integer,default:0" json:"confidenceMicros"`
+	AnalyzedAt time.Time `bun:"analyzed_at,type:timestamptz,default:now()" json:"analyzedAt"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value BenefactorMarketingCallInsightsBun) Validate() error {
+	if !containsString(BenefactorMarketingCallInsightsStatusValues, value.Status) { return errors.New("unsupported benefactor_marketing_call_insights.status") }
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 64 { return errors.New("benefactor_marketing_call_insights.provider exceeds 64 bytes") }
+	}
+	if value.TranscriptUri != nil {
+		if len([]byte(*value.TranscriptUri)) > 2048 { return errors.New("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes") }
+	}
+	if value.Summary != nil {
+		if len([]byte(*value.Summary)) > 20000 { return errors.New("benefactor_marketing_call_insights.summary exceeds 20000 bytes") }
+	}
+	if value.Sentiment != nil {
+		if !containsString(BenefactorMarketingCallInsightsSentimentValues, *value.Sentiment) { return errors.New("unsupported benefactor_marketing_call_insights.sentiment") }
+	}
+	if !validateRawJSON(value.ActionItems) { return errors.New("benefactor_marketing_call_insights.action_items must be valid JSON") }
+	if !validateRawJSON(value.Objections) { return errors.New("benefactor_marketing_call_insights.objections must be valid JSON") }
+	if !validateRawJSON(value.NextSteps) { return errors.New("benefactor_marketing_call_insights.next_steps must be valid JSON") }
+	if value.ConfidenceMicros < 0 { return errors.New("benefactor_marketing_call_insights.confidence_micros is below the minimum") }
+	if value.ConfidenceMicros > 1000000 { return errors.New("benefactor_marketing_call_insights.confidence_micros is above the maximum") }
 	return nil
 }
 
