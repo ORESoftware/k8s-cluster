@@ -276,6 +276,7 @@ spec:
                 '"path": "/fabrication/manufacturability/catalog"' \
                 '"path": "/fabrication/manufacturability/plan"' \
                 '"path": "/fabrication/failure-modes/catalog"' \
+                '"path": "/fabrication/failure-modes/plan"' \
                 '"path": "/fabrication/failure-modes/result"' \
                 '"path": "/fabrication/safety/catalog"' \
                 '"path": "/fabrication/safety/result"' \
