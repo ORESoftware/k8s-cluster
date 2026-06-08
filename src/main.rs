@@ -61883,6 +61883,7 @@ fn release_preview_response(
     object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
     object.insert("requestId".to_string(), json!(&response.request_id));
     object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert("generatedAtMs".to_string(), json!(response.generated_at_ms));
     object.insert(
         "routes".to_string(),
         json!(["POST /release/preview", "POST /fabrication/release/preview"]),
@@ -62003,7 +62004,7 @@ fn release_preview_response(
     object.insert(
         "previewPolicy".to_string(),
         json!([
-            "release preview is advisory and does not store, publish, or certify machine-ready artifacts",
+            "release preview is advisory retained evidence and does not publish or certify machine-ready artifacts",
             "machineReady remains false while machine-release, controller, postprocess, simulation, setup, intervention, split/combine, or package gates are blocked",
             "release-package and release-probe observations remain available for MDP/POMDP/neural learning workers"
         ]),
@@ -62065,6 +62066,137 @@ fn release_preview_response(
         }),
     );
     Value::Object(object)
+}
+
+fn release_preview_job_severity(response: &Value) -> String {
+    let machine_release_blocked = response
+        .get("machineReleaseBlocked")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let release_blocker_count = response
+        .get("releaseBlockerCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let blocked_package_count = response
+        .get("blockedPackageCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if machine_release_blocked || release_blocker_count > 0 || blocked_package_count > 0 {
+        "warning".to_string()
+    } else {
+        "ok".to_string()
+    }
+}
+
+fn stored_release_preview_job(response: &Value) -> StoredFabricationJob {
+    let generated_at_ms = response_u128_field(response, "generatedAtMs");
+    let request_id = response_str_field(response, "requestId", "release-preview");
+    let job_id = response_str_field(
+        response,
+        "jobId",
+        &safe_job_id("release-preview", &request_id, generated_at_ms),
+    );
+    let release_status = response_str_field(response, "releaseStatus", "release-preview");
+    let machine_ready = response
+        .get("machineReady")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let machine_release = response
+        .get("machineRelease")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let release_package_plan = response
+        .get("releasePackagePlan")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let execution_plan = response
+        .get("executionPlan")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let simulation = response
+        .get("simulation")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let operator_intervention_plan = response
+        .get("operatorInterventionPlan")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let policy_summary = response
+        .get("policySummary")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let artifacts = vec![
+        json_artifact(
+            "release-preview".to_string(),
+            "release-preview",
+            response.clone(),
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-machine-release".to_string(),
+            "release-preview-machine-release",
+            machine_release,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-package-plan".to_string(),
+            "release-preview-package-plan",
+            release_package_plan,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-execution-plan".to_string(),
+            "release-preview-execution-plan",
+            execution_plan,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-simulation".to_string(),
+            "release-preview-simulation",
+            simulation,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-operator-intervention".to_string(),
+            "release-preview-operator-intervention",
+            operator_intervention_plan,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-preview-policy-summary".to_string(),
+            "release-preview-policy-summary",
+            policy_summary,
+            generated_at_ms,
+        ),
+    ]
+    .into_iter()
+    .map(|artifact| (artifact.artifact_id.clone(), artifact))
+    .collect::<BTreeMap<_, _>>();
+    let artifact_ids = artifacts.keys().cloned().collect::<Vec<_>>();
+
+    StoredFabricationJob {
+        record: FabricationJobRecord {
+            job_id,
+            request_id,
+            kind: "release-preview".to_string(),
+            status: release_status.clone(),
+            ok: machine_ready,
+            severity: release_preview_job_severity(response),
+            summary: format!("release preview: {release_status}"),
+            artifact_count: artifact_ids.len(),
+            artifact_ids,
+            created_at_ms: generated_at_ms,
+            updated_at_ms: generated_at_ms,
+        },
+        plan: None,
+        analysis: None,
+        learning: None,
+        artifacts,
+    }
+}
+
+fn store_release_preview_response(state: &AppState, response: &Value) {
+    store_job(state, stored_release_preview_job(response));
 }
 
 fn execution_planning_response(
@@ -109542,7 +109674,9 @@ async fn release_preview_http(
                 response.ok,
             )
             .await;
-            Json(release_preview_response(&response, &policy_snapshot)).into_response()
+            let preview = release_preview_response(&response, &policy_snapshot);
+            store_release_preview_response(&state, &preview);
+            Json(preview).into_response()
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -121707,6 +121841,10 @@ mod tests {
             Some("dd.fabrication.release-preview.v1")
         );
         assert!(payload
+            .get("generatedAtMs")
+            .and_then(Value::as_u64)
+            .is_some_and(|generated_at_ms| generated_at_ms > 0));
+        assert!(payload
             .get("routes")
             .and_then(Value::as_array)
             .is_some_and(|routes| routes
@@ -121748,7 +121886,20 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
-                .is_some_and(|item| item.contains("does not store")))));
+                .is_some_and(|item| item.contains("retained evidence")))));
+        let stored = stored_release_preview_job(&payload);
+        assert_eq!(stored.record.kind, "release-preview");
+        assert_eq!(stored.record.severity, "warning");
+        assert!(stored.artifacts.contains_key("release-preview"));
+        assert!(stored
+            .artifacts
+            .contains_key("release-preview-machine-release"));
+        assert!(stored
+            .artifacts
+            .contains_key("release-preview-package-plan"));
+        assert!(stored
+            .artifacts
+            .contains_key("release-preview-policy-summary"));
     }
 
     #[test]
