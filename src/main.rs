@@ -64,6 +64,11 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+mod instruction_improvement_catalog;
+mod landing_page_content;
+mod learning_model_catalog;
+mod slicer_catalog;
+
 const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
@@ -63560,214 +63565,7 @@ async fn how_it_works_http() -> impl IntoResponse {
 }
 
 async fn landing_page() -> axum::response::Html<&'static str> {
-    axum::response::Html(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DD Fabrication Server</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --ink: #1f2933;
-      --muted: #52606d;
-      --line: #d9e2ec;
-      --panel: #f8fafc;
-      --accent: #0f766e;
-      --accent-2: #b7791f;
-      --bg: #ffffff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: var(--ink);
-      background: var(--bg);
-      line-height: 1.55;
-    }
-    main {
-      width: min(1120px, calc(100% - 32px));
-      margin: 0 auto;
-      padding: 40px 0 56px;
-    }
-    header {
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 28px;
-      margin-bottom: 28px;
-    }
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(2rem, 5vw, 4.25rem);
-      line-height: 1;
-      letter-spacing: 0;
-    }
-    h2 {
-      margin: 0 0 10px;
-      font-size: 1.1rem;
-      letter-spacing: 0;
-    }
-    p {
-      margin: 0;
-      color: var(--muted);
-      max-width: 78ch;
-    }
-    a { color: var(--accent); font-weight: 700; }
-    .lede {
-      font-size: 1.14rem;
-      color: var(--ink);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 14px;
-      margin: 26px 0;
-    }
-    section {
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      min-height: 100%;
-    }
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 10px;
-      margin-top: 18px;
-    }
-    .step {
-      border-left: 4px solid var(--accent);
-      padding: 10px 12px;
-      background: #ffffff;
-      min-height: 86px;
-    }
-    .step strong, code {
-      color: var(--ink);
-    }
-    code {
-      background: #edf2f7;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 1px 5px;
-      font-size: 0.92em;
-    }
-    .note {
-      margin-top: 22px;
-      padding: 14px 16px;
-      border-left: 4px solid var(--accent-2);
-      background: #fffaf0;
-    }
-    .gate-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
-      margin-top: 16px;
-      padding: 0;
-      list-style: none;
-    }
-    .gate-list li {
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 12px;
-    }
-    .starter-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 10px;
-      margin: 16px 0 0;
-      padding: 0;
-      list-style: none;
-    }
-    .starter-list li {
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 12px;
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <header>
-      <h1>DD Fabrication Server</h1>
-      <p class="lede">A Rust planning and review service for 3D printing, CNC mills and routers, lathes, sheet cutters, EDM, postprocess cells, and hybrid split/combine manufacturing.</p>
-    </header>
-
-    <div class="grid">
-      <section>
-        <h2>What It Takes In</h2>
-        <p>Submit fabrication intents, native CAD, mesh/model/slicer sources, machine profiles, existing G-code, CAM intermediate files such as APT/CLDATA, controller programs, or text job sheets.</p>
-      </section>
-      <section>
-        <h2>What It Builds</h2>
-        <p>The server creates draft design packages, export bundles, process plans, machine schedules, generated instructions, machine-code reviews, release packages, and job artifacts.</p>
-      </section>
-      <section>
-        <h2>How It Learns</h2>
-        <p>Outcomes feed bounded MDP, POMDP, DES, reward, and neural-policy evidence using the local <code>des_engine</code> crate. Learned preferences stay advisory until release gates clear.</p>
-      </section>
-      <section>
-        <h2>How It Stays Safe</h2>
-        <p>Machine-ready release is blocked until validation, simulation or dry-run review, controller/postprocessor checks, setup evidence, quality evidence, and operator or automation signoff are attached.</p>
-      </section>
-    </div>
-
-    <section>
-      <h2>How It Works</h2>
-      <p>The service turns a submitted fabrication goal into evidence-backed choices: it imports or generates geometry, chooses candidate machines and materials, decomposes or combines parts when a single process is risky, generates or reviews instructions, simulates and validates release blockers, then records outcomes so later jobs can learn from the route.</p>
-      <div class="flow">
-        <div class="step"><strong>1. Discover</strong><br>Use <code>/fabrication/capabilities</code>, <code>/fabrication/intake/catalog</code>, <code>/fabrication/templates/catalog</code>, schema, and examples.</div>
-        <div class="step"><strong>2. Intake</strong><br>Provide design inputs, instructions, machines, materials, and review evidence.</div>
-        <div class="step"><strong>3. Plan</strong><br>Generate route, split/combine, setup, toolpath, schedule, and release-package drafts.</div>
-        <div class="step"><strong>4. Validate</strong><br>Analyze imported or generated instructions for machine-failure, human-intervention, and release blockers.</div>
-        <div class="step"><strong>5. Learn</strong><br>Post outcomes and worker result reviews so future jobs can prefer safer strategies.</div>
-        <div class="step"><strong>6. Inspect</strong><br>Fetch retained jobs, artifacts, and release bundles before downstream release review.</div>
-      </div>
-    </section>
-
-    <section>
-      <h2>Start Here</h2>
-      <p>Most integrations follow the same evidence path: discover what the service supports, submit source geometry or instructions, ask for a draft plan or review, attach validation results, then feed the outcome back into learning.</p>
-      <ul class="starter-list">
-        <li><strong>1. Discover</strong><br><a href="/fabrication/capabilities">Capabilities</a>, <a href="/fabrication/machines/catalog">machines</a>, <a href="/fabrication/materials/catalog">materials</a>, and <a href="/fabrication/templates/catalog">request templates</a>.</li>
-        <li><strong>2. Import Or Generate</strong><br><a href="/fabrication/design/import/catalog">Design import</a>, <a href="/fabrication/design/generation/catalog">design generation</a>, <a href="/fabrication/instructions/languages">instruction languages</a>, and <a href="/fabrication/machine-code/catalog">machine-code generation</a>.</li>
-        <li><strong>3. Validate And Improve</strong><br><a href="/fabrication/instructions/validation/catalog">Validation</a>, <a href="/fabrication/boundaries/catalog">failure boundaries</a>, <a href="/fabrication/remediation/catalog">remediation</a>, and <a href="/fabrication/improvements/catalog">instruction improvement</a>.</li>
-        <li><strong>4. Split, Combine, Or Release</strong><br><a href="/fabrication/decomposition/catalog">Decomposition</a>, <a href="/fabrication/interfaces/catalog">interfaces</a>, <a href="/fabrication/joining/catalog">joining</a>, <a href="/fabrication/recomposition/catalog">recomposition</a>, <a href="/fabrication/assembly/catalog">assembly</a>, <a href="/fabrication/release/catalog">release readiness</a>, and <a href="/fabrication/artifacts/catalog">retained artifacts</a>.</li>
-        <li><strong>5. Learn From Results</strong><br><a href="/fabrication/learning/engines/catalog">DES/MDP/POMDP engines</a>, <a href="/fabrication/learning/rewards/catalog">reward terms</a>, <a href="/fabrication/learning/replay/catalog">replay gates</a>, <a href="/fabrication/learning/scenarios/catalog">training scenarios</a>, and <a href="/fabrication/learning/outcomes">outcome memory</a>.</li>
-        <li><strong>6. Operate</strong><br><a href="/grafana/fabrication">Fabrication Planner Grafana dashboard</a> shows request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity before operators trust generated work.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Design And Toolchain Intake</h2>
-      <p>Native and cloud CAD intake includes PTC Creo / Pro/ENGINEER, SOLIDWORKS, Autodesk Fusion, Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, and ZBrush, plus neutral and print handoffs such as STEP, Parasolid, STL, 3MF, OBJ, AMF, and slicer projects from PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio. Ambiguous extensions such as <code>.prt</code> and <code>.asm</code> require source-system or translator evidence before downstream release.</p>
-    </section>
-
-    <section>
-      <h2>Release Gates</h2>
-      <p>Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory until the release packet proves each critical gate.</p>
-      <ul class="gate-list">
-        <li><strong>Source provenance</strong><br>CAD, mesh, CAM, controller, macro, and text instruction origin is identified.</li>
-        <li><strong>Machine envelope</strong><br>Axes, fixtures, work offsets, tools, support media, and controller modes are verified.</li>
-        <li><strong>Process readiness</strong><br>Thermal, spindle, feed, coolant, dust, gas, abrasive, resin, powder, or filament state is ready.</li>
-        <li><strong>Simulation evidence</strong><br>Dry-run, collision, reach, support, quality, and postprocess reviews clear blockers.</li>
-        <li><strong>Human or automation handoff</strong><br>Required operator interventions, split/combine joins, and restart steps are signed off.</li>
-        <li><strong>Learning disposition</strong><br>MDP/POMDP/DES/neural recommendations remain advisory until retained outcomes support promotion.</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Priority Dispositions</h2>
-      <p>Worker result routes publish <code>priorityDispositions</code> so review workers can see which evidence lanes are blocked, need review, are closed, or are ready for learning. Blocked and <code>pending-blocker-resolution</code> dispositions keep <code>machineReady</code> false until the matching release gate has retained evidence.</p>
-    </section>
-
-    <p class="note">Start with <a href="/docs/api">API docs</a>, <a href="/fabrication/capabilities">capabilities</a>, <a href="/fabrication/intake/catalog">intake guide</a>, <a href="/fabrication/templates/catalog">request templates</a>, <a href="/fabrication/schema">schema</a>, or <a href="/fabrication/examples">examples</a>. This service produces planning and evidence packets; machine-ready release stays gated until validation, simulation, controller/postprocessor review, setup, quality, and signoff evidence clear.</p>
-  </main>
-</body>
-</html>"#,
-    )
+    axum::response::Html(landing_page_content::html())
 }
 
 fn safety_boundary_classes() -> Vec<&'static str> {
@@ -109209,6 +109007,7 @@ fn instruction_improvement_catalog_response() -> Value {
             "neuralTrainingCorpus.examples",
             "learning.interventionSignals"
         ],
+        "patchReleaseChecklist": instruction_improvement_catalog::patch_release_checklist(),
         "releasePolicy": [
             "improved programs are review drafts and keep machineReady=false until validation, simulation, controller/postprocessor review, and operator or automation signoff clear",
             "patch manifests describe repair intent, not executable-certified controller code",
@@ -116271,120 +116070,8 @@ fn learning_model_catalog_response() -> Value {
                 "studioGraph": STUDIO_GRAPH_SCHEMA
             }
         },
-        "modelFamilies": [
-            {
-                "family": "mdp-policy-snapshot",
-                "primitive": "des_engine::des::decision::solve_mdp",
-                "artifactKinds": ["mdp-request", "mdp-value-table", "policy-action-map", "learning-policy-snapshot"],
-                "trainedFrom": ["learning.outcomes", "reward_terms", "validation.failureBoundaries", "releasePackagePlan.releaseGates"],
-                "usedFor": [
-                    "fabrication route action ranking",
-                    "machine/process selection previews",
-                    "failure-boundary remediation scoring"
-                ],
-                "promotionGates": [
-                    "reward evidence is complete and redacted",
-                    "policy was replayed against retained validation and release blockers",
-                    "machine-ready release still requires simulation, quality, setup, and operator evidence"
-                ]
-            },
-            {
-                "family": "pomdp-belief-policy",
-                "primitive": "des_engine::des::decision::solve_pomdp_underlying",
-                "artifactKinds": ["pomdp-belief-state", "hidden-intervention-risk", "probe-priority-map"],
-                "trainedFrom": ["learning.observations", "operatorInterventionPlan.requiredOperatorActions", "executionTelemetryResult.machineStops"],
-                "usedFor": [
-                    "human-intervention uncertainty estimation",
-                    "probe and inspection prioritization",
-                    "uncertain split/combine or restart-state review"
-                ],
-                "promotionGates": [
-                    "belief-state assumptions are attached to the retained job evidence",
-                    "hidden-state risk cannot certify unattended release",
-                    "probe or operator gates remain open until direct evidence clears them"
-                ]
-            },
-            {
-                "family": "des-studio-surrogate",
-                "primitive": "des_engine::des::studio::analyze_model_spec",
-                "artifactKinds": ["desScheduleModel", "desInstructionModel", "queue-capacity-analysis", "worker-lane-surrogate"],
-                "trainedFrom": ["machineSchedule", "instructionAnalysis.reviewQueue", "worker result timings", "simulationResult.findings"],
-                "usedFor": [
-                    "machine-lane capacity planning",
-                    "instruction-review bottleneck detection",
-                    "hybrid cell and worker-lane dispatch previews"
-                ],
-                "promotionGates": [
-                    "queue graph validates against the DES Studio schema",
-                    "surrogate output is tied to observed cycle-time or queue evidence",
-                    "runtime telemetry must confirm any schedule policy before automatic reuse"
-                ]
-            },
-            {
-                "family": "bounded-neural-policy-sketch",
-                "primitive": "des_engine::des::general::neural_network::FeedForwardNetwork",
-                "artifactKinds": ["neural-training-corpus", "feature-vector-map", "advisory-action-score", "model-card"],
-                "trainedFrom": ["learning.outcomes", "state/action features", "quality buckets", "false-positive and false-negative boundary labels"],
-                "usedFor": [
-                    "feature-to-action ranking previews",
-                    "boundary-risk classifier experiments",
-                    "split/combine strategy hints"
-                ],
-                "promotionGates": [
-                    "training corpus is versioned, bounded, and linked to retained artifacts",
-                    "model card records features, labels, reward terms, and known failure modes",
-                    "neural scores are advisory and subordinate to deterministic validation and release gates"
-                ]
-            }
-        ],
-        "neuralFeatureContract": {
-            "schemaVersion": "dd.fabrication.neural-feature-contract.v1",
-            "engine": "des_engine::des::general::neural_network::FeedForwardNetwork",
-            "networkKind": "deterministic-single-layer-sigmoid-policy-head",
-            "inputDimension": 9,
-            "outputDimension": 4,
-            "parameterCount": neural_network.num_parameters(),
-            "featureNames": [
-                "objective-embedding",
-                "material-family",
-                "stock-envelope",
-                "machine-envelope",
-                "toolpath-token-sequence",
-                "simulated-force-temperature-vibration",
-                "inspection-error-vector",
-                "automation-requirement-vector",
-                "resolution-step-policy-state"
-            ],
-            "featureSources": [
-                "design and part count normalization",
-                "manufacturing-method diversity",
-                "human-intervention process steps",
-                "validation finding density",
-                "human-boundary count",
-                "instruction-improvement count",
-                "minimum tolerance pressure",
-                "automation requirement count",
-                "resolution-plan step count"
-            ],
-            "outputLabels": [
-                "split-combine",
-                "human-intervention",
-                "machine-failure",
-                "automation-gap"
-            ],
-            "retainedSurfaces": [
-                "learning.neuralPolicy.engineInference",
-                "learning.neuralTrainingCorpus.featureNames",
-                "learning.neuralTrainingCorpus.inferenceCandidates",
-                "learningCorpus.neuralTrainingExamples",
-                "learningModelResult.modelCardCompatibility"
-            ],
-            "releasePolicy": [
-                "feature vectors are bounded 0..1 and must match neuralTrainingCorpus.featureNames before model-card compatibility can pass",
-                "output labels are advisory action-risk scores for planning and replay, not controller approval",
-                "machine-ready release remains blocked by deterministic validation, simulation, setup, quality, telemetry, and human or automation gates"
-            ]
-        },
+        "modelFamilies": learning_model_catalog::model_families(),
+        "neuralFeatureContract": learning_model_catalog::neural_feature_contract(neural_network.num_parameters()),
         "retentionSurfaces": [
             "learningPolicySnapshot",
             "learning.outcomes",
@@ -118744,6 +118431,7 @@ fn slicer_profile_catalog_response() -> Value {
             "simulation.riskProfile",
             "machineRelease.blockers"
         ],
+        "machineCodeHandoffCompatibility": slicer_catalog::machine_code_handoff_compatibility(),
         "releasePolicy": [
             "slicer catalog entries describe accepted slicer project/profile evidence and generated instruction handoffs, not certified printer-ready G-code",
             "machine-ready release remains blocked until profile provenance, material/nozzle compatibility, support/orientation, first-layer, simulation, and operator or automation signoff evidence clear",
@@ -131735,6 +131423,36 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not certified printer-ready G-code")))));
+        let handoff = payload
+            .get("machineCodeHandoffCompatibility")
+            .and_then(Value::as_object)
+            .expect("slicer catalog should expose machine-code handoff compatibility");
+        assert_eq!(
+            handoff.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.slicer-machine-code-handoff.v1")
+        );
+        let handoff_families = handoff
+            .get("handoffFamilies")
+            .and_then(Value::as_array)
+            .expect("handoff families should be exposed");
+        for expected in [
+            "fdm-printer-gcode",
+            "resin-printer-package",
+            "slicer-project-or-profile",
+        ] {
+            assert!(
+                handoff_families
+                    .iter()
+                    .any(|family| family.get("family").and_then(Value::as_str) == Some(expected)),
+                "missing slicer handoff family {expected}"
+            );
+        }
+        assert!(handoff
+            .get("blockerKinds")
+            .and_then(Value::as_array)
+            .is_some_and(|blockers| blockers
+                .iter()
+                .any(|blocker| blocker.as_str() == Some("slicer-mesh-topology-boundary"))));
     }
 
     #[test]
@@ -137008,6 +136726,28 @@ mod tests {
             .is_some_and(|surfaces| surfaces
                 .iter()
                 .any(|surface| surface.as_str() == Some("instruction-patch-action:*"))));
+        let patch_release_checklist = payload
+            .get("patchReleaseChecklist")
+            .and_then(Value::as_array)
+            .expect("patch release checklist should be exposed");
+        for gate in [
+            "immutable-source-retention",
+            "post-patch-validation",
+            "human-or-automation-signoff",
+        ] {
+            assert!(
+                patch_release_checklist
+                    .iter()
+                    .any(|item| item.get("gate").and_then(Value::as_str) == Some(gate)),
+                "missing patch release gate {gate}"
+            );
+        }
+        assert!(patch_release_checklist.iter().any(|item| item
+            .get("requiredEvidence")
+            .and_then(Value::as_array)
+            .is_some_and(|evidence| evidence.iter().any(|entry| entry
+                .as_str()
+                .is_some_and(|entry| entry.contains("validation rerun"))))));
         assert!(payload
             .get("releasePolicy")
             .and_then(Value::as_array)
@@ -159049,9 +158789,7 @@ mod tests {
             .and_then(Value::as_object)
             .expect("learning model catalog should expose neural feature contract");
         assert_eq!(
-            neural_contract
-                .get("schemaVersion")
-                .and_then(Value::as_str),
+            neural_contract.get("schemaVersion").and_then(Value::as_str),
             Some("dd.fabrication.neural-feature-contract.v1")
         );
         assert_eq!(
@@ -159084,6 +158822,12 @@ mod tests {
             .is_some_and(|surfaces| surfaces.iter().any(|surface| surface
                 .as_str()
                 .is_some_and(|surface| surface.contains("modelCardCompatibility")))));
+        assert!(neural_contract
+            .get("compatibilityChecks")
+            .and_then(Value::as_array)
+            .is_some_and(|checks| checks.iter().any(|check| check
+                .as_str()
+                .is_some_and(|check| check.contains("featureNames must match")))));
         assert!(payload
             .get("retentionSurfaces")
             .and_then(Value::as_array)

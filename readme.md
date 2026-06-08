@@ -2185,6 +2185,12 @@ subjects, and related generation, validation, simulation, machine-code, and
 toolpath routes. Resin slicer entries retain exposure, lift/retract, support,
 island, hollowing/drain, peel/recoat, wash/cure, resin lot, and PPE evidence
 before machine-ready release.
+The payload also exposes `machineCodeHandoffCompatibility` with FDM printer
+G-code, resin printer package, and slicer project/profile handoff families. Each
+family names generated instruction kinds, required profile/package evidence,
+blocker kinds such as slicer mesh topology and high-speed kinematics, and the
+rule that non-G-code resin or slicer package jobs need retained package manifest
+and postprocess evidence before machine-ready release.
 
 Slicer catalog entries are accepted profile-evidence contracts, not certified
 printer-ready G-code. Machine-ready release remains blocked until profile
@@ -3193,6 +3199,12 @@ postprocess, monitoring, and structured text checkpoints. Patch manifests use
 `insert-review-checkpoint`, and `review-line`. Improved programs are review
 drafts and keep `machineReady=false` until validation, simulation,
 controller/postprocessor review, and operator or automation signoff clear.
+The catalog also exposes a `patchReleaseChecklist` with machine-readable gates
+for immutable source retention, post-patch validation, and human or automation
+signoff. Checklist entries require original and patched artifact URI/checksum
+evidence, validation reruns, simulation/dry-run/backplot or slicer/package
+review, controller or postprocessor compatibility review, reviewer disposition,
+and learning outcome hints before an improved program can move toward release.
 Instruction-patch observations are emitted for MDP/POMDP/neural workers so
 future planning can learn which evidence, defaults, checkpoints, and
 split/combine gates reduce failures.
@@ -6195,7 +6207,9 @@ It also exposes a `neuralFeatureContract` with the DES
 `FeedForwardNetwork` input dimension, output labels, parameter count,
 `neuralTrainingCorpus.featureNames` alignment, retained inference/model-card
 surfaces, and the bounded `0..1` feature-vector rule external neural workers must
-honor before a model-card compatibility review can pass.
+honor before a model-card compatibility review can pass. The contract also lists
+compatibility checks for feature-name order, input/output dimensions, output-label
+coverage, normalization bounds, and retained model artifact URI/checksum evidence.
 
 Each model family lists artifact kinds, training surfaces, intended planning
 uses, and promotion gates. Model artifacts are retained advisory policy evidence,
