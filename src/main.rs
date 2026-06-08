@@ -80202,6 +80202,190 @@ fn consumables_result_artifact_missing_release_evidence(artifact: &Value) -> boo
             .is_none_or(Vec::is_empty)
 }
 
+fn consumables_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "consumables-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn consumables_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    inventory_blocker_count: usize,
+    tool_life_blocker_count: usize,
+    support_media_blocker_count: usize,
+    split_combine_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    inventory_checks: &[Value],
+    tool_life_checks: &[Value],
+    support_media_checks: &[Value],
+) -> Vec<Value> {
+    let split_or_capacity_review = split_combine_required
+        || values_contain_review_tokens(
+            inventory_checks,
+            &[
+                "split",
+                "combine",
+                "reroute",
+                "capacity",
+                "shortfall",
+                "refill",
+                "lot",
+                "material",
+            ],
+        )
+        || values_contain_review_tokens(
+            tool_life_checks,
+            &[
+                "split",
+                "combine",
+                "reroute",
+                "tool-life",
+                "fresh-edge",
+                "wear",
+                "finish-pass",
+            ],
+        )
+        || values_contain_review_tokens(
+            support_media_checks,
+            &[
+                "split", "combine", "reroute", "support", "coolant", "chip", "wire", "gas",
+            ],
+        );
+    let machine_boundary_blocked = inventory_blocker_count > 0
+        || tool_life_blocker_count > 0
+        || support_media_blocker_count > 0;
+
+    vec![
+        consumables_priority_disposition(
+            "machine-failure-boundary-first",
+            if machine_boundary_blocked {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("inventoryBlockerCount:{inventory_blocker_count}"),
+                format!("toolLifeBlockerCount:{tool_life_blocker_count}"),
+                format!("supportMediaBlockerCount:{support_media_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/consumables/result",
+                "POST /fabrication/tooling/result",
+                "POST /fabrication/release/result",
+            ],
+            if machine_boundary_blocked {
+                "machineReady remains blocked by material capacity, tool-life, or support-media failure boundaries"
+            } else {
+                "consumables result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        consumables_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/consumables/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until consumable refill, tool replacement, or support-media operator signoff evidence is retained"
+            } else {
+                "consumables result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        consumables_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_capacity_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("splitOrCapacityReview:{split_or_capacity_review}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/strategy/recommend",
+                "POST /fabrication/consumables/result",
+            ],
+            if split_or_capacity_review {
+                "machineReady remains blocked until split/combine reroute, consumable capacity, tool-life, or support-media evidence is dispositioned"
+            } else {
+                "consumables result did not surface split/combine or capacity priority evidence"
+            },
+        ),
+        consumables_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/consumables/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until consumable lot, capacity, tool-life, support-media, or operator-signoff artifacts retain URI, checksum, and evidence"
+            } else {
+                "consumables result artifacts include release evidence for downstream review"
+            },
+        ),
+        consumables_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked consumables priority lanes before advisory promotion"
+            } else {
+                "consumables result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn consumables_result_review_response(
     request: ConsumablesResultReviewRequest,
 ) -> Result<Value, String> {
@@ -80311,6 +80495,25 @@ fn consumables_result_review_response(
     if human_intervention_required {
         learning_observations.push("consumables:human-intervention-required".to_string());
     }
+    let priority_dispositions = consumables_priority_dispositions(
+        request.success,
+        release_blocked,
+        inventory_blocker_count,
+        tool_life_blocker_count,
+        support_media_blocker_count,
+        split_combine_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &inventory_checks,
+        &tool_life_checks,
+        &support_media_checks,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(inventory_checks.iter().filter_map(|check| {
         check
             .get("consumableFamily")
@@ -80364,6 +80567,7 @@ fn consumables_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "consumablesResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -80436,6 +80640,7 @@ fn consumables_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -80445,6 +80650,7 @@ fn consumables_result_review_response(
             "consumables-tool-life-checks",
             "consumables-support-media-checks",
             "consumables-artifacts",
+            "consumables-priority-dispositions",
             "consumables-learning-observations",
             "mdp-request.artifacts.consumablesResult"
         ],
@@ -80513,6 +80719,10 @@ fn stored_consumables_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "consumables-result".to_string(),
@@ -80548,6 +80758,12 @@ fn stored_consumables_result_job(response: &Value) -> StoredFabricationJob {
             "consumables-learning-observations".to_string(),
             "consumables-learning-observations",
             learning_observations,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "consumables-priority-dispositions".to_string(),
+            "consumables-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
     ]
@@ -134100,6 +134316,64 @@ mod tests {
                         "consumables-family:subtractive-cutter-insert-and-coolant-consumables"
                     ))
             ));
+        let observations = response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .expect("consumables learning observations should be present");
+        for observation in [
+            "consumables-priority:machine-failure-boundary-first:blocked",
+            "consumables-priority:human-intervention-required:blocked",
+            "consumables-priority:split-combine-or-interface-review:blocked",
+            "consumables-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+        ] {
+            assert!(
+                observations
+                    .iter()
+                    .any(|item| item.as_str() == Some(observation)),
+                "missing consumables priority observation {observation}"
+            );
+        }
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("consumables priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "consumables-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "consumables-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "consumables-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "consumables-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing consumables priority disposition {}",
+                expected.0
+            );
+        }
         assert!(response
             .get("artifactSurfaces")
             .and_then(Value::as_array)
@@ -134152,6 +134426,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let stored = stored_consumables_result_job(&response);
         assert_eq!(stored.record.kind, "consumables-result");
@@ -134167,6 +134448,9 @@ mod tests {
         assert!(stored
             .artifacts
             .contains_key("consumables-support-media-checks"));
+        assert!(stored
+            .artifacts
+            .contains_key("consumables-priority-dispositions"));
         assert!(stored
             .artifacts
             .contains_key("consumables-learning-observations"));

@@ -3619,7 +3619,12 @@ reroutes, and operator refill checkpoints.
 outcomes for material/tool/support-media inventory, lot and shelf-life state,
 remaining capacity, dry-state evidence, tool-life and wear checks, support-media
 restart checks, artifacts, and release warnings. The response uses
-`dd.fabrication.consumables-result-review.v1`.
+`dd.fabrication.consumables-result-review.v1`. It also includes a
+`priorityDispositions` array for machine-failure, human-intervention,
+split/combine or consumable-capacity review, non-G-code job-sheet evidence, and
+learning-feedback lanes, with
+`consumables-priority:<priority>:<disposition>` observations mirrored into the
+learning draft.
 
 Machine-ready and unattended release remain blocked while material, resin,
 powder, binder, wire, gas, abrasive, coolant, solvent, media, or tooling capacity
@@ -3627,8 +3632,8 @@ is stale, depleted, below projected program demand, not lot-traceable, expired,
 outside dry-state requirements, or missing support-media restart evidence. The
 result is stored with `consumables-result`, `consumables-inventory-checks`,
 `consumables-tool-life-checks`, `consumables-support-media-checks`,
-`consumables-artifacts`, and `consumables-learning-observations` artifacts. Its
-learning section includes a
+`consumables-artifacts`, `consumables-priority-dispositions`, and
+`consumables-learning-observations` artifacts. Its learning section includes a
 `dd.fabrication.consumables-learning-outcome-draft.v1` `outcomeDraft` with
 inventory, tool-life, support-media, artifact, split/combine, human-intervention,
 and blocker hints ready for `POST /fabrication/learning/outcomes`, so
