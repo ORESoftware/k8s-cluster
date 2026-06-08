@@ -271,8 +271,10 @@ spec:
                 '"path": "/fabrication/tolerances/catalog"' \
                 '"path": "/fabrication/tolerances/result"' \
                 '"path": "/fabrication/process-capabilities/catalog"' \
+                '"path": "/fabrication/process-capabilities/plan"' \
                 '"path": "/fabrication/process-capabilities/result"' \
                 '"path": "/fabrication/manufacturability/catalog"' \
+                '"path": "/fabrication/manufacturability/plan"' \
                 '"path": "/fabrication/failure-modes/catalog"' \
                 '"path": "/fabrication/failure-modes/result"' \
                 '"path": "/fabrication/safety/catalog"' \
