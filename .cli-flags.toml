@@ -7,6 +7,24 @@ unknown_options_env = "MIP_SOLVER_UNKNOWN_CLI_FLAGS"
 errors_env = "MIP_SOLVER_CLI_PARSE_ERRORS"
 allow_unknown = false
 
+[flags.cli_flags_config]
+env = "FLAGS2ENV_CONFIG"
+aliases = ["cli-flags-config", "flags2env-config", "config"]
+type = "string"
+help = "Path to the flags2env .cli-flags.toml file."
+
+[flags.flags2env_native_lib]
+env = "FLAGS2ENV_NATIVE_LIB"
+aliases = ["flags2env-native-lib"]
+type = "string"
+help = "Optional flags2env native library fallback path."
+
+[flags.flags2env_bin]
+env = "FLAGS2ENV_BIN"
+aliases = ["flags2env-bin"]
+type = "string"
+help = "Optional flags2env CLI fallback path."
+
 [flags.host]
 env = "HOST"
 aliases = ["host", "http-host", "listen-host"]
@@ -285,6 +303,30 @@ aliases = ["nvidia-visible-devices"]
 type = "string"
 help = "Visible NVIDIA devices."
 
+[flags.max_http_body_bytes]
+env = "MIP_SOLVER_MAX_HTTP_BODY_BYTES"
+aliases = ["max-http-body-bytes", "http-body-limit"]
+type = "integer"
+help = "Maximum HTTP request body size in bytes."
+
+[flags.max_vars]
+env = "MIP_SOLVER_MAX_VARS"
+aliases = ["max-vars", "max-variables"]
+type = "integer"
+help = "Maximum variables accepted in a problem."
+
+[flags.max_constraints]
+env = "MIP_SOLVER_MAX_CONSTRAINTS"
+aliases = ["max-constraints"]
+type = "integer"
+help = "Maximum constraints accepted in a problem."
+
+[flags.max_stream_commands]
+env = "MIP_SOLVER_MAX_STREAM_COMMANDS"
+aliases = ["max-stream-commands"]
+type = "integer"
+help = "Maximum commands accepted in a streamed model edit request."
+
 [flags.max_nodes]
 env = "MIP_SOLVER_MAX_NODES"
 aliases = ["max-nodes"]
@@ -348,6 +390,32 @@ type = "bool"
 true_aliases = ["t", "1", "yes", "on"]
 false_aliases = ["f", "0", "no", "off"]
 help = "Enable external solver verification by default."
+
+[flags.max_cut_rounds]
+env = "MIP_SOLVER_MAX_CUT_ROUNDS"
+aliases = ["max-cut-rounds"]
+type = "integer"
+help = "Default maximum cut rounds for IP/MIP solves."
+
+[flags.max_cuts_per_node]
+env = "MIP_SOLVER_MAX_CUTS_PER_NODE"
+aliases = ["max-cuts-per-node"]
+type = "integer"
+help = "Default maximum cuts generated per branch-and-bound node."
+
+[flags.heuristic_passes]
+env = "MIP_SOLVER_HEURISTIC_PASSES"
+aliases = ["heuristic-passes"]
+type = "integer"
+help = "Default number of primal heuristic passes."
+
+[flags.verbose]
+env = "MIP_SOLVER_VERBOSE"
+aliases = ["verbose", "solver-verbose"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Enable verbose solver options."
 
 [flags.external_verification_method]
 env = "MIP_SOLVER_EXTERNAL_VERIFICATION_METHOD"

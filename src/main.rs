@@ -61,6 +61,10 @@ const MAX_HTTP_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
 const MAX_STREAM_COMMANDS: usize = 2_000;
+const HARD_MAX_HTTP_BODY_BYTES: usize = 256 * 1024 * 1024;
+const HARD_MAX_VARS: usize = 1_000_000;
+const HARD_MAX_CONSTRAINTS: usize = 1_000_000;
+const HARD_MAX_STREAM_COMMANDS: usize = 100_000;
 const MIP_SOLVER_REDIS_PREFIX: &str = "dd:mip-solver";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -489,10 +493,10 @@ impl SolveOptions {
                 ConcreteLpRelaxationAlgorithm::InternalSimplex,
             )),
             allow_external_solvers: Some(false),
-            max_cut_rounds: Some(8),
-            max_cuts_per_node: Some(16),
-            heuristic_passes: Some(2),
-            verbose: Some(false),
+            max_cut_rounds: Some(solver_max_cut_rounds()),
+            max_cuts_per_node: Some(solver_max_cuts_per_node()),
+            heuristic_passes: Some(solver_heuristic_passes()),
+            verbose: Some(solver_verbose()),
             ..Default::default()
         }
     }
@@ -810,6 +814,58 @@ fn env_f64(key: &str, fallback: f64) -> f64 {
 
 fn env_bool(key: &str, fallback: bool) -> bool {
     runtime_config::bool_value(key, fallback)
+}
+
+fn capped_env_usize(key: &str, fallback: usize, hard_max: usize) -> usize {
+    env_usize(key, fallback).clamp(1, hard_max)
+}
+
+fn capped_env_usize_allow_zero(key: &str, fallback: usize, hard_max: usize) -> usize {
+    env_usize_allow_zero(key, fallback).min(hard_max)
+}
+
+fn max_http_body_bytes() -> usize {
+    capped_env_usize(
+        "MIP_SOLVER_MAX_HTTP_BODY_BYTES",
+        MAX_HTTP_BODY_BYTES,
+        HARD_MAX_HTTP_BODY_BYTES,
+    )
+}
+
+fn max_vars() -> usize {
+    capped_env_usize("MIP_SOLVER_MAX_VARS", MAX_VARS, HARD_MAX_VARS)
+}
+
+fn max_constraints() -> usize {
+    capped_env_usize(
+        "MIP_SOLVER_MAX_CONSTRAINTS",
+        MAX_CONSTRAINTS,
+        HARD_MAX_CONSTRAINTS,
+    )
+}
+
+fn max_stream_commands() -> usize {
+    capped_env_usize(
+        "MIP_SOLVER_MAX_STREAM_COMMANDS",
+        MAX_STREAM_COMMANDS,
+        HARD_MAX_STREAM_COMMANDS,
+    )
+}
+
+fn solver_max_cut_rounds() -> usize {
+    capped_env_usize_allow_zero("MIP_SOLVER_MAX_CUT_ROUNDS", 8, 256)
+}
+
+fn solver_max_cuts_per_node() -> usize {
+    capped_env_usize_allow_zero("MIP_SOLVER_MAX_CUTS_PER_NODE", 16, 1_024)
+}
+
+fn solver_heuristic_passes() -> usize {
+    capped_env_usize_allow_zero("MIP_SOLVER_HEURISTIC_PASSES", 2, 256)
+}
+
+fn solver_verbose() -> bool {
+    env_bool("MIP_SOLVER_VERBOSE", false)
 }
 
 fn now_ms() -> u128 {
@@ -1561,11 +1617,13 @@ fn sense_of(raw: &str) -> Sense {
 
 fn validate_problem(problem: &MipProblemSpec) -> Result<(), String> {
     let n = problem.c.len();
+    let max_vars = max_vars();
+    let max_constraints = max_constraints();
     if n == 0 {
         return Err("objective vector `c` must not be empty".to_string());
     }
-    if n > MAX_VARS {
-        return Err(format!("variable count {n} exceeds limit {MAX_VARS}"));
+    if n > max_vars {
+        return Err(format!("variable count {n} exceeds limit {max_vars}"));
     }
     if problem.a.len() != problem.b.len() {
         return Err(format!(
@@ -1574,9 +1632,9 @@ fn validate_problem(problem: &MipProblemSpec) -> Result<(), String> {
             problem.b.len()
         ));
     }
-    if problem.a.len() > MAX_CONSTRAINTS {
+    if problem.a.len() > max_constraints {
         return Err(format!(
-            "constraint count {} exceeds limit {MAX_CONSTRAINTS}",
+            "constraint count {} exceeds limit {max_constraints}",
             problem.a.len()
         ));
     }
@@ -1780,9 +1838,10 @@ fn str_at(command: &Value, key: &str) -> Result<Option<String>, String> {
 fn parse_problem_from_commands(
     commands: &[Value],
 ) -> Result<(MipProblemSpec, u64, Vec<Value>), String> {
-    if commands.len() > MAX_STREAM_COMMANDS {
+    let max_stream_commands = max_stream_commands();
+    if commands.len() > max_stream_commands {
         return Err(format!(
-            "stream command count {} exceeds limit {MAX_STREAM_COMMANDS}",
+            "stream command count {} exceeds limit {max_stream_commands}",
             commands.len()
         ));
     }
@@ -3566,10 +3625,10 @@ fn external_des_ipmip_options(
             ),
         ),
         allow_external_solvers: Some(true),
-        max_cut_rounds: Some(8),
-        max_cuts_per_node: Some(16),
-        heuristic_passes: Some(2),
-        verbose: Some(false),
+        max_cut_rounds: Some(solver_max_cut_rounds()),
+        max_cuts_per_node: Some(solver_max_cuts_per_node()),
+        heuristic_passes: Some(solver_heuristic_passes()),
+        verbose: Some(solver_verbose()),
         ..Default::default()
     }
 }
@@ -6871,16 +6930,17 @@ async fn example() -> impl IntoResponse {
 async fn read_limited_body(body: Body) -> Result<Vec<u8>, String> {
     let mut stream = body.into_data_stream();
     let mut bytes = Vec::new();
+    let max_http_body_bytes = max_http_body_bytes();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| format!("read request body: {error}"))?;
         let next_len = bytes
             .len()
             .checked_add(chunk.len())
             .ok_or_else(|| "request body is too large".to_string())?;
-        if next_len > MAX_HTTP_BODY_BYTES {
+        if next_len > max_http_body_bytes {
             return Err(format!(
                 "request body exceeds {} bytes",
-                MAX_HTTP_BODY_BYTES
+                max_http_body_bytes
             ));
         }
         bytes.extend_from_slice(&chunk);
@@ -7120,7 +7180,7 @@ async fn stream_session(
         Value::Array(items) => items,
         value => vec![value],
     };
-    if commands.len() > MAX_STREAM_COMMANDS {
+    if commands.len() > max_stream_commands() {
         return response_json(
             StatusCode::BAD_REQUEST,
             json!({"ok":false,"error":"too many stream commands"}),
@@ -8172,7 +8232,7 @@ fn app_router(state: AppState) -> Router {
         .route("/sessions/:session_id", get(get_session))
         .route("/sessions/:session_id/events", post(stream_session))
         .route("/sessions/:session_id/solve", post(solve_session))
-        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .layer(DefaultBodyLimit::max(max_http_body_bytes()))
         .with_state(state)
 }
 
@@ -8213,6 +8273,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let runtime_config = runtime_config::initialize();
     for warning in runtime_config.warnings() {
         eprintln!("runtime config warning: {warning}");
+    }
+    if runtime_config.help_requested() {
+        let help_table = runtime_config
+            .help_table()
+            .unwrap_or("No CLI help is available.");
+        println!("{help_table}");
+        return Ok(());
     }
     if !runtime_config.cli_values().is_empty() {
         let config_path = runtime_config
