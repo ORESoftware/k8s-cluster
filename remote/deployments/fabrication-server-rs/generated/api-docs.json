@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 396,
+  "routeCount": 398,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 386,
+    "user-generated": 388,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -3061,6 +3061,23 @@
       "notes": ""
     },
     {
+      "path": "/fabrication/objective/coverage",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "objective_coverage_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/fabrication/packages/catalog",
       "methods": [
         "GET"
@@ -5572,6 +5589,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "nesting_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/objective/coverage",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "objective_coverage_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"

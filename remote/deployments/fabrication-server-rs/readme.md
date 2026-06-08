@@ -25,6 +25,8 @@ outcomes.
 - `GET /metrics`
 - `GET /capabilities`
 - `GET /fabrication/capabilities`
+- `GET /objective/coverage`
+- `GET /fabrication/objective/coverage`
 - `GET /machines/catalog`
 - `GET /fabrication/machines/catalog`
 - `GET /printers/catalog`
@@ -819,6 +821,20 @@ retained evidence clears the matching gates.
 These capabilities describe draft planning and validation support, not
 controller-certified release.
 
+## `GET /fabrication/objective/coverage`
+
+`GET /objective/coverage` and the gateway-prefixed
+`GET /fabrication/objective/coverage` return the
+`dd.fabrication.objective-coverage.v1` mission-coverage view used by the
+capability payload. It exposes the `objectiveCoverageMatrix` directly, including
+coverage rows for 3D-printing and hybrid intake, machine-code and instruction
+generation, existing-instruction validation and improvement, machine-failure and
+human-intervention boundaries, split/combine multi-process learning, and
+MDP/POMDP/DES/neural learning. The endpoint is for integration audits and UI
+discovery; every row still declares advisory release rules, so machine-ready
+approval remains gated by retained validation, simulation, setup, quality,
+release, and human or automation evidence.
+
 ## `GET /fabrication/machines/catalog`
 
 `GET /machines/catalog` and the gateway-prefixed
@@ -1395,11 +1411,14 @@ reviews topology, unit/scale, PMI/profile, and manufacturability checks; records
 failure boundaries that require human intervention, split/combine, conversion,
 or regeneration; verifies retained artifacts have URI, checksum, format, and
 evidence; and stores `design-import-result`, `design-import-checks`,
-`design-import-failure-boundaries`, `design-import-artifacts`, and
-`design-import-learning-observations` artifacts. The learning section also emits
-a `dd.fabrication.design-import-learning-outcome-draft.v1` `outcomeDraft` with
+`design-import-failure-boundaries`, `design-import-artifacts`,
+`design-import-priority-dispositions`, and `design-import-learning-observations`
+artifacts. The response also includes `priorityDispositions` rows for source
+context, import-check closure, failure-boundary closure, artifact evidence, and
+learning-feedback readiness. The learning section emits a
+`dd.fabrication.design-import-learning-outcome-draft.v1` `outcomeDraft` with
 worker-lane, source-format, check, boundary, recommended-action, artifact,
-split/combine, human-intervention, and blocker hints ready for
+priority, split/combine, human-intervention, and blocker hints ready for
 `POST /fabrication/learning/outcomes`.
 
 Machine-ready release remains blocked when import workers fail, checks are
