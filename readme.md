@@ -5831,8 +5831,11 @@ runtime inspection boundary while the database contract is still being designed.
   bounded ledger.
   `GET /fabrication/jobs/catalog` is the gateway-prefixed app alias.
 - `GET /jobs` lists retained jobs with status, severity, summary, and artifact
-  IDs. `GET /fabrication/jobs` is the gateway-prefixed app alias for the same
-  ledger.
+  IDs. It also includes `releaseGateSummaries`, a compact per-job triage list
+  with job ID, request ID, kind, severity, ok status, `releaseGateSummary`, and
+  the release-bundle route so operators and worker clients can prioritize blocked
+  jobs before fetching full bundles. `GET /fabrication/jobs` is the
+  gateway-prefixed app alias for the same ledger.
 - `GET /jobs/:job_id` returns the recorded plan or analysis response plus
   artifact summaries. `GET /fabrication/jobs/:job_id` is the prefixed alias.
 - `GET /jobs/:job_id/release-bundle` returns the

@@ -6989,6 +6989,29 @@ impl FabricationJobStore {
             .collect()
     }
 
+    fn release_gate_summaries(&self) -> Vec<Value> {
+        self.order
+            .iter()
+            .rev()
+            .filter_map(|job_id| self.jobs.get(job_id))
+            .map(|job| {
+                let release_bundle = job_release_bundle_response(job);
+                json!({
+                    "jobId": job.record.job_id,
+                    "requestId": job.record.request_id,
+                    "kind": job.record.kind,
+                    "severity": job.record.severity,
+                    "ok": job.record.ok,
+                    "releaseGateSummary": release_bundle
+                        .get("releaseGateSummary")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                    "releaseBundleRoute": format!("/fabrication/jobs/{}/release-bundle", job.record.job_id)
+                })
+            })
+            .collect()
+    }
+
     fn detail(&self, job_id: &str) -> Option<FabricationJobDetail> {
         self.jobs.get(job_id).map(|job| FabricationJobDetail {
             record: job.record.clone(),
@@ -113357,9 +113380,11 @@ async fn list_jobs(State(state): State<AppState>) -> Response {
     match state.jobs.read() {
         Ok(jobs) => {
             let records = jobs.list();
+            let release_gate_summaries = jobs.release_gate_summaries();
             Json(json!({
                 "ok": true,
                 "count": records.len(),
+                "releaseGateSummaries": release_gate_summaries,
                 "jobs": records,
             }))
             .into_response()
@@ -163938,6 +163963,19 @@ mod tests {
             .is_some_and(|gate_ids| gate_ids
                 .iter()
                 .any(|gate_id| gate_id.as_str() == Some("learning-disposition"))));
+        let listed_gate_summaries = store.release_gate_summaries();
+        assert!(listed_gate_summaries.iter().any(|entry| {
+            entry.get("jobId").and_then(Value::as_str) == Some(response.job_id.as_str())
+                && entry
+                    .get("releaseGateSummary")
+                    .and_then(|summary| summary.get("blockedGateIds"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|gate_ids| {
+                        gate_ids
+                            .iter()
+                            .any(|gate_id| gate_id.as_str() == Some("learning-disposition"))
+                    })
+        }));
         assert_eq!(
             summary
                 .get("releaseGateBlockedCount")
