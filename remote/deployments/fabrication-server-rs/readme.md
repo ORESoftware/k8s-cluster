@@ -706,8 +706,9 @@ is supplied.
   recomposition interfaces, release gates, blockers, and `decomposition-*`
   learning observations so workers can prove when one body must become multiple
   parts, or multiple parts can be recombined safely.
-- A `releasePackagePlan` that bundles each generated machine program or
-  assembly/recomposition handoff with design export IDs, controller targets,
+- A `releasePackagePlan` that bundles each generated machine program, imported
+  `instructionPrograms` stream, or assembly/recomposition handoff with retained
+  `instruction-programs` analysis, design export IDs, controller targets,
   fixture setups, monitoring points, quality inspections, decomposition targets,
   interface controls, required artifacts, release gates, blockers, and
   `release-package*` learning observations for downstream worker review.
@@ -2131,22 +2132,26 @@ or dry-run worker results, normalize them into
 retained toolpath segment, simulation, check, artifact, and learning-observation
 surfaces. The response reports blocker counts for collision evidence, envelope
 excursions, clearance failures, required dry-runs that have not passed,
-toolpath checks, human interventions, and missing toolpath artifact evidence.
+toolpath checks, human interventions, missing toolpath artifact evidence, and a
+`priorityDispositions` array for machine-failure, human-intervention,
+split/combine or interface, non-G-code/job-sheet evidence, and learning-feedback
+lanes.
 
 Toolpath result reviews are retained CAM/slicer/motion, simulation, dry-run, and
 release-package evidence, not certified machine-safety approval. Machine-ready
 release remains blocked until toolpath segments, simulations, dry-run gates,
 checks, retained artifacts, and human dispositions clear. Stored artifacts
 include `toolpath-result`, `toolpath-segments`, `toolpath-simulations`,
-`toolpath-checks`, `toolpath-artifacts`, and
-`toolpath-learning-observations` so MDP/POMDP/neural workers can learn when to
-split parts, combine assemblies, reroute machines, regenerate motion, change
-fixtures, or require human review before release.
+`toolpath-checks`, `toolpath-artifacts`, `toolpath-priority-dispositions`, and
+`toolpath-learning-observations`. Toolpath observations include
+`toolpath-priority:<priority>:<disposition>` so MDP/POMDP/neural workers can
+learn when to split parts, combine assemblies, reroute machines, regenerate
+motion, change fixtures, or require human review before release.
 The `learning.outcomeDraft` uses
 `dd.fabrication.toolpath-learning-outcome-draft.v1` with segment, part,
 operation, simulation, check, artifact, collision, envelope, clearance, dry-run,
-human-intervention, blocker, reward, and submit-route hints for direct
-submission to `POST /fabrication/learning/outcomes`.
+human-intervention, priority-disposition, blocker, reward, and submit-route
+hints for direct submission to `POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/improvements/catalog`
 
@@ -2937,26 +2942,32 @@ The response exposes `instructionSimulationResult`, `releaseUpdate`,
 `simulationResultJobId`, `generatedAtMs`, `releaseBlocked`,
 `blockedEnvelopeCheckCount`, `blockingFindingCount`, `failureBoundaryCount`,
 `humanInterventionBoundaryCount`, `missingArtifactEvidenceCount`, and the
-request/queue/result subjects for the instruction-simulation worker lane.
+request/queue/result subjects for the instruction-simulation worker lane. It
+also includes a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface, non-G-code/job-sheet evidence,
+and learning-feedback lanes.
 It also includes a
 `dd.fabrication.instruction-simulation-learning-outcome-draft.v1` payload with
-simulator, check, finding, boundary, recommended-action, artifact, reward, and
-submit-route hints for `POST /fabrication/learning/outcomes`.
+simulator, check, finding, boundary, recommended-action, artifact,
+priority-disposition, reward, and submit-route hints for
+`POST /fabrication/learning/outcomes`.
 Successful result reviews are also retained in the bounded job ledger under
 `simulationResultJobId`, where `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `instruction-simulation-result`,
 `instruction-simulation-envelope-checks`, `instruction-simulation-findings`,
 `instruction-simulation-failure-boundaries`, `instruction-simulation-artifacts`,
-and `instruction-simulation-learning-observations`. Machine-ready release
-remains blocked until simulation checks pass, failure boundaries are resolved or
+`instruction-simulation-priority-dispositions`, and
+`instruction-simulation-learning-observations`. Machine-ready release remains
+blocked until simulation checks pass, failure boundaries are resolved or
 accepted, dry-run artifacts are retained with URI/checksum/evidence labels, and
 required operator, split/combine, regeneration, or reroute decisions are
 attached. Result observations include `instruction-simulation-check:*`,
 `instruction-simulation-boundary-kind:*`,
 `instruction-simulation-recommended-action:*`, and
-`instruction-simulation-artifact:*` signals so MDP/POMDP/neural workers can
-learn which simulators, dry runs, and boundary decisions prevented machine
-failure before hardware execution.
+`instruction-simulation-artifact:*` signals plus
+`simulation-priority:<priority>:<disposition>` signals so MDP/POMDP/neural
+workers can learn which simulators, dry runs, and boundary decisions prevented
+machine failure before hardware execution.
 
 ## `GET /fabrication/quality/catalog`
 
