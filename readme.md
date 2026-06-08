@@ -4325,9 +4325,16 @@ scan-to-design, CMM, probing, additive layer-inspection, subtractive feature
 inspection, and split/combine interface-fit reviewers. The response uses
 `dd.fabrication.as-built-result-review.v1` and captures measurement checks,
 deviation maps, interface checks, retained artifacts, release blockers, warning
-counts, MDP/POMDP/neural learning observations, and a
-`dd.fabrication.as-built-learning-outcome-draft.v1` payload that callers can send
-to `POST /fabrication/learning/outcomes`.
+counts, and a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface review, non-G-code/job-sheet
+evidence, and learning feedback lanes. The learning section includes a
+`dd.fabrication.as-built-learning-outcome-draft.v1` `outcomeDraft` with method,
+boundary, feature, priority-disposition, remeasure, rework,
+human-intervention, and reward hints ready for
+`POST /fabrication/learning/outcomes`. As-built priority observations such as
+`as-built-priority:<priority>:<disposition>` let MDP/POMDP/neural workers learn
+which measured-geometry, deviation, interface-fit, rework, or operator signoff
+blockers stopped release.
 
 Machine-ready and release-ready status remains blocked when measured actual
 geometry is missing, deviation maps are unaligned or out of tolerance,
@@ -4335,10 +4342,11 @@ split/combine interfaces lack fit or datum-transfer proof, as-built artifacts
 lack URI/checksum/evidence labels, remeasurement or rework is required, or human
 intervention is still open. The result is stored with `as-built-result`,
 `as-built-measurement-checks`, `as-built-deviation-maps`,
-`as-built-interface-checks`, `as-built-artifacts`, and
-`as-built-learning-observations` artifacts so future planners can learn which
-scan, CMM, probe, interface-fit, and actual-geometry evidence made generated,
-imported, split, or combined fabrication instructions releasable.
+`as-built-interface-checks`, `as-built-artifacts`,
+`as-built-priority-dispositions`, and `as-built-learning-observations` artifacts
+so future planners can learn which scan, CMM, probe, interface-fit, and
+actual-geometry evidence made generated, imported, split, or combined
+fabrication instructions releasable.
 
 ## `POST /fabrication/provenance/result`
 
@@ -4754,6 +4762,9 @@ job/artifact counts, current job kinds, retrieval routes, producer routes,
 record/detail/release-bundle surfaces, artifact families, and learning surfaces
 such as `learningPolicySnapshot`, `mdp-request`, `pomdp-belief-state`,
 `release-probe-plan`, `neural-training-corpus`, and `outcome-learning-event`.
+The release-bundle surface list includes `bundleManifest`, `releaseGateMatrix`,
+`releaseGateSummary`, and the `summary.releaseGate*` count fields so clients can
+discover gate triage fields before fetching a retained bundle.
 Catalog policy makes the boundary explicit: retained jobs are review evidence
 for CAD/CAM, slicer, controller, setup, simulation, release, and learning
 workers, not durable database storage or certified production history; release
@@ -5816,7 +5827,8 @@ runtime inspection boundary while the database contract is still being designed.
 
 - `GET /jobs/catalog` returns the
   `dd.fabrication.job-evidence-catalog.v1` route, retention, artifact-family,
-  release-bundle, and learning-surface contract for the bounded ledger.
+  release-bundle, release-gate summary, and learning-surface contract for the
+  bounded ledger.
   `GET /fabrication/jobs/catalog` is the gateway-prefixed app alias.
 - `GET /jobs` lists retained jobs with status, severity, summary, and artifact
   IDs. `GET /fabrication/jobs` is the gateway-prefixed app alias for the same

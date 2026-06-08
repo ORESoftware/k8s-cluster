@@ -91078,6 +91078,163 @@ fn as_built_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn as_built_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "as-built-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn as_built_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    measurement_blocker_count: usize,
+    deviation_blocker_count: usize,
+    interface_blocker_count: usize,
+    remeasure_required: bool,
+    rework_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        as_built_priority_disposition(
+            "machine-failure-boundary-first",
+            if measurement_blocker_count > 0
+                || deviation_blocker_count > 0
+                || interface_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("measurementBlockerCount:{measurement_blocker_count}"),
+                format!("deviationBlockerCount:{deviation_blocker_count}"),
+                format!("interfaceBlockerCount:{interface_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/as-built/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/release/result",
+            ],
+            if measurement_blocker_count > 0
+                || deviation_blocker_count > 0
+                || interface_blocker_count > 0
+            {
+                "machineReady remains blocked until measured geometry, deviation maps, and interface fit clear the machine-failure boundary"
+            } else {
+                "as-built result did not report an open machine-failure priority blocker"
+            },
+        ),
+        as_built_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required || remeasure_required || rework_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("remeasureRequired:{remeasure_required}"),
+                format!("reworkRequired:{rework_required}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required || remeasure_required || rework_required {
+                "machineReady remains blocked until remeasurement, rework disposition, or operator as-built signoff evidence is retained"
+            } else {
+                "as-built result did not report an open human-intervention priority blocker"
+            },
+        ),
+        as_built_priority_disposition(
+            "split-combine-or-interface-review",
+            if interface_blocker_count > 0 || rework_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("interfaceBlockerCount:{interface_blocker_count}"),
+                format!("reworkRequired:{rework_required}"),
+            ],
+            vec![
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/result",
+                "POST /fabrication/decomposition/plan",
+            ],
+            if interface_blocker_count > 0 || rework_required {
+                "machineReady remains blocked until split/combine fit, datum transfer, join, or interface-control evidence clears recomposition"
+            } else {
+                "as-built result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        as_built_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/as-built/result",
+                "POST /fabrication/provenance/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until scan, CMM, deviation-map, interface-fit, or operator job-sheet artifacts retain URI, checksum, format, and evidence"
+            } else {
+                "as-built artifacts include retained release evidence for downstream review"
+            },
+        ),
+        as_built_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked as-built priority lanes before advisory promotion"
+            } else {
+                "as-built result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "as-built-result");
     let generated_at_ms = now_ms();
@@ -91190,6 +91347,23 @@ fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Resul
     if human_intervention_required {
         learning_observations.push("as-built:human-intervention-required".to_string());
     }
+    let priority_dispositions = as_built_priority_dispositions(
+        request.success,
+        release_blocked,
+        measurement_blocker_count,
+        deviation_blocker_count,
+        interface_blocker_count,
+        remeasure_required,
+        rework_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(measurement_checks.iter().filter_map(|check| {
         check
             .get("asBuiltFamily")
@@ -91249,6 +91423,7 @@ fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Resul
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "asBuiltResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -91306,6 +91481,7 @@ fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Resul
                     format!("rework-required:{rework_required}"),
                     format!("human-intervention-required:{human_intervention_required}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -91315,6 +91491,7 @@ fn as_built_result_review_response(request: AsBuiltResultReviewRequest) -> Resul
             "as-built-deviation-maps",
             "as-built-interface-checks",
             "as-built-artifacts",
+            "as-built-priority-dispositions",
             "as-built-learning-observations",
             "mdp-request.artifacts.asBuiltResult"
         ]
@@ -91373,6 +91550,10 @@ fn stored_as_built_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -91407,6 +91588,12 @@ fn stored_as_built_result_job(response: &Value) -> StoredFabricationJob {
             "as-built-artifacts".to_string(),
             "as-built-artifacts",
             as_built_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "as-built-priority-dispositions".to_string(),
+            "as-built-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -104838,6 +105025,13 @@ fn job_evidence_catalog_response(
             "machineRelease",
             "releasePackagePlan",
             "releaseSurfaces",
+            "bundleManifest",
+            "releaseGateMatrix",
+            "releaseGateSummary",
+            "summary.releaseGateCount",
+            "summary.releaseGateReadyCount",
+            "summary.releaseGateBlockedCount",
+            "summary.releaseGateMissingCategoryCount",
             "artifactSummaries",
             "artifacts",
             "bundlePolicy"
@@ -135912,6 +136106,58 @@ mod tests {
                     .is_some_and(|observation| observation
                         == "as-built-family:hybrid-split-combine-as-built-interface-evidence"))
             ));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("as-built-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("as-built-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("observations"))
+            .and_then(Value::as_array)
+            .is_some_and(|observations| observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("as-built-priority:split-combine-or-interface-review:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+                    && priority.get("disposition").and_then(Value::as_str) == Some("blocked")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("as-built-priority:machine-failure-boundary-first:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("as-built-priority:human-intervention-required:blocked")
+            })));
+        assert!(response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+                    && priority.get("learningObservation").and_then(Value::as_str)
+                        == Some("as-built-priority:split-combine-or-interface-review:blocked")
+            })));
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
             .expect("as-built learning outcome draft");
@@ -135951,12 +136197,19 @@ mod tests {
             .is_some_and(|hints| hints.iter().any(|hint| hint
                 .as_str()
                 .is_some_and(|hint| hint == "rework-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|priorities| priorities.iter().any(|priority| {
+                priority.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
         assert!(response
             .get("artifactSurfaces")
             .and_then(Value::as_array)
             .is_some_and(|surfaces| surfaces
                 .iter()
-                .any(|surface| surface.as_str() == Some("as-built-deviation-maps"))));
+                .any(|surface| surface.as_str() == Some("as-built-priority-dispositions"))));
 
         let job = stored_as_built_result_job(&response);
         assert_eq!(job.record.kind, "as-built-result");
@@ -135967,6 +136220,7 @@ mod tests {
             "as-built-deviation-maps",
             "as-built-interface-checks",
             "as-built-artifacts",
+            "as-built-priority-dispositions",
             "as-built-learning-observations",
         ] {
             assert!(
@@ -138843,6 +139097,21 @@ mod tests {
             .is_some_and(|surfaces| surfaces
                 .iter()
                 .any(|surface| surface.as_str() == Some("machineRelease"))));
+        for surface in [
+            "releaseGateMatrix",
+            "releaseGateSummary",
+            "summary.releaseGateBlockedCount",
+        ] {
+            assert!(
+                payload
+                    .get("releaseBundleSurfaces")
+                    .and_then(Value::as_array)
+                    .is_some_and(|surfaces| surfaces
+                        .iter()
+                        .any(|item| item.as_str() == Some(surface))),
+                "missing release bundle surface {surface}"
+            );
+        }
         assert!(payload
             .get("learningSurfaces")
             .and_then(Value::as_array)
