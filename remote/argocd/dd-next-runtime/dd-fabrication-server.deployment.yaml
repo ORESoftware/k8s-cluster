@@ -154,10 +154,12 @@ spec:
                 '"path": "/fabrication/material-jetting/catalog"' \
                 '"path": "/fabrication/pellet-fgf/catalog"' \
                 '"path": "/fabrication/robotic-additive/catalog"' \
+                '"path": "/fabrication/sheet-lamination/catalog"' \
                 '"path": "/fabrication/directed-energy-deposition/catalog"' \
                 '"path": "/fabrication/composite-fiber/catalog"' \
                 '"path": "/fabrication/composite-layup/catalog"' \
                 '"path": "/fabrication/powder-bed/catalog"' \
+                '"path": "/fabrication/hot-wire-foam/catalog"' \
                 '"path": "/fabrication/printers/preflight/catalog"' \
                 '"path": "/fabrication/subtractive/catalog"' \
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
@@ -165,6 +167,7 @@ spec:
                 '"path": "/fabrication/vertical-mill/catalog"' \
                 '"path": "/fabrication/horizontal-mill/catalog"' \
                 '"path": "/fabrication/sheet-cutting/catalog"' \
+                '"path": "/fabrication/hot-wire-foam/catalog"' \
                 '"path": "/fabrication/edm/catalog"' \
                 '"path": "/fabrication/turning/catalog"' \
                 '"path": "/fabrication/lathe/catalog"' \

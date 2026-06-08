@@ -43,6 +43,8 @@ outcomes.
 - `GET /fabrication/material-jetting/catalog`
 - `GET /robotic-additive/catalog`
 - `GET /fabrication/robotic-additive/catalog`
+- `GET /sheet-lamination/catalog`
+- `GET /fabrication/sheet-lamination/catalog`
 - `GET /directed-energy-deposition/catalog`
 - `GET /fabrication/directed-energy-deposition/catalog`
 - `GET /composite-fiber/catalog`
@@ -65,6 +67,8 @@ outcomes.
 - `GET /fabrication/horizontal-mill/catalog`
 - `GET /sheet-cutting/catalog`
 - `GET /fabrication/sheet-cutting/catalog`
+- `GET /hot-wire-foam/catalog`
+- `GET /fabrication/hot-wire-foam/catalog`
 - `GET /edm/catalog`
 - `GET /fabrication/edm/catalog`
 - `GET /turning/catalog`
@@ -1060,6 +1064,30 @@ controller, toolpath, safety, setup, telemetry, quality, costing, and learning
 routes so DES, MDP/POMDP, and neural workers can learn when to reroute, pause,
 split, change frames, or require human intervention.
 
+## `GET /fabrication/sheet-lamination/catalog`
+
+`GET /sheet-lamination/catalog` and the gateway-prefixed
+`GET /fabrication/sheet-lamination/catalog` return the
+`dd.fabrication.sheet-lamination-catalog.v1` discovery view for
+sheet-lamination/LOM/UAM printer profiles. It narrows the additive printer
+catalog to sheet-lamination machines and lists the release evidence needed
+before stack build, trim, bond, or machine-ready handoff: sheet or foil stock
+lot, thickness or gauge, grain or fiber direction, storage condition, surface
+prep, cleaning, adhesive lot, ultrasonic energy profile, stack order, layer
+registration, fiducials, datum pins, vacuum or hold-down, blade or laser trim
+path, kerf or offset, interlayer alignment, adhesive cure or press cycle,
+ultrasonic weld amplitude/force/speed, consolidation coupon, peel or lap-shear
+result, delamination inspection, dimensional release, telemetry, and signoff
+evidence. The payload names sheet-lamination stock, registration,
+bond/consolidation, missing-evidence, and dimensional-inspection boundary
+families and links generated `LOAD_SHEET_STACK`, `REGISTER_LAYER_STACK`,
+`CUT_OR_TRIM_LAYERS`, `BOND_OR_CONSOLIDATE_LAYERS`, and `INSPECT_LAMINATION`
+records back to release gates. Sheet-lamination outcomes should feed material,
+tooling, workholding, toolpath, quality, telemetry, costing, and learning
+routes so DES, MDP/POMDP, and neural workers can learn when to resequence
+layers, split stacks, reroute, change bond strategy, or require human
+intervention.
+
 ## `GET /fabrication/directed-energy-deposition/catalog`
 
 `GET /directed-energy-deposition/catalog` and the gateway-prefixed
@@ -1273,6 +1301,28 @@ or automation signoff evidence are retained. Sheet-cutting outcomes should feed
 setup, nesting, support-strategy, simulation, quality, telemetry, and learning
 routes so DES, MDP/POMDP, and neural workers can learn safer split, combine,
 tab, bridge, or human-intervention strategies.
+
+## `GET /fabrication/hot-wire-foam/catalog`
+
+`GET /hot-wire-foam/catalog` and the gateway-prefixed
+`GET /fabrication/hot-wire-foam/catalog` return the
+`dd.fabrication.hot-wire-foam-catalog.v1` discovery view for hot-wire foam
+cutters, foam-core/airfoil cutting, lost-foam patterns, and packaging insert
+profiles. The catalog exposes hot-wire foam cutter kinds, controllers, foam
+materials, operations, setup evidence, process evidence, boundary families, and
+links to machine, cell, sheet-cutting, process-recipe, support-strategy,
+simulation, quality, release, and learning outcome routes.
+
+The catalog is advisory rather than a live-cutter approval. Machine-ready
+release remains blocked until foam blank density, blank thickness, template or
+CNC profile, fixture/support, bow or wire tension, fume extraction, PPE,
+fire-watch, wire heat/current, feed, kerf coupon, wire-lag/taper compensation,
+synchronized-axis state, surface-melt review, dimensional inspection, and
+operator or automation signoff evidence are retained. Hot-wire foam outcomes
+should feed material, profile, process-recipe, support-strategy, quality,
+telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers
+can learn when to split, combine, compensate taper, reroute, or require human
+intervention.
 
 ## `GET /fabrication/edm/catalog`
 
