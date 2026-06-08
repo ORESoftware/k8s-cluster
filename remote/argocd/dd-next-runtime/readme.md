@@ -151,6 +151,7 @@ Gateway path map:
   `POST /fabrication/decomposition/plan`, `POST /fabrication/decomposition/result`,
   `/fabrication/assembly/catalog`, `/fabrication/assembly/preflight/catalog`,
   `POST /fabrication/interfaces/result`,
+  `POST /fabrication/joining/result`,
   `POST /fabrication/assembly/plan`,
   `POST /fabrication/assembly/result`,
   `/fabrication/release/catalog`, `/fabrication/release/preflight/catalog`,

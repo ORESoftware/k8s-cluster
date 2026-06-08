@@ -155,6 +155,7 @@ spec:
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/result"' \
+                '"path": "/fabrication/joining/result"' \
                 '"path": "/fabrication/cnc/catalog"' \
                 '"path": "/fabrication/hybrid/catalog"' \
                 '"path": "/fabrication/hybrid/plan"' \
@@ -216,6 +217,7 @@ spec:
                 '"path": "/fabrication/assembly/preflight/catalog"' \
                 '"path": "/fabrication/assembly/plan"' \
                 '"path": "/fabrication/assembly/result"' \
+                '"path": "/fabrication/joining/result"' \
                 '"path": "/fabrication/release/catalog"' \
                 '"path": "/fabrication/release/preflight/catalog"' \
                 '"path": "/fabrication/release/preview"' \

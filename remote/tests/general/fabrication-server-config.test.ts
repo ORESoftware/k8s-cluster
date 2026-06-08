@@ -3867,6 +3867,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /dd\.fabrication\.interface-result-review\.v1/);
   assert.match(source, /dd\.fabrication\.interface-learning-outcome-draft\.v1/);
   assert.match(source, /"POST \/fabrication\/interfaces\/result"/);
+  assert.match(source, /"POST \/joining\/result"/);
+  assert.match(source, /"POST \/fabrication\/joining\/result"/);
   assert.match(source, /"sourceKind": "interface-result"/);
   assert.match(source, /"interfaceResultJobId"/);
   assert.match(source, /"interface-join-evidence"/);
@@ -5662,6 +5664,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /request_template_design_import_bodies_match_review_contract/);
   assert.match(source, /request_template_instruction_bodies_match_analysis_contract/);
   assert.match(source, /request_template_instruction_improvement_body_matches_analysis_contract/);
+  assert.match(source, /request_template_instruction_improvement_result_body_matches_review_contract/);
   assert.match(source, /hybrid_request_template_keeps_split_combine_part_routes/);
   assert.match(source, /split_combine_route_templates_match_plan_contract/);
   assert.match(source, /request_template_learning_bodies_match_outcome_contract/);
@@ -5670,6 +5673,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /instruction template request should match analysis schema/);
   assert.match(source, /instruction improvement template should match analysis schema/);
   assert.match(source, /instruction improvement template should include arc geometry needing review/);
+  assert.match(source, /instruction improvement result template should match review schema/);
+  assert.match(source, /instruction improvement result template should retain patch review blockers/);
   assert.match(source, /instruction templates should include \{expected\}/);
   assert.match(source, /hybrid template should include \{expected\} part route/);
   assert.match(source, /split\/combine route template should include \{expected\} part route/);
@@ -5678,7 +5683,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /learning templates should include \{expected\}/);
   assert.match(source, /imported-cnc-program-review/);
   assert.match(source, /imported-cnc-improvement-review/);
+  assert.match(source, /instruction-improvement-result-feedback/);
   assert.match(source, /POST \/fabrication\/instructions\/improve/);
+  assert.match(source, /POST \/fabrication\/instructions\/improvement\/result/);
   assert.match(source, /imported-printer-gcode-review/);
   assert.match(source, /imported-resin-job-review/);
   assert.match(source, /imported-powder-bed-build-review/);
@@ -5687,6 +5694,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /resin-job-validation/);
   assert.match(source, /powder-bed-build-validation/);
   assert.match(source, /improvedProgramReview/);
+  assert.match(source, /instructionImprovementResult\.patchOperations/);
+  assert.match(source, /instructionImprovementLearningOutcomeDraft/);
   assert.match(source, /temperatureStateEvidence/);
   assert.match(source, /extrusionStateEvidence/);
   assert.match(source, /resinPostprocessEvidence/);
@@ -6211,6 +6220,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(
     source,
     /\.route\(\s*"\/fabrication\/interfaces\/result",\s*post\(interface_result_http\),\s*\)/,
+  );
+  assert.match(source, /\.route\("\/joining\/result", post\(interface_result_http\)\)/);
+  assert.match(
+    source,
+    /\.route\("\/fabrication\/joining\/result", post\(interface_result_http\)\)/,
   );
   assert.match(
     source,
@@ -7698,11 +7712,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`assembly-interface-check:\*`/);
   assert.match(readme, /`POST \/interfaces\/result`/);
   assert.match(readme, /`POST \/fabrication\/interfaces\/result`/);
+  assert.match(readme, /`POST \/joining\/result`/);
+  assert.match(readme, /`POST \/fabrication\/joining\/result`/);
   assert.match(readme, /dd\.fabrication\.interface-result-review\.v1/);
   assert.match(readme, /dd\.fabrication\.interface-learning-outcome-draft\.v1/);
   assert.match(readme, /`interfaceResult`/);
   assert.match(readme, /`interfaceResultJobId`/);
-  assert.match(readme, /datum-transfer and fit checks, join evidence/);
+  assert.match(readme, /datum-transfer\s+and fit checks,\s+join evidence/);
   assert.match(readme, /`interface-priority:<priority>:<disposition>`/);
   assert.match(readme, /`interface-join-evidence`/);
   assert.match(readme, /`interface-split-combine-decisions`/);
@@ -9893,6 +9909,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/decomposition\/result"/);
   assert.match(docs, /"path": "\/fabrication\/decomposition\/result"/);
   assert.match(docs, /"path": "\/assembly\/catalog"/);
+  assert.match(docs, /"path": "\/joining\/result"/);
+  assert.match(docs, /"path": "\/fabrication\/joining\/result"/);
   assert.match(docs, /"path": "\/fabrication\/assembly\/catalog"/);
   assert.match(docs, /"path": "\/assembly\/preflight\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/assembly\/preflight\/catalog"/);
@@ -10253,6 +10271,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/learning\/optimizers\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/decomposition\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/decomposition\/result"/);
+  assert.match(deployment, /"path": "\/fabrication\/joining\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/assembly\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/assembly\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/assembly\/plan"/);
@@ -10536,6 +10555,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /\/fabrication\/assembly\/result/);
   assert.match(grafanaDashboards, /\/fabrication\/interfaces\/result/);
   assert.match(grafanaDashboards, /interface result review/);
+  assert.match(grafanaDashboards, /\/fabrication\/joining\/result/);
+  assert.match(grafanaDashboards, /joining result review/);
   assert.match(grafanaDashboards, /\/fabrication\/instructions\/import\/preflight\/catalog/);
   assert.match(grafanaDashboards, /instruction import preflight catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/execution\/plan/);
@@ -10833,6 +10854,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/assembly\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/assembly\/result/);
   assert.match(runtimeReadme, /POST \/fabrication\/interfaces\/result/);
+  assert.match(runtimeReadme, /POST \/fabrication\/joining\/result/);
   assert.match(runtimeReadme, /\/fabrication\/instructions\/import\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/release\/preflight\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/execution\/plan/);
@@ -11104,6 +11126,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/handoff\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/handoff\/result/);
   assert.match(observabilityReadme, /\/fabrication\/assembly\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/joining\/result/);
   assert.match(observabilityReadme, /\/fabrication\/assembly\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/calibration\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/calibration\/result/);
