@@ -181,6 +181,7 @@ spec:
                 '"path": "/fabrication/results/catalog"' \
                 '"path": "/fabrication/instructions/import/catalog"' \
                 '"path": "/fabrication/instructions/import/preflight/catalog"' \
+                '"path": "/fabrication/instructions/import/review"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
                 '"path": "/fabrication/instructions/validation/preflight/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
