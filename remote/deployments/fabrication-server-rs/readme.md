@@ -39,6 +39,8 @@ outcomes.
 - `GET /fabrication/resin-printer/catalog`
 - `GET /material-jetting/catalog`
 - `GET /fabrication/material-jetting/catalog`
+- `GET /directed-energy-deposition/catalog`
+- `GET /fabrication/directed-energy-deposition/catalog`
 - `GET /powder-bed/catalog`
 - `GET /fabrication/powder-bed/catalog`
 - `GET /printers/preflight/catalog`
@@ -1005,6 +1007,29 @@ release gates. Material-jetting outcomes should feed material, postprocess,
 quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural
 workers can learn when to reorient, split, reroute, change support strategy, or
 require human intervention.
+
+## `GET /fabrication/directed-energy-deposition/catalog`
+
+`GET /directed-energy-deposition/catalog` and the gateway-prefixed
+`GET /fabrication/directed-energy-deposition/catalog` return the
+`dd.fabrication.directed-energy-deposition-catalog.v1` discovery view for
+DED/WAAM/laser-cladding additive cells. It narrows the additive printer and cell
+catalogs to directed-energy deposition profiles and lists the evidence needed
+before generated DED job packages or machine-ready handoff: wire or powder
+feedstock lot, feed calibration, bead path, substrate, build plate,
+finish-machining allowance, laser/arc/e-beam power, travel speed, wire feed or
+powder flow, shielding gas, oxygen/moisture, interlocks, robot TCP/frame,
+external-axis synchronization, melt-pool monitoring, interpass temperature,
+cooldown, thermal log, distortion, residual stress, stop/restart tie-in, NDE,
+coupon, hardness, porosity, crack inspection, dimensional inspection, robot
+collision simulation, thermal postprocess, first-article, telemetry, and signoff
+evidence. The payload names feedstock/path and energy/thermal/inspection
+boundary families and links generated directed-energy-deposition job packages to
+robotic path, monitoring, postprocess, quality, and learning release gates. DED
+outcomes should feed material, toolpath, monitoring, postprocess, quality,
+telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers
+can learn when to resequence, split, reroute, pause for inspection, or require
+human intervention.
 
 ## `GET /fabrication/powder-bed/catalog`
 

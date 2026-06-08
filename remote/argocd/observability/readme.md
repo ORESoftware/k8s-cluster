@@ -188,6 +188,7 @@ Currently opted-in:
   `/fabrication/machines/catalog`,
   `/fabrication/printers/catalog`, `/fabrication/fdm-printer/catalog`,
   `/fabrication/resin-printer/catalog`, `/fabrication/material-jetting/catalog`,
+  `/fabrication/directed-energy-deposition/catalog`,
   `/fabrication/powder-bed/catalog`, `/fabrication/subtractive/catalog`,
   `/fabrication/subtractive/preflight/catalog`,
   `/fabrication/mill-router/catalog`,

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "fabrication-server-rs",
   "language": "rust",
-  "routeCount": 451,
+  "routeCount": 453,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 441,
+    "user-generated": 443,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -757,6 +757,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "design_synthesis_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/directed-energy-deposition/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "directed_energy_deposition_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
@@ -1709,6 +1726,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "design_synthesis_result_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fabrication-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fabrication/directed-energy-deposition/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "directed_energy_deposition_catalog_http"
       ],
       "sourceFiles": [
         "remote/deployments/fabrication-server-rs/src/main.rs"
