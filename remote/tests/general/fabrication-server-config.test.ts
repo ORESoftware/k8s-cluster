@@ -3284,6 +3284,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"programContracts": program_contracts/);
   assert.match(source, /"controllerTargets": controller_targets/);
   assert.match(source, /"machineCodePolicy"/);
+  assert.match(source, /fn machine_code_target_selection_matrix/);
+  assert.match(source, /"targetSelectionMatrix": machine_code_target_selection_matrix\(\)/);
+  assert.match(source, /additive-printer-firmware/);
+  assert.match(source, /subtractive-mill-router-controller/);
+  assert.match(source, /turning-and-mill-turn-controller/);
+  assert.match(source, /sheet-cutting-edm-and-special-process/);
+  assert.match(source, /hybrid-assembly-and-human-reviewed-instructions/);
+  assert.match(source, /part-off support/);
   assert.match(
     source,
     /machine_code_catalog_endpoint_exposes_program_controller_and_learning_contract/,
@@ -6811,6 +6819,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /CTB\/Photon\/Lychee\/Chitubox resin\s+package jobs/);
   assert.match(readme, /Machine-ready=false|machineReady=false/);
   assert.match(readme, /Program-generation, controller-release, simulation-risk/);
+  assert.match(readme, /`targetSelectionMatrix`/);
+  assert.match(readme, /additive printer\s+firmware/);
+  assert.match(readme, /subtractive mill\/router controllers including vertical and horizontal\s+mills/);
+  assert.match(readme, /turning and mill-turn controllers including lathes/);
+  assert.match(readme, /sheet-cutting\/EDM and\s+special-process outputs/);
+  assert.match(readme, /hybrid assembly or human-reviewed travelers/);
+  assert.match(readme, /part-off support, cut-chart\/support-media/);
   assert.match(readme, /`GET \/machine-code\/preflight\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/machine-code\/preflight\/catalog`/);
   assert.match(readme, /dd\.fabrication\.machine-code-preflight-catalog\.v1/);
