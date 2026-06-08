@@ -149,6 +149,7 @@ spec:
                 '"path": "/fabrication/subtractive/preflight/catalog"' \
                 '"path": "/fabrication/mill-router/catalog"' \
                 '"path": "/fabrication/sheet-cutting/catalog"' \
+                '"path": "/fabrication/edm/catalog"' \
                 '"path": "/fabrication/turning/catalog"' \
                 '"path": "/fabrication/turning/preflight/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
@@ -156,6 +157,7 @@ spec:
                 '"path": "/fabrication/interfaces/result"' \
                 '"path": "/fabrication/cnc/catalog"' \
                 '"path": "/fabrication/hybrid/catalog"' \
+                '"path": "/fabrication/hybrid/plan"' \
                 '"path": "/fabrication/cells/catalog"' \
                 '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \

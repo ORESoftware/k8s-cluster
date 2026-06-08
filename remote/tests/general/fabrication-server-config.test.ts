@@ -3105,6 +3105,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"sheetCuttingCatalog": \["GET \/sheet-cutting\/catalog", "GET \/fabrication\/sheet-cutting\/catalog"\]/);
   assert.match(source, /sheet_cutting_catalog_endpoint_exposes_laser_waterjet_plasma_and_wire_profiles/);
   assert.match(source, /assist gas, fume extraction, abrasive\/pump/);
+  assert.match(source, /async fn edm_catalog_http/);
+  assert.match(source, /fn edm_catalog_response/);
+  assert.match(source, /dd\.fabrication\.edm-catalog\.v1/);
+  assert.match(source, /"GET \/fabrication\/edm\/catalog"/);
+  assert.match(source, /"edmCatalog": \["GET \/edm\/catalog", "GET \/fabrication\/edm\/catalog"\]/);
+  assert.match(source, /edm_catalog_endpoint_exposes_wire_and_sinker_release_contracts/);
+  assert.match(source, /dielectric\/flushing, wire threading, tension/);
   assert.match(source, /async fn turning_catalog_http/);
   assert.match(source, /fn turning_catalog_response/);
   assert.match(source, /dd\.fabrication\.turning-catalog\.v1/);
@@ -4049,9 +4056,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn hybrid_catalog_response/);
   assert.match(source, /dd\.fabrication\.hybrid-catalog\.v1/);
   assert.match(source, /"GET \/fabrication\/hybrid\/catalog"/);
+  assert.match(source, /async fn hybrid_plan_http/);
+  assert.match(source, /fn hybrid_planning_response/);
+  assert.match(source, /dd\.fabrication\.hybrid-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/hybrid\/plan"/);
   assert.match(
     source,
     /hybrid_catalog_endpoint_exposes_split_combine_method_and_learning_contract/,
+  );
+  assert.match(
+    source,
+    /hybrid_planning_endpoint_exposes_split_combine_routes_and_learning_contract/,
   );
   assert.match(source, /async fn manufacturing_method_catalog_http/);
   assert.match(source, /fn manufacturing_method_catalog_response/);
@@ -6513,6 +6528,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(source, /\.route\("\/hybrid\/catalog", get\(hybrid_catalog_http\)\)/);
   assert.match(source, /\.route\("\/fabrication\/hybrid\/catalog", get\(hybrid_catalog_http\)\)/);
+  assert.match(source, /\.route\("\/hybrid\/plan", post\(hybrid_plan_http\)\)/);
+  assert.match(source, /\.route\("\/fabrication\/hybrid\/plan", post\(hybrid_plan_http\)\)/);
   assert.match(source, /\.route\("\/strategy\/recommend", post\(strategy_recommend_http\)\)/);
   assert.match(
     source,
@@ -6691,6 +6708,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /laser, waterjet,\s+plasma, and wire-EDM sheet\/profile cutting profiles/);
   assert.match(readme, /kerf\/pierce, assist gas, fume extraction, abrasive\/pump/);
   assert.match(readme, /safer split, combine,\s+tab, bridge, or human-intervention strategies/);
+  assert.match(readme, /`GET \/edm\/catalog`/);
+  assert.match(readme, /`GET \/fabrication\/edm\/catalog`/);
+  assert.match(readme, /dd\.fabrication\.edm-catalog\.v1/);
+  assert.match(readme, /wire-EDM and sinker-EDM\s+profiles/);
+  assert.match(readme, /dielectric\/flushing, wire threading, tension/);
+  assert.match(readme, /safer cavity,\s+profile, split, combine, reroute, or human-intervention strategies/);
   assert.match(readme, /`GET \/turning\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/turning\/catalog`/);
   assert.match(readme, /dd\.fabrication\.turning-catalog\.v1/);
@@ -9554,6 +9577,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /GET \/hybrid\/catalog/);
   assert.match(readme, /GET \/fabrication\/hybrid\/catalog/);
   assert.match(readme, /dd\.fabrication\.hybrid-catalog\.v1/);
+  assert.match(readme, /POST \/hybrid\/plan/);
+  assert.match(readme, /POST \/fabrication\/hybrid\/plan/);
+  assert.match(readme, /dd\.fabrication\.hybrid-planning\.v1/);
+  assert.match(readme, /split\/combine planning envelope/);
   assert.match(readme, /split\/combine discovery view/);
   assert.match(readme, /one-piece, split-route, recomposed, or\s+human-intervention paths/);
   assert.match(readme, /GET \/methods\/catalog/);
@@ -9991,6 +10018,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/packages\/catalog"/);
   assert.match(docs, /"path": "\/packages\/plan"/);
   assert.match(docs, /"path": "\/fabrication\/packages\/plan"/);
+  assert.match(docs, /"path": "\/hybrid\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/hybrid\/plan"/);
   assert.match(docs, /"path": "\/methods\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/methods\/catalog"/);
   assert.match(docs, /"path": "\/process\/catalog"/);
@@ -10085,6 +10114,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/subtractive\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/mill-router\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/sheet-cutting\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/edm\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/turning\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/turning\/preflight\/catalog"/);
   assert.match(deployment, /revisionHistoryLimit:\s*3/);
@@ -10108,6 +10138,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/cnc\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/design\/preflight\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/hybrid\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/hybrid\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/cells\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/machines\/select"/);
   assert.match(deployment, /"path": "\/fabrication\/controllers\/plan"/);
@@ -10373,6 +10404,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /mill\/router catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/sheet-cutting\/catalog/);
   assert.match(grafanaDashboards, /sheet-cutting catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/edm\/catalog/);
+  assert.match(grafanaDashboards, /EDM catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/catalog/);
   assert.match(grafanaDashboards, /turning catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/turning\/preflight\/catalog/);
@@ -10385,6 +10418,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /CNC intake catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/hybrid\/catalog/);
   assert.match(grafanaDashboards, /hybrid catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/hybrid\/plan/);
+  assert.match(grafanaDashboards, /hybrid planning/);
   assert.match(grafanaDashboards, /\/fabrication\/cells\/catalog/);
   assert.match(grafanaDashboards, /cell catalog/);
   assert.match(grafanaDashboards, /\/fabrication\/machines\/select/);
@@ -10694,6 +10729,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/printers\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/mill-router\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/sheet-cutting\/catalog/);
+  assert.match(runtimeReadme, /\/fabrication\/edm\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cells\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/machines\/select/);
@@ -10862,6 +10898,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(runtimeReadme, /\/fabrication\/hybrid\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/hybrid\/plan/);
   assert.match(runtimeReadme, /\/fabrication\/jobs\/<jobId>\/release-bundle/);
   assert.match(runtimeReadme, /`POST \/fabrication\/plan`/);
   assert.match(runtimeReadme, /\/fabrication\/workflow\/catalog/);
@@ -10913,12 +10950,14 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/subtractive\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/mill-router\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/sheet-cutting\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/edm\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/turning\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cleanliness\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/interfaces\/preflight\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/cnc\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/hybrid\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/hybrid\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/cells\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/controllers\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/boundaries\/result/);
