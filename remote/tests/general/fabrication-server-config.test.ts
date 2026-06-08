@@ -4835,6 +4835,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"GET \/fabrication\/safety\/catalog"/);
   assert.match(source, /"safetyCatalog"/);
   assert.match(source, /safety_catalog_endpoint_exposes_interlock_release_contract/);
+  assert.match(source, /async fn safety_plan_http/);
+  assert.match(source, /fn safety_planning_response/);
+  assert.match(source, /dd\.fabrication\.safety-planning\.v1/);
+  assert.match(source, /"POST \/fabrication\/safety\/plan"/);
+  assert.match(source, /"safetyPlan"/);
+  assert.match(source, /fabrication\.safety\.planned/);
+  assert.match(
+    source,
+    /safety_planning_endpoint_returns_interlock_operator_and_release_contract/,
+  );
   assert.match(source, /struct SafetyResultReviewRequest/);
   assert.match(source, /struct SafetyResultCheck/);
   assert.match(source, /struct SafetyResultInterlockCheck/);
@@ -6844,6 +6854,11 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.safety-catalog\.v1/);
   assert.match(readme, /robotic-cell and\s+external-axis interlocks/);
   assert.match(readme, /not certified machine-safety approvals/);
+  assert.match(readme, /`POST \/fabrication\/safety\/plan`/);
+  assert.match(readme, /dd\.fabrication\.safety-planning\.v1/);
+  assert.match(readme, /`safetyContracts`, `operatorInterventionPlan`, `interventionMap`/);
+  assert.match(readme, /The endpoint keeps `machineReady=false`/);
+  assert.match(readme, /choose safer\s+machines, routes, checkpoints/);
   assert.match(readme, /`POST \/safety\/result`/);
   assert.match(readme, /`POST \/fabrication\/safety\/result`/);
   assert.match(readme, /dd\.fabrication\.safety-result-review\.v1/);
@@ -9750,6 +9765,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(docs, /"path": "\/fabrication\/failure-modes\/result"/);
   assert.match(docs, /"path": "\/safety\/catalog"/);
   assert.match(docs, /"path": "\/fabrication\/safety\/catalog"/);
+  assert.match(docs, /"path": "\/safety\/plan"/);
+  assert.match(docs, /"path": "\/fabrication\/safety\/plan"/);
   assert.match(docs, /"path": "\/safety\/result"/);
   assert.match(docs, /"path": "\/fabrication\/safety\/result"/);
   assert.match(docs, /"path": "\/environment\/catalog"/);
@@ -10031,6 +10048,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(deployment, /"path": "\/fabrication\/failure-modes\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/failure-modes\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/safety\/catalog"/);
+  assert.match(deployment, /"path": "\/fabrication\/safety\/plan"/);
   assert.match(deployment, /"path": "\/fabrication\/safety\/result"/);
   assert.match(deployment, /"path": "\/fabrication\/environment\/catalog"/);
   assert.match(deployment, /"path": "\/fabrication\/environment\/result"/);
@@ -10392,6 +10410,8 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(grafanaDashboards, /failure mode result review/);
   assert.match(grafanaDashboards, /\/fabrication\/safety\/catalog/);
   assert.match(grafanaDashboards, /safety catalog/);
+  assert.match(grafanaDashboards, /\/fabrication\/safety\/plan/);
+  assert.match(grafanaDashboards, /safety planning/);
   assert.match(grafanaDashboards, /\/fabrication\/safety\/result/);
   assert.match(grafanaDashboards, /safety result review/);
   assert.match(grafanaDashboards, /\/fabrication\/environment\/catalog/);
@@ -10570,6 +10590,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(runtimeReadme, /POST \/fabrication\/failure-modes\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/failure-modes\/result/);
   assert.match(runtimeReadme, /\/fabrication\/safety\/catalog/);
+  assert.match(runtimeReadme, /POST \/fabrication\/safety\/plan/);
   assert.match(runtimeReadme, /POST \/fabrication\/safety\/result/);
   assert.match(runtimeReadme, /\/fabrication\/environment\/catalog/);
   assert.match(runtimeReadme, /POST \/fabrication\/environment\/result/);
@@ -10806,6 +10827,7 @@ test('fabrication server is deployed through runtime manifests, gateway, and obs
   assert.match(observabilityReadme, /\/fabrication\/failure-modes\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/failure-modes\/result/);
   assert.match(observabilityReadme, /\/fabrication\/safety\/catalog/);
+  assert.match(observabilityReadme, /\/fabrication\/safety\/plan/);
   assert.match(observabilityReadme, /\/fabrication\/safety\/result/);
   assert.match(observabilityReadme, /\/fabrication\/environment\/catalog/);
   assert.match(observabilityReadme, /\/fabrication\/environment\/result/);

@@ -279,6 +279,7 @@ spec:
                 '"path": "/fabrication/failure-modes/plan"' \
                 '"path": "/fabrication/failure-modes/result"' \
                 '"path": "/fabrication/safety/catalog"' \
+                '"path": "/fabrication/safety/plan"' \
                 '"path": "/fabrication/safety/result"' \
                 '"path": "/fabrication/environment/catalog"' \
                 '"path": "/fabrication/environment/result"' \

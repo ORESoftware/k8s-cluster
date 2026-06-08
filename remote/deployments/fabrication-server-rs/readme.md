@@ -315,6 +315,8 @@ outcomes.
 - `POST /fabrication/failure-modes/result`
 - `GET /safety/catalog`
 - `GET /fabrication/safety/catalog`
+- `POST /safety/plan`
+- `POST /fabrication/safety/plan`
 - `POST /safety/result`
 - `POST /fabrication/safety/result`
 - `GET /environment/catalog`
@@ -4322,6 +4324,25 @@ emergency response, monitoring, alerting, and release signoff evidence clear.
 Interlock states, operator stops, extraction failures, E-stop events, recovery
 actions, and unattended-release outcomes are retained as MDP/POMDP/neural
 learning signals for future planning and instruction repair.
+
+## `POST /fabrication/safety/plan`
+
+`POST /safety/plan` and the gateway-prefixed
+`POST /fabrication/safety/plan` accept the same request body as
+`POST /fabrication/plan`, then return a focused
+`dd.fabrication.safety-planning.v1` projection for guarding, interlocks,
+extraction, emergency-stop, lockout, restart, monitoring, operator action, and
+unattended-release evidence before machine-code release. The response includes
+`safetyContracts`, `operatorInterventionPlan`, `interventionMap`,
+`executionPlan`, `monitoringPlan`, `releasePackagePlan`, `machineRelease`, and
+learning surfaces.
+
+The endpoint keeps `machineReady=false` while guarding, emergency response,
+operator actions, monitoring, release packages, split/combine safety evidence,
+or human-intervention signoff remain unresolved. Interlock states, stop points,
+emergency actions, human interventions, and unattended-release outcomes are
+retained for the MDP/POMDP/neural lanes so future plans can choose safer
+machines, routes, checkpoints, and operator handoffs.
 
 ## `POST /fabrication/safety/result`
 
