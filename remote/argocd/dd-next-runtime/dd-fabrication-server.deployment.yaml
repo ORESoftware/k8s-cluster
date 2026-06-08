@@ -177,6 +177,7 @@ spec:
                 '"path": "/fabrication/metal-joining/catalog"' \
                 '"path": "/fabrication/molding-casting/catalog"' \
                 '"path": "/fabrication/pcb-electronics/catalog"' \
+                '"path": "/fabrication/joining/catalog"' \
                 '"path": "/fabrication/bonding-joining/catalog"' \
                 '"path": "/fabrication/fixture-adaptive/catalog"' \
                 '"path": "/fabrication/mechanical-installation/catalog"' \
@@ -187,7 +188,9 @@ spec:
                 '"path": "/fabrication/turning/catalog"' \
                 '"path": "/fabrication/lathe/catalog"' \
                 '"path": "/fabrication/turning/preflight/catalog"' \
+                '"path": "/fabrication/cleanliness/catalog"' \
                 '"path": "/fabrication/cleanliness/preflight/catalog"' \
+                '"path": "/fabrication/interfaces/catalog"' \
                 '"path": "/fabrication/interfaces/preflight/catalog"' \
                 '"path": "/fabrication/interfaces/result"' \
                 '"path": "/fabrication/joining/result"' \
@@ -246,6 +249,7 @@ spec:
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/improvements/preflight/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
+                '"path": "/fabrication/recomposition/catalog"' \
                 '"path": "/fabrication/decomposition/plan"' \
                 '"path": "/fabrication/decomposition/result"' \
                 '"path": "/fabrication/assembly/catalog"' \

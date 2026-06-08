@@ -87,6 +87,8 @@ outcomes.
 - `GET /fabrication/molding-casting/catalog`
 - `GET /pcb-electronics/catalog`
 - `GET /fabrication/pcb-electronics/catalog`
+- `GET /joining/catalog`
+- `GET /fabrication/joining/catalog`
 - `GET /bonding-joining/catalog`
 - `GET /fabrication/bonding-joining/catalog`
 - `GET /fixture-adaptive/catalog`
@@ -107,8 +109,12 @@ outcomes.
 - `GET /fabrication/lathe/catalog`
 - `GET /turning/preflight/catalog`
 - `GET /fabrication/turning/preflight/catalog`
+- `GET /cleanliness/catalog`
+- `GET /fabrication/cleanliness/catalog`
 - `GET /cleanliness/preflight/catalog`
 - `GET /fabrication/cleanliness/preflight/catalog`
+- `GET /interfaces/catalog`
+- `GET /fabrication/interfaces/catalog`
 - `GET /interfaces/preflight/catalog`
 - `GET /fabrication/interfaces/preflight/catalog`
 - `GET /cnc/catalog`
@@ -235,6 +241,8 @@ outcomes.
 - `POST /fabrication/remediation/result`
 - `GET /decomposition/catalog`
 - `GET /fabrication/decomposition/catalog`
+- `GET /recomposition/catalog`
+- `GET /fabrication/recomposition/catalog`
 - `POST /decomposition/plan`
 - `POST /fabrication/decomposition/plan`
 - `POST /decomposition/result`
@@ -1557,6 +1565,29 @@ quality, telemetry, costing, release, and learning routes so DES, MDP/POMDP,
 and neural workers can learn when to split, combine, reroute, adjust board
 fabrication or SMT assembly sequence, or require human intervention.
 
+## `GET /fabrication/joining/catalog`
+
+`GET /joining/catalog` and the gateway-prefixed
+`GET /fabrication/joining/catalog` return the live
+`dd.fabrication.joining-catalog.v1` method-selection catalog for recombining
+hybrid fabricated child parts. It unifies metal joining, adhesive and polymer
+joining, and mechanical installation profiles so callers can choose between
+welding/brazing/soldering, adhesive bonding, solvent or ultrasonic welding,
+heat staking, threaded fasteners, inserts, rivets, seals, bearings, bushings,
+and snap-fit style recomposition. The payload links to assembly, interface,
+metal-joining, bonding-joining, mechanical-installation, workholding, quality,
+release, and learning routes.
+
+Joining catalog entries are recomposition evidence contracts, not certified
+joining procedure approvals. Machine-ready release remains blocked until method
+selection, interface fit, access, recipe, material compatibility, fixture,
+inspection, serviceability, operator or automation signoff, and retained
+artifact evidence are attached to assembly, interface, quality, release, and
+learning surfaces. Joining outcomes should feed DES, MDP/POMDP, and neural
+workers so future plans can choose single-piece fabrication, split/combine
+boundaries, alternate joining methods, rework routes, or human intervention
+before parts are combined.
+
 ## `GET /fabrication/bonding-joining/catalog`
 
 `GET /bonding-joining/catalog` and the gateway-prefixed
@@ -1802,6 +1833,31 @@ clear. Failed checks feed DES, MDP/POMDP, reward, neural, and learning-outcome
 workers so future plans can split or combine turned inserts, reroute machines, or
 insert human checkpoints before risky turning boundaries.
 
+## `GET /fabrication/cleanliness/catalog`
+
+`GET /cleanliness/catalog` and the gateway-prefixed
+`GET /fabrication/cleanliness/catalog` return the
+`dd.fabrication.cleanliness-catalog.v1` discovery view for residue, FOD,
+wash/cure, depowder, drying, internal-passage cleaning, interface cleanliness,
+packout cleanliness, and release-owner evidence. The catalog links to the
+cleanliness preflight catalog and exposes additive residue/powder,
+machining-coolant/chip/FOD, and assembly-interface release groups as reusable
+planning and release evidence families.
+
+The catalog is advisory rather than a released cleaning specification.
+Machine-ready release remains blocked until resin drip, wash bath, IPA or
+solvent saturation, UV cure, support-removal, tack-free surface, PPE,
+ventilation, waste control, powder depowdering, trapped-powder removal, coolant,
+oil, abrasive, dielectric, EDM debris, swarf, chip, burr, FOD removal,
+blind-hole/thread/lattice/channel/cavity/internal-passage cleaning, critical
+surface, datum, bearing bore, seal land, bondline, weld, electrical-contact,
+swab, particle, blacklight, residue, conductivity, torque-slip, leak, adhesion,
+packout cleanliness class, desiccant, cap/plug, traveler, photo, release-owner,
+and signoff evidence are retained. Cleanliness outcomes should feed
+postprocess, quality, provenance, telemetry, costing, release, and learning
+routes so DES, MDP/POMDP, and neural workers can learn when to split, combine,
+clean, reroute, add inspection, or require human intervention.
+
 ## `GET /fabrication/cleanliness/preflight/catalog`
 
 `GET /cleanliness/preflight/catalog` and the gateway-prefixed
@@ -1822,6 +1878,28 @@ cleaning specification. Failed checks should be retained through postprocess,
 quality, release bundles, and learning outcome routes so DES, MDP/POMDP, and
 neural workers can learn when to split, combine, clean, reroute, or require human
 intervention before contaminated parts are joined.
+
+## `GET /fabrication/interfaces/catalog`
+
+`GET /interfaces/catalog` and the gateway-prefixed
+`GET /fabrication/interfaces/catalog` return the live
+`dd.fabrication.interface-catalog.v1` split/combine interface-control catalog for
+recombining printed, milled, turned, molded, sheet-cut, or postprocessed child
+parts. The catalog groups datum-transfer and locating features, fit/stackup and
+functional interfaces, and joining/service/maintenance access. It calls out
+process-to-process datum transfer, interface-control revisions, retained child
+artifacts, critical dimensions, tolerance stacks, coating or bondline allowances,
+first-article fit proof, fasteners, inserts, welds, adhesives, service access,
+kit genealogy, nonconformance disposition, operator signoff, and release-owner
+evidence.
+
+Interface catalog entries are recomposition evidence contracts, not released
+drawings or assembly work instructions. Machine-ready release remains blocked
+until datum transfer, fit stackup, joining/service access, interface revision,
+and retained artifact evidence are attached to decomposition, assembly, quality,
+release, and learning surfaces so DES, MDP/POMDP, and neural workers can learn
+when to split differently, add datums, adjust fits, change joining methods, route
+rework, or require human intervention before parts are combined.
 
 ## `GET /fabrication/interfaces/preflight/catalog`
 
@@ -3366,6 +3444,28 @@ recomposition decisions, and artifacts have evidence. Result observations
 include `decomposition-target:*`, `decomposition-route:*`,
 `decomposition-interface:*`, `decomposition-decision:*`, and
 `decomposition-artifact:*`.
+
+## `GET /fabrication/recomposition/catalog`
+
+`GET /recomposition/catalog` and the gateway-prefixed
+`GET /fabrication/recomposition/catalog` return the live
+`dd.fabrication.recomposition-catalog.v1` evidence catalog for turning separately
+fabricated child parts back into one releasable object. The catalog stages
+child-route package intake, interface-control and datum transfer, and
+joining/final release. It calls out printed, milled, turned, sheet-cut, EDM,
+molded, cast, electronics, and special-process child route package IDs, retained
+artifact URIs/checksums, material and disposition state, interface-control IDs,
+datum maps, measured coordinate transfer, fit stackups, joining method selection,
+post-join metrology, functional proof, signoff evidence, and learning outcomes.
+
+Recomposition catalog entries are evidence contracts, not released assembly work
+instructions. Machine-ready release remains blocked until child route packages,
+interface-control evidence, datum transfer, fit stackup, joining method, final
+inspection, retained artifacts, and operator or automation signoff are attached
+to release surfaces. Recomposition outcomes should feed DES, MDP/POMDP, and
+neural workers so future plans can compare single-piece fabrication,
+split/combine routes, joining methods, rework loops, and human-intervention
+checkpoints.
 
 ## `GET /fabrication/assembly/catalog`
 
@@ -6091,6 +6191,11 @@ DES/MDP/POMDP/neural fabrication learning. The catalog names the local
 `des_engine` source crate, canonical MDP/POMDP/DES Studio schemas, and model
 families for MDP policy snapshots, POMDP belief policies, DES Studio queue
 surrogates, and bounded neural-policy sketches.
+It also exposes a `neuralFeatureContract` with the DES
+`FeedForwardNetwork` input dimension, output labels, parameter count,
+`neuralTrainingCorpus.featureNames` alignment, retained inference/model-card
+surfaces, and the bounded `0..1` feature-vector rule external neural workers must
+honor before a model-card compatibility review can pass.
 
 Each model family lists artifact kinds, training surfaces, intended planning
 uses, and promotion gates. Model artifacts are retained advisory policy evidence,
@@ -6220,8 +6325,9 @@ states before any machine-ready release.
 The page includes a "Start Here" workflow that turns the overview into a first
 integration path: discover capabilities, machines, materials, and request
 templates; import or generate design and machine-code evidence; validate,
-remediate, and improve instructions; decide whether to decompose, assemble, or
-release; then submit retained outcomes to the DES/MDP/POMDP learning surfaces.
+remediate, and improve instructions; decide whether to decompose, define
+interfaces, join, recompose, assemble, or release; then submit retained outcomes
+to the DES/MDP/POMDP learning surfaces.
 It also links `/grafana/fabrication`, the `dd-fabrication-planner` Grafana
 dashboard, so operators can inspect request intake, release blockers, NATS
 fanout, learning feedback, artifact ledgers, and runtime capacity before
