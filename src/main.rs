@@ -6084,6 +6084,7 @@ struct ReleasePackage {
     package_kind: String,
     part_id: Option<String>,
     program_id: Option<String>,
+    instruction_program_ids: Vec<String>,
     machine_id: Option<String>,
     machine_kind: Option<String>,
     process_node_id: Option<String>,
@@ -17979,6 +17980,186 @@ fn simulation_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn simulation_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "simulation-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn simulation_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    blocked_envelope_check_count: usize,
+    blocking_finding_count: usize,
+    failure_boundary_count: usize,
+    human_review_check_count: usize,
+    human_intervention_boundary_count: usize,
+    artifact_evidence_missing: bool,
+    findings: &[Value],
+    failure_boundaries: &[Value],
+) -> Vec<Value> {
+    let human_intervention_required =
+        human_review_check_count > 0 || human_intervention_boundary_count > 0;
+    let split_or_interface_review = values_contain_review_tokens(
+        failure_boundaries,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    ) || values_contain_review_tokens(
+        findings,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    );
+
+    vec![
+        simulation_priority_disposition(
+            "machine-failure-boundary-first",
+            if blocked_envelope_check_count > 0
+                || blocking_finding_count > 0
+                || failure_boundary_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("blockedEnvelopeCheckCount:{blocked_envelope_check_count}"),
+                format!("blockingFindingCount:{blocking_finding_count}"),
+                format!("failureBoundaryCount:{failure_boundary_count}"),
+            ],
+            vec![
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/release/result",
+            ],
+            if blocked_envelope_check_count > 0
+                || blocking_finding_count > 0
+                || failure_boundary_count > 0
+            {
+                "machineReady remains blocked by simulation checks, findings, or failure boundaries"
+            } else {
+                "simulation result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        simulation_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanReviewCheckCount:{human_review_check_count}"),
+                format!("humanInterventionBoundaryCount:{human_intervention_boundary_count}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until human intervention or verified automation disposition is retained"
+            } else {
+                "simulation result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        simulation_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceReview:{split_or_interface_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_or_interface_review {
+                "machineReady remains blocked until split/combine or interface simulation evidence is dispositioned"
+            } else {
+                "simulation result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        simulation_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/simulation/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until dry-run or simulation artifacts retain URI, checksum, and evidence"
+            } else {
+                "simulation result artifacts include release evidence for downstream review"
+            },
+        ),
+        simulation_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked simulation priority lanes before advisory promotion"
+            } else {
+                "simulation result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn instruction_simulation_result_review_response(
     request: InstructionSimulationResultReviewRequest,
 ) -> Result<Value, String> {
@@ -18063,6 +18244,24 @@ fn instruction_simulation_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("instruction-simulation:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = simulation_priority_dispositions(
+        request.success,
+        release_blocked,
+        blocked_envelope_check_count,
+        blocking_finding_count,
+        failure_boundaries.len(),
+        human_review_check_count,
+        human_intervention_boundary_count,
+        artifact_evidence_missing,
+        &findings,
+        &failure_boundaries,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(envelope_checks.iter().filter_map(|check| {
         check
             .get("checkKind")
@@ -18153,6 +18352,7 @@ fn instruction_simulation_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "instructionSimulationResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -18226,6 +18426,7 @@ fn instruction_simulation_result_review_response(
                     format!("human-intervention-boundaries:{human_intervention_boundary_count}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -18235,6 +18436,7 @@ fn instruction_simulation_result_review_response(
             "instruction-simulation-findings",
             "instruction-simulation-failure-boundaries",
             "instruction-simulation-artifacts",
+            "instruction-simulation-priority-dispositions",
             "instruction-simulation-learning-observations",
             "simulation-report",
             "envelope-report",
@@ -18318,6 +18520,10 @@ fn stored_instruction_simulation_result_job(response: &Value) -> StoredFabricati
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -18352,6 +18558,12 @@ fn stored_instruction_simulation_result_job(response: &Value) -> StoredFabricati
             "instruction-simulation-artifacts".to_string(),
             "instruction-simulation-artifacts",
             worker_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "instruction-simulation-priority-dispositions".to_string(),
+            "instruction-simulation-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -48965,6 +49177,7 @@ fn plan_fabrication(request: FabricationPlanRequest) -> Result<FabricationPlanRe
     );
     let release_package_plan = release_package_plan(
         &generated_programs,
+        &analyzed_programs,
         &design_exports,
         &process_graph,
         &quality_plan,
@@ -51347,6 +51560,7 @@ fn release_package_process_node_id(
 
 fn release_package_required_artifacts(
     program_id: Option<&str>,
+    instruction_program_ids: &[String],
     design_export_ids: &[String],
     fixture_setup_ids: &[String],
     monitoring_point_ids: &[String],
@@ -51362,6 +51576,9 @@ fn release_package_required_artifacts(
     artifacts.insert("design-export-bundle".to_string());
     if let Some(program_id) = program_id {
         artifacts.insert(artifact_id("program", program_id));
+    }
+    if !instruction_program_ids.is_empty() {
+        artifacts.insert("instruction-programs".to_string());
     }
     if !design_export_ids.is_empty() {
         artifacts.extend(design_export_ids.iter().cloned());
@@ -51386,6 +51603,19 @@ fn release_package_required_artifacts(
         artifacts.insert("postprocess-plan".to_string());
     }
     artifacts.into_iter().collect()
+}
+
+fn release_package_instruction_program_ids(
+    program_id: &str,
+    analyzed_programs: &[AnalyzedProgram],
+) -> Vec<String> {
+    analyzed_programs
+        .iter()
+        .filter(|program| program.program_id == program_id)
+        .map(|program| program.program_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn release_package_blockers(
@@ -51584,6 +51814,7 @@ fn release_package_gates_for_package(package: &ReleasePackage) -> Vec<ReleasePac
 
 fn release_package_for_program(
     program: &GeneratedProgram,
+    analyzed_programs: &[AnalyzedProgram],
     design_exports: &DesignExportBundle,
     process_graph: &ProcessGraph,
     quality_plan: &QualityPlan,
@@ -51607,6 +51838,8 @@ fn release_package_for_program(
     let interface_control_ids =
         release_package_interface_control_ids(part_id, interface_control_plan);
     let controller_target_ids = release_package_controller_target_ids(program_id, controller_plan);
+    let instruction_program_ids =
+        release_package_instruction_program_ids(&program.program_id, analyzed_programs);
     let release_blockers = release_package_blockers(
         part_id,
         program_id,
@@ -51624,6 +51857,7 @@ fn release_package_for_program(
     let release_state = release_package_state(&release_blockers, machine_ready);
     let required_artifacts = release_package_required_artifacts(
         program_id,
+        &instruction_program_ids,
         &design_export_ids,
         &fixture_setup_ids,
         &monitoring_point_ids,
@@ -51639,6 +51873,7 @@ fn release_package_for_program(
         package_kind: "machine-program-release".to_string(),
         part_id: Some(program.part_id.clone()),
         program_id: Some(program.program_id.clone()),
+        instruction_program_ids,
         machine_id: Some(program.machine_id.clone()),
         machine_kind: Some(program.machine_kind.clone()),
         process_node_id: release_package_process_node_id(program_id, part_id, process_graph),
@@ -51796,6 +52031,7 @@ fn assembly_release_package(
         package_kind: "assembly-recomposition-release".to_string(),
         part_id: None,
         program_id: None,
+        instruction_program_ids: Vec::new(),
         machine_id: None,
         machine_kind: Some("assembly-or-manual-cell".to_string()),
         process_node_id: None,
@@ -51814,8 +52050,79 @@ fn assembly_release_package(
     })
 }
 
+fn instruction_program_release_blockers(
+    program: &AnalyzedProgram,
+    machine_release: &MachineReleaseReport,
+) -> Vec<String> {
+    let mut blockers = BTreeSet::new();
+    for blocker in &machine_release.blockers {
+        if blocker.program_id.as_deref() == Some(program.program_id.as_str()) {
+            blockers.insert(format!(
+                "machine-release:{}:{}",
+                blocker.blocker_type, blocker.reason
+            ));
+        }
+    }
+    if !program.has_units_mode {
+        blockers.insert("instruction-analysis:missing-units-mode".to_string());
+    }
+    if !program.has_positioning_mode {
+        blockers.insert("instruction-analysis:missing-positioning-mode".to_string());
+    }
+    if !program.has_homing_or_fixture_reference {
+        blockers.insert("instruction-analysis:missing-homing-or-fixture-reference".to_string());
+    }
+    if !program.has_program_end {
+        blockers.insert("instruction-analysis:missing-program-end".to_string());
+    }
+    blockers.into_iter().collect()
+}
+
+fn release_package_for_imported_instruction_program(
+    program: &AnalyzedProgram,
+    machine_release: &MachineReleaseReport,
+) -> ReleasePackage {
+    let instruction_program_ids = vec![program.program_id.clone()];
+    let release_blockers = instruction_program_release_blockers(program, machine_release);
+    let machine_ready = false;
+    let release_state = release_package_state(&release_blockers, machine_ready);
+    let required_artifacts = BTreeSet::from([
+        "instruction-programs".to_string(),
+        "machine-release".to_string(),
+        "simulation-report".to_string(),
+        "validation-report".to_string(),
+    ])
+    .into_iter()
+    .collect();
+    let package_id = artifact_id("release-package-imported-instruction", &program.program_id);
+    ReleasePackage {
+        learning_observation: format!("release-package:{}:{release_state}", package_id),
+        package_id,
+        package_kind: "imported-instruction-release".to_string(),
+        part_id: None,
+        program_id: Some(program.program_id.clone()),
+        instruction_program_ids,
+        machine_id: None,
+        machine_kind: Some(program.machine_kind.clone()),
+        process_node_id: None,
+        controller_target_ids: Vec::new(),
+        design_export_ids: Vec::new(),
+        fixture_setup_ids: Vec::new(),
+        monitoring_point_ids: Vec::new(),
+        quality_inspection_ids: Vec::new(),
+        decomposition_target_ids: Vec::new(),
+        interface_control_ids: Vec::new(),
+        required_artifacts,
+        release_blockers,
+        release_state,
+        machine_ready,
+        requires_human_review: true,
+    }
+}
+
 fn release_package_plan(
     generated_programs: &[GeneratedProgram],
+    analyzed_programs: &[AnalyzedProgram],
     design_exports: &DesignExportBundle,
     process_graph: &ProcessGraph,
     quality_plan: &QualityPlan,
@@ -51831,6 +52138,7 @@ fn release_package_plan(
         .map(|program| {
             release_package_for_program(
                 program,
+                analyzed_programs,
                 design_exports,
                 process_graph,
                 quality_plan,
@@ -51843,6 +52151,18 @@ fn release_package_plan(
             )
         })
         .collect::<Vec<_>>();
+    let generated_program_ids = generated_programs
+        .iter()
+        .map(|program| program.program_id.as_str())
+        .collect::<BTreeSet<_>>();
+    packages.extend(
+        analyzed_programs
+            .iter()
+            .filter(|program| !generated_program_ids.contains(program.program_id.as_str()))
+            .map(|program| {
+                release_package_for_imported_instruction_program(program, machine_release)
+            }),
+    );
     if let Some(assembly_package) = assembly_release_package(
         design_exports,
         quality_plan,
@@ -51901,7 +52221,7 @@ fn release_package_plan(
         required_artifacts: required_artifacts.into_iter().collect(),
         learning_observations: learning_observations.into_iter().collect(),
         notes: vec![
-            "Release packages bundle each machine program or assembly handoff with the design exports, controller targets, setup, quality, monitoring, split/combine, and blocker evidence needed by downstream review workers".to_string(),
+            "Release packages bundle each generated or imported instruction program, machine program, or assembly handoff with instruction-program analysis, design exports, controller targets, setup, quality, monitoring, split/combine, and blocker evidence needed by downstream review workers".to_string(),
             "Packages are draft release packets; machine-ready status remains false until controller/postprocessor checks, simulation or dry-run evidence, profile evidence, and operator or automation signoff clear all gates".to_string(),
             "Learning observations let MDP/POMDP/neural workers compare which package evidence cleared or blocked print, mill, lathe, sheet-cut, EDM, and assembly routes".to_string(),
         ],
@@ -99422,6 +99742,198 @@ fn toolpath_result_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn toolpath_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "toolpath-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn toolpath_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    segment_blocker_count: usize,
+    simulation_blocker_count: usize,
+    check_blocker_count: usize,
+    collision_blocker_count: usize,
+    envelope_blocker_count: usize,
+    clearance_blocker_count: usize,
+    dry_run_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    toolpaths: &[Value],
+    checks: &[Value],
+) -> Vec<Value> {
+    let split_or_interface_review = values_contain_review_tokens(
+        toolpaths,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    ) || values_contain_review_tokens(
+        checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+        ],
+    );
+
+    vec![
+        toolpath_priority_disposition(
+            "machine-failure-boundary-first",
+            if segment_blocker_count > 0
+                || simulation_blocker_count > 0
+                || check_blocker_count > 0
+                || collision_blocker_count > 0
+                || envelope_blocker_count > 0
+                || clearance_blocker_count > 0
+                || dry_run_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("segmentBlockerCount:{segment_blocker_count}"),
+                format!("simulationBlockerCount:{simulation_blocker_count}"),
+                format!("checkBlockerCount:{check_blocker_count}"),
+                format!("collisionBlockerCount:{collision_blocker_count}"),
+                format!("envelopeBlockerCount:{envelope_blocker_count}"),
+                format!("clearanceBlockerCount:{clearance_blocker_count}"),
+                format!("dryRunBlockerCount:{dry_run_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/toolpaths/result",
+                "POST /fabrication/simulation/run",
+                "POST /fabrication/release/result",
+            ],
+            if segment_blocker_count > 0
+                || simulation_blocker_count > 0
+                || check_blocker_count > 0
+                || collision_blocker_count > 0
+                || envelope_blocker_count > 0
+                || clearance_blocker_count > 0
+                || dry_run_blocker_count > 0
+            {
+                "machineReady remains blocked by CAM, slicer, motion, simulation, dry-run, or toolpath check failure evidence"
+            } else {
+                "toolpath result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        toolpath_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator or automation signoff is retained for the toolpath result"
+            } else {
+                "toolpath result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        toolpath_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceReview:{split_or_interface_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_or_interface_review {
+                "machineReady remains blocked until split/combine or interface toolpath evidence is dispositioned"
+            } else {
+                "toolpath result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        toolpath_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/toolpaths/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until CAM, slicer, dry-run, or job-sheet toolpath artifacts retain URI, checksum, and evidence"
+            } else {
+                "toolpath result artifacts include release evidence for downstream review"
+            },
+        ),
+        toolpath_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked toolpath priority lanes before advisory promotion"
+            } else {
+                "toolpath result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn toolpath_result_review_response(request: ToolpathResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "toolpath-result");
     let generated_at_ms = now_ms();
@@ -99592,6 +100104,27 @@ fn toolpath_result_review_response(request: ToolpathResultReviewRequest) -> Resu
     if dry_run_blocker_count > 0 {
         learning_observations.push("toolpath:dry-run-blocked".to_string());
     }
+    let priority_dispositions = toolpath_priority_dispositions(
+        request.success,
+        release_blocked,
+        segment_blocker_count,
+        simulation_blocker_count,
+        check_blocker_count,
+        collision_blocker_count,
+        envelope_blocker_count,
+        clearance_blocker_count,
+        dry_run_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &toolpaths,
+        &checks,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(toolpaths.iter().filter_map(|segment| {
         segment
             .get("operation")
@@ -99691,6 +100224,7 @@ fn toolpath_result_review_response(request: ToolpathResultReviewRequest) -> Resu
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "toolpathResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -99799,6 +100333,7 @@ fn toolpath_result_review_response(request: ToolpathResultReviewRequest) -> Resu
                     "machineReady": request.machine_ready,
                     "releaseReady": release_ready
                 },
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -99808,6 +100343,7 @@ fn toolpath_result_review_response(request: ToolpathResultReviewRequest) -> Resu
             "toolpath-simulations",
             "toolpath-checks",
             "toolpath-artifacts",
+            "toolpath-priority-dispositions",
             "toolpath-learning-observations",
             "cam-toolpath-package",
             "slicer-toolpath-package",
@@ -99871,6 +100407,10 @@ fn stored_toolpath_result_job(response: &Value) -> StoredFabricationJob {
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -99905,6 +100445,12 @@ fn stored_toolpath_result_job(response: &Value) -> StoredFabricationJob {
             "toolpath-artifacts".to_string(),
             "toolpath-artifacts",
             toolpath_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "toolpath-priority-dispositions".to_string(),
+            "toolpath-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -117707,7 +118253,6 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(true)
         );
-
         let observations = response
             .get("learning")
             .and_then(|learning| learning.get("observations"))
@@ -120775,6 +121320,50 @@ mod tests {
                 .and_then(Value::as_bool),
             Some(true)
         );
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("toolpath result priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "toolpath-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "toolpath-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "toolpath-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing toolpath priority disposition {}",
+                expected.0
+            );
+        }
+        assert!(response
+            .get("learning")
+            .and_then(|learning| learning.get("outcomeDraft"))
+            .and_then(|draft| draft.get("priorityDispositions"))
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
 
         let observations = response
             .get("learning")
@@ -120798,6 +121387,9 @@ mod tests {
             "toolpath:envelope-blocked",
             "toolpath:human-intervention-required",
             "toolpath:release-blocked",
+            "toolpath-priority:machine-failure-boundary-first:blocked",
+            "toolpath-priority:human-intervention-required:blocked",
+            "toolpath-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
@@ -120825,6 +121417,7 @@ mod tests {
             "toolpath-simulations",
             "toolpath-checks",
             "toolpath-artifacts",
+            "toolpath-priority-dispositions",
             "toolpath-learning-observations",
         ] {
             assert!(
@@ -126912,6 +127505,33 @@ mod tests {
             .is_some_and(|programs| programs.iter().any(|program| {
                 program.get("programId").and_then(Value::as_str) == Some("oversize-router")
             })));
+        let release_package_plan = job
+            .artifacts
+            .get("release-package-plan")
+            .expect("release package plan should retain imported instruction packages");
+        assert!(release_package_plan
+            .content
+            .get("packages")
+            .and_then(Value::as_array)
+            .is_some_and(|packages| packages.iter().any(|package| {
+                package.get("packageKind").and_then(Value::as_str)
+                    == Some("imported-instruction-release")
+                    && package.get("programId").and_then(Value::as_str) == Some("oversize-router")
+                    && package
+                        .get("instructionProgramIds")
+                        .and_then(Value::as_array)
+                        .is_some_and(|ids| {
+                            ids.iter().any(|id| id.as_str() == Some("oversize-router"))
+                        })
+                    && package
+                        .get("requiredArtifacts")
+                        .and_then(Value::as_array)
+                        .is_some_and(|artifacts| {
+                            artifacts
+                                .iter()
+                                .any(|artifact| artifact.as_str() == Some("instruction-programs"))
+                        })
+            })));
     }
 
     #[test]
@@ -127042,6 +127662,48 @@ mod tests {
             .is_some_and(|boundaries| boundaries.iter().any(|boundary| {
                 boundary.get("code").and_then(Value::as_str) == Some("workholding-release-required")
             })));
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("simulation result priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "simulation-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "simulation-priority:human-intervention-required:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "simulation-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition.get("learningObservation").and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing simulation priority disposition {}",
+                expected.0
+            );
+        }
+        assert!(payload
+            .get("learning")
+            .and_then(|learning| learning.get("outcomeDraft"))
+            .and_then(|draft| draft.get("priorityDispositions"))
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
         assert!(payload
             .get("learning")
             .and_then(|learning| learning.get("observations"))
@@ -127049,6 +127711,12 @@ mod tests {
             .is_some_and(|observations| observations.iter().any(|observation| {
                 observation.as_str()
                     == Some("instruction-simulation-boundary:workholding-release-required")
+            }) && observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("simulation-priority:machine-failure-boundary-first:blocked")
+            }) && observations.iter().any(|observation| {
+                observation.as_str()
+                    == Some("simulation-priority:human-intervention-required:blocked")
             })));
 
         let simulation_result_job_id = payload
@@ -127077,6 +127745,7 @@ mod tests {
             "instruction-simulation-findings",
             "instruction-simulation-failure-boundaries",
             "instruction-simulation-artifacts",
+            "instruction-simulation-priority-dispositions",
             "instruction-simulation-learning-observations",
         ] {
             assert!(
@@ -157370,10 +158039,17 @@ mod tests {
             .any(|artifact| artifact == "machine-release"));
         assert!(response
             .release_package_plan
+            .required_artifacts
+            .iter()
+            .any(|artifact| artifact == "instruction-programs"));
+        assert!(response
+            .release_package_plan
             .packages
             .iter()
             .all(|package| {
                 !package.required_artifacts.is_empty()
+                    && (!package.instruction_program_ids.is_empty()
+                        || package.package_kind == "assembly-recomposition-release")
                     && (!package.design_export_ids.is_empty()
                         || package.package_kind == "assembly-recomposition-release")
                     && !package.fixture_setup_ids.is_empty()
@@ -160460,6 +161136,23 @@ mod tests {
                         .get("controllerTargetIds")
                         .and_then(Value::as_array)
                         .is_some()
+            })));
+        assert!(release_package_plan
+            .content
+            .get("requiredArtifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| artifacts
+                .iter()
+                .any(|artifact| artifact.as_str() == Some("instruction-programs"))));
+        assert!(release_package_plan
+            .content
+            .get("packages")
+            .and_then(Value::as_array)
+            .is_some_and(|packages| packages.iter().any(|package| {
+                package
+                    .get("instructionProgramIds")
+                    .and_then(Value::as_array)
+                    .is_some_and(|ids| !ids.is_empty())
             })));
         assert!(release_package_plan
             .content
