@@ -84,6 +84,22 @@ test("/telemetry/ proxies websocket upgrades to grafana live", async () => {
   assert.match(telemetryBlock, /proxy_http_version\s+1\.1;/);
 });
 
+test("gateway defers optional cluster MCP DNS resolution until request time", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(
+    gateway,
+    /location\s+=\s+\/cluster-mcp\s*\{[\s\S]*set\s+\$dd_cluster_mcp_upstream\s+dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091;[\s\S]*proxy_pass\s+http:\/\/\$dd_cluster_mcp_upstream\/mcp;/,
+  );
+  assert.match(
+    gateway,
+    /location\s+\/cluster-mcp\/\s*\{[\s\S]*set\s+\$dd_cluster_mcp_upstream\s+dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091;[\s\S]*proxy_pass\s+http:\/\/\$dd_cluster_mcp_upstream\/;/,
+  );
+  assert.doesNotMatch(gateway, /proxy_pass\s+http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local/);
+});
+
 test("dd-idle-reaper has additive baseline securityContext", async () => {
   const reaper = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-idle-reaper.deployment.yaml",

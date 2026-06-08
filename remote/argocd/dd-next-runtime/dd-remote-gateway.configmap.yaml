@@ -795,7 +795,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
-        proxy_pass http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp;
+        set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
+        proxy_pass http://$dd_cluster_mcp_upstream/mcp;
       }
 
       location /cluster-mcp/ {
@@ -810,7 +811,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
-        proxy_pass http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/;
+        set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
+        proxy_pass http://$dd_cluster_mcp_upstream/;
       }
 
       location = /mcp {
