@@ -13230,6 +13230,145 @@ fn validate_conversion_neutral_exports(
         .collect()
 }
 
+fn design_conversion_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "design-conversion-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn design_conversion_priority_dispositions(
+    converted: bool,
+    release_blocked: bool,
+    neutral_export_count: usize,
+    blocker_count: usize,
+    missing_release_evidence: bool,
+    source_context_retained: bool,
+) -> Vec<Value> {
+    vec![
+        design_conversion_priority_disposition(
+            "conversion-success-readiness",
+            if !converted {
+                "blocked"
+            } else if !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("converted:{converted}"),
+                format!("releaseBlocked:{release_blocked}"),
+            ],
+            vec![
+                "POST /fabrication/design/convert/result",
+                "POST /fabrication/design/synthesis/result",
+                "POST /fabrication/handoff/result",
+            ],
+            if !converted {
+                "machineReady remains blocked until the design-conversion worker produces a usable neutral or native output"
+            } else {
+                "design conversion produced downstream review evidence for CAD/CAM or slicer handoff"
+            },
+        ),
+        design_conversion_priority_disposition(
+            "neutral-export-evidence-retention",
+            if missing_release_evidence || neutral_export_count == 0 {
+                "blocked"
+            } else if !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("neutralExportCount:{neutral_export_count}"),
+                format!("missingReleaseEvidence:{missing_release_evidence}"),
+            ],
+            vec![
+                "POST /fabrication/design/convert/result",
+                "POST /fabrication/machine-code/generate",
+                "POST /fabrication/instructions/generate",
+            ],
+            if missing_release_evidence || neutral_export_count == 0 {
+                "machineReady remains blocked until converted exports retain checksums and units for topology, scale, and profile review"
+            } else {
+                "design conversion retained neutral export evidence for downstream machine-release review"
+            },
+        ),
+        design_conversion_priority_disposition(
+            "blocker-review-closure",
+            if blocker_count > 0 {
+                "blocked"
+            } else if !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("blockerCount:{blocker_count}")],
+            vec![
+                "POST /fabrication/design/convert/result",
+                "POST /fabrication/manufacturability/result",
+                "POST /fabrication/release/preview",
+            ],
+            if blocker_count > 0 {
+                "machineReady remains blocked until conversion blockers are reviewed into design, manufacturability, or release gates"
+            } else {
+                "design conversion did not retain open blockers"
+            },
+        ),
+        design_conversion_priority_disposition(
+            "source-context-retention",
+            if source_context_retained {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("sourceContextRetained:{source_context_retained}")],
+            vec![
+                "POST /fabrication/design/import/review",
+                "POST /fabrication/design/convert/plan",
+                "POST /fabrication/design/convert/result",
+            ],
+            if source_context_retained {
+                "design conversion retained input, source format, and source-system context for repeatable worker-lane learning"
+            } else {
+                "conversion evidence should retain input, source format, and source-system context before advisory promotion"
+            },
+        ),
+        design_conversion_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("converted:{converted}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked conversion priorities before CAD intake policy promotion"
+            } else {
+                "design conversion result can be submitted as positive CAD intake learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn design_conversion_result_review_response(
     request: DesignConversionResultReviewRequest,
 ) -> Result<Value, String> {
@@ -13288,6 +13427,22 @@ fn design_conversion_result_review_response(
     if release_blocked {
         learning_observations.push("design-conversion:release-blocked".to_string());
     }
+    let source_context_retained =
+        input_id.is_some() && source_format.is_some() && source_system.is_some();
+    let priority_dispositions = design_conversion_priority_dispositions(
+        converted,
+        release_blocked,
+        neutral_exports.len(),
+        blockers.len(),
+        missing_release_evidence,
+        source_context_retained,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(
         blockers
             .iter()
@@ -13318,6 +13473,8 @@ fn design_conversion_result_review_response(
         "neutralExportCount": neutral_exports.len(),
         "blockerCount": blockers.len(),
         "missingReleaseEvidence": missing_release_evidence,
+        "sourceContextRetained": source_context_retained,
+        "priorityDispositions": priority_dispositions.clone(),
         "conversionResult": {
             "sourceJobId": source_job_id,
             "inputId": input_id,
@@ -13364,6 +13521,7 @@ fn design_conversion_result_review_response(
                 "workerLane": worker_lane,
                 "status": status,
                 "converted": converted,
+                "priorityDispositions": priority_dispositions,
                 "neutralExportFormats": neutral_exports
                     .iter()
                     .filter_map(|export| export.get("format").and_then(Value::as_str))
@@ -13394,6 +13552,7 @@ fn design_conversion_result_review_response(
             "design-export-bundle",
             "machine-release",
             "release-package-plan",
+            "design-conversion-priority-dispositions",
             "mdp-request.artifacts.designInputReview"
         ],
         "releasePolicy": [
@@ -109800,6 +109959,91 @@ async fn capabilities() -> impl IntoResponse {
             "learningOutcomeQuality.riskReviewRequired",
             "learningOutcomeQuality.releasePolicy"
         ],
+        "objectiveCoverageMatrix": [
+            {
+                "requirement": "3d-printing-and-hybrid-intake",
+                "covers": "accept fabrication requests for additive printers, slicers, native CAD exports, submitted machine profiles, and hybrid printed/milled/turned assemblies",
+                "primaryRoutes": [
+                    "POST /fabrication/plan",
+                    "POST /fabrication/design/import/review",
+                    "POST /fabrication/design/generate",
+                    "GET /fabrication/design/formats",
+                    "GET /fabrication/slicers/catalog",
+                    "GET /fabrication/printers/catalog"
+                ],
+                "evidenceSurfaces": ["designInputReview", "materialPlan", "slicerProfiles", "defaultMachines", "profileEvidence"],
+                "releaseRule": "intake remains advisory until source provenance, units, material, profile, and machine evidence are retained"
+            },
+            {
+                "requirement": "machine-code-and-instruction-generation",
+                "covers": "generate draft design packages, toolpaths, slicer plans, G-code, controller programs, and non-G-code job-sheet instructions for printers, mills, routers, lathes, and sheet cutters",
+                "primaryRoutes": [
+                    "POST /fabrication/design/generate",
+                    "POST /fabrication/instructions/generate",
+                    "POST /fabrication/machine-code/generate",
+                    "POST /fabrication/toolpaths/plan",
+                    "GET /fabrication/machine-code/catalog",
+                    "GET /fabrication/instructions/generation/catalog"
+                ],
+                "evidenceSurfaces": ["designPackage", "generatedPrograms", "toolpathPlan", "machineRelease", "releasePackagePlan"],
+                "releaseRule": "generated programs stay machineReady=false until controller, simulation, setup, quality, and operator or automation gates clear"
+            },
+            {
+                "requirement": "existing-instruction-validation-and-improvement",
+                "covers": "accept existing CNC, additive, slicer, CAM, controller, and text fabrication instructions, validate them, improve them, and retain patches or review findings",
+                "primaryRoutes": [
+                    "POST /fabrication/instructions/analyze",
+                    "POST /fabrication/instructions/validate",
+                    "POST /fabrication/instructions/improve",
+                    "POST /fabrication/instructions/validation/result",
+                    "POST /fabrication/instructions/review/result",
+                    "GET /fabrication/instructions/languages"
+                ],
+                "evidenceSurfaces": ["validationFindings", "failureBoundaries", "patchManifest", "learningObservations", "releaseBlockers"],
+                "releaseRule": "improved instructions remain advisory until retained validation, simulation, and release evidence closes every blocker"
+            },
+            {
+                "requirement": "machine-failure-and-human-intervention-boundaries",
+                "covers": "surface machine-failure, process-stop, setup, workholding, support-media, material, macro, modal-state, and human-intervention boundaries before unattended release",
+                "primaryRoutes": [
+                    "GET /fabrication/boundaries/catalog",
+                    "GET /fabrication/boundaries/preflight/catalog",
+                    "POST /fabrication/boundaries/result",
+                    "POST /fabrication/interventions/result",
+                    "POST /fabrication/release/preview"
+                ],
+                "evidenceSurfaces": ["boundaryAnalysis", "interventionMap", "operatorInterventionPlan", "machineRelease", "priorityDispositions"],
+                "releaseRule": "unresolved boundaries force machineReady=false or require split, combine, reroute, remediation, or human/automation handoff"
+            },
+            {
+                "requirement": "split-combine-and-multi-process-learning",
+                "covers": "plan one-piece, split-route, recomposed, alternate-machine, and hybrid assemblies that combine printed, milled, turned, routed, cut, or postprocessed parts",
+                "primaryRoutes": [
+                    "POST /fabrication/decomposition/plan",
+                    "POST /fabrication/assembly/plan",
+                    "POST /fabrication/interfaces/result",
+                    "GET /fabrication/hybrid/catalog",
+                    "POST /fabrication/strategy/recommend",
+                    "POST /fabrication/learning/outcomes"
+                ],
+                "evidenceSurfaces": ["decompositionPlan", "assemblyPlan", "interfaceControlPlan", "strategyCandidates", "learningOutcomeDraft"],
+                "releaseRule": "split/combine choices require child-route packages, datum-transfer evidence, interface checks, and release-package closure"
+            },
+            {
+                "requirement": "mdp-pomdp-des-neural-learning",
+                "covers": "retain rewards, MDP/POMDP/DES model evidence, neural training examples, optimizer outputs, replay gates, and outcome memory so future plans can learn safer routes",
+                "primaryRoutes": [
+                    "GET /fabrication/learning/capabilities",
+                    "GET /fabrication/learning/models/catalog",
+                    "GET /fabrication/learning/optimizers/catalog",
+                    "POST /fabrication/learning/models/result",
+                    "POST /fabrication/learning/optimizers/result",
+                    "GET /fabrication/learning/corpus"
+                ],
+                "evidenceSurfaces": ["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"],
+                "releaseRule": "learned preferences and neural scores remain advisory until replay, simulation, retained artifacts, and release blockers clear"
+            }
+        ],
         "safetyBoundaryClasses": safety_boundary_classes(),
         "notes": [
             "Capabilities describe draft planning and validation support, not controller-certified machine release.",
@@ -121882,6 +122126,21 @@ mod tests {
             payload.get("releaseBlocked").and_then(Value::as_bool),
             Some(false)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("design conversion priority dispositions");
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("conversion-success-readiness")
+                && disposition.get("disposition").and_then(Value::as_str) == Some("closed")
+        }));
+        assert!(priority_dispositions.iter().any(|disposition| {
+            disposition.get("priorityId").and_then(Value::as_str)
+                == Some("learning-feedback-after-disposition")
+                && disposition.get("disposition").and_then(Value::as_str)
+                    == Some("ready-for-learning")
+        }));
         assert_eq!(
             payload.get("resultSubject").and_then(Value::as_str),
             Some(FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT)
@@ -121919,6 +122178,19 @@ mod tests {
             .get("neutralExportFormats")
             .and_then(Value::as_array)
             .is_some_and(|formats| formats.iter().any(|format| format.as_str() == Some("STEP"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    .is_some_and(|observation| {
+                        observation.contains(
+                            "design-conversion-priority:neutral-export-evidence-retention:closed",
+                        )
+                    })
+            })));
         assert_eq!(
             outcome_draft
                 .get("featureHints")
@@ -121957,6 +122229,14 @@ mod tests {
                     .as_str()
                     .is_some_and(|observation| observation.contains("release-blocked")))
             ));
+        assert!(blocked
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("blocker-review-closure")
+                    && disposition.get("disposition").and_then(Value::as_str) == Some("blocked")
+            })));
         let blocked_outcome_draft = blocked
             .get("learning")
             .and_then(|learning| learning.get("outcomeDraft"))

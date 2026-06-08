@@ -808,6 +808,14 @@ It also links `GET /fabrication/subjects/catalog`,
 external CAD/CAM, slicer, simulation, release, and learning workers can discover
 dispatch subjects and result-review intake routes from the top-level capability
 document.
+The payload includes an `objectiveCoverageMatrix` so clients can audit the
+server against the top-level fabrication mission without scraping README prose.
+Rows cover 3D-printing and hybrid intake, machine-code and instruction
+generation, existing-instruction validation and improvement, machine-failure and
+human-intervention boundaries, split/combine multi-process learning, and
+MDP/POMDP/DES/neural learning. Each row names primary routes, evidence surfaces,
+and the release rule that keeps advisory plans from becoming machine-ready until
+retained evidence clears the matching gates.
 These capabilities describe draft planning and validation support, not
 controller-certified release.
 
@@ -1430,17 +1438,20 @@ source system, worker lane, conversion status, neutral exports, evidence,
 blockers, notes, and optional metadata. The response returns
 `dd.fabrication.design-conversion-result-review.v1` with `conversionResult`,
 `releaseUpdate`, `releaseBlocked`, `missingReleaseEvidence`,
-`neutralExportCount`, and MDP/POMDP/neural learning observations. Successful
-converter output is still review evidence rather than certified geometry:
+`neutralExportCount`, `sourceContextRetained`, `priorityDispositions`, and
+MDP/POMDP/neural learning observations. The retained priorities cover
+conversion success, neutral export evidence, blocker closure, source context,
+and learning-feedback readiness. Successful converter output is still review
+evidence rather than certified geometry:
 machine-ready release remains false until neutral export checksums, units,
 topology/scale/profile review, simulation, and operator or automation signoff
 are retained in `designInputReview`, `designExports`, `machineRelease`, and
 `releasePackagePlan`.
 The `learning.outcomeDraft` uses
 `dd.fabrication.design-conversion-learning-outcome-draft.v1` with input,
-source-format, source-system, worker-lane, status, converted, neutral-export,
-blocker, evidence, reward, and submit-route hints for direct submission to
-`POST /fabrication/learning/outcomes`.
+source-format, source-system, worker-lane, status, converted, priority,
+neutral-export, blocker, evidence, reward, and submit-route hints for direct
+submission to `POST /fabrication/learning/outcomes`.
 
 ## `GET /fabrication/design/generation/catalog`
 
