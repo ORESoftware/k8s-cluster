@@ -18,6 +18,8 @@ pub(crate) enum Permission {
     DatasetWrite,
     ConnectionRead,
     ConnectionWrite,
+    SqlLabRead,
+    SqlLabWrite,
     QueryExecute,
     VisualizationSuggest,
     EvolutionRead,
@@ -78,6 +80,8 @@ impl Role {
                 Permission::DatasetWrite,
                 Permission::ConnectionRead,
                 Permission::ConnectionWrite,
+                Permission::SqlLabRead,
+                Permission::SqlLabWrite,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::EvolutionRead,
@@ -100,6 +104,8 @@ impl Role {
             Self::Analyst => vec![
                 Permission::DatasetRead,
                 Permission::ConnectionRead,
+                Permission::SqlLabRead,
+                Permission::SqlLabWrite,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::EvolutionRead,
@@ -125,6 +131,7 @@ impl Role {
             Self::Exporter => vec![
                 Permission::DatasetRead,
                 Permission::ConnectionRead,
+                Permission::SqlLabRead,
                 Permission::QueryExecute,
                 Permission::VisualizationSuggest,
                 Permission::DashboardRead,
@@ -165,6 +172,8 @@ impl Permission {
             Self::DatasetWrite => "Ingest or replace in-memory datasets.",
             Self::ConnectionRead => "Read secretRef-backed data connection metadata.",
             Self::ConnectionWrite => "Create or replace data connection metadata.",
+            Self::SqlLabRead => "Read SQL Lab history and stored query metadata.",
+            Self::SqlLabWrite => "Create SQL Lab history entries for bounded SELECT exploration.",
             Self::QueryExecute => "Execute query dialects against datasets.",
             Self::VisualizationSuggest => "Generate visualization candidates.",
             Self::EvolutionRead => "Read evolution run summaries.",
@@ -233,6 +242,8 @@ fn all_permissions() -> Vec<Permission> {
         Permission::DatasetWrite,
         Permission::ConnectionRead,
         Permission::ConnectionWrite,
+        Permission::SqlLabRead,
+        Permission::SqlLabWrite,
         Permission::QueryExecute,
         Permission::VisualizationSuggest,
         Permission::EvolutionRead,
@@ -269,6 +280,7 @@ mod tests {
     fn builder_can_publish_dashboards() {
         assert!(Role::Builder.allows(Permission::DashboardWrite));
         assert!(Role::Builder.allows(Permission::ConnectionWrite));
+        assert!(Role::Builder.allows(Permission::SqlLabWrite));
         assert!(Role::Builder.allows(Permission::QuestionWrite));
         assert!(Role::Builder.allows(Permission::AlertWrite));
         assert!(Role::Builder.allows(Permission::SemanticWrite));
@@ -288,11 +300,15 @@ mod tests {
         assert!(Role::Analyst.allows(Permission::SemanticCompile));
         assert!(Role::Analyst.allows(Permission::ConnectionRead));
         assert!(!Role::Analyst.allows(Permission::ConnectionWrite));
+        assert!(Role::Analyst.allows(Permission::SqlLabRead));
+        assert!(Role::Analyst.allows(Permission::SqlLabWrite));
         assert!(Role::Analyst.allows(Permission::QuestionWrite));
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(!Role::Analyst.allows(Permission::EtlPlan));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
         assert!(Role::Viewer.allows(Permission::QuestionRead));
+        assert!(!Role::Viewer.allows(Permission::SqlLabRead));
+        assert!(!Role::Viewer.allows(Permission::SqlLabWrite));
         assert!(!Role::Viewer.allows(Permission::QuestionWrite));
         assert!(!Role::Viewer.allows(Permission::SemanticCompile));
     }

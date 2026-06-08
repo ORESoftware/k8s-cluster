@@ -31,6 +31,7 @@ mod rbac;
 mod self_service;
 mod semantic;
 mod sql_frontend;
+mod sql_lab;
 mod util;
 
 use util::{
@@ -56,6 +57,7 @@ struct AppState {
     metrics: Arc<Metrics>,
     datasets: Arc<RwLock<BTreeMap<String, Dataset>>>,
     connections: Arc<RwLock<BTreeMap<String, connections::DataConnection>>>,
+    sql_lab_history: Arc<RwLock<BTreeMap<String, sql_lab::SqlLabHistoryEntry>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
     dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
     alert_rules: Arc<RwLock<BTreeMap<String, alerts::AlertRule>>>,
@@ -85,6 +87,8 @@ struct Metrics {
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
     connections_saved_total: AtomicU64,
+    sql_lab_requests_total: AtomicU64,
+    sql_lab_history_saved_total: AtomicU64,
     association_requests_total: AtomicU64,
     dashboard_requests_total: AtomicU64,
     dashboards_saved_total: AtomicU64,
@@ -488,6 +492,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metrics: Arc::new(Metrics::default()),
         datasets: Arc::new(RwLock::new(BTreeMap::new())),
         connections: Arc::new(RwLock::new(BTreeMap::new())),
+        sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
         dashboards: Arc::new(RwLock::new(BTreeMap::new())),
         alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -530,6 +535,11 @@ fn app_router(state: AppState) -> Router {
             "/connections/:connection_id/test-plan",
             post(connection_test_plan),
         )
+        .route(
+            "/sql-lab/history",
+            get(list_sql_lab_history).post(save_sql_lab_history),
+        )
+        .route("/sql-lab/history/:history_id", get(get_sql_lab_history))
         .route("/etl/plans", post(plan_etl))
         .route("/semantic/models", get(semantic_models))
         .route(
@@ -752,6 +762,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "modes": ["live-query", "import", "metadata-only"],
             "posture": "metadata and secretRef registry only; test plans are dry-run and do not open sockets or call cloud APIs"
         },
+        "sqlLabHistory": {
+            "surfaces": ["bounded SELECT history", "local dataset execution summaries", "external connection dry-run records"],
+            "limits": sql_lab::limits_payload(),
+            "posture": "stored history rejects mutating SQL, comments, multiple statements, and secret-looking tokens; external connections are not executed in-process"
+        },
         "etlPlan": {
             "steps": ["select-columns", "rename-columns", "filter-rows", "derive-column", "join", "union", "group-aggregate", "sort-rows", "limit-rows"],
             "maxSteps": etl::max_etl_steps(),
@@ -894,6 +909,12 @@ dd_data_viz_connection_requests_total {}
 # HELP dd_data_viz_connections_saved_total Data connections saved.
 # TYPE dd_data_viz_connections_saved_total counter
 dd_data_viz_connections_saved_total {}
+# HELP dd_data_viz_sql_lab_requests_total SQL Lab history requests handled.
+# TYPE dd_data_viz_sql_lab_requests_total counter
+dd_data_viz_sql_lab_requests_total {}
+# HELP dd_data_viz_sql_lab_history_saved_total SQL Lab history entries saved.
+# TYPE dd_data_viz_sql_lab_history_saved_total counter
+dd_data_viz_sql_lab_history_saved_total {}
 # HELP dd_data_viz_association_requests_total Associative graph requests handled.
 # TYPE dd_data_viz_association_requests_total counter
 dd_data_viz_association_requests_total {}
@@ -959,6 +980,8 @@ dd_data_viz_errors_total {}
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
         metrics.connections_saved_total.load(Ordering::Relaxed),
+        metrics.sql_lab_requests_total.load(Ordering::Relaxed),
+        metrics.sql_lab_history_saved_total.load(Ordering::Relaxed),
         metrics.association_requests_total.load(Ordering::Relaxed),
         metrics.dashboard_requests_total.load(Ordering::Relaxed),
         metrics.dashboards_saved_total.load(Ordering::Relaxed),
@@ -1197,6 +1220,150 @@ async fn connection_test_plan(
             .ok_or_else(|| ApiError::not_found(format!("connection `{connection_id}` not found")))?
     };
     Ok(Json(connections::test_plan(&connection)))
+}
+
+async fn save_sql_lab_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<sql_lab::SaveSqlLabRequest>,
+) -> Result<Json<sql_lab::SaveSqlLabResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .sql_lab_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SqlLabWrite)?;
+    let mut entry = request
+        .into_history_entry(now_ms())
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    if let Some(connection_id) = entry.connection_id.as_deref() {
+        let dialect = {
+            let connections = state
+                .connections
+                .read()
+                .map_err(|_| ApiError::bad_request("connection store lock poisoned"))?;
+            connections
+                .get(connection_id)
+                .map(connections::DataConnection::dialect_target)
+                .ok_or_else(|| {
+                    ApiError::not_found(format!("connection `{connection_id}` not found"))
+                })?
+        };
+        entry.mark_planned_external(dialect);
+    } else {
+        let start_ms = now_ms();
+        let query_request = QueryRequest {
+            dialect: QueryDialect::Sql,
+            query: entry.query.clone(),
+            dataset_id: entry.dataset_id.clone(),
+            limit: Some(entry.limit),
+        };
+        match logical_plan_from_query(&query_request) {
+            Ok(plan) => {
+                let dataset_id = plan.source.clone();
+                match get_dataset_snapshot(&state, &dataset_id)
+                    .and_then(|dataset| execute_plan(&dataset, plan.clone()))
+                {
+                    Ok(response) => {
+                        warnings.extend(response.warnings.clone());
+                        let logical_plan =
+                            serde_json::to_value(response.logical_plan).map_err(|error| {
+                                ApiError::bad_request(format!(
+                                    "failed to serialize SQL Lab logical plan: {error}"
+                                ))
+                            })?;
+                        entry.mark_succeeded(
+                            dataset_id,
+                            response.row_count,
+                            logical_plan,
+                            now_ms().saturating_sub(start_ms),
+                            warnings,
+                        );
+                    }
+                    Err(error) => {
+                        entry.mark_failed(error.message, now_ms().saturating_sub(start_ms));
+                    }
+                }
+            }
+            Err(error) => {
+                entry.mark_failed(error.message, now_ms().saturating_sub(start_ms));
+            }
+        }
+    }
+    let mut history = state
+        .sql_lab_history
+        .write()
+        .map_err(|_| ApiError::bad_request("SQL Lab history store lock poisoned"))?;
+    if let Some(existing) = history.get(&entry.history_id) {
+        entry.created_at_ms = existing.created_at_ms;
+        entry
+            .warnings
+            .push(format!("history {} replaced", entry.history_id));
+    } else if history.len() >= sql_lab::max_sql_history() {
+        return Err(ApiError::bad_request(format!(
+            "SQL Lab history count exceeds max {}",
+            sql_lab::max_sql_history()
+        )));
+    }
+    history.insert(entry.history_id.clone(), entry.clone());
+    state
+        .metrics
+        .sql_lab_history_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(sql_lab::save_response(entry)))
+}
+
+async fn list_sql_lab_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .sql_lab_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SqlLabRead)?;
+    let history = state
+        .sql_lab_history
+        .read()
+        .map_err(|_| ApiError::bad_request("SQL Lab history store lock poisoned"))?;
+    let summaries = history
+        .values()
+        .map(sql_lab::SqlLabHistoryEntry::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(sql_lab::catalog_payload(summaries)))
+}
+
+async fn get_sql_lab_history(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(history_id): Path<String>,
+) -> Result<Json<sql_lab::SqlLabHistoryEntry>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .sql_lab_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::SqlLabRead)?;
+    let history = state
+        .sql_lab_history
+        .read()
+        .map_err(|_| ApiError::bad_request("SQL Lab history store lock poisoned"))?;
+    history
+        .get(&history_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("SQL Lab history `{history_id}` not found")))
 }
 
 async fn plan_etl(
@@ -3805,6 +3972,24 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/sql-lab/history",
+            auth: "sql-lab-write",
+            description: "Create a bounded Superset-style SQL Lab history entry for local dataset execution or external dry-run planning.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/sql-lab/history",
+            auth: "sql-lab-read",
+            description: "List SQL Lab history summaries without raw query text.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/sql-lab/history/:history_id",
+            auth: "sql-lab-read",
+            description: "Read a stored SQL Lab history entry.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/visualizations/suggest",
             auth: "visualization-suggest",
             description: "Generate 2D, 3D, 4D, 5D, or XD visualization specs.",
@@ -4706,6 +4891,7 @@ mod tests {
             metrics: Arc::new(Metrics::default()),
             datasets: Arc::new(RwLock::new(BTreeMap::new())),
             connections: Arc::new(RwLock::new(BTreeMap::new())),
+            sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
             evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
             dashboards: Arc::new(RwLock::new(BTreeMap::new())),
             alert_rules: Arc::new(RwLock::new(BTreeMap::new())),
@@ -4880,6 +5066,8 @@ mod tests {
         assert!(paths.contains(&"/connections"));
         assert!(paths.contains(&"/connections/:connection_id"));
         assert!(paths.contains(&"/connections/:connection_id/test-plan"));
+        assert!(paths.contains(&"/sql-lab/history"));
+        assert!(paths.contains(&"/sql-lab/history/:history_id"));
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));

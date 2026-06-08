@@ -218,6 +218,10 @@ impl DataConnection {
             updated_at_ms: self.updated_at_ms,
         }
     }
+
+    pub(crate) fn dialect_target(&self) -> &'static str {
+        self.engine.sql_dialect()
+    }
 }
 
 impl ConnectionEndpoint {

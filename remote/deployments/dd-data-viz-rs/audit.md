@@ -15,8 +15,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   `src/connections.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
   hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved dashboard
   validation lives in `src/dashboard.rs`, self-service question/chart validation lives in
-  `src/self_service.rs`, parser-backed SQL compilation lives in `src/sql_frontend.rs`, shared
-  helpers live in `src/util.rs`, and the HTTP server wires those modules through route handlers.
+  `src/self_service.rs`, SQL Lab history validation lives in `src/sql_lab.rs`, parser-backed SQL
+  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
+  server wires those modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -28,6 +29,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Superset/Metabase-style saved questions are validated against ingested dataset fields and exposed
   through `POST /questions`, `GET /questions`, `GET /questions/:question_id`, and `GET /charts`
   with role-gated read/write permissions.
+- Superset-style SQL Lab history is validated through `POST /sql-lab/history`, exposed through
+  `GET /sql-lab/history` and `GET /sql-lab/history/:history_id`, rejects mutating or secret-looking
+  SQL, and stores external connection entries as dry-run plans only.
 - SQL requests are parsed through `sqlparser` and fail closed on joins, CTEs, set operations,
   unsupported predicates, and unsupported aggregate shapes.
 - Categorical columns are dictionary encoded and exposed through profiles.
@@ -76,9 +80,9 @@ This audit tracks the current hardening and visualization-platform parity postur
   result sets.
 - Domo parity still needs a connector SDK, streaming checkpoints, durable ETL job execution, and a
   drag-and-drop visual flow builder.
-- Superset and Metabase parity still need SQL Lab history, natural language question generation,
-  actual external connector execution, and durable ownership beyond the current in-memory
-  role-gated connection/question/chart catalog.
+- Superset and Metabase parity still need natural language question generation, actual external
+  connector execution, query-result caching, and durable ownership beyond the current in-memory
+  role-gated connection/SQL-Lab/question/chart catalog.
 - Grafana parity still needs a real notification dispatcher worker, Loki log frames, and live
   WebSocket panel streams.
 - D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages,
