@@ -4914,7 +4914,11 @@ catalogs, including PTC Creo / Pro/ENGINEER, SOLIDWORKS, Autodesk Fusion,
 Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, ZBrush, STEP, Parasolid,
 STL, 3MF, OBJ, AMF, PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio, while
 calling out ambiguous `.prt`/`.asm` extensions as source-system or translator
-evidence gates.
+evidence gates. The page also includes an operator-facing release-gate matrix
+for source provenance, machine envelope, process readiness, simulation evidence,
+human or automation handoff, and learning disposition so generated designs,
+toolpaths, slicer plans, G-code, controller programs, and text job-sheet
+interpretations are visibly advisory until the release packet proves each gate.
 
 ## `GET /fabrication/how-it-works`
 

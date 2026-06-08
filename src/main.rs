@@ -60560,6 +60560,20 @@ async fn landing_page() -> axum::response::Html<&'static str> {
       border-left: 4px solid var(--accent-2);
       background: #fffaf0;
     }
+    .gate-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+      padding: 0;
+      list-style: none;
+    }
+    .gate-list li {
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
   </style>
 </head>
 <body>
@@ -60604,6 +60618,19 @@ async fn landing_page() -> axum::response::Html<&'static str> {
     <section>
       <h2>Design And Toolchain Intake</h2>
       <p>Native and cloud CAD intake includes PTC Creo / Pro/ENGINEER, SOLIDWORKS, Autodesk Fusion, Siemens NX, CATIA, Onshape, FreeCAD, OpenSCAD, Blender, and ZBrush, plus neutral and print handoffs such as STEP, Parasolid, STL, 3MF, OBJ, AMF, and slicer projects from PrusaSlicer, OrcaSlicer, Cura, and Bambu Studio. Ambiguous extensions such as <code>.prt</code> and <code>.asm</code> require source-system or translator evidence before downstream release.</p>
+    </section>
+
+    <section>
+      <h2>Release Gates</h2>
+      <p>Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory until the release packet proves each critical gate.</p>
+      <ul class="gate-list">
+        <li><strong>Source provenance</strong><br>CAD, mesh, CAM, controller, macro, and text instruction origin is identified.</li>
+        <li><strong>Machine envelope</strong><br>Axes, fixtures, work offsets, tools, support media, and controller modes are verified.</li>
+        <li><strong>Process readiness</strong><br>Thermal, spindle, feed, coolant, dust, gas, abrasive, resin, powder, or filament state is ready.</li>
+        <li><strong>Simulation evidence</strong><br>Dry-run, collision, reach, support, quality, and postprocess reviews clear blockers.</li>
+        <li><strong>Human or automation handoff</strong><br>Required operator interventions, split/combine joins, and restart steps are signed off.</li>
+        <li><strong>Learning disposition</strong><br>MDP/POMDP/DES/neural recommendations remain advisory until retained outcomes support promotion.</li>
+      </ul>
     </section>
 
     <p class="note">Start with <a href="/docs/api">API docs</a>, <a href="/fabrication/capabilities">capabilities</a>, <a href="/fabrication/intake/catalog">intake guide</a>, <a href="/fabrication/templates/catalog">request templates</a>, <a href="/fabrication/schema">schema</a>, or <a href="/fabrication/examples">examples</a>. This service produces planning and evidence packets; machine-ready release stays gated until validation, simulation, controller/postprocessor review, setup, quality, and signoff evidence clear.</p>
@@ -115227,6 +115254,14 @@ mod tests {
             "Cura",
             "Bambu Studio",
             "Ambiguous extensions such as",
+            "Release Gates",
+            "Generated designs, toolpaths, slicer plans, G-code, controller programs, and job-sheet interpretations stay advisory",
+            "Source provenance",
+            "Machine envelope",
+            "Process readiness",
+            "Simulation evidence",
+            "Human or automation handoff",
+            "Learning disposition",
             "3D printing",
             "CNC mills and routers",
             "CAM intermediate files such as APT/CLDATA",
