@@ -278,8 +278,9 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "secretRef-backed contact points and notification policy preview",
                 "bounded Loki log frame adapter",
                 "bounded live panel WebSocket stream",
+                "bounded notification dispatcher outbox",
             ],
-            next_engine_work: vec!["real notification dispatcher worker"],
+            next_engine_work: vec!["external channel drivers and durable dispatch state"],
         },
         ProductParity {
             product: "D3.js",

@@ -217,11 +217,15 @@ impl Permission {
             Self::QuestionWrite => "Create or replace self-service questions and chart bindings.",
             Self::AssociationRead => "Read Qlik-style associative graphs and selection state.",
             Self::AssociationWrite => "Create or replace Qlik-style associative selection sessions.",
-            Self::AlertRead => "Read Grafana-style alert rules and notification routing metadata.",
+            Self::AlertRead => {
+                "Read Grafana-style alert rules, notification routing metadata, and dispatch records."
+            }
             Self::AlertWrite => {
                 "Create or replace Grafana-style alert rules, contact points, and notification policies."
             }
-            Self::AlertEvaluate => "Evaluate alert rules against analytical query results.",
+            Self::AlertEvaluate => {
+                "Evaluate alert rules and enqueue bounded notification dispatch attempts."
+            }
             Self::SemanticRead => "Read governed semantic model definitions.",
             Self::SemanticWrite => "Create or replace governed semantic model definitions.",
             Self::SemanticCompile => {
