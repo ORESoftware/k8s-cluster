@@ -64,10 +64,34 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+mod assembly_catalog_content;
+mod assembly_preflight_content;
+mod boundary_catalog_content;
+mod boundary_preflight_content;
+mod boundary_remediation_content;
+mod capabilities_content;
+mod decomposition_catalog_content;
+mod design_format_content;
+mod design_generation_content;
+mod design_import_content;
+mod design_preflight_content;
+mod execution_preflight_content;
+mod handoff_catalog_content;
+mod how_it_works_content;
 mod instruction_improvement_catalog;
 mod landing_page_content;
 mod learning_model_catalog;
+mod machine_code_catalog_content;
+mod machine_code_preflight_content;
+mod objective_coverage_content;
+mod recomposition_catalog_content;
+mod release_catalog_content;
+mod release_gate_catalog_content;
+mod release_preflight_content;
+mod root_inventory_content;
+mod simulation_catalog_content;
 mod slicer_catalog;
+mod toolpath_catalog_content;
 
 const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
@@ -63280,55 +63304,10 @@ fn root_response() -> Value {
     json!({
         "service": SERVICE_NAME,
         "schemaVersion": SCHEMA_VERSION,
-        "landingPage": {
-            "label": "Human fabrication overview",
-            "routes": ["/landing", "/fabrication", "/fabrication/landing"],
-            "describes": [
-                "request intake for CAD, mesh, slicer, CAM, CNC, and text instructions",
-                "design, instruction, machine-code, toolpath, simulation, and release evidence flow",
-                "machine-failure boundaries, human-intervention gates, split/combine planning, and learning handoffs"
-            ]
-        },
-        "startHere": {
-            "humanOverview": "/fabrication",
-            "workflowOverview": "/fabrication/how-it-works",
-            "capabilities": "/fabrication/capabilities",
-            "requestSchema": "/fabrication/schema",
-            "examples": "/fabrication/examples",
-            "apiDocs": "/api/docs",
-            "operatorDashboard": "/grafana/fabrication",
-            "operatorDashboardSignals": [
-                "request intake",
-                "release blockers",
-                "NATS fanout",
-                "learning feedback",
-                "artifact ledgers",
-                "runtime capacity"
-            ]
-        },
+        "landingPage": root_inventory_content::landing_page(),
+        "startHere": root_inventory_content::start_here(),
         "routes": routes,
-        "capabilities": [
-            "hybrid additive/subtractive/turning process planning",
-            "draft G-code and operator instruction generation",
-            "standalone generated machine-program and instruction package creation",
-            "existing instruction validation and improvement hints",
-            "retained external instruction validation results for imported and generated programs",
-            "standalone instruction improvement review and patch-manifest generation",
-            "standalone instruction boundary review for machine-failure, human-intervention, automation, and split/combine gates",
-            "simulation and dry-run catalog discovery for machine-envelope, clearance, collision, and remediation evidence",
-            "CAD, organic-model, neutral mesh, and slicer project input review",
-            "CAD/model/slicer import worker-lane discovery and release blockers",
-            "standalone CAD/model/slicer import review and conversion-plan validation",
-            "bounded machine profile evidence intake for calibration, tooling, fixtures, materials, support media, and blockers",
-            "bounded job and artifact inspection",
-            "fabrication outcome reward ingestion and policy snapshots",
-            "machine-failure and human-intervention boundary detection",
-            "machine-release blocker and release-package preview for fabrication intents",
-            "hybrid make strategy candidate, learned preference, and MDP/POMDP policy handoff discovery",
-            "learned hybrid strategy recommendation previews for open fabrication intents",
-            "end-to-end fabrication workflow route, evidence, and learning handoff planning",
-            "MDP/POMDP/DES/neural policy feature contract"
-        ]
+        "capabilities": root_inventory_content::capabilities()
     })
 }
 
@@ -63342,219 +63321,13 @@ fn how_it_works_response() -> Value {
         "routes": ["GET /how-it-works", "GET /fabrication/how-it-works"],
         "purpose": "machine-readable overview of the fabrication server intake-to-release workflow",
         "audiences": ["operators", "integration authors", "CAD/CAM workers", "slicer workers", "learning workers"],
-        "startHereWorkflow": [
-            {
-                "step": "discover",
-                "summary": "Inspect capabilities, machines, materials, templates, schemas, and API docs before selecting a worker lane.",
-                "primaryRoutes": [
-                    "GET /fabrication/capabilities",
-                    "GET /fabrication/machines/catalog",
-                    "GET /fabrication/materials/catalog",
-                    "GET /fabrication/templates/catalog",
-                    "GET /api/docs"
-                ],
-                "evidenceGoal": "choose the right printer, mill, lathe, cutter, material, and request template before submitting work"
-            },
-            {
-                "step": "import-or-generate",
-                "summary": "Submit source geometry, slicer/CAM/controller inputs, or a design-generation request and keep every output as draft evidence.",
-                "primaryRoutes": [
-                    "GET /fabrication/design/import/catalog",
-                    "GET /fabrication/design/generation/catalog",
-                    "GET /fabrication/instructions/languages",
-                    "GET /fabrication/machine-code/catalog",
-                    "POST /fabrication/design/generate"
-                ],
-                "evidenceGoal": "retain source provenance, generated design exports, instruction language, and controller/postprocessor targets"
-            },
-            {
-                "step": "validate-and-improve",
-                "summary": "Analyze imported or generated instructions, find release blockers, and create reviewable remediation or improvement drafts.",
-                "primaryRoutes": [
-                    "GET /fabrication/instructions/validation/catalog",
-                    "GET /fabrication/boundaries/catalog",
-                    "GET /fabrication/remediation/catalog",
-                    "GET /fabrication/improvements/catalog",
-                    "POST /fabrication/instructions/validate"
-                ],
-                "evidenceGoal": "surface machine-failure, human-intervention, split/combine, simulation, and quality blockers before release"
-            },
-            {
-                "step": "split-combine-release",
-                "summary": "Decide whether to decompose, assemble, or release the retained package after setup, simulation, quality, and signoff evidence clears.",
-                "primaryRoutes": [
-                    "GET /fabrication/decomposition/catalog",
-                    "GET /fabrication/assembly/catalog",
-                    "GET /fabrication/release/catalog",
-                    "GET /fabrication/artifacts/catalog",
-                    "POST /fabrication/release/preview"
-                ],
-                "evidenceGoal": "prove interfaces, joins, release gates, retained artifacts, and machineReady blockers before downstream approval"
-            },
-            {
-                "step": "learn-from-results",
-                "summary": "Feed completed, failed, remediated, or blocked outcomes back into DES/MDP/POMDP/neural policy memory.",
-                "primaryRoutes": [
-                    "GET /fabrication/learning/engines/catalog",
-                    "GET /fabrication/learning/rewards/catalog",
-                    "GET /fabrication/learning/replay/catalog",
-                    "GET /fabrication/learning/outcomes",
-                    "POST /fabrication/learning/outcomes"
-                ],
-                "evidenceGoal": "keep learned preferences advisory until replay, simulation, retained evidence, and release blockers clear"
-            }
-        ],
-        "flow": [
-            {
-                "step": "discover",
-                "summary": "Find supported machines, CAD/model/slicer formats, instruction languages, templates, capabilities, and schemas.",
-                "routes": [
-                    "GET /fabrication/capabilities",
-                    "GET /fabrication/formats/catalog",
-                    "GET /fabrication/instructions/languages",
-                    "GET /fabrication/templates/catalog",
-                    "GET /fabrication/schema"
-                ],
-                "releaseGate": "discovery data is advisory and does not certify machine readiness"
-            },
-            {
-                "step": "intake",
-                "summary": "Attach fabrication intent, CAD or mesh sources, slicer/CAM/controller programs, text job sheets, machine profiles, materials, and evidence.",
-                "routes": [
-                    "POST /fabrication/design/import/review",
-                    "POST /fabrication/instructions/import/review",
-                    "POST /fabrication/plan"
-                ],
-                "releaseGate": "native CAD, ambiguous formats, imported programs, and text instructions stay blocked until translator, controller, setup, and source-system evidence is retained"
-            },
-            {
-                "step": "generate",
-                "summary": "Draft design packages, machine-code or printer instructions, toolpaths, setup sheets, schedules, decomposition plans, and assembly/interface plans.",
-                "routes": [
-                    "POST /fabrication/design/generate",
-                    "POST /fabrication/machine-code/generate",
-                    "POST /fabrication/instructions/generate",
-                    "POST /fabrication/decomposition/plan",
-                    "POST /fabrication/assembly/plan",
-                    "POST /fabrication/schedule/plan"
-                ],
-                "releaseGate": "generated outputs are deterministic draft evidence, not certified controller, slicer, CAD, or fixture output"
-            },
-            {
-                "step": "validate",
-                "summary": "Analyze imported or generated instructions for machine-failure, human-intervention, automation, split/combine, simulation, quality, and postprocess boundaries.",
-                "routes": [
-                    "POST /fabrication/instructions/analyze",
-                    "POST /fabrication/instructions/validate",
-                    "POST /fabrication/instructions/improve",
-                    "POST /fabrication/simulation/run",
-                    "GET /fabrication/boundaries/catalog"
-                ],
-                "releaseGate": "machineReady remains false while failure boundaries, human intervention, simulation, setup, controller, postprocess, or split/combine blockers remain unresolved"
-            },
-            {
-                "step": "release",
-                "summary": "Assemble retained artifacts, release probes, quality evidence, operator or automation signoff, and bundle manifests for review.",
-                "routes": [
-                    "POST /fabrication/release/preview",
-                    "GET /fabrication/release/catalog",
-                    "GET /fabrication/jobs",
-                    "GET /fabrication/jobs/:job_id/release-bundle"
-                ],
-                "releaseGate": "release previews are compact review packets and do not by themselves approve a real machine run"
-            },
-            {
-                "step": "learn",
-                "summary": "Record outcomes, rewards, remediation decisions, replay evidence, and policy snapshots so future MDP/POMDP/DES/neural recommendations can improve.",
-                "routes": [
-                    "POST /fabrication/learning/outcomes",
-                    "GET /fabrication/learning/outcomes",
-                    "GET /fabrication/learning/replay/catalog",
-                    "GET /fabrication/learning/optimizers/catalog",
-                    "GET /fabrication/learning/policy"
-                ],
-                "releaseGate": "learned preferences remain advisory until replay, simulation, retained evidence, and release blockers clear"
-            }
-        ],
-        "machineFamilies": [
-            "3D printers and slicer-driven additive systems",
-            "vertical mills, horizontal mills, routers, five-axis, mill-turn, Swiss, and lathe systems",
-            "laser, waterjet, plasma, wire EDM, sinker EDM, grinding, inspection, postprocess, and assembly cells",
-            "hybrid split/combine routes that join printed, milled, turned, cut, inspected, or postprocessed parts"
-        ],
-        "releaseGateMatrix": [
-            {
-                "gateId": "source-provenance",
-                "label": "Source provenance",
-                "proves": "CAD, mesh, CAM, slicer, controller, macro, and text job-sheet origins are identified before interpretation.",
-                "blocks": ["translator release", "controller review", "machine-ready release"],
-                "evidenceRoutes": ["POST /fabrication/design/import/review", "POST /fabrication/instructions/import/review"]
-            },
-            {
-                "gateId": "machine-envelope",
-                "label": "Machine envelope",
-                "proves": "machine axes, fixtures, work offsets, tool length, stock, supports, and controller modal state fit the selected route.",
-                "blocks": ["toolpath release", "machine-code release", "unattended run release"],
-                "evidenceRoutes": ["POST /fabrication/machines/select", "POST /fabrication/toolpaths/result", "GET /fabrication/machines/catalog"]
-            },
-            {
-                "gateId": "process-readiness",
-                "label": "Process readiness",
-                "proves": "thermal, extrusion, spindle, feed, coolant, dust, gas, abrasive, resin, powder, or filament state is ready for the operation.",
-                "blocks": ["printer instruction release", "subtractive cutting release", "sheet-cutting release"],
-                "evidenceRoutes": ["POST /fabrication/instructions/validate", "POST /fabrication/materials/result", "POST /fabrication/utilities/result"]
-            },
-            {
-                "gateId": "simulation-evidence",
-                "label": "Simulation evidence",
-                "proves": "dry-run, collision, reach, support, quality, postprocess, and release-bundle reviews cleared known blockers.",
-                "blocks": ["release preview", "machine-ready release", "learning promotion"],
-                "evidenceRoutes": ["POST /fabrication/simulation/run", "POST /fabrication/quality/result", "POST /fabrication/release/preview"]
-            },
-            {
-                "gateId": "human-or-automation-handoff",
-                "label": "Human or automation handoff",
-                "proves": "operator interventions, automation handoffs, split/combine joins, restart steps, and signoffs are retained.",
-                "blocks": ["restart release", "split/combine release", "machine-ready release"],
-                "evidenceRoutes": ["POST /fabrication/interventions/result", "POST /fabrication/assembly/result", "GET /fabrication/jobs/:job_id/release-bundle"]
-            },
-            {
-                "gateId": "learning-disposition",
-                "label": "Learning disposition",
-                "proves": "MDP/POMDP/DES/neural recommendations are tied to retained outcomes and remain advisory until promotion evidence clears.",
-                "blocks": ["policy promotion", "learned-route preference release", "unattended repeat-run release"],
-                "evidenceRoutes": ["POST /fabrication/learning/outcomes", "GET /fabrication/learning/replay/catalog", "GET /fabrication/learning/policy"]
-            }
-        ],
-        "learningContract": {
-            "preferredPrimitiveSource": "remote/submodules/discrete-event-system.rs des_engine",
-            "methods": ["MDP", "POMDP", "DES", "neural policy evidence", "reward replay"],
-            "promotionRule": "policy recommendations cannot promote to machine-ready release without retained evidence and cleared blockers"
-        },
-        "priorityDispositionContract": {
-            "responseSurface": "priorityDispositions",
-            "appliesTo": [
-                "worker result review routes",
-                "machine-code, simulation, remediation, interface, release, and learning handoffs",
-                "human-intervention and split/combine boundary closure"
-            ],
-            "dispositions": ["blocked", "needs-review", "closed", "pending-blocker-resolution", "ready-for-learning"],
-            "learningObservationShape": "<family>:<priority>:<disposition>",
-            "releaseRule": "blocked and pending-blocker-resolution priority dispositions keep machineReady false until retained evidence clears the matching release gate"
-        },
-        "operatorObservability": {
-            "dashboard": "/grafana/fabrication",
-            "grafanaUid": "dd-fabrication-planner",
-            "signals": [
-                "request intake",
-                "release blockers",
-                "NATS fanout",
-                "learning feedback",
-                "artifact ledgers",
-                "runtime capacity"
-            ],
-            "releaseRule": "operators should inspect dashboard signals and retained release evidence before trusting generated or imported machine work"
-        },
+        "startHereWorkflow": how_it_works_content::start_here_workflow(),
+        "flow": how_it_works_content::flow(),
+        "machineFamilies": how_it_works_content::machine_families(),
+        "releaseGateMatrix": how_it_works_content::release_gate_matrix(),
+        "learningContract": how_it_works_content::learning_contract(),
+        "priorityDispositionContract": how_it_works_content::priority_disposition_contract(),
+        "operatorObservability": how_it_works_content::operator_observability(),
         "humanPage": "/fabrication/landing",
         "docs": "/api/docs"
     })
@@ -63945,36 +63718,9 @@ fn boundary_catalog_response() -> Value {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.boundary-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /boundaries/catalog", "GET /fabrication/boundaries/catalog"],
-        "boundaryCount": catalog.len(),
-        "families": families,
-        "familyCounts": boundary_catalog_family_counts(&catalog),
-        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "responseSurfaces": [
-            "validation.failureBoundaries",
-            "boundarySummary",
-            "resolutionPlan",
-            "interventionMap",
-            "operatorInterventionPlan",
-            "releaseProbePlan",
-            "decompositionPlan",
-            "releasePackagePlan"
-        ],
-        "decisionMatrix": boundary_decision_matrix(),
-        "releasePolicy": [
-            "boundary catalog entries describe analyzer coverage and release evidence, not controller-certified safety",
-            "machine-ready release remains blocked while any cataloged machine-failure, human-intervention, split/combine, automation, postprocess, inspection, profile, or material boundary is unresolved",
-            "boundary kinds are converted into MDP/POMDP/neural observations so workers can learn which jobs need regeneration, split/combine, automation proof, or human intervention"
-        ],
-        "boundaries": catalog
-    })
+    let family_counts = boundary_catalog_family_counts(&catalog);
+    let decision_matrix = boundary_decision_matrix();
+    boundary_catalog_content::response(catalog, families, family_counts, decision_matrix)
 }
 
 fn boundary_preflight_catalog_response() -> Value {
@@ -63984,91 +63730,8 @@ fn boundary_preflight_catalog_response() -> Value {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.boundary-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /boundaries/preflight/catalog",
-            "GET /fabrication/boundaries/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/boundaries/catalog",
-            "GET /fabrication/remediation/catalog",
-            "GET /fabrication/release/preflight/catalog",
-            "GET /fabrication/interventions/catalog",
-            "GET /fabrication/decomposition/catalog",
-            "POST /fabrication/instructions/analyze",
-            "POST /fabrication/instructions/validate",
-            "POST /fabrication/instructions/boundaries/review",
-            "POST /fabrication/remediation/plan",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "boundaryCount": catalog.len(),
-        "families": families,
-        "familyCounts": boundary_catalog_family_counts(&catalog),
-        "preflightGroups": [
-            {
-                "group": "machine-failure-boundary-evidence-state",
-                "requiredEvidence": [
-                    "machine envelope, axis travel, spindle/nozzle/tool state, fixture clearance, material-machine compatibility, controller modal state, and dry-run or simulation trace evidence",
-                    "failure boundary ID, source program ID, line/range, severity, machine-failure risk, release blocker, and recommended remediation evidence",
-                    "release probe, hidden-state/POMDP belief, and retained artifact checksum evidence when boundary confidence is uncertain"
-                ],
-                "releaseBlockers": [
-                    "machine-failure boundary lacks source line, detection source, simulation/probe evidence, or retained remediation action",
-                    "machine-ready release requested while collision, envelope, controller, material, postprocess, fixture, or profile blocker remains unresolved",
-                    "failure boundary is accepted without release-owner signoff and learning feedback"
-                ]
-            },
-            {
-                "group": "human-intervention-and-automation-gap-state",
-                "requiredEvidence": [
-                    "operator checkpoint, manual setup/recovery action, robot/automation capability, monitoring trigger, and safe stop/resume evidence",
-                    "handoff instructions, intervention owner, release authority, and artifact links for each hidden manual step",
-                    "learning observation that records whether human intervention recovered, failed, or changed the route"
-                ],
-                "releaseBlockers": [
-                    "program requires manual recovery or automation fallback without an explicit intervention plan",
-                    "human handoff is expected but no owner, stop point, instruction, or release authority is retained",
-                    "automation capability gap is hidden inside generated instructions instead of surfaced as a release blocker"
-                ]
-            },
-            {
-                "group": "split-combine-and-remediation-boundary-state",
-                "requiredEvidence": [
-                    "split boundary, combine/assembly boundary, interface-control, decomposition target, datum transfer, recomposition, and quality evidence",
-                    "remediation plan that names regeneration, instruction improvement, route split, assembly recomposition, rework, waiver, or human intervention",
-                    "DES/MDP/POMDP/neural learning signals for the final boundary outcome and future route selection"
-                ],
-                "releaseBlockers": [
-                    "single-piece route is infeasible but split/combine, interface, or assembly evidence is missing",
-                    "combine or recomposition boundary lacks datum, fit, quality, workholding, or release-package evidence",
-                    "remediation outcome is not tied to learning observations before release"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "validation.failureBoundaries",
-            "boundarySummary.machineFailureRisks",
-            "interventionMap.requiredActions",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "releaseProbePlan.probes",
-            "decompositionPlan.targets",
-            "interfaceControlPlan.controls",
-            "boundaryRemediationPlan.actions",
-            "releasePackagePlan.releaseGates",
-            "learningOutcome.observations"
-        ],
-        "releasePolicy": [
-            "boundary preflight entries describe evidence required before trusting machine-failure, human-intervention, automation-gap, and split/combine decisions; they are not controller-certified safety results",
-            "machine-ready release remains blocked while boundary source evidence, remediation action, release probe, intervention owner, split/combine route, or learning feedback is absent",
-            "failed boundary preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can reroute manufacturing, split parts, regenerate instructions, or require human intervention earlier"
-        ],
-        "boundaries": catalog
-    })
+    let family_counts = boundary_catalog_family_counts(&catalog);
+    boundary_preflight_content::response(catalog, families, family_counts)
 }
 
 async fn boundary_catalog_http() -> impl IntoResponse {
@@ -64187,56 +63850,8 @@ fn boundary_remediation_catalog_response() -> Value {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.boundary-remediation-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /remediation/catalog", "GET /fabrication/remediation/catalog"],
-        "boundaryCount": contracts.len(),
-        "families": families,
-        "familyCounts": boundary_catalog_family_counts(&contracts),
-        "sourceCatalogRoutes": [
-            "GET /boundaries/catalog",
-            "GET /fabrication/boundaries/catalog",
-            "GET /improvements/catalog",
-            "GET /fabrication/improvements/catalog",
-            "GET /decomposition/catalog",
-            "GET /fabrication/decomposition/catalog",
-            "GET /interventions/catalog",
-            "GET /fabrication/interventions/catalog",
-            "GET /release/catalog",
-            "GET /fabrication/release/catalog"
-        ],
-        "analysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "validationRoutes": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
-        "improvementRoutes": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
-        "boundaryReviewRoutes": [
-            "POST /instructions/boundaries/review",
-            "POST /fabrication/instructions/boundaries/review"
-        ],
-        "responseSurfaces": [
-            "validation.failureBoundaries",
-            "boundarySummary",
-            "resolutionPlan.steps",
-            "interventionMap",
-            "operatorInterventionPlan",
-            "improvedPrograms.patchManifest",
-            "decompositionPlan",
-            "interfaceControlPlan",
-            "machineRelease.blockers",
-            "releasePackagePlan.requiredArtifacts",
-            "learning.interventionSignals",
-            "neuralTrainingCorpus.examples"
-        ],
-        "releasePolicy": [
-            "boundary remediation catalog entries rank review lanes for generated and imported fabrication instructions; they do not certify corrected controller output",
-            "machineReady=false remains mandatory until remediation evidence, validation, simulation or dry-run evidence, controller/postprocessor review, split/combine review, and operator or automation signoff clear",
-            "remediation learning signals feed MDP/POMDP/neural workers so future requests can choose safer machines, split/combine routes, regenerated instructions, or human checkpoints before hardware execution"
-        ],
-        "remediationContracts": contracts
-    })
+    let family_counts = boundary_catalog_family_counts(&contracts);
+    boundary_remediation_content::response(contracts, families, family_counts)
 }
 
 async fn boundary_remediation_catalog_http() -> impl IntoResponse {
@@ -64505,46 +64120,16 @@ fn decomposition_catalog_response() -> Value {
             .filter_map(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.decomposition-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /decomposition/catalog", "GET /fabrication/decomposition/catalog"],
-        "targetCount": target_contracts.len(),
-        "interfaceModeCount": decomposition_catalog_interface_modes().len(),
-        "families": families,
-        "familyCounts": decomposition_catalog_family_counts(&target_contracts),
-        "targetKinds": target_kinds,
-        "routeMachineKinds": route_machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /controllers/plan", "POST /fabrication/controllers/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "hybridMakePlan.splitCombineDecisions",
-            "decompositionPlan.targets",
-            "decompositionPlan.routeContracts",
-            "decompositionPlan.recompositionInterfaces",
-            "decompositionPlan.releaseGates",
-            "interfaceControlPlan.controls",
-            "interfaceControlPlan.decisionLinks",
-            "releasePackagePlan.packages"
-        ],
-        "learningSurfaces": [
-            "decompositionPlan.learningObservations",
-            "interfaceControlPlan.learningObservations",
-            "mdp-request.artifacts.decompositionPlan",
-            "mdp-request.artifacts.interfaceControlPlan",
-            "learning.outcomes"
-        ],
-        "releasePolicy": [
-            "decomposition catalog entries are draft split/combine and interface-control contracts, not certified assembly release",
-            "machine-ready release remains blocked until child geometry, per-route machine code, datum transfer, interface metrology, recomposition, and operator or automation evidence are retained",
-            "split/combine target kinds and interface-control signals are emitted as MDP/POMDP/neural observations so workers can compare single-piece, split-route, and recomposed outcomes"
-        ],
-        "targetContracts": target_contracts,
-        "interfaceModes": decomposition_catalog_interface_modes()
-    })
+    let family_counts = decomposition_catalog_family_counts(&target_contracts);
+    let interface_modes = decomposition_catalog_interface_modes();
+    decomposition_catalog_content::response(
+        target_contracts,
+        interface_modes,
+        families,
+        family_counts,
+        target_kinds,
+        route_machine_kinds,
+    )
 }
 
 fn decomposition_planning_response(
@@ -65809,99 +65394,7 @@ async fn decomposition_catalog_http() -> impl IntoResponse {
 }
 
 fn recomposition_catalog_response() -> Value {
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.recomposition-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /recomposition/catalog", "GET /fabrication/recomposition/catalog"],
-        "relatedDiscoveryRoutes": [
-            "GET /fabrication/decomposition/catalog",
-            "GET /fabrication/assembly/catalog",
-            "GET /fabrication/interfaces/catalog",
-            "GET /fabrication/interfaces/preflight/catalog",
-            "GET /fabrication/joining/catalog",
-            "GET /fabrication/quality/catalog",
-            "GET /fabrication/release/catalog",
-            "GET /fabrication/learning/engines/catalog"
-        ],
-        "recompositionStages": [
-            {
-                "stage": "child-route-package-intake",
-                "requiredEvidence": [
-                    "printed, milled, turned, sheet-cut, EDM, molded, cast, electronics, or special-process child route package IDs",
-                    "child artifact URI, checksum, revision, material, process, disposition, and release status",
-                    "single-piece fallback or split/combine rationale retained from decomposition and manufacturability review"
-                ],
-                "blockedSurfaces": [
-                    "decompositionPlan.targets",
-                    "releasePackagePlan.packages",
-                    "machineRelease.blockers"
-                ]
-            },
-            {
-                "stage": "interface-control-and-datum-transfer",
-                "requiredEvidence": [
-                    "interface-control ID, datum-transfer map, mating orientation, keying, clocking, and anti-rotation proof",
-                    "probe, scan, CMM, dry-fit, fixture repeatability, work-offset, or measured coordinate transfer evidence",
-                    "critical-to-function dimensions, tolerance stack, clearance/interference, and postprocess allowance evidence"
-                ],
-                "blockedSurfaces": [
-                    "interfaceControlPlan.controls",
-                    "qualityPlan.measurementTargets",
-                    "assemblyPlan.joinSteps"
-                ]
-            },
-            {
-                "stage": "joining-and-final-release",
-                "requiredEvidence": [
-                    "joining method selection, recipe, access path, fixture, clamp, torque, weld, adhesive, insert, fastener, or serviceability evidence",
-                    "post-join metrology, functional proof, leak/torque/pull/runout/electrical check, nonconformance disposition, and signoff evidence",
-                    "learning outcome with split/combine decision, recomposition result, reward hint, and retained artifacts"
-                ],
-                "blockedSurfaces": [
-                    "joiningCatalog.joiningFamilies",
-                    "qualityResult.metrologyChecks",
-                    "releaseReadiness.releaseBlockers",
-                    "learningOutcome.observations"
-                ]
-            }
-        ],
-        "boundarySignals": [
-            "recomposition-child-package-boundary",
-            "recomposition-interface-control-boundary",
-            "recomposition-joining-release-boundary",
-            "split-combine-interface-control-boundary",
-            "human-intervention-boundary"
-        ],
-        "responseSurfaces": [
-            "decompositionPlan.recompositionInterfaces",
-            "interfaceControlPlan.releaseGates",
-            "assemblyPlan.joinSteps",
-            "hybridMakePlan.splitCombineDecisions",
-            "releasePackagePlan.packages",
-            "learningOutcome.observations"
-        ],
-        "planningRoutes": [
-            "POST /fabrication/decomposition/plan",
-            "POST /fabrication/assembly/plan",
-            "POST /fabrication/release/preview",
-            "POST /fabrication/workflow/plan"
-        ],
-        "resultRoutes": [
-            "POST /fabrication/decomposition/result",
-            "POST /fabrication/assembly/result",
-            "POST /fabrication/interfaces/result",
-            "POST /fabrication/joining/result",
-            "POST /fabrication/release/result",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "releasePolicy": [
-            "recomposition catalog entries describe how separately fabricated child parts become one releasable object; they are evidence contracts, not released assembly work instructions",
-            "machine-ready release remains blocked until child route packages, interface-control evidence, datum transfer, fit stackup, joining method, final inspection, retained artifacts, and operator or automation signoff are attached to release surfaces",
-            "recomposition outcomes should feed DES, MDP/POMDP, and neural workers so future plans can compare single-piece fabrication, split/combine routes, joining methods, rework loops, and human-intervention checkpoints"
-        ]
-    })
+    recomposition_catalog_content::response()
 }
 
 async fn recomposition_catalog_http() -> impl IntoResponse {
@@ -66038,53 +65531,7 @@ fn assembly_catalog_response() -> Value {
             .filter_map(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.assembly-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /assembly/catalog", "GET /fabrication/assembly/catalog"],
-        "contractCount": contracts.len(),
-        "families": families,
-        "workerFamilies": worker_families,
-        "responseSurfaces": response_surfaces,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "relatedDiscoveryRoutes": [
-            "GET /handoff/catalog",
-            "GET /fabrication/handoff/catalog",
-            "GET /decomposition/catalog",
-            "GET /fabrication/decomposition/catalog",
-            "GET /quality/catalog",
-            "GET /fabrication/quality/catalog",
-            "GET /release/catalog",
-            "GET /fabrication/release/catalog"
-        ],
-        "artifactSurfaces": [
-            "assembly-plan",
-            "hybrid-make-plan",
-            "interface-control-plan",
-            "quality-plan",
-            "assembly-kit-and-join-traveler",
-            "assembly-recomposition-release",
-            "release-package-plan",
-            "mdp-request"
-        ],
-        "learningSurfaces": [
-            "hybridMakePlan.learningObservations",
-            "interfaceControlPlan.learningObservations",
-            "qualityPlan.learningObservations",
-            "releasePackagePlan.learningObservations",
-            "learning.outcomes"
-        ],
-        "releasePolicy": [
-            "assembly catalog entries describe worker-lane evidence contracts, not certified assembly or robot-cell release",
-            "machine-ready release remains blocked until child route packages, interface controls, dry-fit or metrology, join recipe evidence, and operator or automation signoff are retained",
-            "assembly, interface, quality, release, and outcome observations feed MDP/POMDP/neural workers so future plans can learn when to split, combine, recompose, or keep a part single-piece"
-        ],
-        "contracts": contracts
-    })
+    assembly_catalog_content::response(contracts, families, worker_families, response_surfaces)
 }
 
 fn assembly_preflight_catalog_response() -> Value {
@@ -66102,90 +65549,7 @@ fn assembly_preflight_catalog_response() -> Value {
             .filter_map(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.assembly-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /assembly/preflight/catalog",
-            "GET /fabrication/assembly/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/assembly/catalog",
-            "GET /fabrication/decomposition/catalog",
-            "GET /fabrication/interfaces/preflight/catalog",
-            "GET /fabrication/workholding/preflight/catalog",
-            "GET /fabrication/quality/preflight/catalog",
-            "POST /fabrication/assembly/plan",
-            "POST /fabrication/assembly/result",
-            "POST /fabrication/release/result",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "assemblyFamilyCount": families.len(),
-        "assemblyFamilies": families,
-        "releaseGateKinds": release_gates,
-        "preflightGroups": [
-            {
-                "group": "child-route-package-and-interface-state",
-                "requiredEvidence": [
-                    "printed, milled, turned, sheet-cut, EDM, or special-process child route package IDs",
-                    "interface-control IDs, datum transfer, orientation keys, tolerance stackups, and dry-fit evidence",
-                    "retained child-route artifacts, checksums, material trace, and disposition status before recomposition"
-                ],
-                "releaseBlockers": [
-                    "child route package is missing, stale, failed, or not traceable to retained artifacts",
-                    "interface datum, tolerance, or orientation evidence is absent before parts are combined",
-                    "split/combine boundary expects human fit correction without an explicit intervention and disposition plan"
-                ]
-            },
-            {
-                "group": "join-recipe-fixture-and-process-state",
-                "requiredEvidence": [
-                    "assembly fixture, recomposition nest, robot cell, press, weld, fastener, adhesive, cure, torque, or heat-set recipe evidence",
-                    "workholding/preflight clearance, clamp or gripper force, access, collision, and process-window verification",
-                    "operator or automation ownership for each manual fit, robot handoff, joining, cure, rework, or recovery stop"
-                ],
-                "releaseBlockers": [
-                    "join operation lacks fixture, process, controller, cure, torque, or recipe evidence",
-                    "robotic, press, weld, adhesive, or fastener operation can collide, overconstrain, undercure, or damage child parts",
-                    "assembly process requires manual recovery but no planned stop, instruction, or release owner is retained"
-                ]
-            },
-            {
-                "group": "final-fit-quality-release-and-learning-state",
-                "requiredEvidence": [
-                    "final metrology, functional fit, leak/torque/pull/electrical test, visual inspection, and acceptance-band evidence",
-                    "nonconformance, rework, remake, waiver, split/combine redesign, or scrap disposition evidence",
-                    "learning observations for successful and failed recomposition paths, hidden human intervention, and route reliability"
-                ],
-                "releaseBlockers": [
-                    "assembled object lacks final fit, quality, or functional proof before release-package handoff",
-                    "out-of-tolerance interface or join result is not tied to disposition and reinspection evidence",
-                    "outcome learning is absent for a split/combine decision that changed route, fixture, operator, or process risk"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "assembly.assemblyGraph",
-            "hybridMakePlan.joinOperations",
-            "hybridMakePlan.splitCombineDecisions",
-            "interfaceControlPlan.controls",
-            "fixturePlan.setups",
-            "workholdingPreflightCatalog.preflightGroups",
-            "qualityPlan.inspectionPoints",
-            "releasePackagePlan.releaseGates",
-            "machineRelease.releaseBlockers",
-            "learningOutcome.observations"
-        ],
-        "releasePolicy": [
-            "assembly preflight entries describe evidence required before child fabrication routes are combined into one released object; they are not certified assembly, robot-cell, or joining instructions",
-            "machine-ready release remains blocked while child route packages, interface controls, join recipes, fixtures, final fit, quality, disposition, or operator/automation signoff evidence is absent",
-            "failed assembly preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can split, combine, recompose, redesign, reroute, or require human intervention earlier"
-        ],
-        "contracts": contracts
-    })
+    assembly_preflight_content::response(contracts, families, release_gates)
 }
 
 fn assembly_planning_response(
@@ -66584,51 +65948,14 @@ fn release_catalog_response() -> Value {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
     }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.release-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /release/catalog", "GET /fabrication/release/catalog"],
-        "packageKindCount": package_kinds.len(),
-        "gateCount": gate_contracts.len(),
-        "packageKinds": package_kind_names,
-        "gateTypes": gate_types,
-        "releaseStates": ["release-blocked", "release-review-ready", "machine-ready"],
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "machineRelease.status",
-            "machineRelease.blockers",
-            "machineRelease.checklist",
-            "releasePackagePlan.packages",
-            "releasePackagePlan.releaseGates",
-            "releasePackagePlan.requiredArtifacts",
-            "releasePackagePlan.learningObservations",
-            "controllerPlan.releaseGates",
-            "postprocessPlan.blockers",
-            "simulation.riskProfile",
-            "decompositionPlan.releaseGates",
-            "interfaceControlPlan.releaseGates"
-        ],
-        "learningSurfaces": [
-            "releasePackagePlan.learningObservations",
-            "releaseProbePlan.probes",
-            "pomdpBeliefState.hiddenStates",
-            "neuralTrainingCorpus.examples",
-            "mdp-request.artifacts.releasePackagePlan"
-        ],
-        "requiredArtifacts": release_catalog_required_artifacts(),
-        "blockerSources": release_catalog_blocker_sources(),
-        "releasePolicy": [
-            "release catalog entries describe machine-ready evidence contracts, not certified equipment safety",
-            "machine-ready release remains blocked until validation findings, failure boundaries, release probes, controller/postprocessor checks, simulation or dry-run evidence, split/combine interface gates, and operator or automation signoff clear",
-            "release-package observations are emitted for MDP/POMDP/neural workers so future planning can learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM, and recomposed routes"
-        ],
-        "packageKindContracts": package_kinds,
-        "gateContracts": gate_contracts
-    })
+    release_catalog_content::response(
+        gate_contracts,
+        gate_types,
+        package_kinds,
+        package_kind_names,
+        release_catalog_required_artifacts(),
+        release_catalog_blocker_sources(),
+    )
 }
 
 fn release_gate_catalog_response() -> Value {
@@ -66647,64 +65974,7 @@ fn release_gate_catalog_response() -> Value {
         })
         .count();
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.release-gate-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /release/gates/catalog",
-            "GET /fabrication/release/gates/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/release/catalog",
-            "GET /fabrication/release/preflight/catalog",
-            "POST /fabrication/release/preview",
-            "POST /fabrication/release/result",
-            "GET /fabrication/jobs/:job_id/release-bundle"
-        ],
-        "gateCount": gate_contracts.len(),
-        "releaseBlockingGateCount": release_blocking_gate_count,
-        "gateTypes": gate_types,
-        "machineReadyRule": "machineReady remains false until every release-blocking gate has retained evidence, cleared blockers, and operator or automation signoff when required",
-        "evidenceSurfaceFamilies": [
-            "source-provenance",
-            "design-export-review",
-            "machine-envelope",
-            "controller-postprocess-compatibility",
-            "setup-quality-monitoring-evidence",
-            "split-combine-interface-release",
-            "simulation-or-dry-run-evidence",
-            "learning-disposition"
-        ],
-        "responseSurfaces": [
-            "releasePackagePlan.releaseGates",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.status",
-            "machineRelease.blockers",
-            "machineRelease.checklist",
-            "controllerPlan.releaseGates",
-            "postprocessPlan.blockers",
-            "simulation.riskProfile",
-            "decompositionPlan.releaseGates",
-            "interfaceControlPlan.releaseGates",
-            "priorityDispositions"
-        ],
-        "learningSurfaces": [
-            "releasePackagePlan.learningObservations",
-            "releaseProbePlan.probes",
-            "releaseReadinessResult.learning.outcomeDraft",
-            "pomdpBeliefState.hiddenStates",
-            "neuralTrainingCorpus.examples",
-            "mdp-request.artifacts.releasePackagePlan"
-        ],
-        "releasePolicy": [
-            "release gate catalog entries expose machine-ready blockers for UIs, workers, and reviewers; they do not certify equipment safety",
-            "generated designs, machine code, slicer jobs, imported CNC/controller streams, text job sheets, split routes, and recomposed assemblies remain advisory until retained gate evidence clears",
-            "gate outcomes and priority dispositions are learning signals for MDP/POMDP/DES/neural workers, but learned policy never bypasses release gates"
-        ],
-        "gateContracts": gate_contracts
-    })
+    release_gate_catalog_content::response(gate_contracts, gate_types, release_blocking_gate_count)
 }
 
 fn release_preflight_catalog_response() -> Value {
@@ -66721,94 +65991,14 @@ fn release_preflight_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.release-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /release/preflight/catalog",
-            "GET /fabrication/release/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/release/catalog",
-            "GET /fabrication/design/preflight/catalog",
-            "GET /fabrication/controllers/preflight/catalog",
-            "GET /fabrication/workholding/preflight/catalog",
-            "GET /fabrication/assembly/preflight/catalog",
-            "GET /fabrication/quality/preflight/catalog",
-            "POST /fabrication/release/preview",
-            "POST /fabrication/release/result",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "packageKindCount": package_kinds.len(),
-        "gateCount": gate_contracts.len(),
-        "packageKinds": package_kind_names,
-        "gateTypes": gate_types,
-        "preflightGroups": [
-            {
-                "group": "manifest-artifact-and-checksum-state",
-                "requiredEvidence": [
-                    "design package, generated or imported program, machine code, controller plan, setup, fixture, simulation, quality, and release-package artifact URIs",
-                    "checksums, revision IDs, material lot, machine profile, worker version, route package ID, and retained source request evidence",
-                    "trace from printed, milled, turned, cut, EDM, postprocessed, and recomposed child artifacts into the release bundle"
-                ],
-                "releaseBlockers": [
-                    "release bundle lacks artifact URI, checksum, revision, route package, or retained source request evidence",
-                    "generated and improved instructions are mixed without explicit provenance and acceptance evidence",
-                    "split/combine child packages cannot be traced to final assembly, inspection, and disposition artifacts"
-                ]
-            },
-            {
-                "group": "machine-controller-simulation-and-process-state",
-                "requiredEvidence": [
-                    "controller/postprocessor compatibility, machine envelope, modal state, coordinate frame, tool/nozzle/spindle state, and dry-run or simulation evidence",
-                    "workholding, setup, calibration, consumables, process recipe, utility, environment, safety, maintenance, and monitoring release gates",
-                    "machine-failure, human-intervention, hidden-state, and POMDP belief evidence for uncertain release boundaries"
-                ],
-                "releaseBlockers": [
-                    "machine-ready release requested before controller, calibration, setup, simulation, monitoring, or process support gates clear",
-                    "failure boundary predicts collision, out-of-envelope motion, missing consumable, unsafe process state, or hidden manual recovery",
-                    "operator, automation, or robot handoff lacks a retained stop point and release owner"
-                ]
-            },
-            {
-                "group": "quality-disposition-signoff-and-learning-state",
-                "requiredEvidence": [
-                    "quality inspection, final fit, surface finish, cleanliness, first article, material witness, and acceptance-band evidence",
-                    "nonconformance, rework, waiver, scrap/remake, split/combine redesign, and release-owner disposition evidence",
-                    "learning outcome draft with release blockers, cleared gates, reward hint, route risk, and future planning signals"
-                ],
-                "releaseBlockers": [
-                    "quality, cleanliness, final fit, disposition, or release owner evidence is missing before machine-ready handoff",
-                    "failed gate is accepted without reinspection, waiver, or disposition authority",
-                    "release outcome is not available to DES, MDP/POMDP, and neural workers for future route selection"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "releasePackagePlan.packages",
-            "releasePackagePlan.releaseGates",
-            "releasePackagePlan.requiredArtifacts",
-            "releaseReadinessResult.manifestArtifacts",
-            "releaseReadinessResult.decisions",
-            "releaseReadinessResult.blockers",
-            "machineRelease.blockers",
-            "validation.failureBoundaries",
-            "qualityResult.findings",
-            "dispositionResult.decisions",
-            "learningOutcome.observations"
-        ],
-        "releasePolicy": [
-            "release preflight entries describe evidence required before machine-ready handoff, not certified equipment safety or production approval",
-            "machine-ready release remains blocked while manifest, checksum, controller, simulation, workholding, quality, disposition, split/combine, signoff, or learning evidence is absent",
-            "failed release preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can add evidence gates, split jobs, reroute manufacturing, or require human intervention earlier"
-        ],
-        "requiredArtifacts": release_catalog_required_artifacts(),
-        "blockerSources": release_catalog_blocker_sources(),
-        "packageKindContracts": package_kinds,
-        "gateContracts": gate_contracts
-    })
+    release_preflight_content::response(
+        gate_contracts,
+        gate_types,
+        package_kinds,
+        package_kind_names,
+        release_catalog_required_artifacts(),
+        release_catalog_blocker_sources(),
+    )
 }
 
 async fn release_catalog_http() -> impl IntoResponse {
@@ -66824,104 +66014,7 @@ async fn release_preflight_catalog_http() -> impl IntoResponse {
 }
 
 fn execution_preflight_catalog_response() -> Value {
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.execution-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /execution/preflight/catalog",
-            "GET /fabrication/execution/preflight/catalog"
-        ],
-        "executionPlanRoutes": ["POST /execution/plan", "POST /fabrication/execution/plan"],
-        "executionResultRoutes": ["POST /execution/result", "POST /fabrication/execution/result"],
-        "relatedRoutes": [
-            "GET /fabrication/machine-code/preflight/catalog",
-            "GET /fabrication/release/preflight/catalog",
-            "GET /fabrication/monitoring/catalog",
-            "GET /fabrication/interventions/catalog",
-            "GET /fabrication/setup/catalog",
-            "GET /fabrication/learning/preflight/catalog",
-            "POST /fabrication/release/preview",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "preflightGroups": [
-            {
-                "group": "program-run-and-machine-state",
-                "requiredEvidence": [
-                    "generated or imported machine program, controller dialect, postprocessor checksum, tool/nozzle/spindle state, and machine profile are retained",
-                    "executionPlan.programRuns map every generated printer, mill, router, lathe, sheet-cut, EDM, assembly, and special-process program to a reviewed machine and setup",
-                    "machineSchedule dependency holds, setup order, and process handoff boundaries are visible before any run can start"
-                ],
-                "blocks": ["executionPlan.programRuns", "machineSchedule.dependencyHolds", "controllerPlan.releaseGates"]
-            },
-            {
-                "group": "stop-point-human-intervention-and-automation-state",
-                "requiredEvidence": [
-                    "executionPlan.stopPoints and checkpoints identify manual setup, inspection, material change, part combine/separate, or recovery boundaries",
-                    "operatorInterventionPlan.requiredOperatorActions, evidenceGates, automationCandidates, and splitCombineReviews have owners and retained acceptance evidence",
-                    "interventionMap human and automation paths describe when the job must pause rather than pretending unattended completion is possible"
-                ],
-                "blocks": ["executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions", "interventionMap.humanInterventionPoints"]
-            },
-            {
-                "group": "monitoring-recovery-and-release-state",
-                "requiredEvidence": [
-                    "monitoringPlan monitor points, alert rules, recovery actions, and unattended-run release gates cover thermal, motion, extrusion, spindle, coolant, fixturing, and process-specific failure modes",
-                    "simulation, validation, quality, release package, and machineRelease blockers have been reviewed before execution is declared machine-ready",
-                    "execution result, monitoring result, and learning outcome routes are linked so failed runs feed MDP/POMDP/neural policy updates"
-                ],
-                "blocks": ["monitoringPlan.releaseGates", "machineRelease.blockers", "releasePackagePlan.releaseGates"]
-            }
-        ],
-        "responseSurfaces": [
-            "executionPlan.programRuns",
-            "executionPlan.checkpoints",
-            "executionPlan.stopPoints",
-            "executionPlan.canStart",
-            "executionPlan.canRunUnattended",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "operatorInterventionPlan.evidenceGates",
-            "operatorInterventionPlan.automationCandidates",
-            "operatorInterventionPlan.splitCombineReviews",
-            "interventionMap.humanInterventionPoints",
-            "interventionMap.automationPaths",
-            "machineSchedule.dependencyHolds",
-            "monitoringPlan.monitorPoints",
-            "monitoringPlan.alertRules",
-            "monitoringPlan.recoveryActions",
-            "machineRelease.blockers",
-            "releasePackagePlan.releaseGates",
-            "learning.interventionSignals"
-        ],
-        "artifactSurfaces": [
-            "execution-plan",
-            "operator-intervention-plan",
-            "machine-schedule",
-            "monitoring-plan",
-            "machine-release",
-            "release-package-plan",
-            "simulation-report",
-            "mdp-request.artifacts.executionPlan",
-            "mdp-request.artifacts.operatorInterventionPlan",
-            "mdp-request.artifacts.monitoringPlan"
-        ],
-        "learningSurfaces": [
-            "executionPlan.learningObservations",
-            "operatorInterventionPlan.learningObservations",
-            "interventionMap.learningObservations",
-            "machineSchedule.learningObservations",
-            "monitoringPlan.learningObservations",
-            "executionResult.learningOutcomeDraft",
-            "learning.interventionSignals",
-            "neuralTrainingCorpus.examples"
-        ],
-        "executionPolicy": [
-            "execution preflight catalog entries describe conservative run-readiness evidence, not certified shop-floor authorization or controller safety",
-            "machine-ready execution remains blocked while stop points, required operator actions, dependency holds, monitoring recovery gaps, split/combine evidence, release blockers, or learning handoff links are missing",
-            "failed execution preflight gates should feed DES, MDP/POMDP, and neural workers so future plans can reroute, split jobs, regenerate instructions, or ask for human intervention earlier"
-        ]
-    })
+    execution_preflight_content::response()
 }
 
 async fn execution_preflight_catalog_http() -> impl IntoResponse {
@@ -70561,69 +69654,7 @@ fn simulation_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.simulation-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /simulation/catalog", "GET /fabrication/simulation/catalog"],
-        "riskContractCount": risk_contracts.len(),
-        "traceContractCount": trace_contracts.len(),
-        "dryRunContractCount": dry_run_contracts.len(),
-        "riskTypes": risk_types,
-        "riskStatuses": [
-            "simulation-risk-low",
-            "simulation-risk-review-required",
-            "simulation-risk-blocked"
-        ],
-        "simulationInputs": [
-            "generatedPrograms",
-            "existingInstructions",
-            "machineProfiles",
-            "machineProfileEvidence",
-            "postprocessor/controller evidence"
-        ],
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "simulation.programs",
-            "simulation.programs.axisExtents",
-            "simulation.programs.safeClearanceObserved",
-            "simulation.programs.spindleOrHeatupObserved",
-            "simulation.riskProfile",
-            "simulation.riskProfile.programRisks",
-            "simulation.riskProfile.learningObservations",
-            "simulation.findings",
-            "simulation.failureBoundaries",
-            "validation.failureBoundaries",
-            "machineRelease.blockers",
-            "executionPlan.stopPoints",
-            "releaseProbePlan.probes"
-        ],
-        "artifactSurfaces": [
-            "simulation-report",
-            "analysis-simulation-report",
-            "mdp-request.artifacts.simulation",
-            "release-package-plan.requiredArtifacts",
-            "rotary-clearance-simulation-report",
-            "robot-path-or-fixture-simulation-report"
-        ],
-        "learningSurfaces": [
-            "simulation.riskProfile.learningObservations",
-            "simulation.riskProfile.programRisks.learningObservations",
-            "learning.interventionSignals",
-            "neuralTrainingCorpus.examples",
-            "mdp-request.artifacts.releaseProbePlan"
-        ],
-        "releasePolicy": [
-            "simulation catalog entries describe dry-run and risk evidence contracts, not certified machine safety",
-            "machine-ready release remains blocked while simulation risk is blocked, envelope or clearance boundaries remain open, process-start proof is missing, or required dry-run artifacts are absent",
-            "simulation-risk observations are emitted for MDP/POMDP/neural workers so future planning can learn when to reroute, split parts, add clearance, or require operator review"
-        ],
-        "riskContracts": risk_contracts,
-        "traceContracts": trace_contracts,
-        "dryRunContracts": dry_run_contracts
-    })
+    simulation_catalog_content::response(risk_contracts, trace_contracts, dry_run_contracts, risk_types)
 }
 
 fn simulation_preflight_catalog_response() -> Value {
@@ -106781,147 +105812,13 @@ fn machine_code_target_selection_matrix() -> Vec<Value> {
 fn machine_code_catalog_response() -> Value {
     let program_contracts = instruction_generation_catalog_program_contracts();
     let controller_targets = controller_catalog_targets();
-    let generated_languages = unique_sorted(program_contracts.iter().flat_map(|contract| {
-        contract
-            .get("generatedLanguages")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let machine_classes = unique_sorted(program_contracts.iter().flat_map(|contract| {
-        contract
-            .get("machineClasses")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let output_formats = unique_sorted(controller_targets.iter().filter_map(|target| {
-        target
-            .get("outputFormat")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let dialect_families = unique_sorted(controller_targets.iter().filter_map(|target| {
-        target
-            .get("dialectFamily")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let postprocessors = unique_sorted(controller_targets.iter().filter_map(|target| {
-        target
-            .get("postprocessor")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let generated_language_count = generated_languages.len();
-    let machine_class_count = machine_classes.len();
-    let output_format_count = output_formats.len();
-    let dialect_family_count = dialect_families.len();
-    let postprocessor_count = postprocessors.len();
-    let known_postprocessor_count = controller_targets
-        .iter()
-        .filter(|target| {
-            target
-                .get("postprocessorKnown")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        })
-        .count();
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.machine-code-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
-        "generationRoutes": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
-        "resultRoutes": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "relatedRoutes": [
-            "GET /instructions/generation/catalog",
-            "GET /fabrication/instructions/generation/catalog",
-            "GET /controllers/catalog",
-            "GET /fabrication/controllers/catalog",
-            "POST /toolpaths/plan",
-            "POST /fabrication/toolpaths/plan",
-            "GET /simulation/catalog",
-            "GET /fabrication/simulation/catalog",
-            "GET /setup/catalog",
-            "GET /fabrication/setup/catalog",
-            "GET /release/catalog",
-            "GET /fabrication/release/catalog"
-        ],
-        "programContractCount": program_contracts.len(),
-        "controllerTargetCount": controller_targets.len(),
-        "knownPostprocessorCount": known_postprocessor_count,
-        "generatedLanguages": generated_languages,
-        "generatedLanguageCount": generated_language_count,
-        "machineClasses": machine_classes,
-        "machineClassCount": machine_class_count,
-        "outputFormats": output_formats,
-        "outputFormatCount": output_format_count,
-        "dialectFamilies": dialect_families,
-        "dialectFamilyCount": dialect_family_count,
-        "postprocessors": postprocessors,
-        "postprocessorCount": postprocessor_count,
-        "dialectCounts": controller_catalog_dialect_counts(&controller_targets),
-        "responseSurfaces": [
-            "generatedPrograms",
-            "generatedPrograms.instructions",
-            "generatedPrograms.language",
-            "generatedPrograms.machineKind",
-            "generatedPrograms.draft",
-            "generatedPrograms.machineReady",
-            "controllerPlan.compatibilityTargets",
-            "controllerPlan.dialectSummaries",
-            "controllerPlan.releaseGates",
-            "postprocessPlan.controllerTargets",
-            "toolpathPlan.segments",
-            "simulation.programs",
-            "executionPlan.programRuns",
-            "machineRelease.generatedProgramsBlocked",
-            "releasePackagePlan.requiredArtifacts",
-            "learning.neuralTrainingCorpus"
-        ],
-        "artifactSurfaces": [
-            "generated-machine-program",
-            "program-*",
-            "controller-plan",
-            "postprocess-plan",
-            "toolpath-plan",
-            "simulation-report",
-            "execution-plan",
-            "release-package-plan",
-            "mdp-request.artifacts.generatedPrograms"
-        ],
-        "releaseEvidence": [
-            "controller dialect and postprocessor selection",
-            "machine profile, material, workholding, setup, and calibration evidence",
-            "simulation, dry-run, or equivalent controller verification",
-            "postprocessed output checksum and source revision",
-            "operator or automation signoff before machine-ready release"
-        ],
-        "learningSurfaces": [
-            "program-generation:*",
-            "controller-release:*",
-            "simulation-risk:*",
-            "release-probe:*",
-            "neuralTrainingCorpus.examples",
-            "learning.outcomes"
-        ],
-        "machineCodePolicy": [
-            "machine-code catalog entries are discovery contracts for draft printer, mill, router, sheet-cutting, mill-turn, lathe, and special-process programs",
-            "generated controller or printer programs remain draft=true and machineReady=false until validation, simulation or dry-run evidence, controller/postprocessor compatibility, setup, quality, release package, and signoff gates clear",
-            "machine-code generation observations feed MDP/POMDP/neural workers so future plans can regenerate programs, choose alternate machines, split parts, combine assemblies, or add human checkpoints"
-        ],
-        "targetSelectionMatrix": machine_code_target_selection_matrix(),
-        "programContracts": program_contracts,
-        "controllerTargets": controller_targets
-    })
+    let dialect_counts = controller_catalog_dialect_counts(&controller_targets);
+    machine_code_catalog_content::response(
+        program_contracts,
+        controller_targets,
+        dialect_counts,
+        machine_code_target_selection_matrix(),
+    )
 }
 
 async fn machine_code_catalog_http() -> impl IntoResponse {
@@ -106931,129 +105828,7 @@ async fn machine_code_catalog_http() -> impl IntoResponse {
 fn machine_code_preflight_catalog_response() -> Value {
     let program_contracts = instruction_generation_catalog_program_contracts();
     let controller_targets = controller_catalog_targets();
-    let generated_languages = unique_sorted(program_contracts.iter().flat_map(|contract| {
-        contract
-            .get("generatedLanguages")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let machine_classes = unique_sorted(program_contracts.iter().flat_map(|contract| {
-        contract
-            .get("machineClasses")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let output_formats = unique_sorted(controller_targets.iter().filter_map(|target| {
-        target
-            .get("outputFormat")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.machine-code-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /machine-code/preflight/catalog",
-            "GET /fabrication/machine-code/preflight/catalog"
-        ],
-        "machineCodeCatalogRoutes": ["GET /machine-code/catalog", "GET /fabrication/machine-code/catalog"],
-        "generationRoutes": ["POST /machine-code/generate", "POST /fabrication/machine-code/generate"],
-        "resultRoutes": ["POST /machine-code/result", "POST /fabrication/machine-code/result"],
-        "relatedRoutes": [
-            "GET /fabrication/instructions/generation/preflight/catalog",
-            "GET /fabrication/instructions/import/preflight/catalog",
-            "GET /fabrication/controllers/preflight/catalog",
-            "GET /fabrication/toolpaths/catalog",
-            "GET /fabrication/simulation/preflight/catalog",
-            "GET /fabrication/release/preflight/catalog",
-            "GET /fabrication/learning/preflight/catalog"
-        ],
-        "generatedLanguageCount": generated_languages.len(),
-        "generatedLanguages": generated_languages,
-        "machineClassCount": machine_classes.len(),
-        "machineClasses": machine_classes,
-        "outputFormatCount": output_formats.len(),
-        "outputFormats": output_formats,
-        "preflightGroups": [
-            {
-                "group": "program-source-and-design-state",
-                "evidence": [
-                    "design package, imported instruction stream, or generated-program request is retained",
-                    "units, coordinate system, part split/combine context, and source revision are declared",
-                    "draft generatedPrograms entries remain traceable to designInputReview or instructionImportReview"
-                ],
-                "blocks": ["machine-code generation", "controller handoff", "releasePackagePlan.readyPackageCount"]
-            },
-            {
-                "group": "controller-postprocessor-and-dialect-state",
-                "evidence": [
-                    "target controller, postprocessor, dialect family, output format, macro policy, and tool table are selected",
-                    "controllerPlan.compatibilityTargets and controllerPlan.releaseGates have no unresolved blockers",
-                    "postprocessed output checksum and source revision evidence are retained before release"
-                ],
-                "blocks": ["controllerPlan.releaseGates", "machineRelease.generatedProgramsBlocked"]
-            },
-            {
-                "group": "machine-setup-toolpath-and-process-state",
-                "evidence": [
-                    "machine profile, workholding, tooling, material/feedstock, support media, offsets, calibration, and setup evidence are current",
-                    "toolpathPlan.segments and executionPlan.programRuns identify setup changes and human checkpoints",
-                    "printer thermal/extrusion state or CNC spindle/feed/coolant/support-process state is reviewable before execution"
-                ],
-                "blocks": ["toolpathPlan.releaseGates", "executionPlan.stopPoints", "operatorInterventionPlan.requiredOperatorActions"]
-            },
-            {
-                "group": "validation-simulation-release-and-learning-state",
-                "evidence": [
-                    "validation findings, failure boundaries, dry-run or simulation results, and quality gates are retained",
-                    "releasePackagePlan.requiredArtifacts includes generated code, controller checks, setup evidence, simulation, and signoff artifacts",
-                    "DES, MDP/POMDP, reward, neural, and learning outcome records are linked without bypassing release gates"
-                ],
-                "blocks": ["machineReady release", "releasePackagePlan.releaseGates", "learning.promotion"]
-            }
-        ],
-        "responseSurfaces": [
-            "generatedPrograms",
-            "generatedPrograms.instructions",
-            "generatedPrograms.draft",
-            "generatedPrograms.machineReady",
-            "controllerPlan.compatibilityTargets",
-            "controllerPlan.releaseGates",
-            "postprocessPlan.controllerTargets",
-            "toolpathPlan.segments",
-            "simulation.programs",
-            "validation.failureBoundaries",
-            "executionPlan.programRuns",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "machineRelease.generatedProgramsBlocked",
-            "releasePackagePlan.requiredArtifacts",
-            "learning.outcomeDraft"
-        ],
-        "artifactSurfaces": [
-            "generated-machine-program",
-            "controller-plan",
-            "postprocess-plan",
-            "toolpath-plan",
-            "simulation-report",
-            "quality-plan",
-            "release-package-plan",
-            "mdp-request.artifacts.generatedPrograms"
-        ],
-        "releasePolicy": [
-            "machine-code preflight entries describe evidence required before generated or imported controller output can be trusted for release review; they do not certify machine execution",
-            "generatedPrograms remain draft=true and machineReady=false until design provenance, controller/postprocessor compatibility, machine setup, validation, simulation or dry-run, quality, release package, and signoff evidence clear",
-            "failed machine-code preflight checks feed DES, MDP/POMDP, reward, neural, and learning-outcome workers so future plans can regenerate code, choose alternate machines, split/combine parts, or add human checkpoints"
-        ]
-    })
+    machine_code_preflight_content::response(program_contracts, controller_targets)
 }
 
 async fn machine_code_preflight_catalog_http() -> impl IntoResponse {
@@ -107364,158 +106139,8 @@ fn machine_code_generation_response(
     Value::Object(object)
 }
 
-fn toolpath_catalog_entries() -> Vec<Value> {
-    vec![
-        json!({
-            "toolpathFamily": "additive-slicer-path-and-extrusion-plan",
-            "machineKinds": ["fdm-printer", "multi-material-fdm-printer", "pellet-fgf-printer", "robotic-additive-cell", "resin-printer", "material-jetting-printer"],
-            "pathEvidence": [
-                "slice path, extrusion/jet/exposure segments, layer order, seam, support, purge/prime, and tool/material change evidence",
-                "temperature wait, bed/chamber state, first-layer, fan/cooling, acceleration, volumetric flow, and retraction mode evidence",
-                "resume, homing, z-offset, material map, and postprocess handoff checks before machine-ready release"
-            ],
-            "releaseBlockers": [
-                "positive extrusion, jetting, or exposure appears before temperature, material, positioning, and profile evidence",
-                "tool/material change, pause/resume, or extrusion-mode transition is not followed by reset, purge/prime, or verification evidence",
-                "path exceeds printer envelope, violates support strategy, or requires split/combine without interface-control evidence"
-            ],
-            "responseSurfaces": ["slicerPlan.profileEvidence", "supportStrategyPlan", "simulation.programs", "postprocessPlan.steps", "machineRelease.blockers"],
-            "artifactSurfaces": ["slicer-profile", "generated-machine-program", "simulation-report", "release-package-plan"],
-            "learningSignals": ["toolpath:additive", "extrusion-state:*", "temperature-wait:*", "support-removal:*"]
-        }),
-        json!({
-            "toolpathFamily": "subtractive-cam-rough-finish-and-fixture-clearance",
-            "machineKinds": ["vertical-mill", "horizontal-mill", "five-axis-mill", "rotary-indexer-mill", "cnc-router"],
-            "pathEvidence": [
-                "roughing, finishing, drilling, contouring, ramp/plunge, lead-in/out, rest-machining, and stock-to-leave evidence",
-                "fixture, clamp, vise, vacuum, tab, work-offset, tool-length, cutter compensation, and arc-plane evidence",
-                "feeds/speeds, spindle/coolant/chip evacuation state, tool-life envelope, and dry-run simulation evidence"
-            ],
-            "releaseBlockers": [
-                "cutting or rapid plunge reaches stock before spindle, feed, workholding, datum, tool-length, or process-media evidence",
-                "arc, cutter-comp, canned-cycle, coordinate-transform, or incremental modal state cannot be released safely",
-                "fixture/clamp clearance, envelope, tool-life, or chip evacuation risk requires operator intervention"
-            ],
-            "responseSurfaces": ["toolingPlan.requirements", "fixturePlan.setups", "controllerPlan.requiredControllerChecks", "simulation.failureBoundaries", "machineRelease.blockers"],
-            "artifactSurfaces": ["tooling-plan", "fixture-plan", "controller-plan", "simulation-report", "machine-code-programs"],
-            "learningSignals": ["toolpath:subtractive", "fixture-clearance:*", "feed-speed:*", "modal-state:*"]
-        }),
-        json!({
-            "toolpathFamily": "turning-millturn-threading-and-transfer",
-            "machineKinds": ["lathe", "mill-turn-center", "swiss-turning-center"],
-            "pathEvidence": [
-                "turning, facing, grooving, boring, threading, part-off, live-tool, transfer, and pickoff path evidence",
-                "chuck/collet/guide-bushing/tailstock/subspindle/catcher support, stickout, runout, and spindle-state evidence",
-                "CSS/RPM cap, feed-per-rev, tool-nose compensation, turret tool change, and synchronization review"
-            ],
-            "releaseBlockers": [
-                "threading, part-off, transfer, or live-tool path lacks feed-mode, support, spindle-state, or synchronization evidence",
-                "tool-nose compensation, turret change, CSS, or spindle direction state cannot be released safely",
-                "bar stock, part catcher, subspindle, or tailstock support requires human intervention before completion"
-            ],
-            "responseSurfaces": ["fixturePlan.setups", "toolingPlan.requirements", "controllerPlan.requiredControllerChecks", "executionPlan.stopPoints", "machineRelease.blockers"],
-            "artifactSurfaces": ["lathe-program", "mill-turn-program", "simulation-report", "quality-plan"],
-            "learningSignals": ["toolpath:turning", "threading-sync:*", "partoff-support:*", "spindle-transfer:*"]
-        }),
-        json!({
-            "toolpathFamily": "sheet-cut-nesting-kerf-pierce-and-retention",
-            "machineKinds": ["laser-sheet-cutter", "waterjet-sheet-cutter", "plasma-sheet-cutter", "wire-edm-sheet-cutter", "hot-wire-foam-cutter"],
-            "pathEvidence": [
-                "nest layout, common-line, kerf, pierce/thread, lead-in/out, cut order, tab/bridge, and slug/drop retention evidence",
-                "assist gas, fume extraction, abrasive/pump pressure, dielectric/flushing, work clamp, table/slat/support media, and coupon evidence",
-                "material thickness, cut chart, heat affected zone, edge quality, skeleton handling, and part traceability review"
-            ],
-            "releaseBlockers": [
-                "feed cutting starts before process-media, pierce/thread, kerf, and cut-chart evidence",
-                "support media stops before continued cutting without restart verification",
-                "slug/drop, skeleton, tab, or part traceability risk requires operator intervention"
-            ],
-            "responseSurfaces": ["nestingResult", "processRecipeCatalog", "consumablesResult", "qualityPlan.measurementTargets", "machineRelease.blockers"],
-            "artifactSurfaces": ["dd-sheet-nesting-json", "process-recipe-result", "simulation-report", "release-package-plan"],
-            "learningSignals": ["toolpath:sheet-cutting", "kerf:*", "support-media:*", "drop-control:*"]
-        }),
-        json!({
-            "toolpathFamily": "hybrid-split-combine-interface-and-recomposition-path",
-            "machineKinds": ["hybrid-cell", "robotic-assembly-cell", "vertical-mill", "lathe", "fdm-printer", "laser-sheet-cutter"],
-            "pathEvidence": [
-                "per-part route path, interface datum, assembly/recomposition sequence, fixture handoff, and inspection checkpoint evidence",
-                "printed/milled/turned/sheet-cut subpart traceability, kit labels, tolerance stackup, and joining or fastening path evidence",
-                "operator stop points, automation handoffs, machine sequencing, and release bundle cross-links"
-            ],
-            "releaseBlockers": [
-                "one-piece path cannot complete and split/combine interface evidence is absent",
-                "recomposition, datum transfer, kit traceability, or inspection path requires human intervention",
-                "machine sequence, fixture handoff, or release package lacks retained evidence for all subparts"
-            ],
-            "responseSurfaces": ["decompositionPlan.parts", "interfaceControlPlan.interfaces", "assemblyPlan.steps", "executionPlan.stopPoints", "releasePackagePlan.packages"],
-            "artifactSurfaces": ["decomposition-result", "assembly-result", "toolpath-result", "release-bundle"],
-            "learningSignals": ["toolpath:hybrid", "split-combine:*", "interface-datum:*", "recomposition:*"]
-        }),
-    ]
-}
-
 fn toolpath_catalog_response() -> Value {
-    let entries = toolpath_catalog_entries();
-    let toolpath_families = unique_sorted(entries.iter().filter_map(|entry| {
-        entry
-            .get("toolpathFamily")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let machine_kinds = unique_sorted(entries.iter().flat_map(|entry| {
-        entry
-            .get("machineKinds")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.toolpath-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /toolpaths/catalog", "GET /fabrication/toolpaths/catalog"],
-        "toolpathFamilyCount": entries.len(),
-        "toolpathFamilies": toolpath_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /toolpaths/plan", "POST /fabrication/toolpaths/plan"],
-        "reviewRoutes": ["POST /toolpaths/result", "POST /fabrication/toolpaths/result"],
-        "relatedCatalogRoutes": [
-            "GET /fabrication/machine-code/catalog",
-            "GET /fabrication/process-recipes/catalog",
-            "GET /fabrication/nesting/catalog",
-            "GET /fabrication/workholding/catalog",
-            "GET /fabrication/simulation/catalog",
-            "GET /fabrication/release/catalog"
-        ],
-        "responseSurfaces": [
-            "toolpathPlan",
-            "toolpathPlan.simulationTrace",
-            "generatedPrograms",
-            "controllerPlan.requiredControllerChecks",
-            "fixturePlan.setups",
-            "executionPlan.stopPoints",
-            "releasePackagePlan.packages",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "generated-machine-program",
-            "machine-code-programs",
-            "toolpath-result",
-            "simulation-report",
-            "release-package-plan",
-            "mdp-request.artifacts.toolpathCatalog"
-        ],
-        "releasePolicy": [
-            "toolpath catalog entries describe CAM, slicer, sheet-cut, turning, and hybrid path evidence contracts, not certified machine programs",
-            "machine-ready release remains blocked until path geometry, feeds/speeds or process parameters, workholding/datum, controller modal state, simulation, and operator or automation handoff evidence clears",
-            "toolpath planning and result observations are retained for MDP/POMDP/neural workers so future jobs can choose safer machines, split parts, adjust feeds, add fixtures, or insert human intervention earlier"
-        ],
-        "toolpathContracts": entries
-    })
+    toolpath_catalog_content::response()
 }
 
 async fn toolpath_catalog_http() -> impl IntoResponse {
@@ -117562,103 +116187,7 @@ async fn learning_optimizer_result_http(
 }
 
 fn objective_coverage_matrix() -> Vec<Value> {
-    vec![
-        json!({
-            "requirement": "3d-printing-and-hybrid-intake",
-            "covers": "accept fabrication requests for additive printers, slicers, native CAD exports, submitted machine profiles, and hybrid printed/milled/turned assemblies",
-            "primaryRoutes": [
-                "POST /fabrication/plan",
-                "POST /fabrication/design/import/review",
-                "POST /fabrication/design/generate",
-                "GET /fabrication/design/formats",
-                "GET /fabrication/slicers/catalog",
-                "GET /fabrication/printers/catalog"
-            ],
-            "evidenceSurfaces": ["designInputReview", "materialPlan", "slicerProfiles", "defaultMachines", "profileEvidence"],
-            "releaseRule": "intake remains advisory until source provenance, units, material, profile, and machine evidence are retained"
-        }),
-        json!({
-            "requirement": "machine-code-and-instruction-generation",
-            "covers": "generate draft design packages, toolpaths, slicer plans, G-code, controller programs, and non-G-code job-sheet instructions for printers, mills, routers, lathes, and sheet cutters",
-            "primaryRoutes": [
-                "POST /fabrication/design/generate",
-                "POST /fabrication/instructions/generate",
-                "POST /fabrication/machine-code/generate",
-                "POST /fabrication/toolpaths/plan",
-                "GET /fabrication/machine-code/catalog",
-                "GET /fabrication/instructions/generation/catalog"
-            ],
-            "evidenceSurfaces": ["designPackage", "generatedPrograms", "toolpathPlan", "machineRelease", "releasePackagePlan"],
-            "releaseRule": "generated programs stay machineReady=false until controller, simulation, setup, quality, and operator or automation gates clear"
-        }),
-        json!({
-            "requirement": "existing-instruction-validation-and-improvement",
-            "covers": "accept existing CNC, additive, slicer, CAM, controller, and text fabrication instructions, validate them, improve them, and retain patches or review findings",
-            "primaryRoutes": [
-                "POST /fabrication/instructions/analyze",
-                "POST /fabrication/instructions/validate",
-                "POST /fabrication/instructions/improve",
-                "POST /fabrication/instructions/validation/result",
-                "POST /fabrication/instructions/review/result",
-                "GET /fabrication/instructions/languages"
-            ],
-            "evidenceSurfaces": ["validationFindings", "failureBoundaries", "patchManifest", "learningObservations", "releaseBlockers"],
-            "releaseRule": "improved instructions remain advisory until retained validation, simulation, and release evidence closes every blocker"
-        }),
-        json!({
-            "requirement": "machine-failure-and-human-intervention-boundaries",
-            "covers": "surface machine-failure, process-stop, setup, workholding, support-media, material, macro, modal-state, and human-intervention boundaries before unattended release",
-            "primaryRoutes": [
-                "GET /fabrication/boundaries/catalog",
-                "GET /fabrication/boundaries/preflight/catalog",
-                "POST /fabrication/boundaries/result",
-                "POST /fabrication/interventions/result",
-                "POST /fabrication/release/preview"
-            ],
-            "evidenceSurfaces": ["boundaryAnalysis", "interventionMap", "operatorInterventionPlan", "machineRelease", "priorityDispositions"],
-            "releaseRule": "unresolved boundaries force machineReady=false or require split, combine, reroute, remediation, or human/automation handoff"
-        }),
-        json!({
-            "requirement": "operator-observability-and-release-trust",
-            "covers": "expose the landing-page, how-it-works, metrics, and Grafana dashboard path operators use to inspect request intake, release blockers, NATS fanout, learning feedback, artifact ledgers, and runtime capacity before trusting generated work",
-            "primaryRoutes": [
-                "GET /fabrication",
-                "GET /fabrication/how-it-works",
-                "GET /metrics",
-                "GET /grafana/fabrication"
-            ],
-            "evidenceSurfaces": ["operatorObservability", "operatorDashboardSignals", "dd-fabrication-planner", "releasePackagePlan", "machineRelease"],
-            "releaseRule": "operator dashboards and metrics are release evidence context, not machine approval; retained validation, simulation, setup, quality, and signoff gates still decide machineReady"
-        }),
-        json!({
-            "requirement": "split-combine-and-multi-process-learning",
-            "covers": "plan one-piece, split-route, recomposed, alternate-machine, and hybrid assemblies that combine printed, milled, turned, routed, cut, or postprocessed parts",
-            "primaryRoutes": [
-                "POST /fabrication/decomposition/plan",
-                "POST /fabrication/assembly/plan",
-                "POST /fabrication/interfaces/result",
-                "GET /fabrication/hybrid/catalog",
-                "POST /fabrication/strategy/recommend",
-                "POST /fabrication/learning/outcomes"
-            ],
-            "evidenceSurfaces": ["decompositionPlan", "assemblyPlan", "interfaceControlPlan", "strategyCandidates", "learningOutcomeDraft"],
-            "releaseRule": "split/combine choices require child-route packages, datum-transfer evidence, interface checks, and release-package closure"
-        }),
-        json!({
-            "requirement": "mdp-pomdp-des-neural-learning",
-            "covers": "retain rewards, MDP/POMDP/DES model evidence, neural training examples, optimizer outputs, replay gates, and outcome memory so future plans can learn safer routes",
-            "primaryRoutes": [
-                "GET /fabrication/learning/capabilities",
-                "GET /fabrication/learning/models/catalog",
-                "GET /fabrication/learning/optimizers/catalog",
-                "POST /fabrication/learning/models/result",
-                "POST /fabrication/learning/optimizers/result",
-                "GET /fabrication/learning/corpus"
-            ],
-            "evidenceSurfaces": ["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"],
-            "releaseRule": "learned preferences and neural scores remain advisory until replay, simulation, retained artifacts, and release blockers clear"
-        }),
-    ]
+    objective_coverage_content::matrix()
 }
 
 fn objective_coverage_response() -> Value {
@@ -117691,430 +116220,35 @@ async fn capabilities() -> impl IntoResponse {
         "schemaVersion": "dd.fabrication.capabilities.v1",
         "serviceSchemaVersion": SCHEMA_VERSION,
         "requestContracts": {
-            "discovery": [
-                "GET /capabilities",
-                "GET /fabrication/capabilities",
-                "GET /objective/coverage",
-                "GET /fabrication/objective/coverage",
-                "GET /machines/catalog",
-                "GET /fabrication/machines/catalog",
-                "POST /machines/select",
-                "POST /fabrication/machines/select",
-                "GET /printers/catalog",
-                "GET /fabrication/printers/catalog",
-                "GET /subtractive/catalog",
-                "GET /fabrication/subtractive/catalog",
-                "GET /cnc/catalog",
-                "GET /fabrication/cnc/catalog",
-                "GET /cells/catalog",
-                "GET /fabrication/cells/catalog",
-                "GET /hybrid/catalog",
-                "GET /fabrication/hybrid/catalog",
-                "GET /methods/catalog",
-                "GET /fabrication/methods/catalog",
-                "GET /controllers/catalog",
-                "GET /fabrication/controllers/catalog",
-                "POST /controllers/result",
-                "POST /fabrication/controllers/result",
-                "GET /materials/catalog",
-                "GET /fabrication/materials/catalog",
-                "POST /materials/plan",
-                "POST /fabrication/materials/plan",
-                "POST /materials/result",
-                "POST /fabrication/materials/result",
-                "GET /design/formats",
-                "GET /fabrication/design/formats",
-                "GET /slicers/catalog",
-                "GET /fabrication/slicers/catalog",
-                "POST /slicers/result",
-                "POST /fabrication/slicers/result",
-                "GET /mesh-repair/catalog",
-                "GET /fabrication/mesh-repair/catalog",
-                "POST /mesh-repair/result",
-                "POST /fabrication/mesh-repair/result",
-                "GET /design/import/catalog",
-                "GET /fabrication/design/import/catalog",
-                "GET /subjects/catalog",
-                "GET /fabrication/subjects/catalog",
-                "GET /workers/catalog",
-                "GET /fabrication/workers/catalog",
-                "GET /results/catalog",
-                "GET /fabrication/results/catalog",
-                "GET /design/generation/catalog",
-                "GET /fabrication/design/generation/catalog",
-                "POST /design/synthesis/result",
-                "POST /fabrication/design/synthesis/result",
-                "POST /design/generate",
-                "POST /fabrication/design/generate",
-                "POST /design/import/review",
-                "POST /fabrication/design/import/review",
-                "POST /design/import/result",
-                "POST /fabrication/design/import/result",
-                "POST /design/convert/plan",
-                "POST /fabrication/design/convert/plan",
-                "POST /design/convert/result",
-                "POST /fabrication/design/convert/result",
-                "GET /handoff/catalog",
-                "GET /fabrication/handoff/catalog",
-                "GET /instructions/languages",
-                "GET /fabrication/instructions/languages",
-                "GET /instructions/generation/catalog",
-                "GET /fabrication/instructions/generation/catalog",
-                "POST /instructions/generate",
-                "POST /fabrication/instructions/generate",
-                "POST /instructions/generation/result",
-                "POST /fabrication/instructions/generation/result",
-                "POST /instructions/review/result",
-                "POST /fabrication/instructions/review/result",
-                "POST /instructions/validation/result",
-                "POST /fabrication/instructions/validation/result",
-                "GET /machine-code/catalog",
-                "GET /fabrication/machine-code/catalog",
-                "POST /machine-code/generate",
-                "POST /fabrication/machine-code/generate",
-                "POST /machine-code/result",
-                "POST /fabrication/machine-code/result",
-                "GET /toolpaths/catalog",
-                "GET /fabrication/toolpaths/catalog",
-                "POST /toolpaths/plan",
-                "POST /fabrication/toolpaths/plan",
-                "POST /toolpaths/result",
-                "POST /fabrication/toolpaths/result",
-                "GET /improvements/catalog",
-                "GET /fabrication/improvements/catalog",
-                "GET /boundaries/catalog",
-                "GET /fabrication/boundaries/catalog",
-                "GET /remediation/catalog",
-                "GET /fabrication/remediation/catalog",
-                "POST /remediation/plan",
-                "POST /fabrication/remediation/plan",
-                "GET /decomposition/catalog",
-                "GET /fabrication/decomposition/catalog",
-                "POST /decomposition/plan",
-                "POST /fabrication/decomposition/plan",
-                "POST /decomposition/result",
-                "POST /fabrication/decomposition/result",
-                "GET /assembly/catalog",
-                "GET /fabrication/assembly/catalog",
-                "POST /assembly/plan",
-                "POST /fabrication/assembly/plan",
-                "POST /assembly/result",
-                "POST /fabrication/assembly/result",
-                "GET /release/catalog",
-                "GET /fabrication/release/catalog",
-                "POST /release/result",
-                "POST /fabrication/release/result",
-                "GET /workflow/catalog",
-                "GET /fabrication/workflow/catalog",
-                "POST /workflow/plan",
-                "POST /fabrication/workflow/plan",
-                "GET /strategy/catalog",
-                "GET /fabrication/strategy/catalog",
-                "POST /strategy/recommend",
-                "POST /fabrication/strategy/recommend",
-                "POST /strategy/result",
-                "POST /fabrication/strategy/result",
-                "GET /schedule/catalog",
-                "GET /fabrication/schedule/catalog",
-                "POST /schedule/result",
-                "POST /fabrication/schedule/result",
-                "GET /simulation/catalog",
-                "GET /fabrication/simulation/catalog",
-                "POST /simulation/run",
-                "POST /fabrication/simulation/run",
-                "POST /simulation/result",
-                "POST /fabrication/simulation/result",
-                "GET /quality/catalog",
-                "GET /fabrication/quality/catalog",
-                "POST /quality/plan",
-                "POST /fabrication/quality/plan",
-                "POST /quality/result",
-                "POST /fabrication/quality/result",
-                "GET /calibration/catalog",
-                "GET /fabrication/calibration/catalog",
-                "POST /calibration/plan",
-                "POST /fabrication/calibration/plan",
-                "POST /calibration/result",
-                "POST /fabrication/calibration/result",
-                "GET /interventions/catalog",
-                "GET /fabrication/interventions/catalog",
-                "POST /interventions/result",
-                "POST /fabrication/interventions/result",
-                "GET /setup/catalog",
-                "GET /fabrication/setup/catalog",
-                "GET /tooling/catalog",
-                "GET /fabrication/tooling/catalog",
-                "GET /workholding/catalog",
-                "GET /fabrication/workholding/catalog",
-                "GET /nesting/catalog",
-                "GET /fabrication/nesting/catalog",
-                "POST /nesting/result",
-                "POST /fabrication/nesting/result",
-                "GET /support-strategies/catalog",
-                "GET /fabrication/support-strategies/catalog",
-                "POST /support-strategies/result",
-                "POST /fabrication/support-strategies/result",
-                "GET /process-recipes/catalog",
-                "GET /fabrication/process-recipes/catalog",
-                "POST /process-recipes/result",
-                "POST /fabrication/process-recipes/result",
-                "GET /kinematics/catalog",
-                "GET /fabrication/kinematics/catalog",
-                "POST /kinematics/result",
-                "POST /fabrication/kinematics/result",
-            "GET /tolerances/catalog",
-            "GET /fabrication/tolerances/catalog",
-            "GET /process-capabilities/catalog",
-            "GET /fabrication/process-capabilities/catalog",
-            "GET /manufacturability/catalog",
-            "GET /fabrication/manufacturability/catalog",
-            "POST /manufacturability/result",
-            "POST /fabrication/manufacturability/result",
-            "GET /failure-modes/catalog",
-            "GET /fabrication/failure-modes/catalog",
-            "POST /failure-modes/result",
-            "POST /fabrication/failure-modes/result",
-            "GET /safety/catalog",
-            "GET /fabrication/safety/catalog",
-                "GET /environment/catalog",
-                "GET /fabrication/environment/catalog",
-                "GET /provenance/catalog",
-                "GET /fabrication/provenance/catalog",
-                "GET /as-built/catalog",
-                "GET /fabrication/as-built/catalog",
-                "POST /as-built/result",
-                "POST /fabrication/as-built/result",
-                "POST /setup/plan",
-                "POST /fabrication/setup/plan",
-                "POST /setup/result",
-                "POST /fabrication/setup/result",
-                "GET /monitoring/catalog",
-                "GET /fabrication/monitoring/catalog",
-                "POST /monitoring/plan",
-                "POST /fabrication/monitoring/plan",
-                "POST /monitoring/result",
-                "POST /fabrication/monitoring/result",
-                "GET /postprocess/catalog",
-                "GET /fabrication/postprocess/catalog",
-                "POST /postprocess/plan",
-                "POST /fabrication/postprocess/plan",
-                "POST /postprocess/result",
-                "POST /fabrication/postprocess/result",
-                "GET /evidence/catalog",
-                "GET /fabrication/evidence/catalog",
-                "GET /artifacts/catalog",
-                "GET /fabrication/artifacts/catalog",
-        "GET /learning/capabilities",
-        "GET /fabrication/learning/capabilities",
-        "GET /learning/engines/catalog",
-        "GET /fabrication/learning/engines/catalog",
-        "GET /learning/models/catalog",
-        "GET /fabrication/learning/models/catalog",
-        "GET /learning/optimizers/catalog",
-        "GET /fabrication/learning/optimizers/catalog",
-        "POST /learning/models/result",
-        "POST /fabrication/learning/models/result",
-        "POST /learning/optimizers/result",
-        "POST /fabrication/learning/optimizers/result",
-        "GET /schema",
-                "GET /fabrication/schema",
-                "GET /examples",
-                "GET /fabrication/examples"
-            ],
-            "planning": [
-                "POST /plan",
-                "POST /fabrication/plan",
-                "POST /release/preview",
-                "POST /fabrication/release/preview",
-                "POST /strategy/recommend",
-                "POST /fabrication/strategy/recommend",
-                "POST /strategy/result",
-                "POST /fabrication/strategy/result"
-            ],
-            "instructionGeneration": [
-                "POST /instructions/generate",
-                "POST /fabrication/instructions/generate",
-                "POST /instructions/generation/result",
-                "POST /fabrication/instructions/generation/result"
-            ],
-            "toolpaths": [
-                "GET /machine-code/catalog",
-                "GET /fabrication/machine-code/catalog",
-                "POST /machine-code/generate",
-                "POST /fabrication/machine-code/generate",
-                "POST /machine-code/result",
-                "POST /fabrication/machine-code/result",
-                "POST /toolpaths/plan",
-                "POST /fabrication/toolpaths/plan",
-                "POST /toolpaths/result",
-                "POST /fabrication/toolpaths/result"
-            ],
-            "materials": [
-                "POST /materials/plan",
-                "POST /fabrication/materials/plan",
-                "POST /materials/result",
-                "POST /fabrication/materials/result"
-            ],
-            "schedule": [
-                "GET /schedule/catalog",
-                "GET /fabrication/schedule/catalog",
-                "POST /schedule/result",
-                "POST /fabrication/schedule/result"
-            ],
-            "decomposition": [
-                "GET /decomposition/catalog",
-                "GET /fabrication/decomposition/catalog",
-                "POST /decomposition/plan",
-                "POST /fabrication/decomposition/plan",
-                "POST /decomposition/result",
-                "POST /fabrication/decomposition/result"
-            ],
-            "instructionAnalysis": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-            "instructionValidationCatalog": [
-                "GET /instructions/validation/catalog",
-                "GET /fabrication/instructions/validation/catalog"
-            ],
-            "instructionValidation": ["POST /instructions/validate", "POST /fabrication/instructions/validate"],
-            "instructionValidationResult": [
-                "POST /instructions/validation/result",
-                "POST /fabrication/instructions/validation/result"
-            ],
-            "instructionImprovement": ["POST /instructions/improve", "POST /fabrication/instructions/improve"],
-            "instructionBoundaryReview": [
-                "POST /instructions/boundaries/review",
-                "POST /fabrication/instructions/boundaries/review"
-            ],
-            "boundaryRemediationPlan": [
-                "POST /remediation/plan",
-                "POST /fabrication/remediation/plan"
-            ],
-            "boundaryRemediationResult": [
-                "POST /remediation/result",
-                "POST /fabrication/remediation/result"
-            ],
-            "instructionReviewResult": [
-                "POST /instructions/review/result",
-                "POST /fabrication/instructions/review/result"
-            ],
-            "instructionSimulation": [
-                "POST /simulation/run",
-                "POST /fabrication/simulation/run",
-                "POST /simulation/result",
-                "POST /fabrication/simulation/result"
-            ],
-            "quality": [
-                "POST /quality/plan",
-                "POST /fabrication/quality/plan",
-                "POST /quality/result",
-                "POST /fabrication/quality/result"
-            ],
-            "calibration": [
-                "POST /calibration/plan",
-                "POST /fabrication/calibration/plan",
-                "POST /calibration/result",
-                "POST /fabrication/calibration/result"
-            ],
-            "setup": [
-                "POST /setup/plan",
-                "POST /fabrication/setup/plan",
-                "POST /setup/result",
-                "POST /fabrication/setup/result"
-            ],
-            "monitoring": [
-                "GET /monitoring/catalog",
-                "GET /fabrication/monitoring/catalog",
-                "POST /monitoring/plan",
-                "POST /fabrication/monitoring/plan",
-                "POST /monitoring/result",
-                "POST /fabrication/monitoring/result"
-            ],
-            "postprocess": [
-                "GET /postprocess/catalog",
-                "GET /fabrication/postprocess/catalog",
-                "POST /postprocess/plan",
-                "POST /fabrication/postprocess/plan",
-                "POST /postprocess/result",
-                "POST /fabrication/postprocess/result"
-            ],
-            "assemblyPlanning": [
-                "POST /assembly/plan",
-                "POST /fabrication/assembly/plan",
-                "POST /assembly/result",
-                "POST /fabrication/assembly/result"
-            ],
-            "releaseReadinessResult": [
-                "POST /release/result",
-                "POST /fabrication/release/result"
-            ],
-            "execution": [
-                "POST /execution/plan",
-                "POST /fabrication/execution/plan",
-                "POST /execution/result",
-                "POST /fabrication/execution/result"
-            ],
-            "learning": [
-                "POST /learning/observe",
-                "POST /fabrication/learning/observe",
-                "POST /learning/outcomes",
-                "POST /fabrication/learning/outcomes",
-                "GET /learning/outcomes",
-                "GET /fabrication/learning/outcomes",
-                "GET /learning/capabilities",
-                "GET /fabrication/learning/capabilities",
-                "GET /learning/rewards/catalog",
-                "GET /fabrication/learning/rewards/catalog",
-                "GET /learning/corpus",
-                "GET /fabrication/learning/corpus",
-                "GET /learning/policy",
-                "GET /fabrication/learning/policy"
-            ],
-            "inspection": [
-                "GET /jobs",
-                "GET /fabrication/jobs",
-                "GET /jobs/:job_id",
-                "GET /fabrication/jobs/:job_id",
-                "GET /jobs/:job_id/artifacts/:artifact_id",
-                "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
-            ]
+            "discovery": capabilities_content::discovery_contracts(),
+            "planning": capabilities_content::planning_contracts(),
+            "instructionGeneration": capabilities_content::instruction_generation_contracts(),
+            "toolpaths": capabilities_content::toolpath_contracts(),
+            "materials": capabilities_content::material_contracts(),
+            "schedule": capabilities_content::schedule_contracts(),
+            "decomposition": capabilities_content::decomposition_contracts(),
+            "instructionAnalysis": capabilities_content::instruction_analysis_contracts(),
+            "instructionValidationCatalog": capabilities_content::instruction_validation_catalog_contracts(),
+            "instructionValidation": capabilities_content::instruction_validation_contracts(),
+            "instructionValidationResult": capabilities_content::instruction_validation_result_contracts(),
+            "instructionImprovement": capabilities_content::instruction_improvement_contracts(),
+            "instructionBoundaryReview": capabilities_content::instruction_boundary_review_contracts(),
+            "boundaryRemediationPlan": capabilities_content::boundary_remediation_plan_contracts(),
+            "boundaryRemediationResult": capabilities_content::boundary_remediation_result_contracts(),
+            "instructionReviewResult": capabilities_content::instruction_review_result_contracts(),
+            "instructionSimulation": capabilities_content::instruction_simulation_contracts(),
+            "quality": capabilities_content::quality_contracts(),
+            "calibration": capabilities_content::calibration_contracts(),
+            "setup": capabilities_content::setup_contracts(),
+            "monitoring": capabilities_content::monitoring_contracts(),
+            "postprocess": capabilities_content::postprocess_contracts(),
+            "assemblyPlanning": capabilities_content::assembly_planning_contracts(),
+            "releaseReadinessResult": capabilities_content::release_readiness_result_contracts(),
+            "execution": capabilities_content::execution_contracts(),
+            "learning": capabilities_content::learning_contracts(),
+            "inspection": capabilities_content::inspection_contracts()
         },
-            "machineClasses": [
-                "fdm-printer",
-                "pellet-fgf-printer",
-                "robotic-additive-cell",
-                "sheet-lamination-printer",
-                "sla-msla-resin-printer",
-            "material-jetting-printer",
-            "directed-energy-deposition-cell",
-            "continuous-fiber-composite-printer",
-            "binder-jet-printer",
-            "sls-mjf-powder-bed-printer",
-            "metal-pbf-printer",
-            "dmls-slm-lpbf-metal-powder-bed-printer",
-            "vertical-mill",
-            "five-axis-mill",
-            "rotary-indexer-mill",
-            "horizontal-mill",
-            "cnc-router",
-            "laser-sheet-cutter",
-            "waterjet-sheet-cutter",
-            "plasma-sheet-cutter",
-            "wire-edm-sheet-cutter",
-            "sinker-edm-cell",
-            "precision-grinder",
-            "cmm-inspection-cell",
-            "thermal-postprocess-furnace",
-            "surface-finishing-cell",
-            "metal-joining-cell",
-            "molding-casting-cell",
-            "composite-layup-cell",
-            "hot-wire-foam-cutter",
-            "press-brake-forming-cell",
-            "mill-turn-center",
-            "swiss-turning-center",
-            "lathe",
-            "robotic-assembly-cell",
-            "manual-or-special-process"
-        ],
+            "machineClasses": capabilities_content::machine_classes(),
         "defaultMachines": default_machines(),
         "machineFleetLimits": {
             "maxMachines": MAX_MACHINES,
@@ -118123,111 +116257,17 @@ async fn capabilities() -> impl IntoResponse {
         },
         "acceptedInstructionKinds": accepted_instruction_languages(),
         "designInputFormats": design_format_catalog(),
-        "generatedArtifacts": [
-            "design-summary",
-            "parametric-design",
-            "design-package",
-            "design-export-bundle",
-            "design-input-review",
-            "generated-design-export",
-            "process-plan",
-            "production-plan",
-            "machine-schedule",
-            "machine-selection",
-            "machine-profile-evidence",
-            "process-graph",
-            "manufacturing-handoff",
-            "quality-plan",
-            "tooling-plan",
-            "machine-release",
-            "execution-plan",
-            "postprocess-plan",
-            "intervention-map",
-            "pomdp-belief-state",
-            "release-probe-plan",
-            "neural-training-corpus",
-            "learning-policy-snapshot",
-            "learning-outcome-memory",
-            "learning-corpus",
-            "mdp-request"
-        ],
-        "learningChannels": [
-            "mdp-states-actions-rewards",
-            "pomdp-belief-state-and-probes",
-            "release-probe-plan",
-            "neural-policy-sketch",
-            "neural-training-corpus",
-            "fabrication-outcome-rewards",
-            "compact-learning-outcomes",
-            "des-engine-capability-catalog",
-            "material-method-remediation-risks"
-        ],
-        "strategyQualitySurfaces": [
-            "policySummary.successRate",
-            "policySummary.failureRate",
-            "policySummary.learnedQuality",
-            "learningOutcomeQuality.riskReviewRequired",
-            "learningOutcomeQuality.releasePolicy"
-        ],
+        "generatedArtifacts": capabilities_content::generated_artifacts(),
+        "learningChannels": capabilities_content::learning_channels(),
+        "strategyQualitySurfaces": capabilities_content::strategy_quality_surfaces(),
         "objectiveCoverageMatrix": objective_coverage_matrix(),
         "safetyBoundaryClasses": safety_boundary_classes(),
-        "notes": [
-            "Capabilities describe draft planning and validation support, not controller-certified machine release.",
-            "Clients may submit their own machine profiles; defaultMachines are the built-in fallback fleet used when no fleet is supplied.",
-            "Generated programs and improved programs remain machineReady=false until downstream CAD/CAM, slicer, simulation, workholding, and operator review are complete."
-        ]
+        "notes": capabilities_content::notes()
     }))
 }
 
-fn design_format_category_counts(formats: &[SupportedDesignFormat]) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
-    for format in formats {
-        *counts.entry(format.category.clone()).or_insert(0) += 1;
-    }
-    counts
-}
-
 fn design_format_catalog_response() -> Value {
-    let formats = design_format_catalog();
-    let source_systems = unique_sorted(formats.iter().map(|format| format.source_system.clone()));
-    let ecosystems = unique_sorted(formats.iter().map(|format| format.ecosystem.clone()));
-    let categories = unique_sorted(formats.iter().map(|format| format.category.clone()));
-    let preferred_neutral_exports = unique_sorted(
-        formats
-            .iter()
-            .flat_map(|format| format.preferred_neutral_exports.iter().cloned()),
-    );
-    let slicer_targets = unique_sorted(
-        formats
-            .iter()
-            .flat_map(|format| format.slicer_targets.iter().cloned()),
-    );
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.design-format-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /design/formats", "GET /fabrication/design/formats"],
-        "formatCount": formats.len(),
-        "sourceSystems": source_systems,
-        "ecosystems": ecosystems,
-        "categories": categories,
-        "categoryCounts": design_format_category_counts(&formats),
-        "preferredNeutralExports": preferred_neutral_exports,
-        "slicerTargets": slicer_targets,
-        "conversionSubjects": {
-            "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
-            "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
-            "queueGroup": "dd-fabrication-design-conversion"
-        },
-        "releasePolicy": [
-            "native CAD, CAD-kernel, cloud CAD, lightweight PMI, mesh, scan, profile, and slicer project inputs are accepted as source evidence, not certified machine geometry",
-            "machine-ready release stays blocked until translator output, topology/scale/profile review, simulation, and operator or automation signoff are attached",
-            "prefer STEP or 3MF for mechanical CAD handoff, 3MF/STL/OBJ for mesh handoff, DXF/DWG for sheet profiles, and CAM setup JSON for controller-specific downstream workers"
-        ],
-        "formats": formats
-    })
+    design_format_content::catalog_response(design_format_catalog())
 }
 
 async fn design_formats() -> impl IntoResponse {
@@ -120302,164 +118342,11 @@ fn design_import_release_blockers_for_category(category: &str) -> Vec<&'static s
 }
 
 fn design_import_catalog_contracts() -> Vec<Value> {
-    DESIGN_FORMAT_SPECS
-        .iter()
-        .map(|spec| {
-            json!({
-                "normalizedFormat": spec.normalized_format,
-                "sourceSystem": spec.source_system,
-                "ecosystem": spec.ecosystem,
-                "category": spec.category,
-                "acceptedExtensions": design_strings(spec.extensions),
-                "aliases": design_strings(spec.aliases),
-                "workerLane": design_import_worker_lane_for_category(spec.category),
-                "requestSubject": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
-                "resultSubject": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
-                "queueGroup": FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP,
-                "importStrategy": spec.import_strategy,
-                "preferredNeutralExports": design_strings(spec.preferred_neutral_exports),
-                "slicerTargets": design_strings(spec.slicer_targets),
-                "requiredEvidence": design_import_required_evidence_for_category(spec.category),
-                "reviewGates": design_import_review_gates_for_category(spec.category),
-                "releaseBlockers": design_import_release_blockers_for_category(spec.category),
-                "notes": [spec.note]
-            })
-        })
-        .collect()
-}
-
-fn design_import_translator_readiness_checklist() -> Vec<Value> {
-    vec![
-        json!({
-            "checkId": "native-cad-translator-provenance",
-            "appliesTo": ["PTC Creo / Pro/ENGINEER", "SOLIDWORKS", "Autodesk Fusion", "Siemens NX", "CATIA", "Onshape"],
-            "requiredEvidence": [
-                "source system and version",
-                "translator or export worker identity",
-                "configuration, assembly, and suppressed-feature review",
-                "neutral export checksum or conversion result artifact"
-            ],
-            "blocks": ["designInputReview.conversionPlan", "machineRelease.blockers"],
-            "learningSignals": ["cad-translator:*", "native-cad-version:*", "suppressed-feature-review:*"]
-        }),
-        json!({
-            "checkId": "neutral-kernel-and-pmi-preservation",
-            "appliesTo": ["STEP", "IGES", "Parasolid", "ACIS", "JT"],
-            "requiredEvidence": [
-                "units, coordinate frame, and body count",
-                "PMI/GD&T and tolerance preservation review",
-                "kernel version or schema version",
-                "topology healing and B-rep comparison result"
-            ],
-            "blocks": ["designExports.partExports", "manufacturingHandoff.parts"],
-            "learningSignals": ["neutral-kernel:*", "pmi-preservation:*", "topology-healing:*"]
-        }),
-        json!({
-            "checkId": "mesh-slicer-profile-readiness",
-            "appliesTo": ["STL", "3MF", "OBJ", "AMF", "PrusaSlicer", "OrcaSlicer", "Cura", "Bambu Studio", "Lychee Slicer", "Chitubox"],
-            "requiredEvidence": [
-                "mesh scale, watertightness, normals, and wall-thickness review",
-                "material, color, or resin profile preservation when present",
-                "slicer machine/material profile checksum",
-                "support, orientation, first-layer or exposure review"
-            ],
-            "blocks": ["designExports.partExports", "generated-machine-program", "machineRelease.blockers"],
-            "learningSignals": ["mesh-readiness:*", "slicer-profile:*", "support-orientation:*"]
-        }),
-        json!({
-            "checkId": "sheet-profile-and-cam-handoff",
-            "appliesTo": ["DXF", "DWG", "CAM setup JSON", "APT/CLDATA"],
-            "requiredEvidence": [
-                "drawing units, layer purpose, and revision",
-                "closed contour, kerf, lead-in/out, tab, and nesting review",
-                "stock thickness and sheet process recipe",
-                "postprocessor/controller target or CAM setup lineage"
-            ],
-            "blocks": ["designExports.partExports", "machine-code-generation", "machineRelease.blockers"],
-            "learningSignals": ["sheet-profile:*", "cam-handoff:*", "kerf-nesting:*"]
-        }),
-    ]
+    design_import_content::catalog_contracts()
 }
 
 fn design_import_catalog_response() -> Value {
-    let contracts = design_import_catalog_contracts();
-    let worker_lanes = unique_sorted(contracts.iter().filter_map(|contract| {
-        contract
-            .get("workerLane")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let categories = unique_sorted(contracts.iter().filter_map(|contract| {
-        contract
-            .get("category")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let source_systems = unique_sorted(contracts.iter().filter_map(|contract| {
-        contract
-            .get("sourceSystem")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.design-import-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /formats/catalog",
-            "GET /fabrication/formats/catalog",
-            "GET /design/import/catalog",
-            "GET /fabrication/design/import/catalog"
-        ],
-        "formatContractCount": contracts.len(),
-        "workerLanes": worker_lanes,
-        "categories": categories,
-        "sourceSystems": source_systems,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "relatedCatalogRoutes": [
-            "GET /design/formats",
-            "GET /fabrication/design/formats",
-            "GET /design/generation/catalog",
-            "GET /fabrication/design/generation/catalog",
-            "GET /handoff/catalog",
-            "GET /fabrication/handoff/catalog"
-        ],
-        "conversionSubjects": {
-            "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
-            "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
-            "queueGroup": "dd-fabrication-design-conversion"
-        },
-        "responseSurfaces": [
-            "designInputReview.inputs",
-            "designInputReview.conversionPlan",
-            "designPackage.parts.exportTargets",
-            "designExports.partExports",
-            "manufacturingHandoff.parts",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "design-input-review",
-            "design-package",
-            "design-export-bundle",
-            "generated-design-export",
-            "parametric-design",
-            "mdp-request"
-        ],
-        "ambiguityPolicy": [
-            "source identity must include fileName, sourceUri, format, or sourceSystem; notes alone do not authorize import",
-            "sourceUri values are retained without userinfo, query strings, or fragments",
-            "ambiguous native extensions such as .prt or .asm stay release-blocked until sourceSystem, translator, or neutral-export evidence is attached"
-        ],
-        "translatorReadinessChecklist": design_import_translator_readiness_checklist(),
-        "releasePolicy": [
-            "CAD/model/slicer import contracts describe review and conversion worker lanes, not certified fabrication geometry",
-            "machine-ready release remains blocked until conversion results, topology/scale/profile review, neutral export checksums, simulation, and operator or automation signoff are retained",
-            "conversion outcomes feed designInputReview, machineRelease blockers, and MDP/POMDP/neural training surfaces so future plans can learn which import lanes unblock or fail"
-        ],
-        "formatContracts": contracts
-    })
+    design_import_content::catalog_response()
 }
 
 async fn design_import_catalog_http() -> impl IntoResponse {
@@ -120467,328 +118354,18 @@ async fn design_import_catalog_http() -> impl IntoResponse {
 }
 
 fn design_preflight_catalog_response() -> Value {
-    let contracts = design_import_catalog_contracts();
-    let formats = design_format_catalog();
-    let categories = unique_sorted(contracts.iter().filter_map(|contract| {
-        contract
-            .get("category")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let source_systems = unique_sorted(contracts.iter().filter_map(|contract| {
-        contract
-            .get("sourceSystem")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.design-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /design/preflight/catalog",
-            "GET /fabrication/design/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/formats/catalog",
-            "GET /fabrication/design/import/catalog",
-            "POST /fabrication/design/import/review",
-            "POST /fabrication/design/convert/plan",
-            "GET /fabrication/mesh-repair/catalog",
-            "POST /fabrication/simulation/run",
-            "POST /fabrication/quality/result"
-        ],
-        "formatContractCount": contracts.len(),
-        "supportedFormatCount": formats.len(),
-        "categories": categories,
-        "sourceSystems": source_systems,
-        "preflightGroups": [
-            {
-                "group": "source-identity-and-provenance-state",
-                "requiredEvidence": [
-                    "file name, source URI, source system, format, revision, and authoring-tool identity",
-                    "native CAD ownership, license/export authority, and translator version evidence",
-                    "ambiguous .prt/.asm source-system disambiguation for Creo/ProE, NX, SOLIDWORKS, or other native CAD",
-                    "redacted URI, checksum, artifact retention, and source-to-neutral lineage"
-                ],
-                "releaseBlockers": [
-                    "notes-only design input without source identity",
-                    "ambiguous native CAD extension without source-system or translator evidence",
-                    "missing checksum, revision, or provenance for downstream release package"
-                ]
-            },
-            {
-                "group": "geometry-units-and-feature-state",
-                "requiredEvidence": [
-                    "units, scale, coordinate frame, assembly transform, and tolerance basis",
-                    "solid/surface/mesh topology, watertightness, normals, wall thickness, and feature preservation",
-                    "PMI/GD&T, material/color/body metadata, configuration, and assembly mate review",
-                    "neutral export comparison for STEP, IGES, Parasolid, ACIS, JT, STL, 3MF, OBJ, or slicer package outputs"
-                ],
-                "releaseBlockers": [
-                    "unit or scale ambiguity before design generation or toolpath planning",
-                    "non-manifold, missing-body, suppressed-feature, or assembly-transform ambiguity",
-                    "PMI, tolerance, material, color, or slicer profile metadata not preserved when required"
-                ]
-            },
-            {
-                "group": "conversion-simulation-and-learning-state",
-                "requiredEvidence": [
-                    "worker lane selection and design-conversion request/result subject handoff",
-                    "mesh repair, manufacturability, split/combine, and release-boundary review",
-                    "simulation, first-article, metrology, or operator/automation signoff for the converted design",
-                    "learning observations for translator success, topology drift, split requirement, and human-intervention boundaries"
-                ],
-                "releaseBlockers": [
-                    "conversion worker result missing or failed",
-                    "topology, manufacturability, split/combine, or human-intervention boundary unresolved",
-                    "simulation, quality, release-package, or learning evidence missing for the exact converted artifact"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "designInputReview.inputs",
-            "designInputReview.conversionPlan",
-            "designExports.partExports",
-            "meshRepairPlan.repairDomains",
-            "manufacturabilityPlan.failureBoundaries",
-            "machineRelease.releaseBlockers",
-            "learningOutcomeDraft.observations"
-        ],
-        "releasePolicy": [
-            "design preflight catalog entries describe CAD/model/slicer evidence required before generation, conversion, or machine-code release",
-            "preflight evidence cannot bypass import worker results, mesh/topology review, simulation, setup, quality, or operator/automation signoff",
-            "failed design preflight checks should be retained through design import, conversion, mesh repair, quality, and learning outcome routes so DES, MDP/POMDP, and neural workers can learn safer translators and split/combine strategies"
-        ],
-        "formatContracts": contracts
-    })
+    design_preflight_content::catalog_response(
+        design_import_catalog_contracts(),
+        design_format_catalog(),
+    )
 }
 
 async fn design_preflight_catalog_http() -> impl IntoResponse {
     Json(design_preflight_catalog_response())
 }
 
-fn design_generation_catalog_export_contracts() -> Vec<Value> {
-    vec![
-        json!({
-            "format": "dd-parametric-csg-json",
-            "consumer": "design-agent",
-            "sourceSurface": "designPackage.parts.primitive",
-            "artifactSurface": "parametric-design",
-            "purpose": "authoritative editable planning primitive with coordinate frames and model intent",
-            "releaseGate": "draft until model regeneration, simulation, quality, and machine-release evidence clear"
-        }),
-        json!({
-            "format": "3MF",
-            "consumer": "slicer",
-            "sourceSurface": "designPackage.parts.exportTargets",
-            "artifactSurface": "design-export-bundle.partExports",
-            "purpose": "slicer-ready mesh package with material and orientation metadata",
-            "releaseGate": "draft until slicer profile, support/orientation, mesh, and first-layer evidence clear"
-        }),
-        json!({
-            "format": "STL",
-            "consumer": "mesh-review",
-            "sourceSurface": "designExports.partExports",
-            "artifactSurface": "generated-design-export",
-            "purpose": "neutral mesh handoff for additive review",
-            "releaseGate": "draft until watertight/manifold/normals/wall-thickness review clears"
-        }),
-        json!({
-            "format": "STEP",
-            "consumer": "cam",
-            "sourceSurface": "designExports.partExports",
-            "artifactSurface": "generated-design-export",
-            "purpose": "B-rep solid handoff for CAM feature recognition",
-            "releaseGate": "draft until CAM regeneration, datum, simulation, and controller review clear"
-        }),
-        json!({
-            "format": "DXF",
-            "consumer": "sheet-cam",
-            "sourceSurface": "designExports.partExports",
-            "artifactSurface": "generated-design-export",
-            "purpose": "2D sheet profile with kerf, lead-in, pierce, and tab metadata",
-            "releaseGate": "draft until kerf, pierce, fume/support media, and part-retention evidence clear"
-        }),
-        json!({
-            "format": "dd-cam-setup-json",
-            "consumer": "cam-setup-agent",
-            "sourceSurface": "designExports.partExports.content.camSetup",
-            "artifactSurface": "design-export-bundle",
-            "purpose": "datum, stock, fixture, tolerance, and operation setup handoff",
-            "releaseGate": "draft until fixture/workholding, tool, and simulation evidence clear"
-        }),
-        json!({
-            "format": "dd-sheet-nesting-json",
-            "consumer": "nesting-agent",
-            "sourceSurface": "designExports.partExports.content.nesting",
-            "artifactSurface": "design-export-bundle",
-            "purpose": "sheet nesting, kerf coupon, retained-tab, and support-media handoff",
-            "releaseGate": "draft until nesting, cut recipe, and part-retention gates clear"
-        }),
-        json!({
-            "format": "STEP-assembly",
-            "consumer": "cad-cam-assembly",
-            "sourceSurface": "designPackage.assemblyExports",
-            "artifactSurface": "designExports.assemblyExports",
-            "purpose": "neutral assembly handoff with part transforms and join references",
-            "releaseGate": "draft until interface-control, dry-fit, datum transfer, and final metrology clear"
-        }),
-        json!({
-            "format": "dd-assembly-graph-json",
-            "consumer": "assembly-planner",
-            "sourceSurface": "assembly.assemblyGraph",
-            "artifactSurface": "designExports.assemblyExports",
-            "purpose": "machine-readable join graph and split/combine design intent",
-            "releaseGate": "draft until split/combine reviews and recomposition release gates clear"
-        }),
-        json!({
-            "format": "operator-review-packet",
-            "consumer": "operator",
-            "sourceSurface": "manufacturingHandoff.parts",
-            "artifactSurface": "manufacturing-handoff",
-            "purpose": "special-process drawing, setup, inspection, and acceptance review packet",
-            "releaseGate": "draft until operator signoff and machine-release blockers clear"
-        }),
-    ]
-}
-
-fn design_generation_catalog_handoff_contracts() -> Vec<Value> {
-    vec![
-        json!({
-            "surface": "designPackage",
-            "schemaVersion": "dd.fabrication.design-package.v1",
-            "fields": ["representation", "units", "releaseState", "parts", "assemblyExports", "exportTargets", "blockers"],
-            "usedFor": ["CAD/CAM/slicer export targets", "part coordinate frames", "model intent", "assembly export contracts"]
-        }),
-        json!({
-            "surface": "designExports",
-            "schemaVersion": "dd.fabrication.design-export-bundle.v1",
-            "fields": ["partExports", "assemblyExports", "summary", "notes"],
-            "usedFor": ["deterministic draft export payloads", "format/media-type dispatch", "blocked export accounting"]
-        }),
-        json!({
-            "surface": "designInputReview",
-            "schemaVersion": "design input review payload",
-            "fields": ["inputs", "conversionPlan", "supportedFormats", "reviewRequiredCount"],
-            "usedFor": ["source CAD/mesh/slicer review", "conversion worker dispatch", "release blockers for unsupported or ambiguous inputs"]
-        }),
-        json!({
-            "surface": "manufacturingHandoff",
-            "schemaVersion": "dd.fabrication.manufacturing-handoff.v1",
-            "fields": ["machineReady", "reviewRequired", "parts", "releaseGates"],
-            "usedFor": ["part-level geometry envelopes", "stock/datum/fixture setup", "program and process-node links", "release gates"]
-        }),
-        json!({
-            "surface": "processGraph",
-            "schemaVersion": "process graph response payload",
-            "fields": ["nodes", "dependencies", "gates", "releaseState"],
-            "usedFor": ["operation graph links", "generated program links", "release-gate propagation", "hybrid route dependencies"]
-        }),
-        json!({
-            "surface": "hybridMakePlan",
-            "schemaVersion": "hybrid make plan response payload",
-            "fields": ["partRoutes", "joinOperations", "splitCombineDecisions", "learningObservations"],
-            "usedFor": ["printed/milled/turned route combinations", "join planning", "split/combine learning"]
-        }),
-    ]
-}
-
 fn design_generation_catalog_response() -> Value {
-    let export_contracts = design_generation_catalog_export_contracts();
-    let handoff_contracts = design_generation_catalog_handoff_contracts();
-    let export_formats = unique_sorted(export_contracts.iter().filter_map(|item| {
-        item.get("format")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let consumers = unique_sorted(export_contracts.iter().filter_map(|item| {
-        item.get("consumer")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.design-generation-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /design/generation/catalog", "GET /fabrication/design/generation/catalog"],
-        "generationRoutes": ["POST /design/generate", "POST /fabrication/design/generate"],
-        "exportContractCount": export_contracts.len(),
-        "handoffContractCount": handoff_contracts.len(),
-        "exportFormats": export_formats,
-        "consumers": consumers,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "designInputRoutes": [
-            "GET /design/formats",
-            "GET /fabrication/design/formats",
-            "GET /formats/catalog",
-            "GET /fabrication/formats/catalog",
-            "GET /design/import/catalog",
-            "GET /fabrication/design/import/catalog"
-        ],
-        "responseSurfaces": [
-            "designPackage",
-            "designPackage.parts",
-            "designPackage.parts.coordinateFrame",
-            "designPackage.parts.primitive",
-            "designPackage.parts.exportTargets",
-            "designPackage.assemblyExports",
-            "designExports",
-            "designExports.partExports",
-            "designExports.assemblyExports",
-            "designExports.summary",
-            "designInputReview",
-            "designInputReview.conversionPlan",
-            "manufacturingHandoff",
-            "manufacturingHandoff.parts",
-            "manufacturingHandoff.releaseGates",
-            "processGraph.nodes",
-            "processGraph.gates",
-            "hybridMakePlan.splitCombineDecisions",
-            "machineRelease.blockers",
-            "releasePackagePlan.requiredArtifacts"
-        ],
-        "artifactSurfaces": [
-            "design-summary",
-            "parametric-design",
-            "design-package",
-            "design-export-bundle",
-            "design-input-review",
-            "generated-design-export",
-            "generated-assembly-design-export",
-            "manufacturing-handoff",
-            "process-graph",
-            "hybrid-make-plan",
-            "mdp-request.artifacts.designPackage",
-            "mdp-request.artifacts.designExports"
-        ],
-        "learningSurfaces": [
-            "hybridMakePlan.learningObservations",
-            "decompositionPlan.learningObservations",
-            "interfaceControlPlan.learningObservations",
-            "neuralTrainingCorpus.examples",
-            "learning.interventionSignals"
-        ],
-        "releasePolicy": [
-            "design generation catalog entries describe deterministic draft payloads and handoff contracts, not certified CAD, mesh, CAM, or controller output",
-            "machine-ready release remains blocked while generated exports are blocked, design input conversion is unresolved, machine release is blocked, or manufacturing handoff gates require review",
-            "design, export, handoff, and split/combine observations are emitted for MDP/POMDP/neural workers so future planning can learn when to regenerate geometry, split parts, combine assemblies, or choose alternate machines"
-        ],
-        "schemas": [
-            "dd.fabrication.design-package.v1",
-            "dd.fabrication.design-export-bundle.v1",
-            "dd.fabrication.generated-design-export.v1",
-            "dd.fabrication.generated-assembly-export.v1",
-            "dd.fabrication.parametric-design.v1",
-            "dd.fabrication.manufacturing-handoff.v1"
-        ],
-        "exportContracts": export_contracts,
-        "handoffContracts": handoff_contracts
-    })
+    design_generation_content::catalog_response()
 }
 
 async fn design_generation_catalog_http() -> impl IntoResponse {
@@ -120969,153 +118546,8 @@ fn design_generation_response(
     Value::Object(object)
 }
 
-fn handoff_catalog_lanes() -> Vec<Value> {
-    vec![
-        json!({
-            "lane": "source-design-conversion",
-            "workerFamilies": ["native-cad-translator", "cloud-cad-exporter", "open-scripted-cad-evaluator", "lightweight-cad-pmi-inspector", "cad-kernel-inspector", "sheet-profile-cad-inspector", "slicer-profile-reviewer"],
-            "sourceSurfaces": ["designInputReview.inputs", "designInputReview.conversionPlan"],
-            "artifactSurfaces": ["design-input-review", "parametric-design.designInputReview", "mdp-request.artifacts.designInputReview"],
-            "natsSubjects": {
-                "requests": FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT,
-                "results": FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT,
-                "queueGroup": "dd-fabrication-design-conversion"
-            },
-            "requiredEvidence": ["source identity without secret URI parts", "translator or exporter version", "units/scale/topology/PMI review", "neutral export or manual review result"],
-            "blocks": ["machine-ready release", "generated design export certification"]
-        }),
-        json!({
-            "lane": "generated-design-and-cam-export",
-            "workerFamilies": ["design-agent", "slicer", "mesh-review", "cam", "sheet-cam", "cam-setup-agent", "nesting-agent", "assembly-planner"],
-            "sourceSurfaces": ["designPackage", "designExports", "processGraph", "manufacturingHandoff.parts"],
-            "artifactSurfaces": ["design-package", "design-export-bundle", "generated-design-export", "generated-assembly-design-export", "manufacturing-handoff"],
-            "requiredEvidence": ["generated export media type and source preview", "program/process-node links", "export blockers reviewed", "CAD/CAM/slicer regeneration result attached"],
-            "blocks": ["machine-code release", "slicer release", "assembly/recomposition release"]
-        }),
-        json!({
-            "lane": "machine-program-controller-release",
-            "workerFamilies": ["postprocessor", "controller-reviewer", "dry-run-simulator", "operator-review"],
-            "sourceSurfaces": ["generatedPrograms", "controllerPlan", "postprocessPlan", "releasePackagePlan.packages"],
-            "artifactSurfaces": ["program-*", "controller-plan", "postprocess-plan", "release-package-plan"],
-            "requiredEvidence": ["postprocessor identity and output format", "controller dialect checks", "dry-run or simulation evidence", "operator or automation signoff"],
-            "blocks": ["controller transfer", "machine start", "unattended repeat run"]
-        }),
-        json!({
-            "lane": "setup-quality-monitoring-release",
-            "workerFamilies": ["fixture-planner", "tooling-reviewer", "quality-inspector", "monitoring-operator", "safe-stop-reviewer"],
-            "sourceSurfaces": ["toolingPlan", "fixturePlan", "qualityPlan", "monitoringPlan", "machineRelease"],
-            "artifactSurfaces": ["tooling-plan", "fixture-plan", "quality-plan", "monitoring-plan", "machine-release"],
-            "requiredEvidence": ["tool/workholding/fixture proof", "inspection targets and records", "monitor channels and recovery actions", "machine-release blockers cleared"],
-            "blocks": ["machine-ready release", "unattended release", "restart after stop"]
-        }),
-        json!({
-            "lane": "hybrid-split-combine-assembly",
-            "workerFamilies": ["decomposition-planner", "interface-control-reviewer", "assembly-planner", "robotic-cell-reviewer", "operator-review"],
-            "sourceSurfaces": ["hybridMakePlan", "decompositionPlan", "interfaceControlPlan", "manufacturingHandoff.parts", "releasePackagePlan.packages"],
-            "artifactSurfaces": ["hybrid-make-plan", "decomposition-plan", "interface-control-plan", "manufacturing-handoff", "release-package-plan"],
-            "requiredEvidence": ["split target and recomposition route", "interface acceptance criteria", "datum transfer and mating-surface evidence", "assembly/recomposition release package"],
-            "blocks": ["combine/recomposition release", "assembly handoff", "single-piece fallback release"]
-        }),
-        json!({
-            "lane": "learning-policy-and-outcome-feedback",
-            "workerFamilies": ["des-scheduler", "mdp-optimizer", "pomdp-probe-planner", "neural-policy-trainer", "outcome-learning-worker"],
-            "sourceSurfaces": ["learning", "learningPolicySnapshot", "learningOutcomes", "learningCorpus", "pomdpBeliefState", "releaseProbePlan", "neuralTrainingCorpus", "mdp-request", "learning.outcomes"],
-            "artifactSurfaces": ["learning-plan", "learning-policy-snapshot", "learning-outcome-memory", "learning-corpus", "pomdp-belief-state", "release-probe-plan", "neural-training-corpus", "mdp-request", "reward-signal", "mdp-experience", "neural-example"],
-            "natsSubjects": {
-                "mdpOptimize": MDP_OPTIMIZE_SUBJECT,
-                "fabricationResults": FABRICATION_RESULTS_SUBJECT
-            },
-            "requiredEvidence": ["policy preview retained as advisory evidence", "probe requirements promoted into machineRelease", "outcome rewards and remediation risks recorded", "validation/simulation/operator gates still authoritative"],
-            "blocks": ["learned preference promotion", "unreviewed retry after failed outcome"]
-        }),
-    ]
-}
-
 fn handoff_catalog_response() -> Value {
-    let lanes = handoff_catalog_lanes();
-    let worker_families = unique_sorted(lanes.iter().flat_map(|lane| {
-        lane.get("workerFamilies")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-    let source_surfaces = unique_sorted(lanes.iter().flat_map(|lane| {
-        lane.get("sourceSurfaces")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-    }));
-
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.handoff-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /handoff/catalog", "GET /fabrication/handoff/catalog"],
-        "handoffLaneCount": lanes.len(),
-        "workerFamilies": worker_families,
-        "sourceSurfaces": source_surfaces,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "jobInspectionRoutes": [
-            "GET /jobs",
-            "GET /fabrication/jobs",
-            "GET /jobs/:job_id",
-            "GET /fabrication/jobs/:job_id",
-            "GET /jobs/:job_id/artifacts/:artifact_id",
-            "GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
-        ],
-        "discoveryRoutes": [
-            "GET /design/formats",
-            "GET /fabrication/design/formats",
-            "GET /formats/catalog",
-            "GET /fabrication/formats/catalog",
-            "GET /design/import/catalog",
-            "GET /fabrication/design/import/catalog",
-            "GET /design/generation/catalog",
-            "GET /fabrication/design/generation/catalog",
-            "GET /instructions/generation/catalog",
-            "GET /fabrication/instructions/generation/catalog",
-            "GET /release/catalog",
-            "GET /fabrication/release/catalog"
-        ],
-        "artifactSurfaces": [
-            "design-package",
-            "design-export-bundle",
-            "generated-design-export",
-            "manufacturing-handoff",
-            "program-*",
-            "controller-plan",
-            "postprocess-plan",
-            "release-package-plan",
-            "tooling-plan",
-            "fixture-plan",
-            "quality-plan",
-            "monitoring-plan",
-            "interface-control-plan",
-            "decomposition-plan",
-            "mdp-request"
-        ],
-        "learningSurfaces": [
-            "hybridMakePlan.learningObservations",
-            "interfaceControlPlan.learningObservations",
-            "decompositionPlan.learningObservations",
-            "releasePackagePlan.learningObservations",
-            "monitoringPlan.learningObservations",
-            "neuralTrainingCorpus.examples",
-            "learning.outcomes"
-        ],
-        "releasePolicy": [
-            "handoff catalog lanes describe downstream worker contracts, not certified CAD, CAM, controller, fixture, inspection, or safety-system output",
-            "machine-ready release remains blocked while conversion, export, controller, setup, monitoring, split/combine, release-package, or learned-remediation evidence is unresolved",
-            "handoff lanes preserve response and artifact surfaces so MDP/POMDP/neural workers can learn which design, machine-code, setup, monitoring, or assembly evidence cleared or blocked prior work"
-        ],
-        "handoffLanes": lanes
-    })
+    handoff_catalog_content::response()
 }
 
 async fn handoff_catalog_http() -> impl IntoResponse {
