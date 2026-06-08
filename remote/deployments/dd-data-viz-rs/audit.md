@@ -10,10 +10,11 @@ This audit tracks the current hardening and visualization-platform parity postur
 - The service is no longer only a monolithic `main.rs`; platform parity lives in
   `src/platform.rs`, Grafana-style alert rules live in `src/alerts.rs`, Qlik-style selection state
   lives in `src/associative.rs`, semantic model parsing and compilation lives in
-  `src/semantic.rs`, hardening posture lives in `src/hardening.rs`, RBAC policy lives in
-  `src/rbac.rs`, saved dashboard validation lives in `src/dashboard.rs`, parser-backed SQL
-  compilation lives in `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP
-  server wires those modules through route handlers.
+  `src/semantic.rs`, infrastructure diagram extraction lives in `src/infra_diagrams.rs`,
+  hardening posture lives in `src/hardening.rs`, RBAC policy lives in `src/rbac.rs`, saved
+  dashboard validation lives in `src/dashboard.rs`, parser-backed SQL compilation lives in
+  `src/sql_frontend.rs`, shared helpers live in `src/util.rs`, and the HTTP server wires those
+  modules through route handlers.
 - Operator data-bearing endpoints are protected by `SERVER_AUTH_SECRET` unless
   `DATA_VIZ_ALLOW_UNAUTHENTICATED=true` is explicitly enabled for local development.
 - Protected endpoints enforce `data-viz.rbac.v1` roles through `X-Data-Viz-Role` or `X-DD-Role`,
@@ -37,6 +38,9 @@ This audit tracks the current hardening and visualization-platform parity postur
 - Looker-style semantic models are parsed from a bounded LookML-like subset, validated against
   ingested dataset fields, stored in memory, and compiled into SQL plus `LogicalPlan` through
   `POST /semantic/registry/:model_id/compile`.
+- Terraform, AWS inventory, and GCP inventory inputs can generate neutral infrastructure graphs and
+  Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw renderer targets
+  through `POST /diagrams/infra`.
 - Platform parity is visible at `GET /capabilities/parity`, covering Tableau, Power BI, Qlik,
   Looker, Sigma, Domo, Superset, Metabase, Grafana, D3.js, Plotly/Dash, and Evidence.dev.
 - Hardening posture is visible at `GET /security/policy`, including implemented controls and
@@ -58,8 +62,8 @@ This audit tracks the current hardening and visualization-platform parity postur
   database connection registries beyond the current in-memory dashboard catalog and role policy.
 - Grafana parity still needs alert notification channels, Loki log frames, and live WebSocket panel
   streams.
-- D3, Plotly/Dash, and Evidence parity still need generated client packages and rendered artifact
-  verification.
+- D3, Plotly/Dash, Evidence, and infrastructure diagram parity still need generated client packages
+  and rendered artifact verification.
 
 ## Hardening gaps
 

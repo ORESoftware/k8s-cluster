@@ -146,6 +146,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/semantic.rs validates dimensions, measures, tags, and generated SQL targets before storing model definitions.",
         },
         ControlDescriptor {
+            id: "bounded-infra-diagrams",
+            status: "implemented",
+            description: "Terraform, AWS, and GCP diagram requests are bounded by file bytes, resource count, node count, and edge count, and raw attributes are not echoed.",
+            evidence: "src/infra_diagrams.rs extracts topology references into neutral graph nodes, edges, and renderer blueprints without returning request secrets.",
+        },
+        ControlDescriptor {
             id: "route-derived-docs",
             status: "implemented",
             description: "API documentation is served by the same route catalog used by the router.",

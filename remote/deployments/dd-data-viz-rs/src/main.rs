@@ -22,6 +22,7 @@ mod alerts;
 mod associative;
 mod dashboard;
 mod hardening;
+mod infra_diagrams;
 mod platform;
 mod rbac;
 mod semantic;
@@ -82,6 +83,7 @@ struct Metrics {
     alert_evaluations_total: AtomicU64,
     semantic_requests_total: AtomicU64,
     semantic_models_saved_total: AtomicU64,
+    infra_diagrams_total: AtomicU64,
     rbac_denials_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
@@ -515,6 +517,7 @@ fn app_router(state: AppState) -> Router {
         .route("/workbooks/blueprints", get(workbook_blueprints))
         .route("/dashboards/panels", get(dashboard_panels))
         .route("/renderers/contracts", get(renderer_contracts))
+        .route("/diagrams/infra", post(generate_infra_diagram))
         .route("/reports/evidence", get(evidence_report_blueprint))
         .route("/security/policy", get(security_policy))
         .route("/security/rbac", get(rbac_policy))
@@ -700,6 +703,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
+        "infraDiagram": {
+            "sources": ["terraform", "aws-inventory", "gcp-inventory", "mixed"],
+            "renderers": ["mermaid", "graphviz-dot", "plantuml", "d2", "structurizr-dsl", "cytoscape-json", "drawio-mxfile", "excalidraw-json"],
+            "posture": "topology only; input attributes are parsed for references and not echoed as secrets"
+        },
         "semanticModel": {
             "modelId": "string",
             "datasetId": "existing dataset id",
@@ -719,7 +727,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "connectorsAndEtl": "Domo/Power Query-style connector and transformation planners",
             "selfService": "Superset/Metabase SQL lab and visual query-builder contracts",
             "observabilityPanels": "Grafana-style time-series panel catalog and alert rule evaluator",
-            "programmaticRenderers": "D3, Plotly/Dash, Evidence, and Office export contracts"
+            "programmaticRenderers": "D3, Plotly/Dash, Evidence, infrastructure diagrams, and Office export contracts"
         }
     }))
 }
@@ -839,6 +847,9 @@ dd_data_viz_semantic_requests_total {}
 # HELP dd_data_viz_semantic_models_saved_total Semantic models saved.
 # TYPE dd_data_viz_semantic_models_saved_total counter
 dd_data_viz_semantic_models_saved_total {}
+# HELP dd_data_viz_infra_diagrams_total Infrastructure diagrams generated.
+# TYPE dd_data_viz_infra_diagrams_total counter
+dd_data_viz_infra_diagrams_total {}
 # HELP dd_data_viz_rbac_denials_total Role-based authorization denials.
 # TYPE dd_data_viz_rbac_denials_total counter
 dd_data_viz_rbac_denials_total {}
@@ -865,6 +876,7 @@ dd_data_viz_errors_total {}
         metrics.alert_evaluations_total.load(Ordering::Relaxed),
         metrics.semantic_requests_total.load(Ordering::Relaxed),
         metrics.semantic_models_saved_total.load(Ordering::Relaxed),
+        metrics.infra_diagrams_total.load(Ordering::Relaxed),
         metrics.rbac_denials_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.errors_total.load(Ordering::Relaxed),
@@ -1162,6 +1174,24 @@ async fn renderer_contracts(State(state): State<AppState>) -> Json<Value> {
         "rendererContracts": platform::renderer_contracts(),
         "presentationTargets": platform::presentation_targets()
     }))
+}
+
+async fn generate_infra_diagram(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<infra_diagrams::InfraDiagramRequest>,
+) -> Result<Json<infra_diagrams::InfraDiagramResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::InfraDiagramGenerate)?;
+    let response = infra_diagrams::generate(request).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .infra_diagrams_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
 }
 
 async fn evidence_report_blueprint(State(state): State<AppState>) -> Json<Value> {
@@ -3301,6 +3331,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "D3, Plotly/Dash, Evidence, and Office renderer/export contracts.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/diagrams/infra",
+            auth: "infra-diagram-generate",
+            description: "Generate Terraform, AWS, and GCP infrastructure diagrams for Mermaid, Graphviz, PlantUML, D2, Structurizr, Cytoscape, Draw.io, and Excalidraw.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/reports/evidence",
             auth: "public",
@@ -4137,6 +4173,7 @@ mod tests {
         assert!(paths.contains(&"/semantic/registry"));
         assert!(paths.contains(&"/semantic/registry/:model_id"));
         assert!(paths.contains(&"/semantic/registry/:model_id/compile"));
+        assert!(paths.contains(&"/diagrams/infra"));
     }
 
     #[test]

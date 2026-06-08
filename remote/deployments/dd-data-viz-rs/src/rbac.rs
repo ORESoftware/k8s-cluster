@@ -29,6 +29,7 @@ pub(crate) enum Permission {
     SemanticRead,
     SemanticWrite,
     SemanticCompile,
+    InfraDiagramGenerate,
     PresentationExport,
 }
 
@@ -83,6 +84,7 @@ impl Role {
                 Permission::SemanticRead,
                 Permission::SemanticWrite,
                 Permission::SemanticCompile,
+                Permission::InfraDiagramGenerate,
                 Permission::PresentationExport,
             ],
             Self::Analyst => vec![
@@ -96,6 +98,7 @@ impl Role {
                 Permission::AlertEvaluate,
                 Permission::SemanticRead,
                 Permission::SemanticCompile,
+                Permission::InfraDiagramGenerate,
             ],
             Self::Viewer => vec![
                 Permission::DatasetRead,
@@ -112,6 +115,7 @@ impl Role {
                 Permission::DashboardRead,
                 Permission::AlertRead,
                 Permission::SemanticRead,
+                Permission::InfraDiagramGenerate,
                 Permission::PresentationExport,
             ],
         }
@@ -157,6 +161,9 @@ impl Permission {
             Self::SemanticWrite => "Create or replace governed semantic model definitions.",
             Self::SemanticCompile => {
                 "Compile governed semantic model selections into query targets."
+            }
+            Self::InfraDiagramGenerate => {
+                "Generate Terraform, AWS, and GCP infrastructure diagram render targets."
             }
             Self::PresentationExport => "Generate presentation/export layers.",
         }
@@ -214,6 +221,7 @@ fn all_permissions() -> Vec<Permission> {
         Permission::SemanticRead,
         Permission::SemanticWrite,
         Permission::SemanticCompile,
+        Permission::InfraDiagramGenerate,
         Permission::PresentationExport,
     ]
 }
@@ -250,6 +258,13 @@ mod tests {
         assert!(!Role::Analyst.allows(Permission::SemanticWrite));
         assert!(Role::Viewer.allows(Permission::SemanticRead));
         assert!(!Role::Viewer.allows(Permission::SemanticCompile));
+    }
+
+    #[test]
+    fn infra_diagrams_require_non_viewer_role() {
+        assert!(Role::Analyst.allows(Permission::InfraDiagramGenerate));
+        assert!(Role::Exporter.allows(Permission::InfraDiagramGenerate));
+        assert!(!Role::Viewer.allows(Permission::InfraDiagramGenerate));
     }
 
     #[test]
