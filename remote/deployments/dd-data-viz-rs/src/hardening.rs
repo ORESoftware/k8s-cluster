@@ -224,6 +224,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/query_cache.rs bounds in-memory snapshots; /query-cache lists redacted summaries and /query-cache/:cache_id is RBAC-gated.",
         },
         ControlDescriptor {
+            id: "bounded-evidence-report-compiler",
+            status: "implemented",
+            description: "Evidence.dev-style Markdown reports are capped by section, title, body, SQL, chart field, and variable sizes; report text rejects secret-looking content before SQL snippets are planned.",
+            evidence: "src/evidence_reports.rs validates report structure; /reports/evidence/compile requires QueryExecute and compiles SQL blocks through the existing LogicalPlan parser before returning Markdown.",
+        },
+        ControlDescriptor {
             id: "bounded-infra-diagrams",
             status: "implemented",
             description: "Terraform HCL, Terraform plan JSON, AWS, and GCP diagram requests are bounded by file bytes, import JSON bytes, resource count, node count, and edge count, and raw attributes are not echoed across the expanded renderer bundle.",

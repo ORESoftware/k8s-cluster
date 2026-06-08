@@ -319,14 +319,11 @@ pub fn parity_matrix() -> Vec<ProductParity> {
             parity_goal: "Markdown plus SQL narrative reports checked into source control",
             implemented_surfaces: vec![
                 "Evidence report blueprint",
+                "bounded Markdown report compiler",
                 "Reveal markdown export",
                 "SQL query examples",
             ],
-            next_engine_work: vec![
-                "Markdown report compiler",
-                "repo build artifacts",
-                "scheduled report publication",
-            ],
+            next_engine_work: vec!["repo build artifacts", "scheduled report publication"],
         },
     ]
 }
@@ -543,8 +540,13 @@ pub fn renderer_contracts() -> Vec<RendererContract> {
         RendererContract {
             id: "evidence-markdown",
             analog: "Evidence.dev",
-            output: "Markdown report with SQL and visualization placeholders",
-            supports: vec!["narrative analytics", "repo review", "static publication"],
+            output: "Compiled Markdown report with bounded SQL blocks and visualization placeholders",
+            supports: vec![
+                "narrative analytics",
+                "repo review",
+                "static publication",
+                "dataset dependency metadata",
+            ],
         },
         RendererContract {
             id: "office-openxml",

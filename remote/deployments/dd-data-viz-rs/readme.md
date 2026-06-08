@@ -73,6 +73,8 @@ concept in `main.rs`:
 - `src/infra_diagrams.rs` owns Terraform/HCL, Terraform plan JSON, AWS inventory, AWS Resource
   Explorer, GCP inventory, and GCP Cloud Asset graph extraction plus diagram-as-code, web graph,
   whiteboard, graph analytics, spatial, and presentation-oriented renderer outputs.
+- `src/evidence_reports.rs` owns bounded Evidence.dev-style Markdown report compilation, embedded
+  SQL validation requests, chart component placeholders, and dataset dependency metadata.
 - `src/hardening.rs` defines operator auth posture, input limits, implemented controls, and
   residual risks.
 - `src/rbac.rs` defines enforced roles and permissions for protected endpoints.
@@ -111,7 +113,8 @@ Current first-class parity surfaces:
   bounded live panel WebSocket snapshots, Loki log frame adapter, alert rule evaluation, contact
   points, notification policy previews, and bounded notification dispatch outbox records.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
-  blueprint posture, infrastructure diagram tool catalog, and Markdown-plus-SQL report blueprint.
+  blueprint posture, infrastructure diagram tool catalog, Markdown-plus-SQL report blueprint, and
+  compiled Evidence-style Markdown reports.
 
 ## Endpoints
 
@@ -151,6 +154,8 @@ Current first-class parity surfaces:
   JSON Graph, vis-network, Sigma.js, ECharts, ELK, deck.gl, GEXF, Markmap, Markdown inventory, and
   Kroki-ready export targets.
 - `GET /reports/evidence` - Evidence.dev-style Markdown plus SQL report blueprint.
+- `POST /reports/evidence/compile` - authenticated bounded Evidence.dev-style Markdown report
+  compiler that validates embedded SQL blocks against ingested datasets before returning Markdown.
 - `GET /security/policy` - hardening controls, limits, and residual-risk report.
 - `GET /security/rbac` - role and permission policy for protected routes.
 - `GET /schema` - request/response contract summary.
