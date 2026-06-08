@@ -61921,6 +61921,8 @@ async fn root() -> impl IntoResponse {
         "GET /fabrication/controllers/catalog",
         "GET /controllers/preflight/catalog",
         "GET /fabrication/controllers/preflight/catalog",
+        "POST /controllers/plan",
+        "POST /fabrication/controllers/plan",
         "POST /controllers/result",
         "POST /fabrication/controllers/result",
         "GET /process/catalog",
@@ -63637,7 +63639,7 @@ fn decomposition_catalog_response() -> Value {
         "familyCounts": decomposition_catalog_family_counts(&target_contracts),
         "targetKinds": target_kinds,
         "routeMachineKinds": route_machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
+        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /controllers/plan", "POST /fabrication/controllers/plan"],
         "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
         "responseSurfaces": [
             "hybridMakePlan.splitCombineDecisions",
@@ -100539,6 +100541,7 @@ fn controller_preflight_catalog_response() -> Value {
         ],
         "relatedRoutes": [
             "GET /fabrication/controllers/catalog",
+            "POST /fabrication/controllers/plan",
             "POST /fabrication/controllers/result",
             "POST /fabrication/machine-code/generate",
             "POST /fabrication/machine-code/result",
@@ -100605,6 +100608,228 @@ fn controller_preflight_catalog_response() -> Value {
         ],
         "targets": targets
     })
+}
+
+fn controller_planning_response(
+    response: &FabricationPlanResponse,
+    policy: &LearningPolicySnapshot,
+) -> Value {
+    let blocked_target_count = response
+        .controller_plan
+        .compatibility_targets
+        .iter()
+        .filter(|target| target.compatibility_status == "controller-release-blocked")
+        .count();
+    let review_target_count = response
+        .controller_plan
+        .compatibility_targets
+        .iter()
+        .filter(|target| target.compatibility_status == "controller-review-required")
+        .count();
+    let unknown_postprocessor_count = response
+        .controller_plan
+        .compatibility_targets
+        .iter()
+        .filter(|target| !target.postprocessor_known)
+        .count();
+    let dry_run_target_count = response
+        .controller_plan
+        .compatibility_targets
+        .iter()
+        .filter(|target| target.requires_dry_run)
+        .count();
+    let operator_signoff_target_count = response
+        .controller_plan
+        .compatibility_targets
+        .iter()
+        .filter(|target| target.requires_operator_signoff)
+        .count();
+    let release_gate_blocker_count = response
+        .controller_plan
+        .release_gates
+        .iter()
+        .filter(|gate| gate.release_blocker)
+        .count();
+    let high_risk_dialect_count = response
+        .controller_plan
+        .dialect_summaries
+        .iter()
+        .filter(|summary| summary.risk_level == "high")
+        .count();
+    let controller_blocked = response.controller_plan.machine_release_blocked
+        || response.postprocess_plan.machine_release_blocked
+        || response.release_package_plan.machine_release_blocked
+        || response.machine_release.machine_release_blocked
+        || blocked_target_count > 0
+        || release_gate_blocker_count > 0
+        || high_risk_dialect_count > 0;
+
+    let mut object = Map::new();
+    object.insert("ok".to_string(), json!(response.ok));
+    object.insert("service".to_string(), json!(SERVICE_NAME));
+    object.insert(
+        "schemaVersion".to_string(),
+        json!("dd.fabrication.controller-planning.v1"),
+    );
+    object.insert("serviceSchemaVersion".to_string(), json!(SCHEMA_VERSION));
+    object.insert("requestId".to_string(), json!(&response.request_id));
+    object.insert("jobId".to_string(), json!(&response.job_id));
+    object.insert(
+        "routes".to_string(),
+        json!([
+            "POST /controllers/plan",
+            "POST /fabrication/controllers/plan"
+        ]),
+    );
+    object.insert(
+        "catalogRoutes".to_string(),
+        json!([
+            "GET /controllers/catalog",
+            "GET /fabrication/controllers/catalog",
+            "GET /controllers/preflight/catalog",
+            "GET /fabrication/controllers/preflight/catalog"
+        ]),
+    );
+    object.insert(
+        "resultRoutes".to_string(),
+        json!([
+            "POST /controllers/result",
+            "POST /fabrication/controllers/result",
+            "POST /machine-code/result",
+            "POST /fabrication/machine-code/result",
+            "POST /simulation/result",
+            "POST /fabrication/simulation/result",
+            "POST /release/result",
+            "POST /fabrication/release/result"
+        ]),
+    );
+    object.insert("machineReady".to_string(), json!(!controller_blocked));
+    object.insert(
+        "machineReleaseBlocked".to_string(),
+        json!(controller_blocked),
+    );
+    object.insert(
+        "controllerTargetCount".to_string(),
+        json!(response.controller_plan.target_count),
+    );
+    object.insert(
+        "controllerDialectCount".to_string(),
+        json!(response.controller_plan.dialect_count),
+    );
+    object.insert(
+        "blockedTargetCount".to_string(),
+        json!(blocked_target_count),
+    );
+    object.insert("reviewTargetCount".to_string(), json!(review_target_count));
+    object.insert(
+        "unknownPostprocessorCount".to_string(),
+        json!(unknown_postprocessor_count),
+    );
+    object.insert("dryRunTargetCount".to_string(), json!(dry_run_target_count));
+    object.insert(
+        "operatorSignoffTargetCount".to_string(),
+        json!(operator_signoff_target_count),
+    );
+    object.insert(
+        "releaseGateBlockerCount".to_string(),
+        json!(release_gate_blocker_count),
+    );
+    object.insert(
+        "highRiskDialectCount".to_string(),
+        json!(high_risk_dialect_count),
+    );
+    object.insert(
+        "requiredArtifactCount".to_string(),
+        json!(response.controller_plan.required_artifacts.len()),
+    );
+    object.insert(
+        "responseSurfaces".to_string(),
+        json!([
+            "controllerPlan.compatibilityTargets",
+            "controllerPlan.compatibilityTargets.requiredChecks",
+            "controllerPlan.compatibilityTargets.releaseBlockers",
+            "controllerPlan.dialectSummaries",
+            "controllerPlan.releaseGates",
+            "controllerPlan.requiredArtifacts",
+            "postprocessPlan.controllerTargets",
+            "generatedPrograms",
+            "instructionPrograms",
+            "simulation.riskProfile",
+            "releasePackagePlan.packages",
+            "machineRelease.blockers",
+            "learning.releaseProbePlan"
+        ]),
+    );
+    object.insert(
+        "artifactSurfaces".to_string(),
+        json!([
+            "controller-plan",
+            "controller-catalog",
+            "controller-preflight-catalog",
+            "postprocess-plan",
+            "generated-programs",
+            "instruction-programs",
+            "simulation-report",
+            "release-package-plan",
+            "mdp-request.artifacts.controllerPlan"
+        ]),
+    );
+    object.insert(
+        "controllerPolicy".to_string(),
+        json!([
+            "controller planning returns draft controller, postprocessor, dialect, modal-state, offset-table, macro/subprogram, dry-run, and release-gate evidence, not certified machine safety approval",
+            "machineReady=false while the exact posted output, controller setup sheet, postprocessor version, controller dialect checks, dry-run/simulation evidence, or operator/automation signoff remains unresolved",
+            "controller target failures, unknown postprocessors, dialect mismatches, macro dependencies, and dry-run results are retained for MDP/POMDP/neural workers to choose safer postprocessors, split jobs, or require human intervention"
+        ]),
+    );
+    object.insert(
+        "learningPolicySnapshot".to_string(),
+        json!({
+            "outcomeCount": policy.outcome_count,
+            "successes": policy.successes,
+            "failures": policy.failures,
+            "averageReward": policy.average_reward
+        }),
+    );
+    object.insert(
+        "controllerPlanning".to_string(),
+        json!({
+            "controllerContracts": controller_catalog_targets(),
+            "preflightCatalog": controller_preflight_catalog_response(),
+            "controllerPlan": &response.controller_plan,
+            "postprocessPlan": &response.postprocess_plan,
+            "simulation": &response.simulation,
+            "releasePackagePlan": &response.release_package_plan,
+            "machineRelease": &response.machine_release
+        }),
+    );
+    object.insert(
+        "controllerPlan".to_string(),
+        json!(&response.controller_plan),
+    );
+    object.insert(
+        "postprocessPlan".to_string(),
+        json!(&response.postprocess_plan),
+    );
+    object.insert("simulation".to_string(), json!(&response.simulation));
+    object.insert(
+        "releasePackagePlan".to_string(),
+        json!(&response.release_package_plan),
+    );
+    object.insert(
+        "machineRelease".to_string(),
+        json!(&response.machine_release),
+    );
+    object.insert(
+        "learning".to_string(),
+        json!({
+            "engine": &response.learning.engine,
+            "enginePolicy": &response.learning.engine_policy,
+            "releaseProbePlan": &response.learning.release_probe_plan,
+            "neuralTrainingCorpus": &response.learning.neural_training_corpus
+        }),
+    );
+    Value::Object(object)
 }
 
 async fn controller_preflight_catalog_http() -> impl IntoResponse {
@@ -117791,6 +118016,8 @@ async fn request_schema() -> impl IntoResponse {
         "routes": {
             "machineCatalog": ["GET /machines/catalog", "GET /fabrication/machines/catalog"],
             "controllerCatalog": ["GET /controllers/catalog", "GET /fabrication/controllers/catalog"],
+            "controllerPreflightCatalog": ["GET /controllers/preflight/catalog", "GET /fabrication/controllers/preflight/catalog"],
+            "controllerPlan": ["POST /controllers/plan", "POST /fabrication/controllers/plan"],
             "controllerPostprocessorResult": ["POST /controllers/result", "POST /fabrication/controllers/result"],
             "processCatalog": ["GET /process/catalog", "GET /fabrication/process/catalog"],
             "materialCatalog": ["GET /materials/catalog", "GET /fabrication/materials/catalog"],
@@ -119714,6 +119941,50 @@ async fn toolpath_plan_http(
     }
 }
 
+async fn controller_plan_http(
+    State(state): State<AppState>,
+    Json(request): Json<FabricationPlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let policy_snapshot = match learning_policy_snapshot(&state) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
+        Ok(response) => {
+            record_plan_metrics(&state, &response);
+            store_plan_response(&state, &response);
+            publish_plan_outputs(&state, &response).await;
+            publish_event(
+                &state,
+                "fabrication.controllers.planned",
+                &response.request_id,
+                response.ok,
+            )
+            .await;
+            Json(controller_planning_response(&response, &policy_snapshot)).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn controller_postprocessor_result_http(
     State(state): State<AppState>,
     Json(request): Json<ControllerPostprocessorResultReviewRequest>,
@@ -120877,6 +121148,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/controllers/preflight/catalog",
             get(controller_preflight_catalog_http),
         )
+        .route("/controllers/plan", post(controller_plan_http))
+        .route("/fabrication/controllers/plan", post(controller_plan_http))
         .route(
             "/controllers/result",
             post(controller_postprocessor_result_http),
@@ -129798,6 +130071,145 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("cannot bypass validation")))));
+    }
+
+    #[test]
+    fn controller_planning_endpoint_returns_dialect_targets_and_release_gates() {
+        let policy = LearningPolicySnapshot {
+            outcome_count: 4,
+            successes: 2,
+            failures: 2,
+            average_reward: -0.04,
+            method_preferences: Vec::new(),
+            method_combination_preferences: Vec::new(),
+            machine_kind_preferences: Vec::new(),
+            operation_sequence_preferences: Vec::new(),
+            assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
+            remediation_risks: Vec::new(),
+            neural_training_examples: vec![
+                "neural-example controller haas-mill dry-run macro-dependency blocked".to_string(),
+            ],
+            boundary_learning_examples: Vec::new(),
+        };
+        let response = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-controller-plan".to_string()),
+                objective:
+                    "make a split printed enclosure and milled aluminum insert requiring Marlin gcode, Haas mill postprocessor, exact posted output, dry-run, controller setup sheet, and macro dependency review"
+                        .to_string(),
+                material: Some(material("6061 aluminum", "metal")),
+                stock: Some(StockSpec {
+                    form: "plate".to_string(),
+                    dimensions_mm: Some(vec![180.0, 120.0, 16.0]),
+                }),
+                tolerance_mm: Some(0.05),
+                quantity: Some(1),
+                machines: None,
+                constraints: Some(FabricationConstraints {
+                    max_setups: Some(2),
+                    allow_human_intervention: Some(false),
+                    allow_multi_part_assembly: Some(true),
+                    require_dry_run: Some(true),
+                    preferred_methods: Some(vec![
+                        "additive-print".to_string(),
+                        "milling".to_string(),
+                    ]),
+                    preferred_assembly_strategy: Some("split-combine".to_string()),
+                }),
+                parts: Some(vec![
+                    RequestedPart {
+                        id: "printed-shell".to_string(),
+                        description: "printed enclosure shell posted to Marlin firmware".to_string(),
+                        material: Some(material("polycarbonate", "polymer")),
+                        preferred_method: Some("additive-print".to_string()),
+                        tolerance_mm: Some(0.12),
+                    },
+                    RequestedPart {
+                        id: "milled-insert".to_string(),
+                        description:
+                            "milled aluminum insert posted for Haas/Fanuc style controller"
+                                .to_string(),
+                        material: Some(material("6061 aluminum", "metal")),
+                        preferred_method: Some("milling".to_string()),
+                        tolerance_mm: Some(0.05),
+                    },
+                ]),
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&policy),
+        )
+        .expect("controller planning should build controller targets");
+
+        let payload = controller_planning_response(&response, &policy);
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.controller-planning.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/controllers/plan"))));
+        assert_eq!(
+            payload.get("machineReady").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(payload
+            .get("controllerTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("controllerDialectCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("dryRunTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("operatorSignoffTargetCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count > 0));
+        assert!(payload
+            .get("controllerPlan")
+            .and_then(|plan| plan.get("compatibilityTargets"))
+            .and_then(Value::as_array)
+            .is_some_and(|targets| targets.iter().any(|target| {
+                target
+                    .get("postprocessor")
+                    .and_then(Value::as_str)
+                    .is_some_and(|postprocessor| !postprocessor.is_empty())
+                    && target
+                        .get("requiredChecks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|checks| !checks.is_empty())
+                    && target
+                        .get("requiredEvidence")
+                        .and_then(Value::as_array)
+                        .is_some_and(|evidence| !evidence.is_empty())
+            })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| { surface.as_str() == Some("controllerPlan.releaseGates") })));
+        assert!(payload
+            .get("artifactSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                surface.as_str() == Some("mdp-request.artifacts.controllerPlan")
+            })));
+        assert!(payload
+            .get("controllerPolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("machineReady=false")))));
     }
 
     #[test]
