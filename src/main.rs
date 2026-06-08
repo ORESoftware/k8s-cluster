@@ -6404,6 +6404,7 @@ struct LearningPolicySnapshot {
     machine_kind_preferences: Vec<LearningPreference>,
     operation_sequence_preferences: Vec<LearningPreference>,
     assembly_preferences: Vec<LearningPreference>,
+    split_combine_preferences: Vec<LearningPreference>,
     remediation_risks: Vec<LearningRemediationRisk>,
     neural_training_examples: Vec<String>,
     boundary_learning_examples: Vec<String>,
@@ -7483,6 +7484,7 @@ impl LearningMemory {
         let mut machine_kinds = BTreeMap::<String, LearningAggregate>::new();
         let mut operation_sequences = BTreeMap::<String, LearningAggregate>::new();
         let mut assemblies = BTreeMap::<String, LearningAggregate>::new();
+        let mut split_combine_preferences = BTreeMap::<String, LearningAggregate>::new();
         let mut remediation_risks = BTreeMap::<
             (String, Option<String>, Option<String>),
             LearningRemediationAggregate,
@@ -7518,6 +7520,12 @@ impl LearningMemory {
             }
             if let Some(strategy) = outcome.assembly_strategy.as_ref() {
                 assemblies.entry(strategy.clone()).or_default().add(outcome);
+            }
+            for split_combine_key in outcome_split_combine_keys(outcome) {
+                split_combine_preferences
+                    .entry(split_combine_key)
+                    .or_default()
+                    .add(outcome);
             }
             if !outcome.success || outcome.reward < 0.0 {
                 let material = outcome
@@ -7616,6 +7624,18 @@ impl LearningMemory {
                 .then_with(|| right.samples.cmp(&left.samples))
                 .then_with(|| left.key.cmp(&right.key))
         });
+        let mut split_combine_preferences = split_combine_preferences
+            .into_iter()
+            .map(|(key, aggregate)| aggregate.preference(key))
+            .collect::<Vec<_>>();
+        split_combine_preferences.sort_by(|left, right| {
+            right
+                .average_reward
+                .partial_cmp(&left.average_reward)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| right.samples.cmp(&left.samples))
+                .then_with(|| left.key.cmp(&right.key))
+        });
         let mut remediation_risks = remediation_risks
             .into_iter()
             .map(|((method, material, material_family), aggregate)| {
@@ -7683,6 +7703,7 @@ impl LearningMemory {
             machine_kind_preferences,
             operation_sequence_preferences,
             assembly_preferences,
+            split_combine_preferences,
             remediation_risks,
             neural_training_examples,
             boundary_learning_examples,
@@ -48224,6 +48245,30 @@ fn outcome_operation_sequence_key(outcome: &LearningOutcomeRecord) -> Option<Str
     }
 }
 
+fn outcome_split_combine_keys(outcome: &LearningOutcomeRecord) -> Vec<String> {
+    let mut keys = BTreeSet::new();
+    for item in outcome
+        .observations
+        .iter()
+        .chain(outcome.notes.iter())
+        .chain(outcome.assembly_strategy.iter())
+    {
+        let token = normalize_token(item);
+        if let Some(hint) = token.strip_prefix("hint-split-combine-") {
+            if !hint.is_empty() {
+                keys.insert(hint.to_string());
+            }
+        } else if let Some(action) = token.strip_prefix("resolution-action-") {
+            if action.contains("split") || action.contains("combine") {
+                keys.insert(action.to_string());
+            }
+        } else if token.contains("split") || token.contains("combine") || token.contains("hybrid") {
+            keys.insert(token);
+        }
+    }
+    keys.into_iter().take(MAX_LEARNING_SIGNALS).collect()
+}
+
 fn learned_preferred_methods(policy: Option<&LearningPolicySnapshot>) -> Vec<String> {
     let mut methods = Vec::new();
     let Some(policy) = policy else {
@@ -73683,6 +73728,168 @@ fn quality_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn quality_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "quality-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn quality_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    measurement_blocker_count: usize,
+    finding_blocker_count: usize,
+    gate_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    findings: &[Value],
+) -> Vec<Value> {
+    let split_or_interface_review = values_contain_review_tokens(
+        findings,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "join",
+            "assembly",
+            "decomposition",
+            "insert",
+        ],
+    );
+
+    vec![
+        quality_priority_disposition(
+            "machine-failure-boundary-first",
+            if measurement_blocker_count > 0 || finding_blocker_count > 0 || gate_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("measurementBlockerCount:{measurement_blocker_count}"),
+                format!("findingBlockerCount:{finding_blocker_count}"),
+                format!("gateBlockerCount:{gate_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/quality/result",
+                "POST /fabrication/remediation/plan",
+                "POST /fabrication/release/result",
+            ],
+            if measurement_blocker_count > 0 || finding_blocker_count > 0 || gate_blocker_count > 0
+            {
+                "machineReady remains blocked by out-of-tolerance measurement, nonconformance, or inspection-gate evidence"
+            } else {
+                "quality result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        quality_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/dispositions/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until quality disposition, operator signoff, or verified automation evidence is retained"
+            } else {
+                "quality result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        quality_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_interface_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitOrInterfaceReview:{split_or_interface_review}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_or_interface_review {
+                "machineReady remains blocked until split/combine or interface quality evidence is dispositioned"
+            } else {
+                "quality result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        quality_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/quality/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until metrology, inspection, coupon, or final-fit artifacts retain URI, checksum, and evidence"
+            } else {
+                "quality result artifacts include release evidence for downstream review"
+            },
+        ),
+        quality_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked quality priority lanes before advisory promotion"
+            } else {
+                "quality result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn quality_result_review_response(request: QualityResultReviewRequest) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "quality-result");
     let generated_at_ms = now_ms();
@@ -73772,6 +73979,22 @@ fn quality_result_review_response(request: QualityResultReviewRequest) -> Result
     if artifact_evidence_missing {
         learning_observations.push("quality:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = quality_priority_dispositions(
+        request.success,
+        release_blocked,
+        measurement_blocker_count,
+        finding_blocker_count,
+        gate_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &findings,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(measurements.iter().filter_map(|measurement| {
         measurement
             .get("targetId")
@@ -73867,6 +74090,7 @@ fn quality_result_review_response(request: QualityResultReviewRequest) -> Result
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "qualityResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -73934,6 +74158,7 @@ fn quality_result_review_response(request: QualityResultReviewRequest) -> Result
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -73943,6 +74168,7 @@ fn quality_result_review_response(request: QualityResultReviewRequest) -> Result
             "quality-findings",
             "quality-inspection-gates",
             "quality-artifacts",
+            "quality-priority-dispositions",
             "quality-learning-observations",
             "first-article-metrology-record",
             "final-fit-metrology-record",
@@ -74012,6 +74238,10 @@ fn stored_quality_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "quality-result".to_string(),
@@ -74041,6 +74271,12 @@ fn stored_quality_result_job(response: &Value) -> StoredFabricationJob {
             "quality-artifacts".to_string(),
             "quality-artifacts",
             quality_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "quality-priority-dispositions".to_string(),
+            "quality-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -74324,6 +74560,176 @@ fn calibration_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn calibration_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "calibration-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn calibration_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    check_blocker_count: usize,
+    offset_blocker_count: usize,
+    probe_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+    checks: &[Value],
+    probes: &[Value],
+) -> Vec<Value> {
+    let split_or_setup_review = values_contain_review_tokens(
+        checks,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "setup",
+            "fixture",
+            "datum",
+            "workholding",
+        ],
+    ) || values_contain_review_tokens(
+        probes,
+        &[
+            "split",
+            "combine",
+            "interface",
+            "setup",
+            "fixture",
+            "datum",
+            "workholding",
+        ],
+    );
+
+    vec![
+        calibration_priority_disposition(
+            "machine-failure-boundary-first",
+            if check_blocker_count > 0 || offset_blocker_count > 0 || probe_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("checkBlockerCount:{check_blocker_count}"),
+                format!("offsetBlockerCount:{offset_blocker_count}"),
+                format!("probeBlockerCount:{probe_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/calibration/result",
+                "POST /fabrication/setup/plan",
+                "POST /fabrication/release/result",
+            ],
+            if check_blocker_count > 0 || offset_blocker_count > 0 || probe_blocker_count > 0 {
+                "machineReady remains blocked by calibration check, offset, or probe evidence"
+            } else {
+                "calibration result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        calibration_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/setup/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until calibration operator signoff or verified automation evidence is retained"
+            } else {
+                "calibration result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        calibration_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_or_setup_review {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!("splitOrSetupReview:{split_or_setup_review}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/setup/result",
+            ],
+            if split_or_setup_review {
+                "machineReady remains blocked until split/combine, setup, datum, or interface calibration evidence is dispositioned"
+            } else {
+                "calibration result did not surface split/combine or interface priority evidence"
+            },
+        ),
+        calibration_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/calibration/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until calibration, machine-profile, probe, or setup artifacts retain URI, checksum, and evidence"
+            } else {
+                "calibration result artifacts include release evidence for downstream review"
+            },
+        ),
+        calibration_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked calibration priority lanes before advisory promotion"
+            } else {
+                "calibration result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn calibration_result_review_response(
     request: CalibrationResultReviewRequest,
 ) -> Result<Value, String> {
@@ -74431,6 +74837,23 @@ fn calibration_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("calibration:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = calibration_priority_dispositions(
+        request.success,
+        release_blocked,
+        check_blocker_count,
+        offset_blocker_count,
+        probe_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+        &checks,
+        &probes,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(checks.iter().filter_map(|check| {
         check
             .get("checkKind")
@@ -74522,6 +74945,7 @@ fn calibration_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "humanInterventionRequired": human_intervention_required,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "calibrationResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -74587,6 +75011,7 @@ fn calibration_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -74596,6 +75021,7 @@ fn calibration_result_review_response(
             "calibration-offsets",
             "calibration-probes",
             "calibration-artifacts",
+            "calibration-priority-dispositions",
             "calibration-learning-observations",
             "machine-profile-evidence",
             "release-probe-plan",
@@ -74661,6 +75087,10 @@ fn stored_calibration_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "calibration-result".to_string(),
@@ -74690,6 +75120,12 @@ fn stored_calibration_result_job(response: &Value) -> StoredFabricationJob {
             "calibration-artifacts".to_string(),
             "calibration-artifacts",
             calibration_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "calibration-priority-dispositions".to_string(),
+            "calibration-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -113173,6 +113609,7 @@ fn learning_policy_response(snapshot: &LearningPolicySnapshot) -> Value {
             "machineKindPreferenceCount": snapshot.machine_kind_preferences.len(),
             "operationSequencePreferenceCount": snapshot.operation_sequence_preferences.len(),
             "assemblyPreferenceCount": snapshot.assembly_preferences.len(),
+            "splitCombinePreferenceCount": snapshot.split_combine_preferences.len(),
             "remediationRiskCount": snapshot.remediation_risks.len(),
             "neuralTrainingExampleCount": snapshot.neural_training_examples.len(),
             "boundaryLearningExampleCount": snapshot.boundary_learning_examples.len()
@@ -113183,6 +113620,7 @@ fn learning_policy_response(snapshot: &LearningPolicySnapshot) -> Value {
             "policy.machineKindPreferences",
             "policy.operationSequencePreferences",
             "policy.assemblyPreferences",
+            "policy.splitCombinePreferences",
             "policy.remediationRisks",
             "policy.neuralTrainingExamples",
             "policy.boundaryLearningExamples"
@@ -113367,6 +113805,11 @@ fn learning_outcomes_memory_response(memory: &LearningMemory) -> Value {
                 "surface": "operationSequencePreferences",
                 "input": "positive reward operation order and route sequencing evidence",
                 "futureUse": "prefer learned print-then-machine, machine-then-postprocess, split-combine, and assembly ordering when constraints are otherwise open"
+            },
+            {
+                "surface": "splitCombinePreferences",
+                "input": "retained split/combine hints, resolution actions, and boundary observations",
+                "futureUse": "bias future hybrid decomposition and recomposition candidates while preserving validation, simulation, release-package, and operator signoff gates"
             },
             {
                 "surface": "remediationRisks",
@@ -117994,6 +118437,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -119343,6 +119787,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -120597,6 +121042,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -121092,6 +121538,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -122487,6 +122934,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -123750,6 +124198,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -124317,6 +124766,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -125096,6 +125546,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -125356,6 +125807,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -125783,6 +126235,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -126433,6 +126886,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -126532,6 +126986,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: vec![LearningRemediationRisk {
                 key: "milling@petg".to_string(),
                 method: "milling".to_string(),
@@ -127344,6 +127799,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -129742,6 +130198,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -129989,12 +130446,56 @@ mod tests {
             "quality:human-intervention-required",
             "quality-gate:final-fit-metrology",
             "quality-artifact:first-article-metrology-record",
+            "quality-priority:machine-failure-boundary-first:blocked",
+            "quality-priority:human-intervention-required:blocked",
+            "quality-priority:split-combine-or-interface-review:blocked",
+            "quality-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
                     .iter()
                     .any(|item| item.as_str() == Some(observation)),
                 "missing quality observation {observation}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("quality priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "quality-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "quality-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "quality-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "quality-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing quality priority disposition {}",
+                expected.0
             );
         }
         let outcome_draft = payload
@@ -130036,6 +130537,13 @@ mod tests {
             .is_some_and(|hints| hints.iter().any(|hint| hint
                 .as_str()
                 .is_some_and(|hint| hint == "human-intervention-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
 
         let job = stored_quality_result_job(&payload);
         assert!(job
@@ -130055,6 +130563,7 @@ mod tests {
             "quality-findings",
             "quality-inspection-gates",
             "quality-artifacts",
+            "quality-priority-dispositions",
             "quality-learning-observations",
         ] {
             assert!(
@@ -130145,6 +130654,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -130398,12 +130908,54 @@ mod tests {
             "calibration-probe:tool-length-probe",
             "calibration-artifact:machine-profile-calibration-record",
             "calibration:human-intervention-required",
+            "calibration-priority:machine-failure-boundary-first:blocked",
+            "calibration-priority:human-intervention-required:blocked",
+            "calibration-priority:split-combine-or-interface-review:not-observed",
+            "calibration-priority:learning-feedback-after-disposition:pending-blocker-resolution",
         ] {
             assert!(
                 observations
                     .iter()
                     .any(|item| item.as_str() == Some(observation)),
                 "missing calibration observation {observation}"
+            );
+        }
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("calibration priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "calibration-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "calibration-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "not-observed",
+                "calibration-priority:split-combine-or-interface-review:not-observed",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "calibration-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition.get("learningObservation").and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing calibration priority disposition {}",
+                expected.0
             );
         }
         let outcome_draft = payload
@@ -130445,6 +130997,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str().is_some_and(|hint| hint == "probe-blockers:1"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("machine-failure-boundary-first")
+            })));
 
         let job = stored_calibration_result_job(&payload);
         assert!(job
@@ -130464,6 +131023,7 @@ mod tests {
             "calibration-offsets",
             "calibration-probes",
             "calibration-artifacts",
+            "calibration-priority-dispositions",
             "calibration-learning-observations",
         ] {
             assert!(
@@ -134827,6 +135387,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -135280,6 +135841,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -135760,6 +136322,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -136426,6 +136989,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: vec![
                 "job=package-plan-success success=true reward=1.400".to_string()
@@ -137479,6 +138043,7 @@ mod tests {
             machine_kind_preferences: Vec::new(),
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: Vec::new(),
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: Vec::new(),
             boundary_learning_examples: Vec::new(),
@@ -158920,6 +159485,7 @@ mod tests {
             observations: Some(vec![
                 "machine-failure:thin-wall-chatter".to_string(),
                 "human-intervention-required".to_string(),
+                "resolution-action:split-job-or-part".to_string(),
             ]),
             notes: Some(vec![
                 "manual recovery required".to_string(),
@@ -158978,6 +159544,14 @@ mod tests {
                 .iter()
                 .any(|preference| preference.get("key").and_then(Value::as_str)
                     == Some("additive-print+milling"))));
+        assert!(payload
+            .get("policy")
+            .and_then(|policy| policy.get("splitCombinePreferences"))
+            .and_then(Value::as_array)
+            .is_some_and(|preferences| preferences.iter().any(|preference| preference
+                .get("key")
+                .and_then(Value::as_str)
+                .is_some_and(|key| key.contains("split") || key.contains("hybrid")))));
         assert!(payload
             .get("policy")
             .and_then(|policy| policy.get("remediationRisks"))
@@ -159051,6 +159625,7 @@ mod tests {
             "methodCombinationPreferences",
             "machineKindPreferences",
             "operationSequencePreferences",
+            "splitCombinePreferences",
             "remediationRisks",
             "neuralTrainingExamples",
         ] {
@@ -159157,6 +159732,16 @@ mod tests {
             .is_some_and(|surfaces| surfaces.iter().any(|surface| {
                 surface.as_str() == Some("policy.methodCombinationPreferences")
             })));
+        assert!(payload
+            .get("responseSurfaces")
+            .and_then(Value::as_array)
+            .is_some_and(|surfaces| surfaces
+                .iter()
+                .any(|surface| surface.as_str() == Some("policy.splitCombinePreferences"))));
+        assert!(payload
+            .pointer("/policySummary/splitCombinePreferenceCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
         assert!(payload
             .get("promotionPolicy")
             .and_then(Value::as_array)
@@ -159646,6 +160231,7 @@ mod tests {
                 average_reward: 1.5,
                 recommendation: "prefer".to_string(),
             }],
+            split_combine_preferences: Vec::new(),
             remediation_risks: Vec::new(),
             neural_training_examples: vec![
                 "job=router-success-1 success=true reward=1.600 methods=routing assembly=single-piece observations=clean-tabs".to_string(),
@@ -160011,6 +160597,11 @@ mod tests {
         assert!(snapshot.assembly_preferences.iter().any(|preference| {
             preference.key
                 == "learned draft assembly strategy: joins=datum-bolt-pattern+heat-set-insert;splitCombine=split-printed-body-milled-datum"
+                && preference.samples == 2
+                && preference.recommendation == "prefer"
+        }));
+        assert!(snapshot.split_combine_preferences.iter().any(|preference| {
+            preference.key == "split-printed-body-milled-datum"
                 && preference.samples == 2
                 && preference.recommendation == "prefer"
         }));
@@ -160385,6 +160976,14 @@ mod tests {
             operation_sequence_preferences: Vec::new(),
             assembly_preferences: vec![LearningPreference {
                 key: "printed body plus turned insert".to_string(),
+                samples: 2,
+                successes: 2,
+                failures: 0,
+                average_reward: 2.8,
+                recommendation: "prefer".to_string(),
+            }],
+            split_combine_preferences: vec![LearningPreference {
+                key: "printed-body-plus-turned-insert".to_string(),
                 samples: 2,
                 successes: 2,
                 failures: 0,
