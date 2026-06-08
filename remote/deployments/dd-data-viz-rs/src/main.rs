@@ -589,6 +589,10 @@ fn app_router(state: AppState) -> Router {
             "/associations/sessions/:session_id",
             get(get_association_session),
         )
+        .route(
+            "/associations/relationships",
+            post(association_relationships),
+        )
         .route("/associations/select", post(association_selection))
         .route("/associations/:dataset_id", get(association_graph))
         .route("/dashboards", get(list_dashboards).post(save_dashboard))
@@ -820,7 +824,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "posture": "bounded TTL cache keyed by request hash; cache summaries do not include raw query text"
         },
         "associativeSelection": {
-            "surfaces": ["co-occurrence graph", "multi-dataset selection state", "saved selection sessions"],
+            "surfaces": ["co-occurrence graph", "multi-dataset selection state", "saved selection sessions", "relationship discovery and alias scoring"],
             "limits": associative::selection_limits_payload(),
             "posture": "Qlik-style in-memory session registry; selection details are recomputed against current dataset snapshots"
         },
@@ -1870,6 +1874,29 @@ async fn association_selection(
         .read()
         .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
     associative::selection_payload(&datasets, request)
+        .map(Json)
+        .map_err(ApiError::bad_request)
+}
+
+async fn association_relationships(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<associative::RelationshipDiscoveryRequest>,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::AssociationRead)?;
+    state
+        .metrics
+        .association_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let datasets = state
+        .datasets
+        .read()
+        .map_err(|_| ApiError::bad_request("dataset store lock poisoned"))?;
+    associative::relationship_discovery_payload(&datasets, request)
         .map(Json)
         .map_err(ApiError::bad_request)
 }
@@ -4779,6 +4806,12 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "POST",
+            path: "/associations/relationships",
+            auth: "association-read",
+            description: "Discover likely cross-dataset categorical relationships with field-alias inference and confidence scoring.",
+        },
+        RouteDoc {
+            method: "POST",
             path: "/associations/sessions",
             auth: "association-write",
             description: "Create or replace a persisted Qlik-style associative selection session.",
@@ -5738,6 +5771,7 @@ mod tests {
         assert!(paths.contains(&"/questions/:question_id"));
         assert!(paths.contains(&"/charts"));
         assert!(paths.contains(&"/associations/select"));
+        assert!(paths.contains(&"/associations/relationships"));
         assert!(paths.contains(&"/associations/sessions"));
         assert!(paths.contains(&"/associations/sessions/:session_id"));
         assert!(paths.contains(&"/alerts/rules"));

@@ -168,10 +168,12 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "multi-dataset associative selection endpoint",
                 "green/white/gray selection-state model",
                 "persisted in-memory selection sessions",
+                "cross-dataset field-alias inference and relationship confidence scoring",
             ],
             next_engine_work: vec![
-                "relationship confidence scoring",
-                "field alias and semantic relationship inference",
+                "durable selection sessions beyond memory",
+                "operator-reviewed relationship override maps",
+                "semantic relationship inference beyond categorical value overlap",
             ],
         },
         ProductParity {

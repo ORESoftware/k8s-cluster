@@ -90,7 +90,8 @@ Current first-class parity surfaces:
   expression compilation, and calculated fields.
 - Qlik Sense: `GET /associations/:dataset_id` builds a categorical co-occurrence graph over an
   ingested dataset, while `POST /associations/select` computes multi-dataset green/white/gray
-  selection state and `/associations/sessions` saves reusable selection sessions.
+  selection state, `POST /associations/relationships` scores cross-dataset field aliases, and
+  `/associations/sessions` saves reusable selection sessions.
 - Sigma: workbook blueprints for live-grid and executive-card workflows plus warehouse connection
   metadata for live-query planning.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
@@ -149,6 +150,8 @@ Current first-class parity surfaces:
 - `GET /associations/:dataset_id` - authenticated Qlik-style associative graph over categorical
   fields.
 - `POST /associations/select` - authenticated Qlik-style multi-dataset associative selection state.
+- `POST /associations/relationships` - authenticated Qlik-style field-alias inference and
+  relationship confidence scoring across datasets.
 - `POST /associations/sessions` - authenticated saved associative selection session create/replace.
 - `GET /associations/sessions` - authenticated saved associative selection session catalog.
 - `GET /associations/sessions/:session_id` - authenticated saved associative selection session

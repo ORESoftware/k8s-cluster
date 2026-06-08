@@ -183,6 +183,48 @@ function assertGrafanaCoversFabricationRootRoutes(source: string, grafanaDashboa
 test('rust fabrication server exposes planning, analysis, nats, and learning hooks', async () => {
   const cargo = await readRepoFile('remote/deployments/fabrication-server-rs/Cargo.toml');
   const source = await readRepoFile('remote/deployments/fabrication-server-rs/src/main.rs');
+  const assemblyCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/assembly_catalog_content.rs',
+  );
+  const assemblyPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/assembly_preflight_content.rs',
+  );
+  const boundaryCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/boundary_catalog_content.rs',
+  );
+  const boundaryPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/boundary_preflight_content.rs',
+  );
+  const boundaryRemediationContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/boundary_remediation_content.rs',
+  );
+  const capabilitiesContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/capabilities_content.rs',
+  );
+  const decompositionCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/decomposition_catalog_content.rs',
+  );
+  const designFormatContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/design_format_content.rs',
+  );
+  const designGenerationContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/design_generation_content.rs',
+  );
+  const designImportContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/design_import_content.rs',
+  );
+  const designPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/design_preflight_content.rs',
+  );
+  const executionPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/execution_preflight_content.rs',
+  );
+  const handoffCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/handoff_catalog_content.rs',
+  );
+  const howItWorksContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/how_it_works_content.rs',
+  );
   const slicerCatalogSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/slicer_catalog.rs',
   );
@@ -197,6 +239,36 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   const landingPageHtml = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/landing_page.html',
+  );
+  const machineCodeCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/machine_code_catalog_content.rs',
+  );
+  const machineCodePreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/machine_code_preflight_content.rs',
+  );
+  const recompositionCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/recomposition_catalog_content.rs',
+  );
+  const releaseCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/release_catalog_content.rs',
+  );
+  const releaseGateCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/release_gate_catalog_content.rs',
+  );
+  const releasePreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/release_preflight_content.rs',
+  );
+  const rootInventoryContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/root_inventory_content.rs',
+  );
+  const simulationCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/simulation_catalog_content.rs',
+  );
+  const toolpathCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/toolpath_catalog_content.rs',
+  );
+  const objectiveCoverageContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/objective_coverage_content.rs',
   );
   const readme = await readRepoFile('remote/deployments/fabrication-server-rs/readme.md');
   const subjectSchema = await readRepoFile(
@@ -2901,31 +2973,44 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /axum::response::Html\(landing_page_content::html\(\)\)/);
   assert.match(landingPageContentSource, /pub\(super\) fn html\(\) -> &'static str/);
   assert.match(landingPageContentSource, /include_str!\("landing_page\.html"\)/);
-  assert.match(source, /"landingPage": \{/);
-  assert.match(source, /"Human fabrication overview"/);
-  assert.match(source, /"startHere": \{/);
-  assert.match(source, /"humanOverview": "\/fabrication"/);
-  assert.match(source, /"workflowOverview": "\/fabrication\/how-it-works"/);
-  assert.match(source, /"apiDocs": "\/api\/docs"/);
+  assert.match(source, /mod root_inventory_content;/);
+  assert.match(source, /"landingPage": root_inventory_content::landing_page\(\)/);
+  assert.match(source, /"startHere": root_inventory_content::start_here\(\)/);
+  assert.match(source, /"capabilities": root_inventory_content::capabilities\(\)/);
+  assert.match(rootInventoryContentSource, /pub\(super\) fn landing_page\(\) -> Value/);
+  assert.match(rootInventoryContentSource, /"Human fabrication overview"/);
+  assert.match(rootInventoryContentSource, /pub\(super\) fn start_here\(\) -> Value/);
+  assert.match(rootInventoryContentSource, /"humanOverview": "\/fabrication"/);
+  assert.match(rootInventoryContentSource, /"workflowOverview": "\/fabrication\/how-it-works"/);
+  assert.match(rootInventoryContentSource, /"apiDocs": "\/api\/docs"/);
+  assert.match(rootInventoryContentSource, /pub\(super\) fn capabilities\(\) -> Value/);
+  assert.match(rootInventoryContentSource, /hybrid additive\/subtractive\/turning process planning/);
+  assert.match(rootInventoryContentSource, /MDP\/POMDP\/DES\/neural policy feature contract/);
   assert.match(source, /"GET \/landing"/);
   assert.match(source, /"GET \/fabrication"/);
   assert.match(source, /"GET \/fabrication\/landing"/);
   assert.match(source, /\.route\("\/fabrication", get\(landing_page\)\)/);
   assert.match(source, /fn how_it_works_response\(\) -> Value/);
   assert.match(source, /async fn how_it_works_http\(\) -> impl IntoResponse/);
+  assert.match(source, /mod how_it_works_content;/);
   assert.match(source, /dd\.fabrication\.how-it-works\.v1/);
   assert.match(source, /"GET \/how-it-works"/);
   assert.match(source, /"GET \/fabrication\/how-it-works"/);
-  assert.match(source, /"releaseGateMatrix": \[/);
-  assert.match(source, /"gateId": "source-provenance"/);
-  assert.match(source, /"gateId": "machine-envelope"/);
-  assert.match(source, /"gateId": "process-readiness"/);
-  assert.match(source, /"gateId": "simulation-evidence"/);
-  assert.match(source, /"gateId": "human-or-automation-handoff"/);
-  assert.match(source, /"gateId": "learning-disposition"/);
-  assert.match(source, /"priorityDispositionContract": \{/);
-  assert.match(source, /"responseSurface": "priorityDispositions"/);
-  assert.match(source, /"<family>:<priority>:<disposition>"/);
+  assert.match(source, /"releaseGateMatrix": how_it_works_content::release_gate_matrix\(\)/);
+  assert.match(
+    source,
+    /"priorityDispositionContract": how_it_works_content::priority_disposition_contract\(\)/,
+  );
+  assert.match(howItWorksContentSource, /pub\(super\) fn release_gate_matrix\(\) -> Value/);
+  assert.match(howItWorksContentSource, /"gateId": "source-provenance"/);
+  assert.match(howItWorksContentSource, /"gateId": "machine-envelope"/);
+  assert.match(howItWorksContentSource, /"gateId": "process-readiness"/);
+  assert.match(howItWorksContentSource, /"gateId": "simulation-evidence"/);
+  assert.match(howItWorksContentSource, /"gateId": "human-or-automation-handoff"/);
+  assert.match(howItWorksContentSource, /"gateId": "learning-disposition"/);
+  assert.match(howItWorksContentSource, /pub\(super\) fn priority_disposition_contract\(\) -> Value/);
+  assert.match(howItWorksContentSource, /"responseSurface": "priorityDispositions"/);
+  assert.match(howItWorksContentSource, /"<family>:<priority>:<disposition>"/);
   assert.match(source, /POST \/fabrication\/machine-code\/generate/);
   assert.match(source, /remote\/submodules\/discrete-event-system\.rs des_engine/);
   assert.match(
@@ -2971,23 +3056,87 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(landingPageHtml, /request templates/);
   assert.match(landingPageHtml, /This service produces planning and evidence packets/);
   assert.match(source, /async fn capabilities/);
+  assert.match(source, /mod capabilities_content;/);
   assert.match(source, /"schemaVersion": "dd\.fabrication\.capabilities\.v1"/);
-  assert.match(source, /"GET \/cells\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/cells\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/printers\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/subtractive\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/cnc\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/hybrid\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/methods\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/workers\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/results\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/machine-code\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/learning\/rewards\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/learning\/corpus"/);
-  assert.match(source, /"strategyQualitySurfaces"/);
-  assert.match(source, /"policySummary\.learnedQuality"/);
-  assert.match(source, /"learningOutcomeQuality\.riskReviewRequired"/);
+  assert.match(source, /"machineClasses": capabilities_content::machine_classes\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn machine_classes\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"fdm-printer"/);
+  assert.match(capabilitiesContentSource, /"vertical-mill"/);
+  assert.match(capabilitiesContentSource, /"horizontal-mill"/);
+  assert.match(capabilitiesContentSource, /"lathe"/);
+  assert.match(capabilitiesContentSource, /"waterjet-sheet-cutter"/);
+  assert.match(source, /"generatedArtifacts": capabilities_content::generated_artifacts\(\)/);
+  assert.match(
+    capabilitiesContentSource,
+    /pub\(super\) fn generated_artifacts\(\) -> Vec<&'static str>/,
+  );
+  assert.match(capabilitiesContentSource, /"design-export-bundle"/);
+  assert.match(capabilitiesContentSource, /"machine-release"/);
+  assert.match(capabilitiesContentSource, /"neural-training-corpus"/);
+  assert.match(capabilitiesContentSource, /"learning-policy-snapshot"/);
+  assert.match(capabilitiesContentSource, /"mdp-request"/);
+  assert.match(source, /"learningChannels": capabilities_content::learning_channels\(\)/);
+  assert.match(
+    capabilitiesContentSource,
+    /pub\(super\) fn learning_channels\(\) -> Vec<&'static str>/,
+  );
+  assert.match(capabilitiesContentSource, /"mdp-states-actions-rewards"/);
+  assert.match(capabilitiesContentSource, /"pomdp-belief-state-and-probes"/);
+  assert.match(capabilitiesContentSource, /"neural-policy-sketch"/);
+  assert.match(capabilitiesContentSource, /"material-method-remediation-risks"/);
+  assert.match(
+    source,
+    /"strategyQualitySurfaces": capabilities_content::strategy_quality_surfaces\(\)/,
+  );
+  assert.match(
+    capabilitiesContentSource,
+    /pub\(super\) fn strategy_quality_surfaces\(\) -> Vec<&'static str>/,
+  );
+  assert.match(capabilitiesContentSource, /"policySummary\.learnedQuality"/);
+  assert.match(capabilitiesContentSource, /"learningOutcomeQuality\.riskReviewRequired"/);
+  assert.match(source, /"notes": capabilities_content::notes\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn notes\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /not controller-certified machine release/);
+  assert.match(capabilitiesContentSource, /defaultMachines are the built-in fallback fleet/);
+  assert.match(capabilitiesContentSource, /Generated programs and improved programs remain machineReady=false/);
+  assert.match(source, /"planning": capabilities_content::planning_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn planning_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"POST \/fabrication\/release\/preview"/);
+  assert.match(
+    source,
+    /"instructionGeneration": capabilities_content::instruction_generation_contracts\(\)/,
+  );
+  assert.match(
+    capabilitiesContentSource,
+    /pub\(super\) fn instruction_generation_contracts\(\) -> Vec<&'static str>/,
+  );
+  assert.match(capabilitiesContentSource, /"POST \/fabrication\/instructions\/generation\/result"/);
+  assert.match(source, /"toolpaths": capabilities_content::toolpath_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn toolpath_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/machine-code\/catalog"/);
+  assert.match(source, /"materials": capabilities_content::material_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn material_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"POST \/fabrication\/materials\/result"/);
+  assert.match(source, /"schedule": capabilities_content::schedule_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn schedule_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/schedule\/catalog"/);
+  assert.match(source, /"discovery": capabilities_content::discovery_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn discovery_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"GET \/cells\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/cells\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/printers\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/subtractive\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/cnc\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/hybrid\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/methods\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/workers\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/results\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/machine-code\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/learning\/rewards\/catalog"/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/learning\/corpus"/);
   assert.match(source, /fn objective_coverage_matrix\(\) -> Vec<Value>/);
+  assert.match(source, /mod objective_coverage_content;/);
+  assert.match(source, /objective_coverage_content::matrix\(\)/);
   assert.match(source, /fn objective_coverage_response\(\) -> Value/);
   assert.match(source, /async fn objective_coverage_http\(\) -> impl IntoResponse/);
   assert.match(source, /dd\.fabrication\.objective-coverage\.v1/);
@@ -2995,47 +3144,94 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"GET \/fabrication\/objective\/coverage"/);
   assert.match(source, /"objectiveCoverageMatrix": objective_coverage_matrix\(\)/);
   assert.match(source, /"objectiveCoverageMatrix": matrix/);
-  assert.match(source, /"requirement": "3d-printing-and-hybrid-intake"/);
-  assert.match(source, /"requirement": "machine-code-and-instruction-generation"/);
-  assert.match(source, /"requirement": "existing-instruction-validation-and-improvement"/);
-  assert.match(source, /"requirement": "machine-failure-and-human-intervention-boundaries"/);
-  assert.match(source, /"requirement": "operator-observability-and-release-trust"/);
-  assert.match(source, /"evidenceSurfaces": \["operatorObservability", "operatorDashboardSignals", "dd-fabrication-planner", "releasePackagePlan", "machineRelease"\]/);
-  assert.match(source, /"requirement": "split-combine-and-multi-process-learning"/);
-  assert.match(source, /"requirement": "mdp-pomdp-des-neural-learning"/);
-  assert.match(source, /"evidenceSurfaces": \["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"\]/);
+  assert.match(objectiveCoverageContentSource, /pub\(super\) fn matrix\(\) -> Vec<Value>/);
+  assert.match(objectiveCoverageContentSource, /"requirement": "3d-printing-and-hybrid-intake"/);
+  assert.match(
+    objectiveCoverageContentSource,
+    /"requirement": "machine-code-and-instruction-generation"/,
+  );
+  assert.match(
+    objectiveCoverageContentSource,
+    /"requirement": "existing-instruction-validation-and-improvement"/,
+  );
+  assert.match(
+    objectiveCoverageContentSource,
+    /"requirement": "machine-failure-and-human-intervention-boundaries"/,
+  );
+  assert.match(
+    objectiveCoverageContentSource,
+    /"requirement": "operator-observability-and-release-trust"/,
+  );
+  assert.match(
+    objectiveCoverageContentSource,
+    /"evidenceSurfaces": \["operatorObservability", "operatorDashboardSignals", "dd-fabrication-planner", "releasePackagePlan", "machineRelease"\]/,
+  );
+  assert.match(
+    objectiveCoverageContentSource,
+    /"requirement": "split-combine-and-multi-process-learning"/,
+  );
+  assert.match(objectiveCoverageContentSource, /"requirement": "mdp-pomdp-des-neural-learning"/);
+  assert.match(
+    objectiveCoverageContentSource,
+    /"evidenceSurfaces": \["mdpRequest", "desMdpSolution", "desPomdpSolution", "neuralPolicy", "neuralTrainingCorpus", "learningOutcomeMemory"\]/,
+  );
   assert.match(source, /objective_coverage_endpoint_exposes_goal_matrix/);
   assert.match(source, /"learning-policy-snapshot"/);
   assert.match(source, /"learning-outcome-memory"/);
   assert.match(source, /"learning-corpus"/);
-  assert.match(source, /"decomposition": \[/);
+  assert.match(source, /"decomposition": capabilities_content::decomposition_contracts\(\)/);
   assert.match(
-    source,
-    /"decompositionResult": \["POST \/decomposition\/result", "POST \/fabrication\/decomposition\/result"\]/,
+    capabilitiesContentSource,
+    /pub\(super\) fn decomposition_contracts\(\) -> Vec<&'static str>/,
   );
+  assert.match(capabilitiesContentSource, /"POST \/fabrication\/decomposition\/result"/);
+  assert.match(source, /"learning": capabilities_content::learning_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn learning_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/learning\/policy"/);
+  assert.match(source, /"inspection": capabilities_content::inspection_contracts\(\)/);
+  assert.match(capabilitiesContentSource, /pub\(super\) fn inspection_contracts\(\) -> Vec<&'static str>/);
+  assert.match(capabilitiesContentSource, /"GET \/fabrication\/jobs\/:job_id\/artifacts\/:artifact_id"/);
   assert.match(source, /async fn design_formats/);
   assert.match(source, /fn design_format_catalog_response/);
-  assert.match(source, /dd\.fabrication\.design-format-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/design\/formats"/);
+  assert.match(source, /mod design_format_content;/);
+  assert.match(source, /design_format_content::catalog_response\(design_format_catalog\(\)\)/);
+  assert.match(
+    designFormatContentSource,
+    /pub\(super\) fn catalog_response\(formats: Vec<SupportedDesignFormat>\) -> Value/,
+  );
+  assert.match(designFormatContentSource, /dd\.fabrication\.design-format-catalog\.v1/);
+  assert.match(designFormatContentSource, /"GET \/fabrication\/design\/formats"/);
+  assert.match(designFormatContentSource, /native CAD, CAD-kernel, cloud CAD/);
+  assert.match(designFormatContentSource, /prefer STEP or 3MF for mechanical CAD handoff/);
   assert.match(source, /async fn design_import_catalog_http/);
   assert.match(source, /fn design_import_catalog_response/);
-  assert.match(source, /fn design_import_catalog_contracts/);
-  assert.match(source, /fn design_import_translator_readiness_checklist/);
-  assert.match(source, /dd\.fabrication\.design-import-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/formats\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/design\/import\/catalog"/);
-  assert.match(source, /"translatorReadinessChecklist"/);
-  assert.match(source, /native-cad-translator-provenance/);
-  assert.match(source, /neutral-kernel-and-pmi-preservation/);
-  assert.match(source, /mesh-slicer-profile-readiness/);
-  assert.match(source, /sheet-profile-and-cam-handoff/);
+  assert.match(source, /mod design_import_content;/);
+  assert.match(source, /design_import_content::catalog_contracts\(\)/);
+  assert.match(source, /design_import_content::catalog_response\(\)/);
+  assert.match(designImportContentSource, /pub\(super\) fn catalog_contracts\(\) -> Vec<Value>/);
+  assert.match(designImportContentSource, /pub\(super\) fn translator_readiness_checklist\(\) -> Vec<Value>/);
+  assert.match(designImportContentSource, /pub\(super\) fn catalog_response\(\) -> Value/);
+  assert.match(designImportContentSource, /dd\.fabrication\.design-import-catalog\.v1/);
+  assert.match(designImportContentSource, /"GET \/fabrication\/formats\/catalog"/);
+  assert.match(designImportContentSource, /"GET \/fabrication\/design\/import\/catalog"/);
+  assert.match(designImportContentSource, /"translatorReadinessChecklist"/);
+  assert.match(designImportContentSource, /native-cad-translator-provenance/);
+  assert.match(designImportContentSource, /neutral-kernel-and-pmi-preservation/);
+  assert.match(designImportContentSource, /mesh-slicer-profile-readiness/);
+  assert.match(designImportContentSource, /sheet-profile-and-cam-handoff/);
   assert.match(source, /async fn design_preflight_catalog_http/);
   assert.match(source, /fn design_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.design-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/design\/preflight\/catalog"/);
-  assert.match(source, /source-identity-and-provenance-state/);
-  assert.match(source, /geometry-units-and-feature-state/);
-  assert.match(source, /conversion-simulation-and-learning-state/);
+  assert.match(source, /mod design_preflight_content;/);
+  assert.match(source, /design_preflight_content::catalog_response\(/);
+  assert.match(
+    designPreflightContentSource,
+    /pub\(super\) fn catalog_response\(\s*contracts: Vec<Value>,\s*formats: Vec<SupportedDesignFormat>,\s*\) -> Value/,
+  );
+  assert.match(designPreflightContentSource, /dd\.fabrication\.design-preflight-catalog\.v1/);
+  assert.match(designPreflightContentSource, /"GET \/fabrication\/design\/preflight\/catalog"/);
+  assert.match(designPreflightContentSource, /source-identity-and-provenance-state/);
+  assert.match(designPreflightContentSource, /geometry-units-and-feature-state/);
+  assert.match(designPreflightContentSource, /conversion-simulation-and-learning-state/);
   assert.match(source, /struct DesignImportReviewRequest/);
   assert.match(source, /async fn design_import_review_http/);
   assert.match(source, /fn design_import_review_response/);
@@ -3099,10 +3295,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /design_import_result_endpoint_reviews_boundaries_artifacts_and_learning/);
   assert.match(source, /async fn design_generation_catalog_http/);
   assert.match(source, /fn design_generation_catalog_response/);
-  assert.match(source, /fn design_generation_catalog_export_contracts/);
-  assert.match(source, /fn design_generation_catalog_handoff_contracts/);
-  assert.match(source, /dd\.fabrication\.design-generation-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/design\/generation\/catalog"/);
+  assert.match(source, /mod design_generation_content;/);
+  assert.match(source, /design_generation_content::catalog_response\(\)/);
+  assert.match(designGenerationContentSource, /pub\(super\) fn export_contracts\(\) -> Vec<Value>/);
+  assert.match(designGenerationContentSource, /pub\(super\) fn handoff_contracts\(\) -> Vec<Value>/);
+  assert.match(designGenerationContentSource, /pub\(super\) fn catalog_response\(\) -> Value/);
+  assert.match(designGenerationContentSource, /dd\.fabrication\.design-generation-catalog\.v1/);
+  assert.match(designGenerationContentSource, /"GET \/fabrication\/design\/generation\/catalog"/);
+  assert.match(designGenerationContentSource, /dd-parametric-csg-json/);
+  assert.match(designGenerationContentSource, /dd-sheet-nesting-json/);
+  assert.match(designGenerationContentSource, /printed\/milled\/turned route combinations/);
   assert.match(source, /async fn design_generate_http/);
   assert.match(source, /fn design_generation_response/);
   assert.match(source, /dd\.fabrication\.design-generation\.v1/);
@@ -3117,13 +3319,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /design_generation_endpoint_returns_design_package_and_exports/);
   assert.match(source, /async fn handoff_catalog_http/);
   assert.match(source, /fn handoff_catalog_response/);
-  assert.match(source, /fn handoff_catalog_lanes/);
-  assert.match(source, /dd\.fabrication\.handoff-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/handoff\/catalog"/);
-  assert.match(source, /"source-design-conversion"/);
-  assert.match(source, /"generated-design-and-cam-export"/);
-  assert.match(source, /"machine-program-controller-release"/);
-  assert.match(source, /"hybrid-split-combine-assembly"/);
+  assert.match(source, /mod handoff_catalog_content;/);
+  assert.match(source, /handoff_catalog_content::response\(\)/);
+  assert.match(handoffCatalogContentSource, /pub\(super\) fn lanes\(\) -> Vec<Value>/);
+  assert.match(handoffCatalogContentSource, /pub\(super\) fn response\(\) -> Value/);
+  assert.match(handoffCatalogContentSource, /dd\.fabrication\.handoff-catalog\.v1/);
+  assert.match(handoffCatalogContentSource, /"GET \/fabrication\/handoff\/catalog"/);
+  assert.match(handoffCatalogContentSource, /"source-design-conversion"/);
+  assert.match(handoffCatalogContentSource, /"generated-design-and-cam-export"/);
+  assert.match(handoffCatalogContentSource, /"machine-program-controller-release"/);
+  assert.match(handoffCatalogContentSource, /"hybrid-split-combine-assembly"/);
   assert.match(source, /handoff_catalog_endpoint_exposes_worker_lane_contracts/);
   assert.match(source, /struct HandoffResultReviewRequest/);
   assert.match(source, /async fn handoff_result_http/);
@@ -3827,16 +4032,28 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /instruction_improvement_result_endpoint_reviews_patch_artifacts_and_learning/);
   assert.match(source, /async fn machine_code_catalog_http/);
   assert.match(source, /fn machine_code_catalog_response/);
-  assert.match(source, /dd\.fabrication\.machine-code-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/machine-code\/catalog"/);
+  assert.match(source, /mod machine_code_catalog_content;/);
+  assert.match(source, /machine_code_catalog_content::response\(/);
+  assert.match(
+    machineCodeCatalogContentSource,
+    /pub\(super\) fn response\(\s*program_contracts: Vec<Value>,\s*controller_targets: Vec<Value>,\s*dialect_counts: BTreeMap<String, usize>,\s*target_selection_matrix: Vec<Value>,\s*\) -> Value/,
+  );
+  assert.match(machineCodeCatalogContentSource, /dd\.fabrication\.machine-code-catalog\.v1/);
+  assert.match(machineCodeCatalogContentSource, /"GET \/fabrication\/machine-code\/catalog"/);
   assert.match(source, /async fn machine_code_preflight_catalog_http/);
   assert.match(source, /fn machine_code_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.machine-code-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/machine-code\/preflight\/catalog"/);
-  assert.match(source, /program-source-and-design-state/);
-  assert.match(source, /controller-postprocessor-and-dialect-state/);
-  assert.match(source, /machine-setup-toolpath-and-process-state/);
-  assert.match(source, /validation-simulation-release-and-learning-state/);
+  assert.match(source, /mod machine_code_preflight_content;/);
+  assert.match(source, /machine_code_preflight_content::response\(/);
+  assert.match(
+    machineCodePreflightContentSource,
+    /pub\(super\) fn response\(\s*program_contracts: Vec<Value>,\s*controller_targets: Vec<Value>,?\s*\) -> Value/,
+  );
+  assert.match(machineCodePreflightContentSource, /dd\.fabrication\.machine-code-preflight-catalog\.v1/);
+  assert.match(machineCodePreflightContentSource, /"GET \/fabrication\/machine-code\/preflight\/catalog"/);
+  assert.match(machineCodePreflightContentSource, /program-source-and-design-state/);
+  assert.match(machineCodePreflightContentSource, /controller-postprocessor-and-dialect-state/);
+  assert.match(machineCodePreflightContentSource, /machine-setup-toolpath-and-process-state/);
+  assert.match(machineCodePreflightContentSource, /validation-simulation-release-and-learning-state/);
   assert.match(
     source,
     /\.route\("\/machine-code\/catalog", get\(machine_code_catalog_http\)\)/,
@@ -3845,11 +4062,12 @@ assert.match(source, /sheet-forming-evidence-missing/);
     source,
     /\.route\(\s*"\/fabrication\/machine-code\/catalog",\s*get\(machine_code_catalog_http\),\s*\)/,
   );
-  assert.match(source, /"programContracts": program_contracts/);
-  assert.match(source, /"controllerTargets": controller_targets/);
-  assert.match(source, /"machineCodePolicy"/);
+  assert.match(machineCodeCatalogContentSource, /"programContracts": program_contracts/);
+  assert.match(machineCodeCatalogContentSource, /"controllerTargets": controller_targets/);
+  assert.match(machineCodeCatalogContentSource, /"machineCodePolicy"/);
   assert.match(source, /fn machine_code_target_selection_matrix/);
-  assert.match(source, /"targetSelectionMatrix": machine_code_target_selection_matrix\(\)/);
+  assert.match(source, /machine_code_target_selection_matrix\(\)/);
+  assert.match(machineCodeCatalogContentSource, /"targetSelectionMatrix": target_selection_matrix/);
   assert.match(source, /additive-printer-firmware/);
   assert.match(source, /subtractive-mill-router-controller/);
   assert.match(source, /turning-and-mill-turn-controller/);
@@ -3896,12 +4114,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /machine_code_result_endpoint_reviews_controller_checks_and_learning/);
   assert.match(source, /async fn toolpath_catalog_http/);
   assert.match(source, /fn toolpath_catalog_response/);
-  assert.match(source, /fn toolpath_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.toolpath-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/toolpaths\/catalog"/);
-  assert.match(source, /"toolpathCatalog"/);
-  assert.match(source, /"sheet-cut-nesting-kerf-pierce-and-retention"/);
-  assert.match(source, /"mdp-request\.artifacts\.toolpathCatalog"/);
+  assert.match(source, /mod toolpath_catalog_content;/);
+  assert.match(source, /toolpath_catalog_content::response\(\)/);
+  assert.match(toolpathCatalogContentSource, /pub\(super\) fn response\(\) -> Value/);
+  assert.match(toolpathCatalogContentSource, /dd\.fabrication\.toolpath-catalog\.v1/);
+  assert.match(toolpathCatalogContentSource, /"GET \/fabrication\/toolpaths\/catalog"/);
+  assert.match(toolpathCatalogContentSource, /"toolpathContracts"/);
+  assert.match(toolpathCatalogContentSource, /"sheet-cut-nesting-kerf-pierce-and-retention"/);
+  assert.match(toolpathCatalogContentSource, /"mdp-request\.artifacts\.toolpathCatalog"/);
   assert.match(
     source,
     /toolpath_catalog_endpoint_exposes_path_release_and_learning_contract/,
@@ -4027,12 +4247,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(source, /async fn boundary_catalog_http/);
   assert.match(source, /fn boundary_catalog_response/);
+  assert.match(source, /mod boundary_catalog_content;/);
+  assert.match(source, /boundary_catalog_content::response\(/);
+  assert.match(
+    boundaryCatalogContentSource,
+    /pub\(super\) fn response\(\s*catalog: Vec<Value>,\s*families: Vec<String>,\s*family_counts: BTreeMap<String, usize>,\s*decision_matrix: Vec<Value>,\s*\) -> Value/,
+  );
   assert.match(source, /fn boundary_catalog_release_evidence/);
   assert.match(source, /fn boundary_decision_matrix/);
-  assert.match(source, /dd\.fabrication\.boundary-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/boundaries\/catalog"/);
-  assert.match(source, /"responseSurfaces"/);
-  assert.match(source, /"decisionMatrix"/);
+  assert.match(boundaryCatalogContentSource, /dd\.fabrication\.boundary-catalog\.v1/);
+  assert.match(boundaryCatalogContentSource, /"GET \/fabrication\/boundaries\/catalog"/);
+  assert.match(boundaryCatalogContentSource, /"responseSurfaces"/);
+  assert.match(boundaryCatalogContentSource, /"decisionMatrix": decision_matrix/);
   assert.match(source, /machine-failure-stop-or-regenerate/);
   assert.match(source, /human-intervention-or-automation-proof/);
   assert.match(source, /split-combine-or-interface-control/);
@@ -4042,11 +4268,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /boundary_catalog_endpoint_exposes_failure_intervention_and_split_combine_contract/);
   assert.match(source, /async fn boundary_preflight_catalog_http/);
   assert.match(source, /fn boundary_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.boundary-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/boundaries\/preflight\/catalog"/);
-  assert.match(source, /machine-failure-boundary-evidence-state/);
-  assert.match(source, /human-intervention-and-automation-gap-state/);
-  assert.match(source, /split-combine-and-remediation-boundary-state/);
+  assert.match(source, /mod boundary_preflight_content;/);
+  assert.match(source, /boundary_preflight_content::response\(/);
+  assert.match(
+    boundaryPreflightContentSource,
+    /pub\(super\) fn response\(\s*catalog: Vec<Value>,\s*families: Vec<String>,\s*family_counts: BTreeMap<String, usize>,\s*\) -> Value/,
+  );
+  assert.match(boundaryPreflightContentSource, /dd\.fabrication\.boundary-preflight-catalog\.v1/);
+  assert.match(boundaryPreflightContentSource, /"GET \/fabrication\/boundaries\/preflight\/catalog"/);
+  assert.match(boundaryPreflightContentSource, /machine-failure-boundary-evidence-state/);
+  assert.match(boundaryPreflightContentSource, /human-intervention-and-automation-gap-state/);
+  assert.match(boundaryPreflightContentSource, /split-combine-and-remediation-boundary-state/);
   assert.match(
     source,
     /boundary_preflight_catalog_endpoint_exposes_machine_failure_and_split_gates/,
@@ -4054,10 +4286,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn boundary_remediation_catalog_http/);
   assert.match(source, /fn boundary_remediation_catalog_response/);
   assert.match(source, /fn boundary_remediation_contracts/);
-  assert.match(source, /dd\.fabrication\.boundary-remediation-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/remediation\/catalog"/);
+  assert.match(source, /mod boundary_remediation_content;/);
+  assert.match(source, /boundary_remediation_content::response\(/);
+  assert.match(
+    boundaryRemediationContentSource,
+    /pub\(super\) fn response\(\s*contracts: Vec<Value>,\s*families: Vec<String>,\s*family_counts: BTreeMap<String, usize>,\s*\) -> Value/,
+  );
+  assert.match(boundaryRemediationContentSource, /dd\.fabrication\.boundary-remediation-catalog\.v1/);
+  assert.match(boundaryRemediationContentSource, /"GET \/fabrication\/remediation\/catalog"/);
   assert.match(source, /"boundaryRemediationCatalog"/);
-  assert.match(source, /"remediationContracts"/);
+  assert.match(boundaryRemediationContentSource, /"remediationContracts": contracts/);
   assert.match(source, /"machineReadyAfterRemediation": false/);
   assert.match(source, /remediation-catalog:\{boundary_kind\}/);
   assert.match(
@@ -4116,19 +4354,28 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn decomposition_catalog_response/);
   assert.match(source, /fn decomposition_catalog_target_contracts/);
   assert.match(source, /fn decomposition_catalog_interface_modes/);
-  assert.match(source, /dd\.fabrication\.decomposition-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/decomposition\/catalog"/);
-  assert.match(source, /"interfaceControlPlan\.controls"/);
+  assert.match(source, /mod decomposition_catalog_content;/);
+  assert.match(source, /decomposition_catalog_content::response\(/);
+  assert.match(
+    decompositionCatalogContentSource,
+    /pub\(super\) fn response\(\s*target_contracts: Vec<Value>,\s*interface_modes: Vec<Value>,\s*families: Vec<String>,\s*family_counts: BTreeMap<String, usize>,\s*target_kinds: Vec<String>,\s*route_machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(decompositionCatalogContentSource, /dd\.fabrication\.decomposition-catalog\.v1/);
+  assert.match(decompositionCatalogContentSource, /"GET \/fabrication\/decomposition\/catalog"/);
+  assert.match(decompositionCatalogContentSource, /"interfaceControlPlan\.controls"/);
   assert.match(source, /decomposition-target:split-boundary-decomposition/);
   assert.match(source, /decomposition_catalog_endpoint_exposes_split_combine_and_interface_contract/);
   assert.match(source, /async fn recomposition_catalog_http/);
   assert.match(source, /fn recomposition_catalog_response/);
-  assert.match(source, /dd\.fabrication\.recomposition-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/recomposition\/catalog"/);
+  assert.match(source, /mod recomposition_catalog_content;/);
+  assert.match(source, /recomposition_catalog_content::response\(\)/);
+  assert.match(recompositionCatalogContentSource, /pub\(super\) fn response\(\) -> Value/);
+  assert.match(recompositionCatalogContentSource, /dd\.fabrication\.recomposition-catalog\.v1/);
+  assert.match(recompositionCatalogContentSource, /"GET \/fabrication\/recomposition\/catalog"/);
   assert.match(source, /"recompositionCatalog": \["GET \/recomposition\/catalog", "GET \/fabrication\/recomposition\/catalog"\]/);
-  assert.match(source, /child-route-package-intake/);
-  assert.match(source, /interface-control-and-datum-transfer/);
-  assert.match(source, /joining-and-final-release/);
+  assert.match(recompositionCatalogContentSource, /child-route-package-intake/);
+  assert.match(recompositionCatalogContentSource, /interface-control-and-datum-transfer/);
+  assert.match(recompositionCatalogContentSource, /joining-and-final-release/);
   assert.match(source, /recomposition_catalog_endpoint_exposes_child_interface_join_and_learning_contract/);
   assert.match(source, /async fn decomposition_plan_http/);
   assert.match(source, /fn decomposition_planning_response/);
@@ -4170,18 +4417,30 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn assembly_catalog_http/);
   assert.match(source, /fn assembly_catalog_response/);
   assert.match(source, /fn assembly_catalog_contracts/);
-  assert.match(source, /dd\.fabrication\.assembly-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/assembly\/catalog"/);
+  assert.match(source, /mod assembly_catalog_content;/);
+  assert.match(source, /assembly_catalog_content::response\(/);
+  assert.match(
+    assemblyCatalogContentSource,
+    /pub\(super\) fn response\(\s*contracts: Vec<Value>,\s*families: Vec<String>,\s*worker_families: Vec<String>,\s*response_surfaces: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(assemblyCatalogContentSource, /dd\.fabrication\.assembly-catalog\.v1/);
+  assert.match(assemblyCatalogContentSource, /"GET \/fabrication\/assembly\/catalog"/);
   assert.match(source, /"assembly\.assemblyGraph"/);
   assert.match(source, /"join-recipe-and-lock-in"/);
   assert.match(source, /assembly_catalog_endpoint_exposes_recomposition_and_join_contracts/);
   assert.match(source, /async fn assembly_preflight_catalog_http/);
   assert.match(source, /fn assembly_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.assembly-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/assembly\/preflight\/catalog"/);
-  assert.match(source, /child-route-package-and-interface-state/);
-  assert.match(source, /join-recipe-fixture-and-process-state/);
-  assert.match(source, /final-fit-quality-release-and-learning-state/);
+  assert.match(source, /mod assembly_preflight_content;/);
+  assert.match(source, /assembly_preflight_content::response\(/);
+  assert.match(
+    assemblyPreflightContentSource,
+    /pub\(super\) fn response\(\s*contracts: Vec<Value>,\s*families: Vec<String>,\s*release_gates: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(assemblyPreflightContentSource, /dd\.fabrication\.assembly-preflight-catalog\.v1/);
+  assert.match(assemblyPreflightContentSource, /"GET \/fabrication\/assembly\/preflight\/catalog"/);
+  assert.match(assemblyPreflightContentSource, /child-route-package-and-interface-state/);
+  assert.match(assemblyPreflightContentSource, /join-recipe-fixture-and-process-state/);
+  assert.match(assemblyPreflightContentSource, /final-fit-quality-release-and-learning-state/);
   assert.match(
     source,
     /assembly_preflight_catalog_endpoint_exposes_recomposition_release_gates/,
@@ -4279,23 +4538,41 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn release_catalog_response/);
   assert.match(source, /fn release_catalog_gate_contracts/);
   assert.match(source, /fn release_catalog_blocker_sources/);
-  assert.match(source, /dd\.fabrication\.release-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/release\/catalog"/);
-  assert.match(source, /"machineRelease\.blockers"/);
+  assert.match(source, /mod release_catalog_content;/);
+  assert.match(source, /release_catalog_content::response\(/);
+  assert.match(
+    releaseCatalogContentSource,
+    /pub\(super\) fn response\(\s*gate_contracts: Vec<Value>,\s*gate_types: Vec<String>,\s*package_kinds: Vec<Value>,\s*package_kind_names: Vec<String>,\s*required_artifacts: Vec<&'static str>,\s*blocker_sources: Vec<Value>,\s*\) -> Value/,
+  );
+  assert.match(releaseCatalogContentSource, /dd\.fabrication\.release-catalog\.v1/);
+  assert.match(releaseCatalogContentSource, /"GET \/fabrication\/release\/catalog"/);
+  assert.match(releaseCatalogContentSource, /"machineRelease\.blockers"/);
   assert.match(source, /"split-combine-interface-release"/);
   assert.match(source, /async fn release_gate_catalog_http/);
   assert.match(source, /fn release_gate_catalog_response/);
-  assert.match(source, /dd\.fabrication\.release-gate-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/release\/gates\/catalog"/);
-  assert.match(source, /"releaseReadinessResult\.learning\.outcomeDraft"/);
+  assert.match(source, /mod release_gate_catalog_content;/);
+  assert.match(source, /release_gate_catalog_content::response\(/);
+  assert.match(
+    releaseGateCatalogContentSource,
+    /pub\(super\) fn response\(\s*gate_contracts: Vec<Value>,\s*gate_types: Vec<String>,\s*release_blocking_gate_count: usize,\s*\) -> Value/,
+  );
+  assert.match(releaseGateCatalogContentSource, /dd\.fabrication\.release-gate-catalog\.v1/);
+  assert.match(releaseGateCatalogContentSource, /"GET \/fabrication\/release\/gates\/catalog"/);
+  assert.match(releaseGateCatalogContentSource, /"releaseReadinessResult\.learning\.outcomeDraft"/);
   assert.match(source, /release_gate_catalog_endpoint_exposes_machine_ready_gate_matrix/);
   assert.match(source, /async fn release_preflight_catalog_http/);
   assert.match(source, /fn release_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.release-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/release\/preflight\/catalog"/);
-  assert.match(source, /manifest-artifact-and-checksum-state/);
-  assert.match(source, /machine-controller-simulation-and-process-state/);
-  assert.match(source, /quality-disposition-signoff-and-learning-state/);
+  assert.match(source, /mod release_preflight_content;/);
+  assert.match(source, /release_preflight_content::response\(/);
+  assert.match(
+    releasePreflightContentSource,
+    /pub\(super\) fn response\(\s*gate_contracts: Vec<Value>,\s*gate_types: Vec<String>,\s*package_kinds: Vec<Value>,\s*package_kind_names: Vec<String>,\s*required_artifacts: Vec<&'static str>,\s*blocker_sources: Vec<Value>,\s*\) -> Value/,
+  );
+  assert.match(releasePreflightContentSource, /dd\.fabrication\.release-preflight-catalog\.v1/);
+  assert.match(releasePreflightContentSource, /"GET \/fabrication\/release\/preflight\/catalog"/);
+  assert.match(releasePreflightContentSource, /manifest-artifact-and-checksum-state/);
+  assert.match(releasePreflightContentSource, /machine-controller-simulation-and-process-state/);
+  assert.match(releasePreflightContentSource, /quality-disposition-signoff-and-learning-state/);
   assert.match(
     source,
     /release_preflight_catalog_endpoint_exposes_machine_ready_handoff_gates/,
@@ -4387,11 +4664,14 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn execution_plan_http/);
   assert.match(source, /async fn execution_preflight_catalog_http/);
   assert.match(source, /fn execution_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.execution-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/execution\/preflight\/catalog"/);
-  assert.match(source, /program-run-and-machine-state/);
-  assert.match(source, /stop-point-human-intervention-and-automation-state/);
-  assert.match(source, /monitoring-recovery-and-release-state/);
+  assert.match(source, /mod execution_preflight_content;/);
+  assert.match(source, /execution_preflight_content::response\(\)/);
+  assert.match(executionPreflightContentSource, /pub\(super\) fn response\(\) -> Value/);
+  assert.match(executionPreflightContentSource, /dd\.fabrication\.execution-preflight-catalog\.v1/);
+  assert.match(executionPreflightContentSource, /"GET \/fabrication\/execution\/preflight\/catalog"/);
+  assert.match(executionPreflightContentSource, /program-run-and-machine-state/);
+  assert.match(executionPreflightContentSource, /stop-point-human-intervention-and-automation-state/);
+  assert.match(executionPreflightContentSource, /monitoring-recovery-and-release-state/);
   assert.match(source, /fn execution_planning_response/);
   assert.match(source, /dd\.fabrication\.execution-planning\.v1/);
   assert.match(source, /"POST \/fabrication\/execution\/plan"/);
@@ -4546,9 +4826,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn simulation_catalog_response/);
   assert.match(source, /fn simulation_catalog_risk_contracts/);
   assert.match(source, /fn simulation_catalog_dry_run_contracts/);
-  assert.match(source, /dd\.fabrication\.simulation-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/simulation\/catalog"/);
-  assert.match(source, /"simulation\.riskProfile"/);
+  assert.match(source, /mod simulation_catalog_content;/);
+  assert.match(source, /simulation_catalog_content::response\(/);
+  assert.match(
+    simulationCatalogContentSource,
+    /pub\(super\) fn response\(\s*risk_contracts: Vec<Value>,\s*trace_contracts: Vec<Value>,\s*dry_run_contracts: Vec<Value>,\s*risk_types: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(simulationCatalogContentSource, /dd\.fabrication\.simulation-catalog\.v1/);
+  assert.match(simulationCatalogContentSource, /"GET \/fabrication\/simulation\/catalog"/);
+  assert.match(simulationCatalogContentSource, /"simulation\.riskProfile"/);
   assert.match(source, /"toolpath-envelope-excursion"/);
   assert.match(source, /simulation_catalog_endpoint_exposes_dry_run_and_risk_contract/);
   assert.match(source, /async fn simulation_preflight_catalog_http/);
@@ -7828,8 +8114,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
     readme,
     /The landing page and JSON how-it-works\s+overview explain how the service turns fabrication goals/,
   );
-  assert.match(source, /"operatorDashboard": "\/grafana\/fabrication"/);
-  assert.match(source, /"operatorDashboardSignals": \[/);
+  assert.match(rootInventoryContentSource, /"operatorDashboard": "\/grafana\/fabrication"/);
+  assert.match(rootInventoryContentSource, /"operatorDashboardSignals": \[/);
   assert.match(readme, /split\/combine plans/);
   assert.match(readme, /release gates, and learned\s+outcomes/);
   assert.match(readme, /serve a human\s+landing page for operators and integration authors/);
@@ -7874,11 +8160,13 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /import-or-generate work/);
   assert.match(readme, /split\/combine release review/);
   assert.match(readme, /learning-from-results/);
-  assert.match(source, /"startHereWorkflow": \[/);
-  assert.match(source, /"step": "import-or-generate"/);
-  assert.match(source, /"step": "learn-from-results"/);
-  assert.match(source, /"GET \/fabrication\/materials\/catalog"/);
-  assert.match(source, /"GET \/fabrication\/learning\/engines\/catalog"/);
+  assert.match(source, /"startHereWorkflow": how_it_works_content::start_here_workflow\(\)/);
+  assert.match(source, /"flow": how_it_works_content::flow\(\)/);
+  assert.match(howItWorksContentSource, /pub\(super\) fn start_here_workflow\(\) -> Value/);
+  assert.match(howItWorksContentSource, /"step": "import-or-generate"/);
+  assert.match(howItWorksContentSource, /"step": "learn-from-results"/);
+  assert.match(howItWorksContentSource, /"GET \/fabrication\/materials\/catalog"/);
+  assert.match(howItWorksContentSource, /"GET \/fabrication\/learning\/engines\/catalog"/);
   assert.match(readme, /six-step\s+intake-to-release flow for\s+discovery, intake, generation, validation, release,\s+and learning/);
   assert.match(readme, /generated machine\s+code, printer instructions, imported\s+CNC\/controller streams/);
   assert.match(readme, /vertical mills,\s+horizontal mills/);
@@ -7894,9 +8182,10 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /`operatorObservability` section points machine clients/);
   assert.match(readme, /`\/grafana\/fabrication` and the `dd-fabrication-planner` dashboard/);
   assert.match(readme, /request\s+intake, release-blocker, NATS fanout, learning-feedback, artifact-ledger, and\s+runtime-capacity signals/);
-  assert.match(source, /"operatorObservability": \{/);
-  assert.match(source, /"grafanaUid": "dd-fabrication-planner"/);
-  assert.match(source, /"runtime capacity"/);
+  assert.match(source, /"operatorObservability": how_it_works_content::operator_observability\(\)/);
+  assert.match(howItWorksContentSource, /pub\(super\) fn operator_observability\(\) -> Value/);
+  assert.match(howItWorksContentSource, /"grafanaUid": "dd-fabrication-planner"/);
+  assert.match(howItWorksContentSource, /"runtime capacity"/);
   assert.match(readme, /`GET \/intake\/catalog`/);
   assert.match(readme, /`GET \/fabrication\/intake\/catalog`/);
   assert.match(readme, /`dd\.fabrication\.intake-catalog\.v1` discovery contract/);
