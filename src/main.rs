@@ -77470,6 +77470,164 @@ fn intervention_result_artifact_missing_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn intervention_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "intervention-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn intervention_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    operator_action_count: usize,
+    operator_blocker_count: usize,
+    automation_blocker_count: usize,
+    split_combine_blocker_count: usize,
+    evidence_gate_blocker_count: usize,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        intervention_priority_disposition(
+            "machine-failure-boundary-first",
+            if operator_action_count == 0
+                || operator_blocker_count > 0
+                || automation_blocker_count > 0
+                || evidence_gate_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("operatorActionCount:{operator_action_count}"),
+                format!("operatorBlockerCount:{operator_blocker_count}"),
+                format!("automationBlockerCount:{automation_blocker_count}"),
+                format!("evidenceGateBlockerCount:{evidence_gate_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/plan",
+                "POST /fabrication/release/result",
+            ],
+            if operator_action_count == 0
+                || operator_blocker_count > 0
+                || automation_blocker_count > 0
+                || evidence_gate_blocker_count > 0
+            {
+                "machineReady remains blocked by missing or unresolved intervention, automation, or evidence-gate proof"
+            } else {
+                "intervention result review did not report an open machine-failure priority blocker"
+            },
+        ),
+        intervention_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required || operator_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("humanInterventionRequired:{human_intervention_required}"),
+                format!("operatorBlockerCount:{operator_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required || operator_blocker_count > 0 {
+                "machineReady remains blocked until human intervention, restart, or operator signoff evidence is retained"
+            } else {
+                "intervention result review did not report an open human-intervention priority blocker"
+            },
+        ),
+        intervention_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_combine_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![format!(
+                "splitCombineBlockerCount:{split_combine_blocker_count}"
+            )],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_combine_blocker_count > 0 {
+                "machineReady remains blocked until split/combine or recomposition interface intervention evidence is dispositioned"
+            } else {
+                "intervention result did not surface split/combine or interface priority blockers"
+            },
+        ),
+        intervention_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/release/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until intervention artifacts retain URI, checksum, format, and evidence"
+            } else {
+                "intervention artifacts include release evidence for downstream review"
+            },
+        ),
+        intervention_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked intervention priority lanes before advisory promotion"
+            } else {
+                "intervention result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn intervention_result_review_response(
     request: InterventionResultReviewRequest,
 ) -> Result<Value, String> {
@@ -77618,6 +77776,24 @@ fn intervention_result_review_response(
     if human_intervention_required {
         observations.push("intervention:human-intervention-required".to_string());
     }
+    let artifact_evidence_missing = artifacts.is_empty() || missing_artifact_evidence_count > 0;
+    let priority_dispositions = intervention_priority_dispositions(
+        request.success,
+        release_blocked,
+        operator_actions.len(),
+        operator_blocker_count,
+        automation_blocker_count,
+        split_combine_blocker_count,
+        evidence_gate_blocker_count,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     observations.extend(operator_actions.iter().filter_map(|action| {
         action
             .get("actionKind")
@@ -77664,6 +77840,7 @@ fn intervention_result_review_response(
         "humanInterventionRequired": human_intervention_required,
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "interventionResult": {
             "planRequestId": validate_optional_label(request.plan_request_id, "planRequestId")?,
             "jobId": validate_optional_label(request.job_id, "jobId")?,
@@ -77706,6 +77883,7 @@ fn intervention_result_review_response(
                     format!("split-combine-blockers:{split_combine_blocker_count}"),
                     format!("human-intervention-required:{human_intervention_required}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -77716,6 +77894,7 @@ fn intervention_result_review_response(
             "intervention-split-combine-reviews",
             "intervention-evidence-gates",
             "intervention-artifacts",
+            "intervention-priority-dispositions",
             "intervention-learning-observations"
         ],
         "releasePolicy": [
@@ -77787,6 +77966,10 @@ fn stored_intervention_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "intervention-result".to_string(),
@@ -77822,6 +78005,12 @@ fn stored_intervention_result_job(response: &Value) -> StoredFabricationJob {
             "intervention-artifacts".to_string(),
             "intervention-artifacts",
             artifacts_payload,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "intervention-priority-dispositions".to_string(),
+            "intervention-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -85474,6 +85663,159 @@ fn process_capability_result_artifact_missing_release_evidence(artifact: &Value)
             .is_none_or(Vec::is_empty)
 }
 
+fn process_capability_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "process-capability-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn process_capability_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    finding_blocker_count: usize,
+    route_blocker_count: usize,
+    measurement_blocker_count: usize,
+    alternate_route_required: bool,
+    split_combine_required: bool,
+    redesign_required: bool,
+    human_intervention_required: bool,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        process_capability_priority_disposition(
+            "machine-failure-boundary-first",
+            if finding_blocker_count > 0 || route_blocker_count > 0 || measurement_blocker_count > 0
+            {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("findingBlockerCount:{finding_blocker_count}"),
+                format!("routeBlockerCount:{route_blocker_count}"),
+                format!("measurementBlockerCount:{measurement_blocker_count}"),
+            ],
+            vec![
+                "POST /fabrication/process-capabilities/result",
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/release/result",
+            ],
+            if finding_blocker_count > 0 || route_blocker_count > 0 || measurement_blocker_count > 0
+            {
+                "machineReady remains blocked until process-capability findings, alternate routes, or measured coupon results clear the requested geometry envelope"
+            } else {
+                "process-capability review did not report an open machine-failure priority blocker"
+            },
+        ),
+        process_capability_priority_disposition(
+            "human-intervention-required",
+            if human_intervention_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "humanInterventionRequired:{human_intervention_required}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/setup/result",
+                "POST /fabrication/release/result",
+            ],
+            if human_intervention_required {
+                "machineReady remains blocked until operator, fixture, fit-up, or automation evidence clears the process-capability exception"
+            } else {
+                "process-capability review did not report an open human-intervention priority blocker"
+            },
+        ),
+        process_capability_priority_disposition(
+            "split-combine-or-interface-review",
+            if split_combine_required || alternate_route_required || redesign_required {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "not-observed"
+            },
+            vec![
+                format!("splitCombineRequired:{split_combine_required}"),
+                format!("alternateRouteRequired:{alternate_route_required}"),
+                format!("redesignRequired:{redesign_required}"),
+            ],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/interfaces/result",
+                "POST /fabrication/assembly/plan",
+            ],
+            if split_combine_required || alternate_route_required || redesign_required {
+                "machineReady remains blocked until redesign, alternate route, split/combine, or interface-control evidence is retained"
+            } else {
+                "process-capability review did not surface split/combine or interface priority evidence"
+            },
+        ),
+        process_capability_priority_disposition(
+            "non-gcode-job-sheet-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/process-capabilities/result",
+                "POST /fabrication/quality/result",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until process-capability study, coupon, first-article, or simulation artifacts retain URI, checksum, format, and evidence"
+            } else {
+                "process-capability artifacts include retained release evidence for downstream review"
+            },
+        ),
+        process_capability_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked process-capability priority lanes before advisory promotion"
+            } else {
+                "process-capability result can be submitted as positive learning evidence after release review"
+            },
+        ),
+    ]
+}
+
 fn process_capability_result_review_response(
     request: ProcessCapabilityResultReviewRequest,
 ) -> Result<Value, String> {
@@ -85603,6 +85945,24 @@ fn process_capability_result_review_response(
     if human_intervention_required {
         learning_observations.push("process-capability:human-intervention-required".to_string());
     }
+    let priority_dispositions = process_capability_priority_dispositions(
+        request.success,
+        release_blocked,
+        finding_blocker_count,
+        route_blocker_count,
+        measurement_blocker_count,
+        alternate_route_required,
+        split_combine_required,
+        redesign_required,
+        human_intervention_required,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(capability_findings.iter().filter_map(|finding| {
         finding
             .get("capabilityFamily")
@@ -85658,6 +86018,7 @@ fn process_capability_result_review_response(
         "missingArtifactEvidenceCount": missing_artifact_evidence_count,
         "artifactEvidenceMissing": artifact_evidence_missing,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "processCapabilityResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -85731,6 +86092,7 @@ fn process_capability_result_review_response(
                     format!("human-intervention-required:{human_intervention_required}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -85740,6 +86102,7 @@ fn process_capability_result_review_response(
             "process-capability-alternate-routes",
             "process-capability-measurements",
             "process-capability-artifacts",
+            "process-capability-priority-dispositions",
             "process-capability-learning-observations",
             "mdp-request.artifacts.processCapabilityResult"
         ]
@@ -85798,6 +86161,10 @@ fn stored_process_capability_result_job(response: &Value) -> StoredFabricationJo
         .get("artifacts")
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let learning_observations = response
         .get("learning")
         .and_then(|learning| learning.get("observations"))
@@ -85832,6 +86199,12 @@ fn stored_process_capability_result_job(response: &Value) -> StoredFabricationJo
             "process-capability-artifacts".to_string(),
             "process-capability-artifacts",
             process_capability_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "process-capability-priority-dispositions".to_string(),
+            "process-capability-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -131289,9 +131662,58 @@ mod tests {
             .get("learning")
             .and_then(|learning| learning.get("observations"))
             .and_then(Value::as_array)
-            .is_some_and(|observations| observations.iter().any(|observation| {
-                observation.as_str() == Some("intervention-action:human-review")
-            })));
+            .is_some_and(|observations| {
+                observations.iter().any(|observation| {
+                    observation.as_str() == Some("intervention-action:human-review")
+                }) && observations.iter().any(|observation| {
+                    observation.as_str()
+                        == Some("intervention-priority:machine-failure-boundary-first:blocked")
+                }) && observations.iter().any(|observation| {
+                    observation.as_str()
+                        == Some("intervention-priority:human-intervention-required:blocked")
+                }) && observations.iter().any(|observation| {
+                    observation.as_str()
+                        == Some("intervention-priority:split-combine-or-interface-review:blocked")
+                })
+            }));
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("intervention priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "intervention-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "intervention-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "intervention-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "intervention-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition.get("learningObservation").and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing intervention priority disposition {}",
+                expected.0
+            );
+        }
         let outcome_draft = response
             .pointer("/learning/outcomeDraft")
             .expect("intervention outcome draft");
@@ -131311,6 +131733,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| { hint.as_str() == Some("hybrid-recomposition-interface-review") })));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("human-intervention-required")
+            })));
 
         let stored = stored_intervention_result_job(&response);
         assert_eq!(stored.record.kind, "intervention-result");
@@ -131323,6 +131752,7 @@ mod tests {
             "intervention-split-combine-reviews",
             "intervention-evidence-gates",
             "intervention-artifacts",
+            "intervention-priority-dispositions",
             "intervention-learning-observations",
         ] {
             assert!(
@@ -134808,6 +135238,10 @@ mod tests {
             "process-capability:alternate-route-required",
             "process-capability:split-combine-required",
             "process-capability:human-intervention-required",
+            "process-capability-priority:machine-failure-boundary-first:blocked",
+            "process-capability-priority:human-intervention-required:blocked",
+            "process-capability-priority:split-combine-or-interface-review:blocked",
+            "process-capability-priority:learning-feedback-after-disposition:pending-blocker-resolution",
             "process-capability-family:hybrid-split-combine-and-rework-envelope",
             "process-capability-scope:split-boundary",
             "process-capability-route:print-split-then-mill-interface",
@@ -134818,6 +135252,46 @@ mod tests {
                     .iter()
                     .any(|item| item.as_str() == Some(observation)),
                 "missing learning observation {observation}"
+            );
+        }
+        let priority_dispositions = response
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("process capability priority dispositions should be present");
+        for expected in [
+            (
+                "machine-failure-boundary-first",
+                "blocked",
+                "process-capability-priority:machine-failure-boundary-first:blocked",
+            ),
+            (
+                "human-intervention-required",
+                "blocked",
+                "process-capability-priority:human-intervention-required:blocked",
+            ),
+            (
+                "split-combine-or-interface-review",
+                "blocked",
+                "process-capability-priority:split-combine-or-interface-review:blocked",
+            ),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+                "process-capability-priority:learning-feedback-after-disposition:pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                        && disposition
+                            .get("learningObservation")
+                            .and_then(Value::as_str)
+                            == Some(expected.2)
+                }),
+                "missing process capability priority disposition {}",
+                expected.0
             );
         }
 
@@ -134866,6 +135340,13 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("split-combine-required:true"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition.get("priorityId").and_then(Value::as_str)
+                    == Some("split-combine-or-interface-review")
+            })));
 
         let job = stored_process_capability_result_job(&response);
         assert_eq!(job.record.kind, "process-capability-result");
@@ -134879,6 +135360,7 @@ mod tests {
             "process-capability-findings",
             "process-capability-alternate-routes",
             "process-capability-measurements",
+            "process-capability-priority-dispositions",
             "process-capability-learning-observations",
         ] {
             assert!(
