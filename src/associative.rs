@@ -781,7 +781,10 @@ fn alias_kind(left: &str, right: &str, value_jaccard: f64) -> &'static str {
     if left_canonical == right_canonical {
         return "normalized-name";
     }
-    if left_canonical.ends_with(&right_canonical) || right_canonical.ends_with(&left_canonical) {
+    if token_subset_match(left, right)
+        || left_canonical.ends_with(&right_canonical)
+        || right_canonical.ends_with(&left_canonical)
+    {
         return "suffix-match";
     }
     if value_jaccard >= 0.50 {
@@ -802,7 +805,10 @@ fn field_name_similarity(left: &str, right: &str) -> f64 {
     if left_canonical == right_canonical {
         return 0.95;
     }
-    if left_canonical.ends_with(&right_canonical) || right_canonical.ends_with(&left_canonical) {
+    if token_subset_match(left, right)
+        || left_canonical.ends_with(&right_canonical)
+        || right_canonical.ends_with(&left_canonical)
+    {
         return 0.80;
     }
     let left_tokens = field_tokens(left);
@@ -820,6 +826,14 @@ fn canonical_field_name(field: &str) -> String {
         .into_iter()
         .collect::<Vec<_>>()
         .join("_")
+}
+
+fn token_subset_match(left: &str, right: &str) -> bool {
+    let left_tokens = field_tokens(left);
+    let right_tokens = field_tokens(right);
+    !left_tokens.is_empty()
+        && !right_tokens.is_empty()
+        && (left_tokens.is_subset(&right_tokens) || right_tokens.is_subset(&left_tokens))
 }
 
 fn field_tokens(field: &str) -> BTreeSet<String> {
