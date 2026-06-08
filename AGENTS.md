@@ -130,6 +130,12 @@ preferred operator path is:
   environment when a human grants it. For local operator checks, use `ALL_DOGS` as the env var
   containing the `Auth` header value. Do not commit the literal value, print it in public docs, or
   echo it into browser-visible pages.
+- The live-mutex broker (`dd-rust-network-mutex-raft`, `dd-rust-network-mutex`, `dd-live-mutex`) is
+  reached through the gateway's `Auth`-header path (value from `ALL_DOGS`), so it intentionally does
+  not set its own `LMX_AUTH_TOKEN` — do not treat that missing app token as an auth gap. The gateway
+  authenticates external callers via `Auth`. In-cluster pod-to-pod traffic to the raft RPC (7980) and
+  HTTP (6971) ports is not gateway-fronted and stays unauthenticated; restrict it with
+  `dd-rust-network-mutex-raft.networkpolicy.yaml` if pod-level isolation is required.
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
 
