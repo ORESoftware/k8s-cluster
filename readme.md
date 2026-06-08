@@ -4692,6 +4692,19 @@ counts, interface evidence, release blockers, reward, `machine-ready`, and
 evidence only: missing CAD/CAM/controller context must remain a blocker or
 review-required state, and neural, MDP, POMDP, and DES scores stay advisory
 until validation, simulation, setup, quality, operator, and release gates clear.
+The payload also exposes `hybridDecisionFeatureContracts` for learning when to
+attempt a one-piece build, split work across printed, milled, turned, or
+sheet-cut subparts, and recompose interfaces. Those contracts name state
+features such as `route-decomposition-action`, `single-piece-feasibility`,
+`printed-subpart-count`, `milled-subpart-count`, `turned-subpart-count`,
+`interface-criticality`, `datum-transfer-risk`, and `join-process-risk`;
+action labels such as `split-for-printing`, `split-for-milling`,
+`split-for-turning`, and `combine-after-postprocess`; and release surfaces such
+as `interfaceControlPlan.controls`, `assemblyPlan.requiredEvidence`,
+`qualityPlan.inspectionPoints`, and `machineRelease.blockers`. Combined parts
+remain blocked until child instructions, setup evidence, simulation or dry-run
+proof, interface controls, quality evidence, and operator or automation signoff
+clear.
 
 ## `GET /fabrication/learning/rewards/catalog`
 
@@ -5526,12 +5539,16 @@ decomposition, and strategy result drafts can also use `joinKindHints` and
 split/combine plans.
 
 When a policy snapshot has at least two positive samples for a method such as
-`additive-print`, `milling`, `five-axis-milling`, `horizontal-milling`, `routing`, `sheet-cutting`,
-or `turning`, subsequent `/fabrication/plan` requests without explicit
-`preferredMethods` inherit those learned process preferences. Repeated
-multi-method successes such as `additive-print+milling` are retained as method
-combination preferences; open future requests can be decomposed into learned
-hybrid parts before machine selection. Repeated ordered successes such as
+`additive-print`, `milling`, `five-axis-milling`, `horizontal-milling`, `routing`,
+`sheet-cutting`, `plastic-joining`, or `turning`, subsequent
+`/fabrication/plan` requests without explicit `preferredMethods` inherit those
+learned process preferences. Repeated multi-method successes such as
+`additive-print+milling` or `additive-print+plastic-joining` are retained as
+method combination preferences; open future requests can be decomposed into
+learned hybrid parts before machine selection. Learned join-cell combinations
+keep each generated part's explicit preferred method authoritative so a
+plastic-joining policy can add a join lane without stealing the printed part's
+printer assignment. Repeated ordered successes such as
 `additive-print>milling>turning` are retained as operation-sequence preferences;
 open future requests can be decomposed into learned sequence parts in that order
 and surfaced as `learned-operation-sequence-preference:*` POMDP observations

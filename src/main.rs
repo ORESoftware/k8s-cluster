@@ -21100,6 +21100,7 @@ fn choose_machine<'a>(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let allow_constraint_method_routing = preferred.is_none();
 
     if preferred.is_none() {
         for preferred_machine_kind in &preferred_methods {
@@ -21272,17 +21273,20 @@ fn choose_machine<'a>(
             .any(|value| wants_adaptive_compensation(value));
     let wants_insert_installation_cell =
         preferred.as_deref().is_some_and(wants_insert_installation)
-            || preferred_methods
-                .iter()
-                .any(|value| wants_insert_installation(value));
+            || (allow_constraint_method_routing
+                && preferred_methods
+                    .iter()
+                    .any(|value| wants_insert_installation(value)));
     let wants_adhesive_bonding_cell = preferred.as_deref().is_some_and(wants_adhesive_bonding)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_adhesive_bonding(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_adhesive_bonding(value)));
     let wants_plastic_joining_cell = preferred.as_deref().is_some_and(wants_plastic_joining)
-        || preferred_methods
-            .iter()
-            .any(|value| wants_plastic_joining(value));
+        || (allow_constraint_method_routing
+            && preferred_methods
+                .iter()
+                .any(|value| wants_plastic_joining(value)));
     let wants_fastener_installation_cell = preferred
         .as_deref()
         .is_some_and(wants_fastener_installation)
@@ -46766,6 +46770,8 @@ fn canonical_policy_method(value: &str) -> Option<String> {
         Some("insert-installation".to_string())
     } else if wants_adhesive_bonding(&token) {
         Some("adhesive-bonding".to_string())
+    } else if wants_plastic_joining(&token) {
+        Some("plastic-joining".to_string())
     } else if wants_fastener_installation(&token) {
         Some("fastener-installation".to_string())
     } else if wants_rivet_installation(&token) {
@@ -46810,15 +46816,16 @@ fn method_rank(method: &str) -> u8 {
         "adaptive-compensation" => 10,
         "insert-installation" => 11,
         "adhesive-bonding" => 12,
-        "fastener-installation" => 13,
-        "rivet-installation" => 14,
-        "part-marking" => 15,
-        "packaging-labeling" => 16,
-        "composite-layup" => 17,
-        "hot-wire-foam-cutting" => 18,
-        "sheet-forming" => 19,
-        "sheet-cutting" => 20,
-        "turning" => 21,
+        "plastic-joining" => 13,
+        "fastener-installation" => 14,
+        "rivet-installation" => 15,
+        "part-marking" => 16,
+        "packaging-labeling" => 17,
+        "composite-layup" => 18,
+        "hot-wire-foam-cutting" => 19,
+        "sheet-forming" => 20,
+        "sheet-cutting" => 21,
+        "turning" => 22,
         _ => 100,
     }
 }
@@ -47086,6 +47093,9 @@ fn learned_part_description(method: &str) -> &'static str {
         }
         "turning" => {
             "learned turned shaft, bushing, threaded insert, or cylindrical component inferred from successful hybrid outcomes"
+        }
+        "plastic-joining" => {
+            "learned plastic joining, ultrasonic welding, heat staking, or solvent-weld release inferred from successful hybrid outcomes"
         }
         _ => "learned special-process component inferred from successful hybrid outcomes",
     }
@@ -101601,9 +101611,18 @@ fn learning_feature_catalog_response() -> Value {
                     "combine-count",
                     "join-count",
                     "interface-count",
+                    "route-decomposition-action",
+                    "single-piece-feasibility",
+                    "printed-subpart-count",
+                    "milled-subpart-count",
+                    "turned-subpart-count",
+                    "sheet-cut-subpart-count",
+                    "interface-criticality",
                     "datum-transfer-risk",
+                    "join-process-risk",
                     "recomposition-evidence",
-                    "assembly-human-review"
+                    "assembly-human-review",
+                    "human-intervention-required"
                 ],
                 "surfaces": [
                     "hybridMakePlan.splitCombineDecisions",
@@ -101653,6 +101672,70 @@ fn learning_feature_catalog_response() -> Value {
                     "neuralTrainingCorpus.examples",
                     "neuralTrainingCorpus.inferenceCandidates"
                 ]
+            }
+        ],
+        "hybridDecisionFeatureContracts": [
+            {
+                "decision": "attempt-single-piece-fabrication",
+                "stateFeatures": [
+                    "single-piece-feasibility",
+                    "machine-envelope",
+                    "stock-envelope",
+                    "validation-boundary-count",
+                    "simulation-boundary-count"
+                ],
+                "actionLabels": ["keep-one-piece", "regenerate-design", "route-to-human-review"],
+                "evidenceSurfaces": [
+                    "designPackage.parts",
+                    "machineSelection.candidates",
+                    "simulation.riskProfile",
+                    "machineRelease.blockers"
+                ],
+                "releasePolicy": "machineReady remains false when one-piece fabrication keeps unresolved machine-failure, envelope, setup, or simulation blockers"
+            },
+            {
+                "decision": "split-print-mill-or-turn",
+                "stateFeatures": [
+                    "route-decomposition-action",
+                    "printed-subpart-count",
+                    "milled-subpart-count",
+                    "turned-subpart-count",
+                    "sheet-cut-subpart-count",
+                    "join-process-risk"
+                ],
+                "actionLabels": [
+                    "split-for-printing",
+                    "split-for-milling",
+                    "split-for-turning",
+                    "split-for-sheet-cutting",
+                    "combine-after-postprocess"
+                ],
+                "evidenceSurfaces": [
+                    "decompositionPlan.parts",
+                    "hybridMakePlan.partRoutes",
+                    "processGraph.operations",
+                    "workflowActionQueue"
+                ],
+                "releasePolicy": "split routes remain draft until every child operation has generated or reviewed instructions, setup evidence, simulation or dry-run proof, and retained release artifacts"
+            },
+            {
+                "decision": "recompose-and-release-interfaces",
+                "stateFeatures": [
+                    "interface-count",
+                    "interface-criticality",
+                    "datum-transfer-risk",
+                    "recomposition-evidence",
+                    "assembly-human-review",
+                    "human-intervention-required"
+                ],
+                "actionLabels": ["bond", "fasten", "weld", "press-fit", "inspect-and-hold"],
+                "evidenceSurfaces": [
+                    "interfaceControlPlan.controls",
+                    "assemblyPlan.requiredEvidence",
+                    "qualityPlan.inspectionPoints",
+                    "releasePackagePlan.releaseGates"
+                ],
+                "releasePolicy": "combined parts cannot become machine-ready or release-ready until interface controls, assembly proof, quality evidence, and signoff clear"
             }
         ],
         "normalizationPolicy": [
@@ -135289,6 +135372,38 @@ mod tests {
             .is_some_and(|surfaces| surfaces.iter().any(|surface| {
                 surface.as_str() == Some("hybridMakePlan.splitCombineDecisions")
             }))));
+        let hybrid_decisions = payload
+            .get("hybridDecisionFeatureContracts")
+            .and_then(Value::as_array)
+            .expect("hybrid decision feature contracts should be exposed");
+        assert_eq!(hybrid_decisions.len(), 3);
+        for decision in [
+            "attempt-single-piece-fabrication",
+            "split-print-mill-or-turn",
+            "recompose-and-release-interfaces",
+        ] {
+            assert!(
+                hybrid_decisions
+                    .iter()
+                    .any(|item| item.get("decision").and_then(Value::as_str) == Some(decision)),
+                "missing hybrid decision feature contract {decision}"
+            );
+        }
+        let hybrid_decision_text =
+            serde_json::to_string(hybrid_decisions).expect("hybrid decisions should serialize");
+        for expected in [
+            "split-for-printing",
+            "split-for-milling",
+            "split-for-turning",
+            "interfaceControlPlan.controls",
+            "machineReady remains false",
+            "combined parts cannot become machine-ready",
+        ] {
+            assert!(
+                hybrid_decision_text.contains(expected),
+                "hybrid decision contracts should include {expected}"
+            );
+        }
         assert!(payload
             .get("normalizationPolicy")
             .and_then(Value::as_array)
@@ -157510,6 +157625,146 @@ mod tests {
         );
         assert!(learned.learning.actions.iter().any(|action| {
             action == "prefer-learned-method-combination-additive-print-milling"
+        }));
+    }
+
+    #[test]
+    fn learned_plastic_joining_combinations_decompose_future_open_requests() {
+        let first_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("plastic-joining-methods-1".to_string()),
+            job_id: Some("plan-plastic-joining-1".to_string()),
+            objective: Some(
+                "printed ABS enclosure ultrasonically welded after inspection".to_string(),
+            ),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "additive-print".to_string(),
+                "ultrasonic-welding".to_string(),
+            ]),
+            machine_kind: Some("plastic-joining-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("printed shell plus ultrasonic plastic weld".to_string()),
+            source_kind: None,
+            success: true,
+            reward: Some(2.4),
+            observations: Some(vec![
+                "energy director verified".to_string(),
+                "weld collapse in tolerance".to_string(),
+            ]),
+            notes: Some(vec![
+                "reuse printed plus plastic-joining process".to_string()
+            ]),
+            extra: BTreeMap::new(),
+        })
+        .expect("first learned plastic joining outcome should be valid");
+        let second_success = learning_outcome_record(LearningOutcomeRequest {
+            request_id: Some("plastic-joining-methods-2".to_string()),
+            job_id: Some("plan-plastic-joining-2".to_string()),
+            objective: Some(
+                "printed ABS case with heat-staked bosses and leak visual proof".to_string(),
+            ),
+            material: Some(material("abs", "polymer")),
+            manufacturing_methods: Some(vec![
+                "plastic-joining".to_string(),
+                "additive-print".to_string(),
+            ]),
+            machine_kind: Some("plastic-joining-cell".to_string()),
+            operation_sequence: None,
+            assembly_strategy: Some("printed shell plus ultrasonic plastic weld".to_string()),
+            source_kind: None,
+            success: true,
+            reward: Some(2.1),
+            observations: Some(vec![
+                "staking boss verified".to_string(),
+                "pull proof passed".to_string(),
+            ]),
+            notes: Some(vec!["same polymer join lane worked again".to_string()]),
+            extra: BTreeMap::new(),
+        })
+        .expect("second learned plastic joining outcome should be valid");
+        let mut memory = LearningMemory::new(8);
+        memory.insert(first_success);
+        memory.insert(second_success);
+        let snapshot = memory.snapshot();
+        assert!(snapshot
+            .method_combination_preferences
+            .iter()
+            .any(|preference| {
+                preference.key == "additive-print+plastic-joining"
+                    && preference.samples == 2
+                    && preference.recommendation == "prefer"
+            }));
+
+        let learned = plan_fabrication_with_policy(
+            FabricationPlanRequest {
+                request_id: Some("unit-learned-plastic-joining-combination".to_string()),
+                objective: "ABS enclosure that can use learned printed and joined polymer process"
+                    .to_string(),
+                material: Some(material("abs", "polymer")),
+                stock: None,
+                tolerance_mm: Some(0.2),
+                quantity: Some(1),
+                machines: Some(vec![
+                    MachineProfile {
+                        id: "abs-printer".to_string(),
+                        kind: "fdm-printer".to_string(),
+                        controller: Some("marlin".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![250.0, 210.0, 210.0]),
+                        axes: Some(3),
+                        operations: Some(vec!["additive-print".to_string()]),
+                        profile_evidence: None,
+                    },
+                    MachineProfile {
+                        id: "polymer-joiner".to_string(),
+                        kind: "plastic-joining-cell".to_string(),
+                        controller: Some("plastic-joining-job".to_string()),
+                        materials: Some(vec!["abs".to_string()]),
+                        work_envelope_mm: Some(vec![400.0, 250.0, 180.0]),
+                        axes: Some(3),
+                        operations: Some(vec![
+                            "plastic-joining".to_string(),
+                            "ultrasonic-welding".to_string(),
+                            "heat-staking".to_string(),
+                        ]),
+                        profile_evidence: None,
+                    },
+                ]),
+                constraints: None,
+                parts: None,
+                design_inputs: None,
+                existing_instructions: None,
+                learning: None,
+            },
+            Some(&snapshot),
+        )
+        .expect("learned plastic joining plan should work");
+
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-additive-print-part"
+                && part.machine_kind == "fdm-printer"
+                && part.manufacturing_method == "additive-print"
+        }));
+        assert!(learned.design.parts.iter().any(|part| {
+            part.id == "learned-plastic-joining-part"
+                && part.machine_kind == "plastic-joining-cell"
+                && part.manufacturing_method == "plastic-joining"
+        }));
+        assert!(learned.generated_programs.iter().any(|program| {
+            program.part_id == "learned-plastic-joining-part"
+                && program.machine_id == "polymer-joiner"
+                && program.language == "plastic-joining-job"
+                && program.instructions.iter().any(|instruction| {
+                    instruction.contains("VERIFY_PLASTIC_JOIN_SETUP")
+                        || instruction.contains("VERIFY_PLASTIC_JOIN_RELEASE")
+                })
+        }));
+        assert_eq!(
+            learned.assembly.strategy,
+            "learned hybrid assembly strategy: printed shell plus ultrasonic plastic weld"
+        );
+        assert!(learned.learning.actions.iter().any(|action| {
+            action == "prefer-learned-method-combination-additive-print-plastic-joining"
         }));
     }
 
