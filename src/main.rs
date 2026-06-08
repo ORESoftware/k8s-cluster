@@ -22460,6 +22460,175 @@ fn execution_artifact_missing_release_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn execution_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "execution-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn execution_priority_dispositions(
+    request_success: bool,
+    completed: bool,
+    execution_blocked: bool,
+    incomplete_segment_count: usize,
+    blocking_machine_stop_count: usize,
+    human_intervention_stop_count: usize,
+    restart_blocking_operator_intervention_count: usize,
+    split_combine_blocker_count: usize,
+    artifact_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        execution_priority_disposition(
+            "run-segment-completion",
+            if !completed || incomplete_segment_count > 0 {
+                "blocked"
+            } else if request_success && !execution_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("completed:{completed}"),
+                format!("incompleteSegmentCount:{incomplete_segment_count}"),
+            ],
+            vec![
+                "POST /fabrication/execution/result",
+                "POST /fabrication/monitoring/result",
+                "POST /fabrication/release/result",
+            ],
+            if !completed || incomplete_segment_count > 0 {
+                "machineReady remains blocked until every execution segment is completed, recovered, or converted into a retained stop/recovery gate"
+            } else {
+                "execution segments completed without retained segment blockers"
+            },
+        ),
+        execution_priority_disposition(
+            "machine-stop-recovery",
+            if blocking_machine_stop_count > 0 {
+                "blocked"
+            } else if request_success && !execution_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("blockingMachineStopCount:{blocking_machine_stop_count}"),
+                format!("humanInterventionStopCount:{human_intervention_stop_count}"),
+            ],
+            vec![
+                "POST /fabrication/execution/result",
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/interventions/result",
+            ],
+            if blocking_machine_stop_count > 0 {
+                "machineReady remains blocked until machine stops are classified, recovered, or converted into operator/release gates"
+            } else {
+                "execution reported no blocking machine stops"
+            },
+        ),
+        execution_priority_disposition(
+            "operator-intervention-closure",
+            if restart_blocking_operator_intervention_count > 0 {
+                "blocked"
+            } else if request_success && !execution_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "restartBlockingOperatorInterventionCount:{restart_blocking_operator_intervention_count}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/result",
+                "POST /fabrication/release/result",
+            ],
+            if restart_blocking_operator_intervention_count > 0 {
+                "machineReady remains blocked until restart-blocking operator interventions are resolved with retained evidence"
+            } else {
+                "execution retained no restart-blocking operator interventions"
+            },
+        ),
+        execution_priority_disposition(
+            "split-combine-or-redesign",
+            if split_combine_blocker_count > 0 {
+                "blocked"
+            } else if request_success && !execution_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("splitCombineBlockerCount:{split_combine_blocker_count}")],
+            vec![
+                "POST /fabrication/decomposition/plan",
+                "POST /fabrication/assembly/plan",
+                "POST /fabrication/interfaces/result",
+            ],
+            if split_combine_blocker_count > 0 {
+                "machineReady remains blocked until execution-time split/combine or redesign decisions are reviewed into decomposition, interface, and release-package evidence"
+            } else {
+                "execution retained no open split/combine redesign blockers"
+            },
+        ),
+        execution_priority_disposition(
+            "telemetry-artifact-evidence",
+            if artifact_evidence_missing {
+                "blocked"
+            } else if request_success && !execution_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "artifactEvidenceMissing:{artifact_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/execution/result",
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/jobs/:job_id/artifacts/:artifact_id",
+            ],
+            if artifact_evidence_missing {
+                "machineReady remains blocked until execution telemetry artifacts retain URI, checksum, format, and evidence labels"
+            } else {
+                "execution telemetry artifacts retained release evidence for replay and learning"
+            },
+        ),
+        execution_priority_disposition(
+            "learning-feedback-after-disposition",
+            if execution_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("executionBlocked:{execution_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if execution_blocked {
+                "learning feedback should preserve blocked execution priorities before repeat-run or machine-ready policy promotion"
+            } else {
+                "execution result can be submitted as positive run telemetry learning evidence after retained release review"
+            },
+        ),
+    ]
+}
+
 fn execution_result_review_response(
     request: ExecutionResultReviewRequest,
 ) -> Result<Value, String> {
@@ -22567,6 +22736,23 @@ fn execution_result_review_response(
     if artifact_evidence_missing {
         learning_observations.push("execution:artifact-evidence-missing".to_string());
     }
+    let priority_dispositions = execution_priority_dispositions(
+        request.success,
+        request.completed,
+        execution_blocked,
+        incomplete_segment_count,
+        blocking_machine_stop_count,
+        human_intervention_stop_count,
+        restart_blocking_operator_intervention_count,
+        split_combine_blocker_count,
+        artifact_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(run_segments.iter().filter_map(|segment| {
         segment
             .get("status")
@@ -22651,6 +22837,7 @@ fn execution_result_review_response(
         "artifactEvidenceMissing": artifact_evidence_missing,
         "metricCount": metrics.len(),
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "executionResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -22727,6 +22914,7 @@ fn execution_result_review_response(
                     format!("split-combine-blockers:{split_combine_blocker_count}"),
                     format!("artifact-evidence-missing:{artifact_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -22755,6 +22943,7 @@ fn execution_result_review_response(
             "execution-operator-interventions",
             "execution-split-combine-decisions",
             "execution-artifacts",
+            "execution-priority-dispositions",
             "execution-learning-observations",
             "machine-telemetry-log",
             "operator-intervention-log",
@@ -22830,6 +23019,10 @@ fn stored_execution_result_job(response: &Value) -> StoredFabricationJob {
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "execution-result".to_string(),
@@ -22865,6 +23058,12 @@ fn stored_execution_result_job(response: &Value) -> StoredFabricationJob {
             "execution-artifacts".to_string(),
             "execution-artifacts",
             telemetry_artifacts,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "execution-priority-dispositions".to_string(),
+            "execution-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -61803,6 +62002,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/decomposition/result",
         "GET /release/catalog",
         "GET /fabrication/release/catalog",
+        "GET /release/gates/catalog",
+        "GET /fabrication/release/gates/catalog",
         "GET /release/preflight/catalog",
         "GET /fabrication/release/preflight/catalog",
         "POST /release/preview",
@@ -65400,6 +65601,82 @@ fn release_catalog_response() -> Value {
     })
 }
 
+fn release_gate_catalog_response() -> Value {
+    let gate_contracts = release_catalog_gate_contracts();
+    let gate_types = unique_sorted(gate_contracts.iter().filter_map(|item| {
+        item.get("gateType")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+    }));
+    let release_blocking_gate_count = gate_contracts
+        .iter()
+        .filter(|item| {
+            item.get("releaseBlocking")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.release-gate-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /release/gates/catalog",
+            "GET /fabrication/release/gates/catalog"
+        ],
+        "relatedRoutes": [
+            "GET /fabrication/release/catalog",
+            "GET /fabrication/release/preflight/catalog",
+            "POST /fabrication/release/preview",
+            "POST /fabrication/release/result",
+            "GET /fabrication/jobs/:job_id/release-bundle"
+        ],
+        "gateCount": gate_contracts.len(),
+        "releaseBlockingGateCount": release_blocking_gate_count,
+        "gateTypes": gate_types,
+        "machineReadyRule": "machineReady remains false until every release-blocking gate has retained evidence, cleared blockers, and operator or automation signoff when required",
+        "evidenceSurfaceFamilies": [
+            "source-provenance",
+            "design-export-review",
+            "machine-envelope",
+            "controller-postprocess-compatibility",
+            "setup-quality-monitoring-evidence",
+            "split-combine-interface-release",
+            "simulation-or-dry-run-evidence",
+            "learning-disposition"
+        ],
+        "responseSurfaces": [
+            "releasePackagePlan.releaseGates",
+            "releasePackagePlan.requiredArtifacts",
+            "machineRelease.status",
+            "machineRelease.blockers",
+            "machineRelease.checklist",
+            "controllerPlan.releaseGates",
+            "postprocessPlan.blockers",
+            "simulation.riskProfile",
+            "decompositionPlan.releaseGates",
+            "interfaceControlPlan.releaseGates",
+            "priorityDispositions"
+        ],
+        "learningSurfaces": [
+            "releasePackagePlan.learningObservations",
+            "releaseProbePlan.probes",
+            "releaseReadinessResult.learning.outcomeDraft",
+            "pomdpBeliefState.hiddenStates",
+            "neuralTrainingCorpus.examples",
+            "mdp-request.artifacts.releasePackagePlan"
+        ],
+        "releasePolicy": [
+            "release gate catalog entries expose machine-ready blockers for UIs, workers, and reviewers; they do not certify equipment safety",
+            "generated designs, machine code, slicer jobs, imported CNC/controller streams, text job sheets, split routes, and recomposed assemblies remain advisory until retained gate evidence clears",
+            "gate outcomes and priority dispositions are learning signals for MDP/POMDP/DES/neural workers, but learned policy never bypasses release gates"
+        ],
+        "gateContracts": gate_contracts
+    })
+}
+
 fn release_preflight_catalog_response() -> Value {
     let gate_contracts = release_catalog_gate_contracts();
     let gate_types = unique_sorted(gate_contracts.iter().filter_map(|item| {
@@ -65506,6 +65783,10 @@ fn release_preflight_catalog_response() -> Value {
 
 async fn release_catalog_http() -> impl IntoResponse {
     Json(release_catalog_response())
+}
+
+async fn release_gate_catalog_http() -> impl IntoResponse {
+    Json(release_gate_catalog_response())
 }
 
 async fn release_preflight_catalog_http() -> impl IntoResponse {
@@ -118666,6 +118947,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
+        .route("/release/gates/catalog", get(release_gate_catalog_http))
+        .route(
+            "/fabrication/release/gates/catalog",
+            get(release_gate_catalog_http),
+        )
         .route(
             "/release/preflight/catalog",
             get(release_preflight_catalog_http),
@@ -130382,6 +130668,59 @@ mod tests {
     }
 
     #[test]
+    fn release_gate_catalog_endpoint_exposes_machine_ready_gate_matrix() {
+        let payload = release_gate_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.release-gate-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/release/gates/catalog"))));
+        assert_eq!(
+            payload.get("gateCount").and_then(Value::as_u64),
+            Some(release_catalog_gate_contracts().len() as u64)
+        );
+        assert!(payload
+            .get("machineReadyRule")
+            .and_then(Value::as_str)
+            .is_some_and(|rule| rule.contains("machineReady remains false")));
+        let gate_contracts = payload
+            .get("gateContracts")
+            .and_then(Value::as_array)
+            .expect("release gate catalog should include gate contracts");
+        for expected in [
+            "design-export-review",
+            "setup-quality-monitoring-evidence",
+            "machine-release-signoff",
+            "controller-postprocess-compatibility",
+            "split-combine-interface-release",
+        ] {
+            assert!(
+                gate_contracts
+                    .iter()
+                    .any(|gate| { gate.get("gateType").and_then(Value::as_str) == Some(expected) }),
+                "missing release gate contract {expected}"
+            );
+        }
+        let payload_text = payload.to_string();
+        for expected in [
+            "priorityDispositions",
+            "releaseReadinessResult.learning.outcomeDraft",
+            "generated designs, machine code, slicer jobs, imported CNC/controller streams, text job sheets, split routes, and recomposed assemblies remain advisory",
+            "learned policy never bypasses release gates",
+        ] {
+            assert!(
+                payload_text.contains(expected),
+                "release gate catalog should include {expected}"
+            );
+        }
+    }
+
+    #[test]
     fn release_preflight_catalog_endpoint_exposes_machine_ready_handoff_gates() {
         let payload = release_preflight_catalog_response();
         assert_eq!(
@@ -131528,6 +131867,31 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(0)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("execution priority dispositions");
+        for expected in [
+            ("run-segment-completion", "blocked"),
+            ("machine-stop-recovery", "blocked"),
+            ("operator-intervention-closure", "blocked"),
+            ("split-combine-or-redesign", "blocked"),
+            ("telemetry-artifact-evidence", "needs-review"),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                }),
+                "missing execution priority disposition {}",
+                expected.0
+            );
+        }
         assert!(payload
             .get("executionResult")
             .and_then(|result| result.get("machineStops"))
@@ -131601,6 +131965,15 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| { hint.as_str() == Some("split-combine-blockers:1") })));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some("execution-priority:machine-stop-recovery:blocked")
+            })));
 
         let execution_result_job_id = payload
             .get("executionResultJobId")
@@ -131622,6 +131995,7 @@ mod tests {
             "execution-operator-interventions",
             "execution-split-combine-decisions",
             "execution-artifacts",
+            "execution-priority-dispositions",
             "execution-learning-observations",
         ] {
             assert!(

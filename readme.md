@@ -177,6 +177,8 @@ outcomes.
 - `POST /fabrication/interfaces/result`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
+- `GET /release/gates/catalog`
+- `GET /fabrication/release/gates/catalog`
 - `GET /release/preflight/catalog`
 - `GET /fabrication/release/preflight/catalog`
 - `POST /release/preview`
@@ -2624,6 +2626,24 @@ observations are emitted for MDP/POMDP/neural workers so future planning can
 learn which evidence cleared or blocked printed, milled, turned, sheet-cut, EDM,
 and recomposed routes.
 
+## `GET /fabrication/release/gates/catalog`
+
+`GET /release/gates/catalog` and the gateway-prefixed
+`GET /fabrication/release/gates/catalog` return the direct
+`dd.fabrication.release-gate-catalog.v1` machine-ready gate matrix used by the
+release catalog and job release bundles. The payload exposes each release-blocking
+gate contract, the machine-ready rule, evidence surface families, response
+surfaces such as `releasePackagePlan.releaseGates`, `machineRelease.blockers`,
+`controllerPlan.releaseGates`, `postprocessPlan.blockers`,
+`simulation.riskProfile`, `interfaceControlPlan.releaseGates`, and
+`priorityDispositions`, plus learning surfaces for release probes,
+`releaseReadinessResult.learning.outcomeDraft`, POMDP hidden states, neural
+examples, and `mdp-request` artifacts. Generated designs, machine code, slicer
+jobs, imported CNC/controller streams, text job sheets, split routes, and
+recomposed assemblies remain advisory until retained release-gate evidence clears
+the relevant blockers. Gate outcomes can teach MDP/POMDP/DES/neural workers which
+paths clear safely, but learned policy never bypasses release gates.
+
 ## `GET /fabrication/release/preflight/catalog`
 
 `GET /release/preflight/catalog` and the gateway-prefixed
@@ -2750,24 +2770,26 @@ worker metadata.
 The response exposes `executionResult`, `executionResultJobId`, `generatedAtMs`,
 `executionBlocked`, `blockingMachineStopCount`,
 `restartBlockingOperatorInterventionCount`, `splitCombineBlockerCount`,
-`missingArtifactEvidenceCount`, and the execution-telemetry
+`missingArtifactEvidenceCount`, `priorityDispositions`, and the execution-telemetry
 request/queue/result subjects. It also includes a
 `dd.fabrication.execution-learning-outcome-draft.v1` payload with run, machine,
-state, stop, operator-action, split/combine, artifact, reward, and submit-route
-hints for `POST /fabrication/learning/outcomes`. Successful reviews are retained in the bounded
-job ledger under `executionResultJobId`; `/jobs/:job_id` and
+state, stop, operator-action, split/combine, artifact, priority, reward, and
+submit-route hints for `POST /fabrication/learning/outcomes`. Successful reviews
+are retained in the bounded job ledger under `executionResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `execution-result`,
 `execution-run-segments`, `execution-machine-stops`,
 `execution-operator-interventions`, `execution-split-combine-decisions`,
-`execution-artifacts`, and `execution-learning-observations`. Repeat execution
+`execution-artifacts`, `execution-priority-dispositions`, and
+`execution-learning-observations`. Repeat execution
 or machine-ready release remains blocked until machine stops, unresolved
 operator interventions, split/combine or redesign decisions, and telemetry
 artifacts clear with retained evidence. Execution observations include
 `execution-stop:*`, `execution-stop-kind:*`,
 `execution-recommended-action:*`, `execution-operator-action:*`,
-`execution-split-combine:*`, and `execution-artifact:*` signals so
-MDP/POMDP/neural workers can learn which real runs succeeded, failed, required
-human intervention, or forced separating/combining parts.
+`execution-split-combine:*`, `execution-artifact:*`, and
+`execution-priority:*` signals so MDP/POMDP/neural workers can learn which real
+runs succeeded, failed, required human intervention, or forced
+separating/combining parts.
 
 ## `GET /fabrication/strategy/catalog`
 
