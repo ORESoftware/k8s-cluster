@@ -9,7 +9,8 @@ It exposes:
 `GET /` returns the machine-readable service inventory with a `landingPage`
 block for the human fabrication overview, a compact `startHere` map to
 `/fabrication`, `/fabrication/landing`, `/fabrication/how-it-works`, capabilities, schema,
-examples, and generated API docs. The landing page and JSON how-it-works
+examples, generated API docs, and the `/grafana/fabrication` operator dashboard.
+The landing page and JSON how-it-works
 overview explain how the service turns fabrication goals into
 design/import decisions, machine/material route choices, split/combine plans,
 instruction generation or review, validation, release gates, and learned
@@ -32,6 +33,8 @@ outcomes.
 - `GET /fabrication/machines/catalog`
 - `GET /printers/catalog`
 - `GET /fabrication/printers/catalog`
+- `GET /fdm-printer/catalog`
+- `GET /fabrication/fdm-printer/catalog`
 - `GET /printers/preflight/catalog`
 - `GET /fabrication/printers/preflight/catalog`
 - `GET /subtractive/catalog`
@@ -40,12 +43,18 @@ outcomes.
 - `GET /fabrication/subtractive/preflight/catalog`
 - `GET /mill-router/catalog`
 - `GET /fabrication/mill-router/catalog`
+- `GET /vertical-mill/catalog`
+- `GET /fabrication/vertical-mill/catalog`
+- `GET /horizontal-mill/catalog`
+- `GET /fabrication/horizontal-mill/catalog`
 - `GET /sheet-cutting/catalog`
 - `GET /fabrication/sheet-cutting/catalog`
 - `GET /edm/catalog`
 - `GET /fabrication/edm/catalog`
 - `GET /turning/catalog`
 - `GET /fabrication/turning/catalog`
+- `GET /lathe/catalog`
+- `GET /fabrication/lathe/catalog`
 - `GET /turning/preflight/catalog`
 - `GET /fabrication/turning/preflight/catalog`
 - `GET /cleanliness/preflight/catalog`
@@ -666,6 +675,7 @@ is supplied.
   thermal-runaway/heater-watchdog, nozzle-clog/underextrusion, camera, smoke,
   alerting, and emergency-stop evidence for unattended or long printer streams,
   bed-adhesion, first-layer, fan-timing, resin exposure/profile/layer/support evidence,
+  resin island/support/hollowing/drain/suction/peel-force evidence,
   resin layer/exposure manifest image-hash/checksum and peel/lift/recoat evidence,
   including generated `EXPOSE`/`PEEL` image-stack records and peel/lift/recoat evidence, resin
   vat-capacity/refill evidence, resin-handling/postprocess evidence,
@@ -855,10 +865,11 @@ The payload includes an `objectiveCoverageMatrix` so clients can audit the
 server against the top-level fabrication mission without scraping README prose.
 Rows cover 3D-printing and hybrid intake, machine-code and instruction
 generation, existing-instruction validation and improvement, machine-failure and
-human-intervention boundaries, split/combine multi-process learning, and
-MDP/POMDP/DES/neural learning. Each row names primary routes, evidence surfaces,
-and the release rule that keeps advisory plans from becoming machine-ready until
-retained evidence clears the matching gates.
+human-intervention boundaries, operator observability and release trust,
+split/combine multi-process learning, and MDP/POMDP/DES/neural learning. Each row
+names primary routes, evidence surfaces, and the release rule that keeps advisory
+plans from becoming machine-ready until retained evidence clears the matching
+gates.
 These capabilities describe draft planning and validation support, not
 controller-certified release.
 
@@ -870,11 +881,13 @@ controller-certified release.
 capability payload. It exposes the `objectiveCoverageMatrix` directly, including
 coverage rows for 3D-printing and hybrid intake, machine-code and instruction
 generation, existing-instruction validation and improvement, machine-failure and
-human-intervention boundaries, split/combine multi-process learning, and
-MDP/POMDP/DES/neural learning. The endpoint is for integration audits and UI
-discovery; every row still declares advisory release rules, so machine-ready
-approval remains gated by retained validation, simulation, setup, quality,
-release, and human or automation evidence.
+human-intervention boundaries, operator observability and release trust,
+split/combine multi-process learning, and MDP/POMDP/DES/neural learning. The
+operator-observability row names `/fabrication`, `/fabrication/how-it-works`,
+`/metrics`, and `/grafana/fabrication` as the release-trust inspection path, but
+the endpoint is still for integration audits and UI discovery; every row declares
+advisory release rules, so machine-ready approval remains gated by retained
+validation, simulation, setup, quality, release, and human or automation evidence.
 
 ## `GET /fabrication/machines/catalog`
 
@@ -926,6 +939,26 @@ retention. Printer catalog entries are default additive planning profiles, not
 certified live printer availability; machine-ready release remains blocked until
 the printer profile, material, slicer/job-sheet, support/build-surface,
 simulation, and operator or automation evidence clear.
+
+## `GET /fabrication/fdm-printer/catalog`
+
+`GET /fdm-printer/catalog` and the gateway-prefixed
+`GET /fabrication/fdm-printer/catalog` return the
+`dd.fabrication.fdm-printer-catalog.v1` discovery view for extrusion-style
+additive machines. The catalog narrows the printer catalog to FDM/FFF,
+multi-material FDM/toolchanger, pellet/FGF, paste/clay extrusion, and
+bound-metal filament FFF profiles. It lists the setup evidence needed before
+positive extrusion, including hotend and bed temperature waits, filament or
+feedstock lot/dry-storage/moisture and capacity checks, slicer profile,
+nozzle diameter, extrusion calibration, flow or pressure-advance and
+volumetric-flow evidence, bed mesh, Z-offset, first-layer adhesion, purge/prime,
+runout, resume-state, and support/orientation review. The payload also names the
+additive boundary families that keep machine-ready release blocked for nozzle or
+bed wait gaps, material conditioning gaps, extrusion calibration gaps,
+multi-material map or purge/resume gaps, and bound-metal FFF debind/sinter gaps.
+FDM outcomes should feed slicer, material, telemetry, quality, costing, and
+learning routes so DES, MDP/POMDP, and neural workers can learn when to split,
+combine, reorient, reroute, or require human intervention.
 
 ## `GET /fabrication/subtractive/catalog`
 
@@ -987,6 +1020,50 @@ should feed toolpath, workholding, setup, controller, simulation, quality,
 telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn
 safer fixture, index, split, combine, reroute, or human-intervention strategies.
 
+## `GET /fabrication/vertical-mill/catalog`
+
+`GET /vertical-mill/catalog` and the gateway-prefixed
+`GET /fabrication/vertical-mill/catalog` return the live
+`dd.fabrication.vertical-mill-catalog.v1` discovery view for vertical-mill
+fixture-plate, vise, pocket, drill, face, contour, toe-clamp, soft-jaw, and
+modular-fixture planning profiles derived from the mill/router and subtractive
+catalogs. The payload exposes the vertical-mill machine kind, controllers,
+materials, operations, setup evidence, release policy, and links to machine
+selection, toolpath, workholding, setup, decomposition, controller, simulation,
+quality, and learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until stock orientation, workholding, work-offset/probe
+or setup-sheet datum evidence, tool-length/touch-off, cutter compensation,
+tool-change, positive spindle and feed/speed evidence, chip evacuation, dry-run,
+quality, and operator or automation signoff evidence are retained.
+Vertical-mill outcomes should feed decomposition, workholding, setup,
+controller, simulation, quality, telemetry, and learning routes so DES,
+MDP/POMDP, and neural workers can learn when prismatic features should be split,
+combined, re-fixtured, rerouted, or held for human intervention.
+
+## `GET /fabrication/horizontal-mill/catalog`
+
+`GET /horizontal-mill/catalog` and the gateway-prefixed
+`GET /fabrication/horizontal-mill/catalog` return the live
+`dd.fabrication.horizontal-mill-catalog.v1` discovery view for horizontal-mill
+side-face, tombstone, pallet-index, angle-plate, heavy-slot, keyway, spline, and
+slitting-saw planning profiles derived from the mill/router and subtractive
+catalogs. The payload exposes the horizontal-mill machine kind, controllers,
+materials, operations, setup evidence, release policy, and links to machine
+selection, toolpath, workholding, setup, decomposition, controller, simulation,
+quality, and learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until fixture-column or pallet setup, index/datum
+transfer, arbor or side-cutter support, tool-length/probe, cutter compensation,
+positive spindle and feed/speed evidence, chip evacuation, dry-run, quality, and
+operator or automation signoff evidence are retained. Horizontal-mill outcomes
+should feed decomposition, workholding, setup, controller, simulation, quality,
+telemetry, and learning routes so DES, MDP/POMDP, and neural workers can learn
+when side features should be split, combined, indexed, rerouted, or held for
+human intervention.
+
 ## `GET /fabrication/sheet-cutting/catalog`
 
 `GET /sheet-cutting/catalog` and the gateway-prefixed
@@ -1045,6 +1122,26 @@ and operator or automation signoff evidence. Turning outcomes should be retained
 through controller, setup, simulation, quality, telemetry, and learning routes so
 DES, MDP/POMDP, and neural workers can learn when to split, combine, reroute, or
 require human intervention.
+
+## `GET /fabrication/lathe/catalog`
+
+`GET /lathe/catalog` and the gateway-prefixed `GET /fabrication/lathe/catalog`
+return the live `dd.fabrication.lathe-catalog.v1` discovery view for two-axis
+lathe turning, facing, boring, threading, and part-off planning profiles derived
+from the turning and subtractive catalogs. The payload exposes the lathe machine
+kind, controllers, materials, operations, setup evidence, release policy, and
+links to machine selection, toolpath, workholding, setup, decomposition,
+controller, simulation, quality, and learning outcome routes.
+
+The catalog is advisory rather than a live-machine approval. Machine-ready
+release remains blocked until chuck or collet setup, stock stick-out/runout,
+bar-support or tailstock evidence, tool-nose radius and wear offsets,
+spindle/feed mode, thread pitch, part-off support, chip evacuation, dry-run,
+quality, and operator or automation signoff evidence are retained. Lathe
+outcomes should feed decomposition, workholding, setup, controller, simulation,
+quality, telemetry, and learning routes so DES, MDP/POMDP, and neural workers can
+learn when turned inserts should be split, combined, supported, rerouted, or held
+for human intervention.
 
 ## `GET /fabrication/turning/preflight/catalog`
 
@@ -5510,6 +5607,10 @@ The `priorityDispositionContract` section names the shared
 `<family>:<priority>:<disposition>` learning-observation shape, and the rule
 that blocked or pending-blocker-resolution lanes keep `machineReady=false` until
 retained evidence clears the matching release gate.
+The `operatorObservability` section points machine clients to
+`/grafana/fabrication` and the `dd-fabrication-planner` dashboard for request
+intake, release-blocker, NATS fanout, learning-feedback, artifact-ledger, and
+runtime-capacity signals before generated or imported machine work is trusted.
 
 ## `GET /fabrication/intake/catalog`
 
@@ -5776,7 +5877,7 @@ steps, surface finishing/coating/plating/anodizing/media-blasting/powder-coating
 sheet-cut profiles, and routed sheet/profile parts for wood,
 foam, acrylic, panel, sign, engraving, and tabbed-profile requests. Additive
 plans flag overhang, bridge, cantilever, thin-wall, snap-fit, and resin
-drain/cupping geometry as review boundaries before draft machine instructions
+island/support/hollowing/drain/suction/peel-force geometry as review boundaries before draft machine instructions
 are treated as releasable.
 
 ## `GET /fabrication/workflow/catalog`
@@ -6061,7 +6162,7 @@ moves before explicit `G17`/`G18`/`G19` plane evidence, with center offsets that
 incompatibility with resolved machine profiles, and text-instruction boundaries
 where the job needs setup, subtractive text setup/process evidence for
 workholding/datum/tool-length and spindle/feed/coolant/kerf/pierce/cut-chart
-controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing multi-material FDM material/color map/slot/filament-lot/support-interface evidence, missing multi-material FDM purge/wipe tower/tool-change/runout-sensor/resume-state evidence, missing pellet/FGF pellet-lot/drying/moisture/hopper/purge/nozzle evidence, missing pellet/FGF bead width/layer height/screw/melt/cooling/gantry-clearance/warpage/trim evidence, missing robotic additive robot-frame/TCP/reach/collision/interlock/external-axis/dry-run evidence, missing robotic additive feedstock/nozzle/purge/bead/flow/cooling/cure/dimensional-scan evidence, missing paste/clay rheology/slump/deairing/nozzle/pressure evidence, missing paste/clay drying/humidity/shrinkage/green-part/firing evidence, missing bound-metal filament lot/profile/hardened-nozzle/dry-storage/shrinkage-scale evidence, missing bound-metal debind/brown-part/sinter-furnace/atmosphere/shrinkage-coupon/density evidence, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time evidence, missing composite layup vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing hot-wire foam setup evidence for foam density/blank thickness/template-or-CNC-profile/bow-wire tension/fume extraction/PPE/fire watch, missing hot-wire foam process evidence for wire heat/current/feed/kerf/wire-lag/taper/surface-melt/dimensional inspection, missing resin exposure/profile/layer/support/build-plate evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
+controls, slicer profile/support/orientation/first-layer evidence, missing slicer mesh unit/scale/watertight/manifold/normals/wall-thickness evidence for STL/3MF/OBJ/model inputs, slicer high-speed input-shaper/acceleration/volumetric-flow evidence, post-processing, missing multi-material FDM material/color map/slot/filament-lot/support-interface evidence, missing multi-material FDM purge/wipe tower/tool-change/runout-sensor/resume-state evidence, missing pellet/FGF pellet-lot/drying/moisture/hopper/purge/nozzle evidence, missing pellet/FGF bead width/layer height/screw/melt/cooling/gantry-clearance/warpage/trim evidence, missing robotic additive robot-frame/TCP/reach/collision/interlock/external-axis/dry-run evidence, missing robotic additive feedstock/nozzle/purge/bead/flow/cooling/cure/dimensional-scan evidence, missing paste/clay rheology/slump/deairing/nozzle/pressure evidence, missing paste/clay drying/humidity/shrinkage/green-part/firing evidence, missing bound-metal filament lot/profile/hardened-nozzle/dry-storage/shrinkage-scale evidence, missing bound-metal debind/brown-part/sinter-furnace/atmosphere/shrinkage-coupon/density evidence, missing material-jetting cartridge/material-channel/printhead/tray evidence, missing material-jetting support-removal/UV/color/material inspection evidence, missing DED/WAAM feedstock/substrate/bead-path/standoff/machining-allowance evidence, missing DED/WAAM energy/shielding/melt-pool/interpass/NDE/coupon evidence, missing composite-fiber layup/orientation/load-case evidence, missing composite-fiber spool/cutter/matrix/coupon/continuity inspection evidence, missing composite layup mold/mandrel/release-film/ply-schedule/resin-prepreg-core-lot/out-time evidence, missing composite layup vacuum-bag/leak-down/debulk/cure-trace/demold/trim-drill/coupon/NDI/dimensional-release evidence, missing hot-wire foam setup evidence for foam density/blank thickness/template-or-CNC-profile/bow-wire tension/fume extraction/PPE/fire watch, missing hot-wire foam process evidence for wire heat/current/feed/kerf/wire-lag/taper/surface-melt/dimensional inspection, missing resin exposure/profile/layer/support/build-plate evidence, missing resin island/support/hollowing/drain/suction/peel-force evidence, missing resin layer/exposure manifest image hash/checksum or peel/lift/recoat evidence, missing resin vat-volume/level/refill evidence for large resin jobs, resin IPA/wash/cure/drain/PPE/
 waste controls or missing resin postprocess evidence, powder
 build profile/powder lot/nesting controls or missing powder-bed build/profile evidence,
 cooldown/depowder/recovery controls or missing powder-bed handling evidence, missing
