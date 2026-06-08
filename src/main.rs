@@ -20057,6 +20057,149 @@ fn release_manifest_artifact_missing_evidence(artifact: &Value) -> bool {
             .is_none_or(Vec::is_empty)
 }
 
+fn release_readiness_priority_disposition(
+    priority_id: &str,
+    disposition: &str,
+    evidence: Vec<String>,
+    next_routes: Vec<&str>,
+    release_impact: &str,
+) -> Value {
+    instruction_priority_disposition(
+        "release-readiness-priority",
+        priority_id,
+        disposition,
+        evidence,
+        next_routes,
+        release_impact,
+    )
+}
+
+fn release_readiness_priority_dispositions(
+    request_success: bool,
+    release_blocked: bool,
+    decision_count: usize,
+    blocked_decision_count: usize,
+    blocker_count: usize,
+    pending_human_intervention_count: usize,
+    manifest_evidence_missing: bool,
+) -> Vec<Value> {
+    vec![
+        release_readiness_priority_disposition(
+            "final-decision-closure",
+            if decision_count == 0 || blocked_decision_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![
+                format!("decisionCount:{decision_count}"),
+                format!("blockedDecisionCount:{blocked_decision_count}"),
+            ],
+            vec![
+                "POST /fabrication/release/result",
+                "POST /fabrication/execution/result",
+                "POST /fabrication/release/preview",
+            ],
+            if decision_count == 0 || blocked_decision_count > 0 {
+                "machineReady remains blocked until every final release decision is retained as approved, cleared, or explicitly machine-ready"
+            } else {
+                "release readiness decisions retained no open final gate blockers"
+            },
+        ),
+        release_readiness_priority_disposition(
+            "blocker-disposition-closure",
+            if blocker_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!("blockerCount:{blocker_count}")],
+            vec![
+                "POST /fabrication/release/result",
+                "POST /fabrication/boundaries/result",
+                "POST /fabrication/remediation/result",
+            ],
+            if blocker_count > 0 {
+                "machineReady remains blocked until final release blockers are cleared, remediated, or converted into accepted release conditions"
+            } else {
+                "release readiness retained no open blocker records"
+            },
+        ),
+        release_readiness_priority_disposition(
+            "human-intervention-closure",
+            if pending_human_intervention_count > 0 {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "pendingHumanInterventionCount:{pending_human_intervention_count}"
+            )],
+            vec![
+                "POST /fabrication/interventions/result",
+                "POST /fabrication/execution/result",
+                "POST /fabrication/release/result",
+            ],
+            if pending_human_intervention_count > 0 {
+                "machineReady remains blocked until required operator, automation, split/combine, and signoff interventions are complete"
+            } else {
+                "release readiness retained no pending human-intervention gates"
+            },
+        ),
+        release_readiness_priority_disposition(
+            "manifest-evidence-retention",
+            if manifest_evidence_missing {
+                "blocked"
+            } else if request_success && !release_blocked {
+                "closed"
+            } else {
+                "needs-review"
+            },
+            vec![format!(
+                "manifestEvidenceMissing:{manifest_evidence_missing}"
+            )],
+            vec![
+                "POST /fabrication/release/result",
+                "GET /fabrication/jobs/:job_id/release-bundle",
+                "POST /fabrication/learning/outcomes",
+            ],
+            if manifest_evidence_missing {
+                "machineReady remains blocked until release manifest artifacts retain URI, checksum, and evidence labels"
+            } else {
+                "release readiness retained manifest evidence for final release and learning review"
+            },
+        ),
+        release_readiness_priority_disposition(
+            "learning-feedback-after-disposition",
+            if release_blocked {
+                "pending-blocker-resolution"
+            } else {
+                "ready-for-learning"
+            },
+            vec![
+                format!("releaseBlocked:{release_blocked}"),
+                format!("requestSuccess:{request_success}"),
+            ],
+            vec![
+                "POST /fabrication/learning/outcomes",
+                "GET /fabrication/learning/policy",
+                "GET /fabrication/learning/corpus",
+            ],
+            if release_blocked {
+                "learning feedback should preserve blocked final release priorities before machine-ready policy promotion"
+            } else {
+                "release readiness result can be submitted as positive final-gate learning evidence after retained release review"
+            },
+        ),
+    ]
+}
+
 fn release_readiness_result_review_response(
     request: ReleaseReadinessResultReviewRequest,
 ) -> Result<Value, String> {
@@ -20139,6 +20282,21 @@ fn release_readiness_result_review_response(
     if manifest_evidence_missing {
         learning_observations.push("release-readiness:manifest-evidence-missing".to_string());
     }
+    let priority_dispositions = release_readiness_priority_dispositions(
+        request.success,
+        release_blocked,
+        decisions.len(),
+        blocked_decision_count,
+        blockers.len(),
+        pending_human_intervention_count,
+        manifest_evidence_missing,
+    );
+    learning_observations.extend(priority_dispositions.iter().filter_map(|disposition| {
+        disposition
+            .get("learningObservation")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    }));
     learning_observations.extend(decisions.iter().filter_map(|decision| {
         decision
             .get("releaseStatus")
@@ -20199,6 +20357,7 @@ fn release_readiness_result_review_response(
         "requiredHumanInterventionCount": required_human_intervention_count,
         "pendingHumanInterventionCount": pending_human_intervention_count,
         "warningCount": warnings.len(),
+        "priorityDispositions": priority_dispositions.clone(),
         "releaseReadinessResult": {
             "planRequestId": plan_request_id,
             "jobId": job_id,
@@ -20272,6 +20431,7 @@ fn release_readiness_result_review_response(
                     format!("pending-human-interventions:{pending_human_intervention_count}"),
                     format!("manifest-evidence-missing:{manifest_evidence_missing}")
                 ],
+                "priorityDispositions": priority_dispositions,
                 "recommendedSubmitRoute": "POST /fabrication/learning/outcomes"
             }
         },
@@ -20281,6 +20441,7 @@ fn release_readiness_result_review_response(
             "release-readiness-manifest-artifacts",
             "release-readiness-blockers",
             "release-readiness-human-interventions",
+            "release-readiness-priority-dispositions",
             "release-readiness-learning-observations",
             "release-manifest",
             "machine-release",
@@ -20350,6 +20511,10 @@ fn stored_release_readiness_result_job(response: &Value) -> StoredFabricationJob
         .and_then(|learning| learning.get("observations"))
         .cloned()
         .unwrap_or_else(|| json!([]));
+    let priority_dispositions = response
+        .get("priorityDispositions")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let artifacts = vec![
         json_artifact(
             "release-readiness-result".to_string(),
@@ -20379,6 +20544,12 @@ fn stored_release_readiness_result_job(response: &Value) -> StoredFabricationJob
             "release-readiness-human-interventions".to_string(),
             "release-readiness-human-interventions",
             human_interventions,
+            generated_at_ms,
+        ),
+        json_artifact(
+            "release-readiness-priority-dispositions".to_string(),
+            "release-readiness-priority-dispositions",
+            priority_dispositions,
             generated_at_ms,
         ),
         json_artifact(
@@ -130935,6 +131106,30 @@ mod tests {
                 .and_then(Value::as_u64),
             Some(1)
         );
+        let priority_dispositions = payload
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .expect("release readiness priority dispositions");
+        for expected in [
+            ("final-decision-closure", "blocked"),
+            ("blocker-disposition-closure", "blocked"),
+            ("human-intervention-closure", "blocked"),
+            ("manifest-evidence-retention", "needs-review"),
+            (
+                "learning-feedback-after-disposition",
+                "pending-blocker-resolution",
+            ),
+        ] {
+            assert!(
+                priority_dispositions.iter().any(|disposition| {
+                    disposition.get("priorityId").and_then(Value::as_str) == Some(expected.0)
+                        && disposition.get("disposition").and_then(Value::as_str)
+                            == Some(expected.1)
+                }),
+                "missing release readiness priority disposition {}",
+                expected.0
+            );
+        }
         assert!(payload
             .get("releaseReadinessResult")
             .and_then(|result| result.get("blockers"))
@@ -130996,6 +131191,15 @@ mod tests {
             .is_some_and(|hints| hints
                 .iter()
                 .any(|hint| hint.as_str() == Some("pending-human-interventions:1"))));
+        assert!(outcome_draft
+            .get("priorityDispositions")
+            .and_then(Value::as_array)
+            .is_some_and(|dispositions| dispositions.iter().any(|disposition| {
+                disposition
+                    .get("learningObservation")
+                    .and_then(Value::as_str)
+                    == Some("release-readiness-priority:final-decision-closure:blocked")
+            })));
 
         let job = stored_release_readiness_result_job(&payload);
         for artifact in [
@@ -131004,6 +131208,7 @@ mod tests {
             "release-readiness-manifest-artifacts",
             "release-readiness-blockers",
             "release-readiness-human-interventions",
+            "release-readiness-priority-dispositions",
             "release-readiness-learning-observations",
         ] {
             assert!(

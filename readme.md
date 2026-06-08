@@ -2676,23 +2676,26 @@ machine-release gate.
 
 The response exposes `releaseReadinessResult`, `releaseResultJobId`,
 `generatedAtMs`, `releaseBlocked`, `blockedDecisionCount`, `blockerCount`,
-`pendingHumanInterventionCount`, `missingManifestEvidenceCount`, and the
-release-readiness request/queue/result subjects plus a
+`pendingHumanInterventionCount`, `missingManifestEvidenceCount`,
+`priorityDispositions`, and the release-readiness request/queue/result subjects
+plus a
 `dd.fabrication.release-readiness-learning-outcome-draft.v1` payload that callers
 can send to `POST /fabrication/learning/outcomes`. Successful reviews are
 retained in the bounded job ledger under `releaseResultJobId`; `/jobs/:job_id`
 and `/jobs/:job_id/artifacts/:artifact_id` can inspect
 `release-readiness-result`, `release-readiness-decisions`,
 `release-readiness-manifest-artifacts`, `release-readiness-blockers`,
-`release-readiness-human-interventions`, and
+`release-readiness-human-interventions`,
+`release-readiness-priority-dispositions`, and
 `release-readiness-learning-observations`. Machine-ready release remains blocked
 until every decision is machine-ready or explicitly cleared, manifest artifacts
 carry URI/checksum/evidence labels, blockers are cleared or converted to release
 conditions, and required operator, automation, split/combine, and signoff gates
 are complete. Result observations include `release-readiness-decision:*`,
-`release-readiness-blocker:*`, `release-readiness-intervention:*`, and
-`release-readiness-artifact:*` signals so MDP/POMDP/neural workers can learn
-which final gates cleared or blocked hardware execution.
+`release-readiness-blocker:*`, `release-readiness-intervention:*`,
+`release-readiness-artifact:*`, and `release-readiness-priority:*` signals so
+MDP/POMDP/neural workers can learn which final gates cleared or blocked hardware
+execution.
 
 ## `POST /fabrication/execution/plan`
 
