@@ -22517,7 +22517,12 @@ fn interface_result_review_response(
         "requestId": request_id,
         "interfaceResultJobId": interface_result_job_id,
         "generatedAtMs": generated_at_ms,
-        "routes": ["POST /interfaces/result", "POST /fabrication/interfaces/result"],
+        "routes": [
+            "POST /interfaces/result",
+            "POST /fabrication/interfaces/result",
+            "POST /joining/result",
+            "POST /fabrication/joining/result"
+        ],
         "interfaceRoutes": [
             "GET /interfaces/preflight/catalog",
             "GET /fabrication/interfaces/preflight/catalog",
@@ -62647,6 +62652,8 @@ async fn root() -> impl IntoResponse {
         "POST /fabrication/assembly/result",
         "POST /interfaces/result",
         "POST /fabrication/interfaces/result",
+        "POST /joining/result",
+        "POST /fabrication/joining/result",
         "GET /hybrid/catalog",
         "GET /fabrication/hybrid/catalog",
         "POST /hybrid/plan",
@@ -118765,6 +118772,72 @@ fn request_templates() -> Value {
             }
         },
         {
+            "id": "instruction-improvement-result-feedback",
+            "label": "Review retained instruction-improvement worker results before release",
+            "route": "POST /fabrication/instructions/improvement/result",
+            "machineKind": "cnc-subtractive",
+            "preferredMethods": ["instruction-improvement-result", "machine-code-improvement", "controller-patch-review", "mdp-pomdp-feedback"],
+            "requiredEvidence": ["worker identity and improver version", "patch operations retained", "improved program preview", "artifact checksum", "human approval or dry-run blocker disposition"],
+            "releaseGateHints": ["instructionImprovementResult.improvedPrograms", "instructionImprovementResult.patchOperations", "instructionImprovementLearningOutcomeDraft", "machineRelease.blockers", "releasePackagePlan.releaseGates"],
+            "request": {
+                "templateId": "instruction-improvement-result-feedback",
+                "templateVersion": "v1",
+                "requestId": "instruction-improvement-result-001",
+                "planRequestId": "improve-imported-cnc-001",
+                "jobId": "job-improve-imported-cnc-001",
+                "workerId": "instruction-improvement-worker-01",
+                "improver": "conservative-controller-patch-reviewer",
+                "improverVersion": "2026.06-improvement",
+                "instructionId": "legacy-mill-program-needs-patches",
+                "language": "fanuc-gcode",
+                "machineId": "vmc-01",
+                "machineKind": "vertical-mill",
+                "controller": "fanuc-compatible",
+                "success": true,
+                "machineReady": false,
+                "releaseReady": false,
+                "improvedPrograms": [
+                    {
+                        "programId": "legacy-mill-program-needs-patches-patched",
+                        "sourceProgramId": "legacy-mill-program-needs-patches",
+                        "language": "fanuc-gcode",
+                        "status": "patch-review-required",
+                        "changed": true,
+                        "machineReady": false,
+                        "releaseBlocker": true,
+                        "requiresHumanApproval": true,
+                        "previewLines": ["G21 G90 G54", "T1 M6", "S8000 M3", "G1 X25.0 Y12.0 F250", "G2 X35.0 Y12.0 I5.0 J0.0 F180", "M30"],
+                        "evidence": ["arc center offset and feed-rate patch retained for simulation"]
+                    }
+                ],
+                "patchOperations": [
+                    {
+                        "operationId": "patch-feed-and-arc-001",
+                        "programId": "legacy-mill-program-needs-patches-patched",
+                        "operation": "insert-controller-safe-words",
+                        "action": "add missing feed and arc center-offset evidence",
+                        "summary": "Inserted conservative F words and I/J arc-center offsets before machine-ready review",
+                        "requiresHumanReview": true,
+                        "releaseBlocker": true,
+                        "evidence": ["original program lacked feed-rate and arc geometry evidence"]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "instruction-improvement-result-artifact-001",
+                        "artifactKind": "patched-controller-program",
+                        "programId": "legacy-mill-program-needs-patches-patched",
+                        "uri": "s3://fabrication-instruction-improvements/job-improve-imported-cnc-001/patched.nc",
+                        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                        "format": "gcode",
+                        "evidence": ["checksum verified before release package review"]
+                    }
+                ],
+                "warnings": ["patched program still requires dry-run simulation and human approval"],
+                "reviewMetadata": { "controllerFamily": "fanuc", "plant": "alpha" }
+            }
+        },
+        {
             "id": "imported-printer-gcode-review",
             "label": "Imported printer G-code validation and improvement",
             "route": "POST /fabrication/instructions/analyze",
@@ -119563,7 +119636,7 @@ async fn request_schema() -> impl IntoResponse {
             "assemblyPreflightCatalog": ["GET /assembly/preflight/catalog", "GET /fabrication/assembly/preflight/catalog"],
             "assemblyPlan": ["POST /assembly/plan", "POST /fabrication/assembly/plan"],
             "assemblyPlanningResult": ["POST /assembly/result", "POST /fabrication/assembly/result"],
-            "interfaceResult": ["POST /interfaces/result", "POST /fabrication/interfaces/result"],
+            "interfaceResult": ["POST /interfaces/result", "POST /fabrication/interfaces/result", "POST /joining/result", "POST /fabrication/joining/result"],
             "hybridPlan": ["POST /hybrid/plan", "POST /fabrication/hybrid/plan"],
             "releaseCatalog": ["GET /release/catalog", "GET /fabrication/release/catalog"],
             "releasePreflightCatalog": ["GET /release/preflight/catalog", "GET /fabrication/release/preflight/catalog"],
@@ -123107,6 +123180,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/interfaces/result",
             post(interface_result_http),
         )
+        .route("/joining/result", post(interface_result_http))
+        .route("/fabrication/joining/result", post(interface_result_http))
         .route("/release/catalog", get(release_catalog_http))
         .route("/fabrication/release/catalog", get(release_catalog_http))
         .route("/release/gates/catalog", get(release_gate_catalog_http))
@@ -123965,6 +124040,7 @@ mod tests {
             "imported-cnc-program-review",
             "imported-controller-stream-boundary-review",
             "imported-cnc-improvement-review",
+            "instruction-improvement-result-feedback",
             "imported-printer-gcode-review",
             "imported-resin-job-review",
             "imported-powder-bed-build-review",
@@ -123989,6 +124065,7 @@ mod tests {
             "POST /fabrication/instructions/analyze",
             "POST /fabrication/instructions/import/review",
             "POST /fabrication/instructions/improve",
+            "POST /fabrication/instructions/improvement/result",
             "POST /fabrication/decomposition/plan",
             "POST /fabrication/assembly/plan",
             "POST /fabrication/costing/result",
@@ -124022,6 +124099,7 @@ mod tests {
             "machine-release-review",
             "release-manifest-review",
             "instruction-improvement",
+            "instruction-improvement-result",
             "instruction-import-review",
             "boundary-review",
             "controller-patch-review",
@@ -124055,6 +124133,8 @@ mod tests {
             "releaseReadinessResult.blockers",
             "releaseReadinessLearningOutcomeDraft",
             "improvedPrograms.patchManifest",
+            "instructionImprovementResult.patchOperations",
+            "instructionImprovementLearningOutcomeDraft",
             "machine-code-improvement",
             "slicer-gcode-validation",
             "resin-job-validation",
@@ -124391,6 +124471,69 @@ mod tests {
                 .iter()
                 .any(|line| line.starts_with("G2")),
             "instruction improvement template should include arc geometry needing review"
+        );
+    }
+
+    #[test]
+    fn request_template_instruction_improvement_result_body_matches_review_contract() {
+        let templates = request_templates();
+        let template_entries = templates
+            .as_array()
+            .expect("request templates should be an array");
+        let template = template_entries
+            .iter()
+            .find(|template| {
+                template.get("id").and_then(Value::as_str)
+                    == Some("instruction-improvement-result-feedback")
+            })
+            .expect("instruction improvement result template should exist");
+        assert_eq!(
+            template.get("route").and_then(Value::as_str),
+            Some("POST /fabrication/instructions/improvement/result")
+        );
+        let request = template
+            .get("request")
+            .cloned()
+            .expect("instruction improvement result template should include request body");
+        let parsed: InstructionImprovementResultReviewRequest = serde_json::from_value(request)
+            .expect("instruction improvement result template should match review schema");
+        assert_eq!(parsed.worker_id, "instruction-improvement-worker-01");
+        assert_eq!(parsed.improver, "conservative-controller-patch-reviewer");
+        assert!(!parsed.machine_ready);
+        assert!(
+            parsed
+                .improved_programs
+                .as_ref()
+                .is_some_and(|programs| programs.iter().any(|program| {
+                    program.changed == Some(true)
+                        && program.release_blocker == Some(true)
+                        && program.requires_human_approval == Some(true)
+                })),
+            "instruction improvement result template should retain blocking program patches"
+        );
+        assert!(
+            parsed
+                .patch_operations
+                .as_ref()
+                .is_some_and(|operations| operations.iter().any(|operation| {
+                    operation.requires_human_review == Some(true)
+                        && operation.release_blocker == Some(true)
+                        && operation.summary.contains("arc-center offsets")
+                })),
+            "instruction improvement result template should retain patch review blockers"
+        );
+        assert!(
+            parsed
+                .artifacts
+                .as_ref()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| {
+                    artifact.sha256.as_ref().is_some_and(|sha| sha.len() == 64)
+                        && artifact
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| !evidence.is_empty())
+                })),
+            "instruction improvement result template should retain artifact checksums and evidence"
         );
     }
 
@@ -134970,6 +135113,12 @@ mod tests {
             .is_some_and(|routes| routes
                 .iter()
                 .any(|route| route.as_str() == Some("POST /fabrication/interfaces/result"))));
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("POST /fabrication/joining/result"))));
         assert_eq!(
             payload.get("reviewStatus").and_then(Value::as_str),
             Some("interface-result-fit-datum-release-blocked")

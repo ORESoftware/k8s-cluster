@@ -190,6 +190,8 @@ outcomes.
 - `POST /fabrication/assembly/result`
 - `POST /interfaces/result`
 - `POST /fabrication/interfaces/result`
+- `POST /joining/result`
+- `POST /fabrication/joining/result`
 - `GET /release/catalog`
 - `GET /fabrication/release/catalog`
 - `GET /release/gates/catalog`
@@ -2725,11 +2727,12 @@ split/combine and join boundaries cleared or blocked recomposed hardware.
 
 ## `POST /fabrication/interfaces/result`
 
-`POST /interfaces/result` and the gateway-prefixed
-`POST /fabrication/interfaces/result` normalize external interface-control
-worker evidence into `dd.fabrication.interface-result-review.v1`. The route
-accepts datum-transfer and fit checks, join evidence for adhesive, plastic weld,
-press-fit, fastener, seal, bearing, or metal-joining interfaces,
+`POST /interfaces/result`, `POST /joining/result`, and the gateway-prefixed
+`POST /fabrication/interfaces/result` and `POST /fabrication/joining/result`
+normalize external interface-control and joining worker evidence into
+`dd.fabrication.interface-result-review.v1`. The route accepts datum-transfer
+and fit checks, join evidence for adhesive bonding, plastic joining/ultrasonic
+welding/heat staking/solvent welding, press-fit, fastener, seal, bearing, or metal-joining interfaces,
 split/combine decisions, retained artifacts, worker identity, warnings, and
 metadata after a decomposition or assembly worker tries to prove that printed,
 milled, turned, molded, or special-process parts can be recomposed safely.
@@ -5504,12 +5507,14 @@ reviews clear the machine-ready gates.
 
 `GET /templates/catalog` and `GET /fabrication/templates/catalog` return the
 `dd.fabrication.request-templates-catalog.v1` starter-request catalog. The
-templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
+templates cover FDM printed functional parts, native CAD/3MF intake review for SOLIDWORKS, Creo/ProE, and additive handoff packages, design-to-machine-code generation, direct FDM slicer machine-code generation, direct CNC controller/postprocessor machine-code generation, direct FDM printer instruction generation, direct CNC setup/controller instruction generation, imported CNC dry-run simulation, imported CNC program review, direct imported CNC improvement/patch review, instruction-improvement result feedback, imported slicer G-code review, imported resin/SLA job review, imported powder-bed build review, vertical-mill fixture plates, horizontal-mill side-slot/keyway work, lathe turned inserts, hybrid printed/milled/turned assemblies, direct hybrid decomposition planning, direct hybrid assembly planning, hybrid route costing result feedback, operator intervention result feedback, runtime monitoring result feedback, quality metrology result feedback, release-readiness result feedback, hybrid outcome learning feedback, and boundary-failure learning feedback. Each template
 names the target route, including `POST /fabrication/plan`,
 `POST /fabrication/design/import/review`,
 `POST /fabrication/design/generate`, `POST /fabrication/machine-code/generate`,
 `POST /fabrication/instructions/generate`, `POST /fabrication/instructions/analyze`,
-`POST /fabrication/instructions/improve`, `POST /fabrication/simulation/run`,
+`POST /fabrication/instructions/improve`,
+`POST /fabrication/instructions/improvement/result`,
+`POST /fabrication/simulation/run`,
 `POST /fabrication/decomposition/plan`, `POST /fabrication/assembly/plan`, and
 `POST /fabrication/costing/result`, `POST /fabrication/interventions/result`,
 `POST /fabrication/monitoring/result`, and
@@ -5570,7 +5575,13 @@ Marlin printer G-code, resin job sheets, and powder-bed build packets so the
 analyzer path covers G-code and non-G-code fabrication instructions. The direct
 instruction-improvement starter uses the same request contract while targeting
 `improvedPrograms.patchManifest`, conservative patch review, simulation, and
-human approval gates before any repaired controller code can be released. Learning feedback starter bodies deserialize
+human approval gates before any repaired controller code can be released. The
+instruction-improvement result starter deserializes as an
+`InstructionImprovementResultReviewRequest` example and keeps improved program
+previews, patch operations, worker identity, retained artifact checksums,
+human-approval blockers, dry-run/simulation warnings, and
+`instructionImprovementLearningOutcomeDraft` feedback visible before patched
+controller programs can enter a release package. Learning feedback starter bodies deserialize
 as `LearningOutcomeRequest` examples with `rewardHint`, manufacturing methods,
 and split/combine, machine-failure, and human-intervention observations retained
 for MDP/POMDP/neural outcome memory. Template
