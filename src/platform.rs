@@ -255,11 +255,12 @@ pub fn parity_matrix() -> Vec<ProductParity> {
                 "database connection registry metadata",
                 "SQL Lab history summaries",
                 "query result cache summaries",
+                "deterministic natural-language question proposals",
             ],
             next_engine_work: vec![
                 "visual query builder execution against live warehouses",
                 "parameterized question sharing",
-                "natural language intent parser",
+                "richer multi-clause natural language intent parser",
             ],
         },
         ProductParity {
@@ -573,6 +574,7 @@ pub fn self_service_surfaces() -> Vec<SelfServiceSurface> {
                 "choose dataset",
                 "pick dimensions",
                 "pick measures",
+                "natural-language question suggestions",
                 "save question",
                 "bind chart",
                 "chart suggestion",

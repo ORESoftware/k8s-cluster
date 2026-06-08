@@ -70,6 +70,8 @@ concept in `main.rs`:
 - `src/dashboard.rs` owns saved dashboard request validation and in-memory dashboard metadata.
 - `src/self_service.rs` owns Metabase/Superset-style saved question validation, chart bindings, and
   compiled SQL request metadata.
+- `src/question_nl.rs` owns deterministic natural-language question suggestions and prompt-to-query
+  proposal planning over dataset field metadata.
 - `src/sql_lab.rs` owns Superset-style bounded SQL Lab history validation, summaries, and dry-run
   external connection records.
 - `src/query_cache.rs` owns bounded in-memory query result snapshots, TTL pruning, and cache
@@ -89,9 +91,9 @@ Current first-class parity surfaces:
   metadata for live-query planning.
 - Domo / Power Query: connector catalog, ETL planner primitives, and `POST /etl/plans` validation
   for bounded visual flows.
-- Superset / Metabase: bounded SQL Lab history, visual query-builder/self-service contracts, RBAC
-  policy, secretRef-backed database connection registry, query result cache, saved dashboard
-  catalog, saved questions, and saved chart bindings.
+- Superset / Metabase: bounded SQL Lab history, natural-language question proposals, visual
+  query-builder/self-service contracts, RBAC policy, secretRef-backed database connection registry,
+  query result cache, saved dashboard catalog, saved questions, and saved chart bindings.
 - Grafana: time-series dashboard panel catalog, PromQL/LogQL query frontends, metrics route, alert
   rule evaluation, contact points, and notification policy previews.
 - D3.js / Plotly / Dash / Evidence.dev: renderer contracts, final-layer JSON, Plotly trace
@@ -142,6 +144,8 @@ Current first-class parity surfaces:
 - `POST /questions` - authenticated Metabase-style saved question create/replace with optional chart
   binding.
 - `GET /questions` - authenticated saved question catalog.
+- `POST /questions/nl` - authenticated natural-language prompt to self-service question proposals.
+- `GET /questions/suggestions/:dataset_id` - authenticated dataset-aware question suggestions.
 - `GET /questions/:question_id` - authenticated saved question definition.
 - `GET /charts` - authenticated saved chart catalog derived from saved questions.
 - `POST /alerts/rules` - authenticated Grafana-style alert rule create/replace.

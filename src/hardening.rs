@@ -170,6 +170,12 @@ pub fn control_catalog() -> Vec<ControlDescriptor> {
             evidence: "src/self_service.rs compiles question-builder payloads into bounded SQL request metadata and rejects missing fields or invalid chart encodings.",
         },
         ControlDescriptor {
+            id: "bounded-question-nl",
+            status: "implemented",
+            description: "Natural-language question proposals are bounded by prompt bytes and suggestion count, reject secret-looking prompt text, and map only to existing dataset fields.",
+            evidence: "src/question_nl.rs produces deterministic QuestionBuilder proposals without model calls or query execution.",
+        },
+        ControlDescriptor {
             id: "bounded-sql-lab-history",
             status: "implemented",
             description: "Superset-style SQL Lab history is capped, accepts only single SELECT statements, rejects comments, mutating SQL, and secret-looking tokens, and keeps external connection entries dry-run only.",
