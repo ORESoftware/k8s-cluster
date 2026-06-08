@@ -4430,6 +4430,7 @@ assert.match(source, /sheet-forming-evidence-missing/);
   );
   assert.match(source, /struct ConsumablesResultReviewRequest/);
   assert.match(source, /async fn consumables_result_http/);
+  assert.match(source, /fn consumables_priority_dispositions/);
   assert.match(source, /fn consumables_result_review_response/);
   assert.match(source, /fn store_consumables_result_response/);
   assert.match(source, /dd\.fabrication\.consumables-result-review\.v1/);
@@ -4439,6 +4440,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /"inventoryHints"/);
   assert.match(source, /"supportMediaHints"/);
   assert.match(source, /consumables-tool-life-checks/);
+  assert.match(source, /consumables-priority-dispositions/);
+  assert.match(source, /consumables-priority:machine-failure-boundary-first:blocked/);
+  assert.match(source, /consumables-priority:split-combine-or-interface-review:blocked/);
   assert.match(source, /consumables-learning-observations/);
   assert.match(
     source,
@@ -6529,6 +6533,9 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(readme, /dd\.fabrication\.consumables-result-review\.v1/);
   assert.match(readme, /dd\.fabrication\.consumables-learning-outcome-draft\.v1/);
   assert.match(readme, /consumables-tool-life-checks/);
+  assert.match(readme, /`priorityDispositions`/);
+  assert.match(readme, /`consumables-priority:<priority>:<disposition>`/);
+  assert.match(readme, /consumables-priority-dispositions/);
   assert.match(readme, /consumables-learning-observations/);
   assert.match(readme, /inventory, tool-life, support-media, artifact/);
   assert.match(readme, /operator refill checkpoints/);
