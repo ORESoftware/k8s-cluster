@@ -20,6 +20,15 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+function assertContainsInOrder(haystack: string, needles: string[], label: string): void {
+  let offset = 0;
+  for (const needle of needles) {
+    const index = haystack.indexOf(needle, offset);
+    assert.notEqual(index, -1, `${label} missing ${needle}`);
+    offset = index + needle.length;
+  }
+}
+
 function resultReviewFunctionBodies(source: string): Array<{ name: string; body: string }> {
   const resultFunctions = Array.from(
     source.matchAll(/\nfn\s+([a-z0-9_]+_result_review_response)\s*\(/g),
@@ -212,9 +221,27 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   assert.match(source, /struct LearningPlan/);
   assert.match(source, /struct LearningEngineMetadata/);
   assert.match(source, /struct LearningMdpEnginePolicy/);
-  assert.match(
+  assertContainsInOrder(
     source,
-    /use des_engine::\{[\s\S]*solve_mdp[\s\S]*solve_pomdp_underlying[\s\S]*MdpSpec[\s\S]*PomdpSpec[\s\S]*MDP_SCHEMA[\s\S]*POMDP_SCHEMA[\s\S]*NeuralNetworkLike[\s\S]*ActivationName[\s\S]*DenseLayerConfig[\s\S]*FeedForwardNetwork[\s\S]*analyze_model_spec[\s\S]*StudioModelSpec[\s\S]*STUDIO_GRAPH_SCHEMA[\s\S]*sdk as des_sdk[\s\S]*\};/,
+    [
+      'use des_engine::{',
+      'solve_mdp',
+      'solve_pomdp_underlying',
+      'MdpSpec',
+      'PomdpSpec',
+      'MDP_SCHEMA',
+      'POMDP_SCHEMA',
+      'NeuralNetworkLike',
+      'ActivationName',
+      'DenseLayerConfig',
+      'FeedForwardNetwork',
+      'analyze_model_spec',
+      'StudioModelSpec',
+      'STUDIO_GRAPH_SCHEMA',
+      'sdk as des_sdk',
+      '};',
+    ],
+    'des_engine import block',
   );
   assert.match(source, /engine: LearningEngineMetadata/);
   assert.match(source, /engine_policy: LearningMdpEnginePolicy/);
