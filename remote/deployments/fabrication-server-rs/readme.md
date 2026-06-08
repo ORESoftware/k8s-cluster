@@ -2402,12 +2402,18 @@ human-intervention blocker counts, missing artifact evidence, and follow-up
 assembly, release, and learning routes. The learning section also emits a
 `dd.fabrication.decomposition-learning-outcome-draft.v1` `outcomeDraft` with
 target, route, interface, split/combine, artifact, blocker, redesign, and
-human-intervention hints ready for `POST /fabrication/learning/outcomes`.
+human-intervention hints ready for `POST /fabrication/learning/outcomes`. It also
+includes a `priorityDispositions` array for split/combine boundary-first review,
+redesign or reroute requirements, human-intervention gates, retained result
+artifact evidence, and learning-feedback lanes, with
+`decomposition-priority:<priority>:<disposition>` observations mirrored into the
+learning draft.
 Successful reviews are retained under `decompositionResultJobId`; `/jobs/:job_id` and
 `/jobs/:job_id/artifacts/:artifact_id` can inspect `decomposition-result`,
 `decomposition-targets`, `decomposition-route-reviews`,
 `decomposition-interfaces`, `decomposition-split-combine-decisions`,
-`decomposition-artifacts`, and `decomposition-learning-observations`. Machine-ready
+`decomposition-artifacts`, `decomposition-priority-dispositions`, and
+`decomposition-learning-observations`. Machine-ready
 release stays blocked until split/combine targets, routes, interfaces,
 recomposition decisions, and artifacts have evidence. Result observations
 include `decomposition-target:*`, `decomposition-route:*`,
@@ -3698,6 +3704,11 @@ Its learning section emits a
 `dd.fabrication.workholding-learning-outcome-draft.v1` `outcomeDraft` with
 fixture, datum-transfer, clearance, split/combine, artifact, human-intervention,
 blocker, reward, and submit-route hints for `POST /fabrication/learning/outcomes`.
+It also includes a `priorityDispositions` array for machine-failure,
+human-intervention, split/combine or interface workholding review, non-G-code
+job-sheet evidence, and learning-feedback lanes, with
+`workholding-priority:<priority>:<disposition>` observations mirrored into the
+learning draft.
 
 Machine-ready and unattended release remain blocked while fixture or build
 surface holding is unverified, datum transfer or re-probe evidence is missing,
@@ -3706,10 +3717,11 @@ split/combine recomposition fixture evidence is unresolved, or artifacts lack
 URI, checksum, format, and evidence labels. The result is stored with
 `workholding-result`, `workholding-fixture-checks`,
 `workholding-datum-transfers`, `workholding-clearance-checks`,
-`workholding-split-combine-holds`, `workholding-artifacts`, and
-`workholding-learning-observations` artifacts so MDP/POMDP/neural planners can
-learn fixture failures, datum-transfer risk, clamp collision risk,
-split/combine recomposition holds, and earlier human-intervention points.
+`workholding-split-combine-holds`, `workholding-artifacts`,
+`workholding-priority-dispositions`, and `workholding-learning-observations`
+artifacts so MDP/POMDP/neural planners can learn fixture failures,
+datum-transfer risk, clamp collision risk, split/combine recomposition holds,
+and earlier human-intervention points.
 
 ## `GET /fabrication/nesting/catalog`
 
