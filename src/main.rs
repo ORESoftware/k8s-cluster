@@ -27,6 +27,7 @@ mod connections;
 mod dashboard;
 mod dax;
 mod etl;
+mod evidence_reports;
 mod hardening;
 mod infra_diagrams;
 mod live_panels;
@@ -104,6 +105,7 @@ struct Metrics {
     live_panel_streams_total: AtomicU64,
     live_panel_frames_total: AtomicU64,
     platform_requests_total: AtomicU64,
+    evidence_reports_compiled_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     connection_requests_total: AtomicU64,
     connections_saved_total: AtomicU64,
@@ -598,6 +600,7 @@ fn app_router(state: AppState) -> Router {
         .route("/diagrams/tools", get(diagram_tool_catalog))
         .route("/diagrams/infra", post(generate_infra_diagram))
         .route("/reports/evidence", get(evidence_report_blueprint))
+        .route("/reports/evidence/compile", post(compile_evidence_report))
         .route("/security/policy", get(security_policy))
         .route("/security/rbac", get(rbac_policy))
         .route(
@@ -836,6 +839,11 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
         "presentationExport": {
             "formats": ["all", "powerpoint-openxml", "google-slides", "reveal-markdown", "final-layer-json"]
         },
+        "evidenceReportCompiler": {
+            "surfaces": ["bounded Markdown sections", "embedded SQL validation", "Evidence.dev chart components", "dataset dependency catalog"],
+            "limits": evidence_reports::limits_payload(),
+            "posture": "authenticated compiler only; SQL blocks are parsed into local logical plans and report text rejects secret-looking content"
+        },
         "workbookGrid": {
             "surfaces": ["virtual sheet page", "projection", "filters", "sorts", "formula-column planning"],
             "limits": workbook_grid::limits_payload(),
@@ -1035,6 +1043,9 @@ dd_data_viz_live_panel_frames_total {}
 # HELP dd_data_viz_platform_requests_total Platform parity requests handled.
 # TYPE dd_data_viz_platform_requests_total counter
 dd_data_viz_platform_requests_total {}
+# HELP dd_data_viz_evidence_reports_compiled_total Evidence-style Markdown reports compiled.
+# TYPE dd_data_viz_evidence_reports_compiled_total counter
+dd_data_viz_evidence_reports_compiled_total {}
 # HELP dd_data_viz_hardening_requests_total Hardening policy requests handled.
 # TYPE dd_data_viz_hardening_requests_total counter
 dd_data_viz_hardening_requests_total {}
@@ -1149,6 +1160,9 @@ dd_data_viz_errors_total {}
         metrics.live_panel_streams_total.load(Ordering::Relaxed),
         metrics.live_panel_frames_total.load(Ordering::Relaxed),
         metrics.platform_requests_total.load(Ordering::Relaxed),
+        metrics
+            .evidence_reports_compiled_total
+            .load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.connection_requests_total.load(Ordering::Relaxed),
         metrics.connections_saved_total.load(Ordering::Relaxed),
@@ -1995,6 +2009,50 @@ async fn evidence_report_blueprint(State(state): State<AppState>) -> Json<Value>
             ]
         }
     }))
+}
+
+async fn compile_evidence_report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<evidence_reports::CompileEvidenceReportRequest>,
+) -> Result<Json<evidence_reports::CompileEvidenceReportResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryExecute)?;
+
+    let validations =
+        evidence_reports::query_validations(&request).map_err(ApiError::bad_request)?;
+    let mut query_plans = BTreeMap::new();
+    for validation in validations {
+        let plan = logical_plan_from_query(&validation.query)?;
+        let dataset = get_dataset_snapshot(&state, &plan.source)?;
+        let fields = dataset_field_catalog(&dataset);
+        let logical_plan = serde_json::to_value(&plan).map_err(|error| {
+            ApiError::bad_request(format!(
+                "failed to serialize Evidence logical plan: {error}"
+            ))
+        })?;
+        query_plans.insert(
+            validation.section_id.clone(),
+            evidence_reports::EvidenceQueryPlan {
+                section_id: validation.section_id,
+                query_name: validation.query_name,
+                dataset_id: plan.source,
+                fields,
+                logical_plan,
+            },
+        );
+    }
+
+    let response =
+        evidence_reports::compile(request, query_plans).map_err(ApiError::bad_request)?;
+    state
+        .metrics
+        .evidence_reports_compiled_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(Json(response))
 }
 
 async fn security_policy(State(state): State<AppState>) -> Json<Value> {
@@ -5121,6 +5179,12 @@ fn route_docs() -> Vec<RouteDoc> {
             description: "Evidence.dev-style Markdown plus SQL report blueprint.",
         },
         RouteDoc {
+            method: "POST",
+            path: "/reports/evidence/compile",
+            auth: "query-execute",
+            description: "Compile bounded Evidence.dev-style Markdown reports after validating embedded SQL blocks against ingested datasets.",
+        },
+        RouteDoc {
             method: "GET",
             path: "/security/policy",
             auth: "public",
@@ -6159,6 +6223,8 @@ mod tests {
         assert!(paths.contains(&"/live/panels/:dataset_id"));
         assert!(paths.contains(&"/diagrams/tools"));
         assert!(paths.contains(&"/diagrams/infra"));
+        assert!(paths.contains(&"/reports/evidence"));
+        assert!(paths.contains(&"/reports/evidence/compile"));
     }
 
     #[test]
