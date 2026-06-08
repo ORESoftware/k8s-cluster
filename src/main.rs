@@ -18,8 +18,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod dashboard;
 mod hardening;
 mod platform;
+mod rbac;
 mod sql_frontend;
 mod util;
 
@@ -46,6 +48,7 @@ struct AppState {
     metrics: Arc<Metrics>,
     datasets: Arc<RwLock<BTreeMap<String, Dataset>>>,
     evolution_runs: Arc<RwLock<BTreeMap<String, EvolutionRunRecord>>>,
+    dashboards: Arc<RwLock<BTreeMap<String, dashboard::SavedDashboard>>>,
 }
 
 #[derive(Clone)]
@@ -67,6 +70,9 @@ struct Metrics {
     platform_requests_total: AtomicU64,
     hardening_requests_total: AtomicU64,
     association_requests_total: AtomicU64,
+    dashboard_requests_total: AtomicU64,
+    dashboards_saved_total: AtomicU64,
+    rbac_denials_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -454,6 +460,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metrics: Arc::new(Metrics::default()),
         datasets: Arc::new(RwLock::new(BTreeMap::new())),
         evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
+        dashboards: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let app = app_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
@@ -489,7 +496,10 @@ fn app_router(state: AppState) -> Router {
         .route("/renderers/contracts", get(renderer_contracts))
         .route("/reports/evidence", get(evidence_report_blueprint))
         .route("/security/policy", get(security_policy))
+        .route("/security/rbac", get(rbac_policy))
         .route("/associations/:dataset_id", get(association_graph))
+        .route("/dashboards", get(list_dashboards).post(save_dashboard))
+        .route("/dashboards/:dashboard_id", get(get_dashboard))
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
@@ -614,6 +624,8 @@ async fn descriptor(State(state): State<AppState>) -> Json<Value> {
         ),
         "auth": {
             "operatorHeaders": ["X-Server-Auth", "Auth", "Authorization: Bearer ..."],
+            "roleHeaders": ["X-Data-Viz-Role", "X-DD-Role"],
+            "rbacPolicy": rbac::policy_catalog(),
             "allowUnauthenticated": state.config.allow_unauthenticated,
             "secretConfigured": state.config.server_auth_secret.is_some()
         },
@@ -769,6 +781,15 @@ dd_data_viz_hardening_requests_total {}
 # HELP dd_data_viz_association_requests_total Associative graph requests handled.
 # TYPE dd_data_viz_association_requests_total counter
 dd_data_viz_association_requests_total {}
+# HELP dd_data_viz_dashboard_requests_total Dashboard requests handled.
+# TYPE dd_data_viz_dashboard_requests_total counter
+dd_data_viz_dashboard_requests_total {}
+# HELP dd_data_viz_dashboards_saved_total Dashboards saved.
+# TYPE dd_data_viz_dashboards_saved_total counter
+dd_data_viz_dashboards_saved_total {}
+# HELP dd_data_viz_rbac_denials_total Role-based authorization denials.
+# TYPE dd_data_viz_rbac_denials_total counter
+dd_data_viz_rbac_denials_total {}
 # HELP dd_data_viz_auth_failures_total Failed operator auth checks.
 # TYPE dd_data_viz_auth_failures_total counter
 dd_data_viz_auth_failures_total {}
@@ -785,6 +806,9 @@ dd_data_viz_errors_total {}
         metrics.platform_requests_total.load(Ordering::Relaxed),
         metrics.hardening_requests_total.load(Ordering::Relaxed),
         metrics.association_requests_total.load(Ordering::Relaxed),
+        metrics.dashboard_requests_total.load(Ordering::Relaxed),
+        metrics.dashboards_saved_total.load(Ordering::Relaxed),
+        metrics.rbac_denials_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.errors_total.load(Ordering::Relaxed),
     );
@@ -805,7 +829,7 @@ async fn ingest_dataset(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::DatasetWrite)?;
 
     let dataset = Dataset::from_request(request)?;
     let metadata = dataset.metadata();
@@ -848,7 +872,7 @@ async fn list_datasets(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::DatasetRead)?;
     let datasets = state
         .datasets
         .read()
@@ -1008,6 +1032,18 @@ async fn security_policy(State(state): State<AppState>) -> Json<Value> {
     ))
 }
 
+async fn rbac_policy(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .hardening_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(rbac::policy_payload())
+}
+
 async fn association_graph(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1017,13 +1053,106 @@ async fn association_graph(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::AssociationRead)?;
     let dataset = get_dataset_snapshot(&state, &dataset_id)?;
     state
         .metrics
         .association_requests_total
         .fetch_add(1, Ordering::Relaxed);
     Ok(Json(dataset_association_graph(&dataset)))
+}
+
+async fn save_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<dashboard::SaveDashboardRequest>,
+) -> Result<Json<dashboard::SaveDashboardResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .dashboard_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::DashboardWrite)?;
+
+    let mut dashboard = request
+        .into_saved(now_ms())
+        .map_err(ApiError::bad_request)?;
+    let mut warnings = Vec::new();
+    let mut dashboards = state
+        .dashboards
+        .write()
+        .map_err(|_| ApiError::bad_request("dashboard store lock poisoned"))?;
+    if let Some(existing) = dashboards.get(&dashboard.dashboard_id) {
+        dashboard.created_at_ms = existing.created_at_ms;
+        warnings.push(format!(
+            "dashboard {} replaced with a new in-memory snapshot",
+            dashboard.dashboard_id
+        ));
+    }
+    dashboard.updated_at_ms = now_ms();
+    dashboards.insert(dashboard.dashboard_id.clone(), dashboard.clone());
+    state
+        .metrics
+        .dashboards_saved_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    Ok(Json(dashboard::SaveDashboardResponse {
+        ok: true,
+        dashboard,
+        warnings,
+    }))
+}
+
+async fn list_dashboards(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .dashboard_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::DashboardRead)?;
+    let dashboards = state
+        .dashboards
+        .read()
+        .map_err(|_| ApiError::bad_request("dashboard store lock poisoned"))?;
+    let summaries = dashboards
+        .values()
+        .map(dashboard::SavedDashboard::summary)
+        .collect::<Vec<_>>();
+    Ok(Json(dashboard::catalog_payload(summaries)))
+}
+
+async fn get_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(dashboard_id): Path<String>,
+) -> Result<Json<dashboard::SavedDashboard>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .dashboard_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::DashboardRead)?;
+    let dashboards = state
+        .dashboards
+        .read()
+        .map_err(|_| ApiError::bad_request("dashboard store lock poisoned"))?;
+    dashboards
+        .get(&dashboard_id)
+        .cloned()
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("dashboard `{dashboard_id}` not found")))
 }
 
 async fn get_dataset(
@@ -1035,7 +1164,7 @@ async fn get_dataset(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::DatasetRead)?;
     let dataset = get_dataset_snapshot(&state, &dataset_id)?;
     Ok(Json(dataset.metadata()))
 }
@@ -1049,7 +1178,7 @@ async fn query(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::QueryExecute)?;
 
     let plan = logical_plan_from_query(&request)?;
     let dataset = get_dataset_snapshot(&state, &plan.source)?;
@@ -1068,7 +1197,7 @@ async fn suggest_visualizations(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::VisualizationSuggest)?;
 
     let dataset = get_dataset_snapshot(&state, &request.dataset_id)?;
     let plan = match &request.query {
@@ -1112,7 +1241,7 @@ async fn run_evolution(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::EvolutionRun)?;
 
     let dataset = get_dataset_snapshot(&state, &request.dataset_id)?;
     let dimensions = requested_dimensions(&dataset, request.dimensions.as_deref());
@@ -1213,7 +1342,7 @@ async fn list_evolution_runs(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::EvolutionRead)?;
     let runs = state
         .evolution_runs
         .read()
@@ -1231,7 +1360,7 @@ async fn export_presentation(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    require_operator_auth(&state, &headers)?;
+    authorize(&state, &headers, rbac::Permission::PresentationExport)?;
 
     if request.specs.is_empty() {
         return Err(ApiError::bad_request(
@@ -2705,49 +2834,49 @@ fn route_docs() -> Vec<RouteDoc> {
         RouteDoc {
             method: "POST",
             path: "/datasets",
-            auth: "operator",
+            auth: "dataset-write",
             description: "Ingest JSON records into a columnar in-memory dataset.",
         },
         RouteDoc {
             method: "GET",
             path: "/datasets",
-            auth: "operator",
+            auth: "dataset-read",
             description: "List in-memory datasets and column profiles.",
         },
         RouteDoc {
             method: "GET",
             path: "/datasets/:dataset_id",
-            auth: "operator",
+            auth: "dataset-read",
             description: "Return one dataset profile.",
         },
         RouteDoc {
             method: "POST",
             path: "/query",
-            auth: "operator",
+            auth: "query-execute",
             description: "Translate a supported dialect into a LogicalPlan and execute it.",
         },
         RouteDoc {
             method: "POST",
             path: "/visualizations/suggest",
-            auth: "operator",
+            auth: "visualization-suggest",
             description: "Generate 2D, 3D, 4D, 5D, or XD visualization specs.",
         },
         RouteDoc {
             method: "POST",
             path: "/evolution/run",
-            auth: "operator",
+            auth: "evolution-run",
             description: "Run evolutionary visualization mutation and scoring.",
         },
         RouteDoc {
             method: "GET",
             path: "/evolution/runs",
-            auth: "operator",
+            auth: "evolution-read",
             description: "List prior in-memory evolution run summaries.",
         },
         RouteDoc {
             method: "POST",
             path: "/presentations/export",
-            auth: "operator",
+            auth: "presentation-export",
             description:
                 "Emit PowerPoint OpenXML, Google Slides, Reveal markdown, and final JSON layers.",
         },
@@ -2819,9 +2948,33 @@ fn route_docs() -> Vec<RouteDoc> {
         },
         RouteDoc {
             method: "GET",
+            path: "/security/rbac",
+            auth: "public",
+            description: "Role and permission policy for protected analytics routes.",
+        },
+        RouteDoc {
+            method: "GET",
             path: "/associations/:dataset_id",
-            auth: "operator",
+            auth: "association-read",
             description: "Qlik-style associative graph over categorical fields in an ingested dataset.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/dashboards",
+            auth: "dashboard-write",
+            description: "Create or replace a saved dashboard definition backed by visualization specs.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/dashboards",
+            auth: "dashboard-read",
+            description: "List saved dashboard summaries.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/dashboards/:dashboard_id",
+            auth: "dashboard-read",
+            description: "Read a saved dashboard definition.",
         },
         RouteDoc {
             method: "GET",
@@ -2995,10 +3148,16 @@ fn dataset_association_graph(dataset: &Dataset) -> Value {
     })
 }
 
-fn require_operator_auth(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
+fn authorize(
+    state: &AppState,
+    headers: &HeaderMap,
+    permission: rbac::Permission,
+) -> Result<rbac::AuthContext, ApiError> {
+    let role = role_from_headers(headers)?;
     if state.config.allow_unauthenticated {
-        return Ok(());
+        return authorize_role(state, role.unwrap_or(rbac::Role::Admin), permission, true);
     }
+
     let Some(secret) = &state.config.server_auth_secret else {
         state
             .metrics
@@ -3015,15 +3174,48 @@ fn require_operator_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Ap
             header_value(headers, "authorization")
                 .and_then(|value| value.strip_prefix("Bearer ").map(str::to_string))
         });
-    if candidate.as_deref() == Some(secret.as_str()) {
-        Ok(())
-    } else {
+    if candidate.as_deref() != Some(secret.as_str()) {
         state
             .metrics
             .auth_failures_total
             .fetch_add(1, Ordering::Relaxed);
-        Err(ApiError::unauthorized("operator auth failed"))
+        return Err(ApiError::unauthorized("operator auth failed"));
     }
+
+    authorize_role(state, role.unwrap_or(rbac::Role::Admin), permission, false)
+}
+
+fn role_from_headers(headers: &HeaderMap) -> Result<Option<rbac::Role>, ApiError> {
+    let Some(raw_role) =
+        header_value(headers, "x-data-viz-role").or_else(|| header_value(headers, "x-dd-role"))
+    else {
+        return Ok(None);
+    };
+    rbac::Role::from_header(&raw_role)
+        .map(Some)
+        .ok_or_else(|| ApiError::unauthorized(format!("unknown data viz role `{raw_role}`")))
+}
+
+fn authorize_role(
+    state: &AppState,
+    role: rbac::Role,
+    permission: rbac::Permission,
+    local_bypass: bool,
+) -> Result<rbac::AuthContext, ApiError> {
+    if role.allows(permission) {
+        return Ok(rbac::AuthContext {
+            role,
+            permission,
+            local_bypass,
+        });
+    }
+    state
+        .metrics
+        .rbac_denials_total
+        .fetch_add(1, Ordering::Relaxed);
+    Err(ApiError::unauthorized(format!(
+        "role `{role:?}` does not allow `{permission:?}`"
+    )))
 }
 
 fn filter_matches(dataset: &Dataset, row: usize, filter: Option<&FilterExpr>) -> bool {
@@ -3376,6 +3568,30 @@ mod tests {
         .expect("dataset builds")
     }
 
+    fn test_state() -> AppState {
+        AppState {
+            config: Arc::new(Config {
+                host: DEFAULT_HOST.to_string(),
+                port: DEFAULT_PORT,
+                server_auth_secret: Some("unit-secret".to_string()),
+                allow_unauthenticated: false,
+            }),
+            metrics: Arc::new(Metrics::default()),
+            datasets: Arc::new(RwLock::new(BTreeMap::new())),
+            evolution_runs: Arc::new(RwLock::new(BTreeMap::new())),
+            dashboards: Arc::new(RwLock::new(BTreeMap::new())),
+        }
+    }
+
+    fn auth_headers(role: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-server-auth", "unit-secret".parse().unwrap());
+        if let Some(role) = role {
+            headers.insert("x-data-viz-role", role.parse().unwrap());
+        }
+        headers
+    }
+
     #[test]
     fn ingest_uses_dictionary_encoding_for_categories() {
         let dataset = sample_dataset();
@@ -3513,5 +3729,29 @@ mod tests {
         assert!(paths.contains(&"/semantic/models"));
         assert!(paths.contains(&"/associations/:dataset_id"));
         assert!(paths.contains(&"/security/policy"));
+        assert!(paths.contains(&"/security/rbac"));
+        assert!(paths.contains(&"/dashboards"));
+        assert!(paths.contains(&"/dashboards/:dashboard_id"));
+    }
+
+    #[test]
+    fn rbac_authorization_allows_reader_and_denies_writer() {
+        let state = test_state();
+
+        authorize(
+            &state,
+            &auth_headers(Some("viewer")),
+            rbac::Permission::DatasetRead,
+        )
+        .expect("viewer can read datasets");
+        let error = authorize(
+            &state,
+            &auth_headers(Some("viewer")),
+            rbac::Permission::DatasetWrite,
+        )
+        .expect_err("viewer cannot write datasets");
+
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(state.metrics.rbac_denials_total.load(Ordering::Relaxed), 1);
     }
 }
