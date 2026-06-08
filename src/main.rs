@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "2048"]
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -62787,6 +62787,8 @@ fn root_response() -> Value {
         "GET /fabrication/resin-printer/catalog",
         "GET /material-jetting/catalog",
         "GET /fabrication/material-jetting/catalog",
+        "GET /directed-energy-deposition/catalog",
+        "GET /fabrication/directed-energy-deposition/catalog",
         "GET /powder-bed/catalog",
         "GET /fabrication/powder-bed/catalog",
         "GET /printers/preflight/catalog",
@@ -110389,6 +110391,123 @@ async fn material_jetting_catalog_http() -> impl IntoResponse {
     Json(material_jetting_catalog_response())
 }
 
+fn directed_energy_deposition_catalog_response() -> Value {
+    let printer_payload = printer_catalog_response();
+    let ded_cells = printer_payload
+        .get("printers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|printer| {
+            printer
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(is_directed_energy_deposition_kind)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let cell_kinds = unique_sorted(
+        ded_cells
+            .iter()
+            .filter_map(|cell| cell.get("kind").and_then(Value::as_str).map(str::to_string)),
+    );
+    let operations = unique_sorted(ded_cells.iter().flat_map(|cell| {
+        cell.get("operations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|operation| operation.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+    let materials = unique_sorted(ded_cells.iter().flat_map(|cell| {
+        cell.get("materials")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|material| material.as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+    }));
+
+    json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": "dd.fabrication.directed-energy-deposition-catalog.v1",
+        "serviceSchemaVersion": SCHEMA_VERSION,
+        "routes": [
+            "GET /directed-energy-deposition/catalog",
+            "GET /fabrication/directed-energy-deposition/catalog"
+        ],
+        "parentCatalogRoutes": [
+            "GET /printers/catalog",
+            "GET /fabrication/printers/catalog",
+            "GET /cells/catalog",
+            "GET /fabrication/cells/catalog",
+            "GET /materials/catalog",
+            "GET /fabrication/materials/catalog",
+            "GET /postprocess/catalog",
+            "GET /fabrication/postprocess/catalog",
+            "GET /monitoring/catalog",
+            "GET /fabrication/monitoring/catalog"
+        ],
+        "preflightRoutes": [
+            "GET /printers/preflight/catalog",
+            "GET /fabrication/printers/preflight/catalog",
+            "GET /machine-code/preflight/catalog",
+            "GET /fabrication/machine-code/preflight/catalog",
+            "GET /simulation/preflight/catalog",
+            "GET /fabrication/simulation/preflight/catalog",
+            "GET /safety/catalog",
+            "GET /fabrication/safety/catalog",
+            "GET /release/preflight/catalog",
+            "GET /fabrication/release/preflight/catalog"
+        ],
+        "directedEnergyDepositionCellCount": ded_cells.len(),
+        "directedEnergyDepositionCellKinds": cell_kinds,
+        "materials": materials,
+        "operations": operations,
+        "setupEvidence": [
+            "wire or powder feedstock lot, feedstock diameter or powder size, dry storage, feed calibration, bead path, substrate, build plate, and finish-machining allowance evidence",
+            "laser/arc/e-beam power, travel speed, wire feed or powder flow, shielding gas, oxygen/moisture, interlock, robot TCP/frame, external-axis synchronization, and melt-pool monitoring evidence",
+            "interpass temperature, cooldown, thermal log, distortion, residual stress, stop/restart tie-in, NDE, coupon, hardness, porosity, crack inspection, and dimensional inspection evidence",
+            "generated directed-energy-deposition job package, robot collision simulation, cell safety, thermal postprocess, machining allowance, first-article, telemetry, and signoff evidence"
+        ],
+        "boundaryFamilies": [
+            "ded-feedstock-path-boundary",
+            "ded-energy-thermal-inspection-boundary",
+            "robotic-additive-path-boundary",
+            "robotic-additive-extrusion-boundary",
+            "thermal-postprocess-boundary",
+            "quality-dimensional-inspection-boundary"
+        ],
+        "planningRoutes": [
+            "POST /fabrication/machine-code/generate",
+            "POST /fabrication/instructions/generate",
+            "POST /fabrication/toolpath/result",
+            "POST /fabrication/simulation/run",
+            "POST /fabrication/postprocess/plan"
+        ],
+        "resultReviewRoutes": [
+            "POST /fabrication/materials/result",
+            "POST /fabrication/setup/result",
+            "POST /fabrication/telemetry/result",
+            "POST /fabrication/quality/result",
+            "POST /fabrication/learning/outcomes"
+        ],
+        "releasePolicy": [
+            "directed-energy deposition catalog entries are DED/WAAM/laser-cladding planning profiles, not certified live cell approval",
+            "machine-ready release remains blocked until feedstock, bead path, energy source, shielding, thermal, robot/frame, simulation, NDE/coupon, finish-machining allowance, inspection, and signoff evidence are retained",
+            "DED outcomes should feed material, toolpath, monitoring, postprocess, quality, telemetry, costing, and learning routes so DES, MDP/POMDP, and neural workers can learn when to resequence, split, reroute, pause for inspection, or require human intervention"
+        ],
+        "directedEnergyDepositionCells": ded_cells
+    })
+}
+
+async fn directed_energy_deposition_catalog_http() -> impl IntoResponse {
+    Json(directed_energy_deposition_catalog_response())
+}
+
 fn powder_bed_catalog_response() -> Value {
     let printer_payload = printer_catalog_response();
     let powder_bed_printers = printer_payload
@@ -121304,6 +121423,7 @@ async fn request_schema() -> impl IntoResponse {
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
             "materialJettingCatalog": ["GET /material-jetting/catalog", "GET /fabrication/material-jetting/catalog"],
+            "directedEnergyDepositionCatalog": ["GET /directed-energy-deposition/catalog", "GET /fabrication/directed-energy-deposition/catalog"],
             "powderBedCatalog": ["GET /powder-bed/catalog", "GET /fabrication/powder-bed/catalog"],
             "millRouterCatalog": ["GET /mill-router/catalog", "GET /fabrication/mill-router/catalog"],
             "verticalMillCatalog": ["GET /vertical-mill/catalog", "GET /fabrication/vertical-mill/catalog"],
@@ -124501,6 +124621,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route(
             "/fabrication/material-jetting/catalog",
             get(material_jetting_catalog_http),
+        )
+        .route(
+            "/directed-energy-deposition/catalog",
+            get(directed_energy_deposition_catalog_http),
+        )
+        .route(
+            "/fabrication/directed-energy-deposition/catalog",
+            get(directed_energy_deposition_catalog_http),
         )
         .route("/powder-bed/catalog", get(powder_bed_catalog_http))
         .route(
@@ -151878,6 +152006,89 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|routes| routes.iter().any(|route| {
                 route.as_str() == Some("GET /fabrication/material-jetting/catalog")
+            })));
+    }
+
+    #[test]
+    fn directed_energy_deposition_catalog_endpoint_exposes_feedstock_energy_and_thermal_release_contract(
+    ) {
+        let payload = directed_energy_deposition_catalog_response();
+        assert_eq!(
+            payload.get("schemaVersion").and_then(Value::as_str),
+            Some("dd.fabrication.directed-energy-deposition-catalog.v1")
+        );
+        assert!(payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/directed-energy-deposition/catalog")
+            })));
+        assert!(payload
+            .get("parentCatalogRoutes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes
+                .iter()
+                .any(|route| route.as_str() == Some("GET /fabrication/cells/catalog"))));
+        assert!(payload
+            .get("directedEnergyDepositionCellCount")
+            .and_then(Value::as_u64)
+            .is_some_and(|count| count >= 1));
+
+        let cell_kinds = payload
+            .get("directedEnergyDepositionCellKinds")
+            .and_then(Value::as_array)
+            .expect("DED cell kinds should be present");
+        assert!(cell_kinds
+            .iter()
+            .any(|item| item.as_str() == Some("directed-energy-deposition-cell")));
+
+        let setup_evidence = payload
+            .get("setupEvidence")
+            .and_then(Value::as_array)
+            .expect("DED setup evidence should be present");
+        for expected in [
+            "wire or powder feedstock lot",
+            "laser/arc/e-beam power",
+            "interpass temperature",
+            "robot collision simulation",
+        ] {
+            assert!(
+                setup_evidence
+                    .iter()
+                    .any(|entry| entry.as_str().is_some_and(|entry| entry.contains(expected))),
+                "missing DED setup evidence {expected}"
+            );
+        }
+
+        let boundary_families = payload
+            .get("boundaryFamilies")
+            .and_then(Value::as_array)
+            .expect("DED boundary families should be present");
+        for boundary in [
+            "ded-feedstock-path-boundary",
+            "ded-energy-thermal-inspection-boundary",
+            "robotic-additive-path-boundary",
+        ] {
+            assert!(
+                boundary_families
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(boundary)),
+                "missing DED boundary family {boundary}"
+            );
+        }
+        assert!(payload
+            .get("releasePolicy")
+            .and_then(Value::as_array)
+            .is_some_and(|policy| policy.iter().any(|item| item
+                .as_str()
+                .is_some_and(|item| item.contains("DES, MDP/POMDP, and neural workers")))));
+
+        let root_payload = root_response();
+        assert!(root_payload
+            .get("routes")
+            .and_then(Value::as_array)
+            .is_some_and(|routes| routes.iter().any(|route| {
+                route.as_str() == Some("GET /fabrication/directed-energy-deposition/catalog")
             })));
     }
 
