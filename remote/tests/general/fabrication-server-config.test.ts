@@ -2656,6 +2656,8 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /prefer-learned-method-combination-additive-print-rivet-installation/);
   assert.match(source, /learned_seal_installation_combinations_decompose_future_open_requests/);
   assert.match(source, /prefer-learned-method-combination-additive-print-seal-installation/);
+  assert.match(source, /learned_bearing_installation_combinations_decompose_future_open_requests/);
+  assert.match(source, /prefer-learned-method-combination-additive-print-bearing-installation/);
   assert.match(source, /dd\.fabrication\.neural-policy-sketch\.v1/);
   assert.match(source, /dd\.fabrication\.neural-engine-inference\.v1/);
   assert.match(source, /des_engine::des::general::neural_network::FeedForwardNetwork/);
