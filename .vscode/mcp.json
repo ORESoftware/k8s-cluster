@@ -11,14 +11,14 @@
   "servers": {
     "dd-cluster-mcp": {
       "type": "http",
-      "url": "https://54.91.17.58/cluster-mcp",
+      "url": "https://98.90.186.114/cluster-mcp",
       "headers": {
         "Authorization": "Bearer ${input:dd-mcp-token}"
       }
     },
     "dd-gleam-mcp": {
       "type": "http",
-      "url": "https://54.91.17.58/mcp",
+      "url": "https://98.90.186.114/mcp",
       "headers": {
         "Authorization": "Bearer ${input:dd-mcp-token}"
       }

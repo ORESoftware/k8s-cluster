@@ -2,13 +2,13 @@
   "// dd MCP servers": "Read-only EC2 cluster MCP endpoints behind the dd-remote-gateway. See mcp/README.md for token + TLS CA setup. Cursor expands ${env:VAR} from the environment Cursor was launched with.",
   "mcpServers": {
     "dd-cluster-mcp": {
-      "url": "https://54.91.17.58/cluster-mcp",
+      "url": "https://98.90.186.114/cluster-mcp",
       "headers": {
         "Authorization": "Bearer ${env:DD_MCP_TOKEN}"
       }
     },
     "dd-gleam-mcp": {
-      "url": "https://54.91.17.58/mcp",
+      "url": "https://98.90.186.114/mcp",
       "headers": {
         "Authorization": "Bearer ${env:DD_MCP_TOKEN}"
       }

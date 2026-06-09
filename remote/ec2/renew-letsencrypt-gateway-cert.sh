@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CERT_NAME="${CERT_NAME:-54.91.17.58}"
+CERT_NAME="${CERT_NAME:-98.90.186.114}"
 CERTBOT_BIN="${CERTBOT_BIN:-/home/ec2-user/certbot-venv-312/bin/certbot}"
 CERTBOT_CONFIG_DIR="${CERTBOT_CONFIG_DIR:-/home/ec2-user/letsencrypt/config}"
 CERTBOT_WORK_DIR="${CERTBOT_WORK_DIR:-/home/ec2-user/letsencrypt/work}"

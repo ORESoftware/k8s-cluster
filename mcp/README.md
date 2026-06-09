@@ -4,14 +4,28 @@ This directory holds the checked-in config and helper scripts for connecting
 local IDEs — **Cursor, VS Code, and Codex** — to the two read-only MCP servers
 running on the EC2 Kubernetes runtime:
 
-| Server                                                                    | Language | Gateway URL                       |
-| ------------------------------------------------------------------------- | -------- | --------------------------------- |
-| [`dd-gleam-mcp-server`](../remote/deployments/gleam-mcp-server/)          | Gleam    | `https://54.91.17.58/mcp`         |
-| [`dd-cluster-mcp-rs`](../remote/deployments/cluster-mcp-rs/)              | Rust     | `https://54.91.17.58/cluster-mcp` |
+| Server                                                            | Language | Gateway URL                        |
+| ----------------------------------------------------------------- | -------- | ---------------------------------- |
+| [`dd-gleam-mcp-server`](../remote/deployments/gleam-mcp-server/)  | Gleam    | `https://98.90.186.114/mcp`         |
+| [`dd-cluster-mcp-rs`](../remote/deployments/cluster-mcp-rs/)      | Rust     | `https://98.90.186.114/cluster-mcp` |
 
 Both expose the same read-only `dd_cluster` tool surface (cluster inventory,
-service directory, observability health). They are reached **through the
+service directory, observability health), reached **through the
 `dd-remote-gateway`**, never directly.
+
+> **Gateway IP.** The gateway is the EC2 Elastic IP `98.90.186.114`. If the
+> instance is rebuilt and the EIP changes, update the URLs in `.cursor/mcp.json`,
+> `.vscode/mcp.json`, this file, and `codex-config.example.toml`. Discover the
+> current IP with:
+>
+> ```sh
+> aws ec2 describe-instances --region us-east-1 \
+>   --filters Name=tag:Name,Values=dd-remote-k8s-1 Name=instance-state-name,Values=running \
+>   --query 'Reservations[].Instances[].PublicIpAddress' --output text
+> ```
+>
+> When the IP changes you must also **reissue the TLS cert for the new IP** (see
+> "TLS" below) or clients will fail certificate validation.
 
 ## Auth model
 
@@ -36,90 +50,88 @@ Token plumbing:
   (`$dd_mcp_bearer_ok` / `$dd_mcp_auth_ok`).
 
 **The token is never committed.** It lives in AWS, the cluster secret, and your
-local shell / IDE secret storage only.
+local shell / IDE secret storage only. The current token is stored locally at
+`~/.dd-mcp-token` (mode 600).
 
-### One-time: mint and deploy the token (operator)
+### Mint / rotate the token (operator)
 
 ```sh
-# 1. Generate a token and write the AWS secret (JSON key MCP_READONLY_TOKEN).
 TOKEN=$(openssl rand -hex 32)
-aws secretsmanager create-secret \
-  --name dd/remote-dev/mcp-gateway-token \
+aws secretsmanager put-secret-value \
+  --secret-id dd/remote-dev/mcp-gateway-token \
   --secret-string "{\"MCP_READONLY_TOKEN\":\"$TOKEN\"}"
-#   (use `put-secret-value` to rotate an existing secret)
-
-# 2. Let External Secrets sync, then restart the gateway so it loads the env.
-kubectl -n default rollout restart deploy/dd-remote-gateway
-
-# 3. Share $TOKEN with operators out-of-band; they set it locally (below).
+kubectl -n default rollout restart deploy/dd-remote-gateway   # picks up new value
 ```
 
-Rotation = write a new AWS version + `rollout restart deploy/dd-remote-gateway`.
-Old IDE configs then fail closed with `401`.
+Rotation invalidates old IDE configs (they fail closed with `401`).
 
-## One-time: trust the gateway TLS cert
+## TLS
 
-The gateway serves `https://54.91.17.58` with a self-signed / short-lived IP
-cert, so Node-based MCP clients reject it by default. Pin the cert (keeps full
-TLS verification — do **not** use `NODE_TLS_REJECT_UNAUTHORIZED=0`):
+The gateway serves a **publicly-trusted Let's Encrypt IP certificate** for
+`98.90.186.114` (short-lived, auto-renewed on the EC2 host by
+[`remote/ec2/renew-letsencrypt-gateway-cert.sh`](../remote/ec2/renew-letsencrypt-gateway-cert.sh)).
+Because it's publicly trusted, **clients need no custom CA** — full TLS
+verification works out of the box.
+
+If the EIP changes, the cert must be reissued for the new IP. On the EC2 host
+(SSM Session Manager works; no VPN required):
 
 ```sh
-./mcp/fetch-gateway-ca.sh        # writes mcp/dd-gateway-ca.pem (gitignored)
+/home/ec2-user/certbot-venv-312/bin/certbot certonly \
+  --config-dir /home/ec2-user/letsencrypt/config \
+  --work-dir /home/ec2-user/letsencrypt/work \
+  --logs-dir /home/ec2-user/letsencrypt/logs \
+  --preferred-profile shortlived --webroot \
+  --webroot-path /home/ec2-user/dd-acme-webroot \
+  --ip-address <NEW_IP> --agree-tos --register-unsafely-without-email --non-interactive
+# then deploy + roll the gateway:
+CERT_NAME=<NEW_IP> remote/ec2/renew-letsencrypt-gateway-cert.sh deploy
 ```
 
-Then export `NODE_EXTRA_CA_CERTS` pointing at that file:
-
-- **Codex** (stdio bridge): already wired per-server in
-  [`codex-config.example.toml`](./codex-config.example.toml) — just set the path.
-- **Cursor / VS Code** (native HTTP): these run as GUI apps, so set it in the
-  app's launch environment. On macOS:
-
-  ```sh
-  launchctl setenv NODE_EXTRA_CA_CERTS "$PWD/mcp/dd-gateway-ca.pem"
-  # then fully quit and relaunch Cursor / VS Code
-  ```
-
-  (If the gateway is later moved to a publicly-trusted cert, skip this entirely.)
+`fetch-gateway-ca.sh` remains only as a fallback for a future self-signed cert;
+it is **not needed** with the current LE cert.
 
 ## Per-IDE setup
 
 ### Cursor — [`.cursor/mcp.json`](../.cursor/mcp.json) (committed)
 
 Native HTTP. Cursor expands `${env:DD_MCP_TOKEN}` from the environment it was
-launched with. Set the token, then relaunch Cursor:
+launched with. On macOS, set it for GUI apps and relaunch Cursor:
 
 ```sh
-launchctl setenv DD_MCP_TOKEN "<the token>"   # macOS GUI apps
+launchctl setenv DD_MCP_TOKEN "$(cat ~/.dd-mcp-token)"
 ```
 
 ### VS Code — [`.vscode/mcp.json`](../.vscode/mcp.json) (committed)
 
 Native HTTP with a prompted `input`. VS Code asks for the token once on first
-use and stores it in its secret storage — nothing to export. Open the file and
-click **Start**, or run **MCP: List Servers**.
+use and stores it in its secret storage — nothing to export. Run **MCP: List
+Servers** and start them.
 
 ### Codex — `~/.codex/config.toml`
 
-Codex reaches the servers through `npx mcp-remote`. Copy the blocks from
-[`codex-config.example.toml`](./codex-config.example.toml) into
-`~/.codex/config.toml`, set `AUTH_HEADER = "Bearer <the token>"` and the
-`NODE_EXTRA_CA_CERTS` absolute path. (Your `~/.codex/config.toml` is local-only,
-so the literal token there is acceptable.)
+Codex supports native HTTP MCP servers with `http_headers`. Copy the two blocks
+from [`codex-config.example.toml`](./codex-config.example.toml) into
+`~/.codex/config.toml` and set the bearer token. (Your `~/.codex/config.toml` is
+local-only, so a literal token there is fine.)
 
 ## Smoke test (no IDE)
 
 ```sh
-TOKEN="<the token>"
-curl --cacert mcp/dd-gateway-ca.pem \
-  -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $(cat ~/.dd-mcp-token)" \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  https://54.91.17.58/cluster-mcp
+  https://98.90.186.114/cluster-mcp
 ```
 
-A `200` with a JSON `result.tools` array means the token + CA are good. A `401`
-(or a redirect to `/auth`) means the token is wrong or the gateway hasn't been
-restarted since the secret landed.
+A `200` with a JSON `result.tools` array means the token is good. A `401` means
+the token is wrong or the gateway hasn't been restarted since a rotation.
+
+## Reachability
+
+The gateway EIP is reachable over the public internet (subject to the instance
+security group). If `curl` hangs or returns `000`, you are either off an allowed
+network or the EIP has changed — re-run the discovery command above.
 
 ## Security notes / residual findings
 
@@ -129,8 +141,7 @@ restarted since the secret landed.
 - The MCP server pods still accept **unauthenticated in-VPC traffic** on
   `:8090` / `:8091` via the RFC1918 NetworkPolicy ingress rule added for
   host-network warm workers. Local IDEs do not use that path (they go through
-  the authenticated gateway), but in-VPC callers bypass the token. Tighten to
-  specific pool-node IPs when that rule is revisited.
+  the authenticated gateway), but in-VPC callers bypass the token.
 - Redaction is substring-based on known secret-like keys; bounded samples of
   arbitrary object metadata still flow out. Keep the surface read-only — do not
   add write/secret/log/exec tools without a separate short-lived human grant +

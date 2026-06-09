@@ -15,7 +15,7 @@
 # IP/hostname cert), you can drop the NODE_EXTRA_CA_CERTS step entirely.
 set -euo pipefail
 
-HOST="${DD_GATEWAY_HOST:-54.91.17.58}"
+HOST="${DD_GATEWAY_HOST:-98.90.186.114}"
 PORT="${DD_GATEWAY_PORT:-443}"
 OUT="$(cd "$(dirname "$0")" && pwd)/dd-gateway-ca.pem"
 
