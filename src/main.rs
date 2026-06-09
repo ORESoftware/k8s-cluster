@@ -23,6 +23,7 @@ use serde_json::{json, Value};
 
 mod alerts;
 mod associative;
+mod calculations;
 mod connections;
 mod dashboard;
 mod dax;
@@ -674,6 +675,8 @@ fn app_router(state: AppState) -> Router {
         .route("/datasets", get(list_datasets).post(ingest_dataset))
         .route("/datasets/:dataset_id", get(get_dataset))
         .route("/query", post(query))
+        .route("/calculations", get(calculations_descriptor))
+        .route("/calculations/apply", post(apply_calculations))
         .route("/query-cache", get(list_query_cache))
         .route("/query-cache/:cache_id", get(get_query_cache_entry))
         .route("/visualizations/suggest", post(suggest_visualizations))
@@ -843,7 +846,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limit": "bounded result rows"
         },
         "visualizationSpec": {
-            "mark": "bar, line, scatter, stem, surface, parallel-coordinates, radial-density, hyper-slice-matrix, volume-cloud",
+            "mark": "bar, line, scatter, stem, histogram, box, violin, ecdf, map, choropleth, surface, parallel-coordinates, radial-density, hyper-slice-matrix, volume-cloud",
             "layout": "2d-cartesian, 3d-scene, 4d-encoded-scene, 5d-faceted-hypercube, xd-projection-atlas",
             "encodings": ["channel to field bindings"],
             "fitness": "informationDensity + legibility + novelty + taskFit + optional aiEvaluator"
@@ -3268,6 +3271,28 @@ async fn get_dataset(
     Ok(Json(dataset.metadata()))
 }
 
+async fn calculations_descriptor(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(calculations::descriptor())
+}
+
+async fn apply_calculations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<calculations::CalculationRequest>,
+) -> Result<Json<calculations::CalculationResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::QueryExecute)?;
+    let response = calculations::apply(request).map_err(ApiError::bad_request)?;
+    Ok(Json(response))
+}
+
 async fn query(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -5042,6 +5067,18 @@ fn route_docs() -> Vec<RouteDoc> {
             path: "/query",
             auth: "query-execute",
             description: "Translate a supported dialect into a LogicalPlan and execute it.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/calculations",
+            auth: "query-execute",
+            description: "Describe supported LOD expressions and table calculations.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/calculations/apply",
+            auth: "query-execute",
+            description: "Apply LOD expressions and table calculations to a result set.",
         },
         RouteDoc {
             method: "GET",

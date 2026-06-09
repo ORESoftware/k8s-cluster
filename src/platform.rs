@@ -516,7 +516,16 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             id: "exploration-chart",
             product_analog: "Tableau / Superset / Metabase",
             data_shape: "dimension, measure, optional facet",
-            visualization_families: vec!["bar", "scatter", "stem", "histogram", "heatmap"],
+            visualization_families: vec![
+                "bar", "scatter", "stem", "histogram", "box", "violin", "ecdf", "heatmap",
+            ],
+            refresh: "cached query snapshot",
+        },
+        DashboardPanel {
+            id: "geospatial-map",
+            product_analog: "Tableau symbol / filled maps",
+            data_shape: "lat/lon points or region codes with a measure",
+            visualization_families: vec!["map", "choropleth"],
             refresh: "cached query snapshot",
         },
         DashboardPanel {

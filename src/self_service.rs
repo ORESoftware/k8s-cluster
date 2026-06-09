@@ -247,7 +247,8 @@ impl QuestionChartSpec {
             .ok_or_else(|| "chart mark must be a safe identifier".to_string())?;
         if !matches!(
             mark.as_str(),
-            "bar" | "line" | "area" | "scatter" | "stem" | "table" | "metric" | "pie" | "heatmap"
+            "bar" | "line" | "area" | "scatter" | "stem" | "histogram" | "box" | "violin"
+                | "ecdf" | "map" | "choropleth" | "table" | "metric" | "pie" | "heatmap"
         ) {
             return Err(format!("unsupported chart mark `{mark}`"));
         }
@@ -760,6 +761,25 @@ mod tests {
         .expect("stem chart validates");
 
         assert_eq!(saved.chart_summary().expect("chart summary").mark, "stem");
+    }
+
+    #[test]
+    fn chart_accepts_statistical_marks() {
+        for mark in ["histogram", "box", "violin", "ecdf", "map", "choropleth"] {
+            let chart = QuestionChartSpec {
+                chart_id: None,
+                title: Some(format!("{mark} chart")),
+                mark: mark.to_string(),
+                encodings: vec![QuestionChartEncoding {
+                    channel: "x".to_string(),
+                    field: "revenue".to_string(),
+                }],
+            };
+            let output_fields: BTreeSet<String> = ["revenue".to_string()].into_iter().collect();
+            chart
+                .into_saved("dist", &output_fields)
+                .unwrap_or_else(|err| panic!("{mark} mark should validate: {err}"));
+        }
     }
 
     #[test]
