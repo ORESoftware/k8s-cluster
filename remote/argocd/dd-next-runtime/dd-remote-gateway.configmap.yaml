@@ -5,6 +5,10 @@ metadata:
   namespace: default
 data:
   default.conf.template: |
+    # The $dd_mcp_bearer_ok map keys on "Bearer <MCP_READONLY_TOKEN>", which is
+    # longer than nginx's default 64-byte map hash bucket, so raise it.
+    map_hash_bucket_size 128;
+
     map $http_auth $dd_gateway_header_auth_ok {
       default 0;
       "${DD_REMOTE_GATEWAY_AUTH_VALUE}" 1;
