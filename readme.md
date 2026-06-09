@@ -87,11 +87,16 @@ managed host commands can be overridden by trusted deployment/local env with
 `LAMBDA_NODEJS_HOST_COMMAND`, `LAMBDA_PYTHON3_HOST_COMMAND`, `LAMBDA_RUBY_HOST_COMMAND`, and
 `LAMBDA_BASH_HOST_COMMAND`; this is mainly for dev machines whose local Node permission flags lag the
 cluster `nodejs-current` package. The
-container path supports `LAMBDA_CONTAINER_RUNNER=nerdctl` and `LAMBDA_CONTAINER_RUNNER=ctr`.
-`nerdctl` uses `--read-only --tmpfs /tmp --user 10001:10001 --cap-drop ALL --security-opt
-no-new-privileges --pids-limit 64 --ulimit nofile=64:64`; `ctr` uses equivalent containerd flags
-for read-only rootfs, tmpfs `/tmp`, non-root user, `LAMBDA_CONTAINER_NETWORK`-selected networking,
-seccomp, memory/CPU limits, and dropped default capabilities. No host code is mounted into packaged
+container path supports `LAMBDA_CONTAINER_RUNNER=nerdctl` (default), `LAMBDA_CONTAINER_RUNNER=ctr`,
+`LAMBDA_CONTAINER_RUNNER=docker`, and `LAMBDA_CONTAINER_RUNNER=podman`. The Docker-CLI compatible
+runners (`nerdctl`, `docker`, `podman`) share the same hardening flags: `--read-only --tmpfs /tmp
+--user 10001:10001 --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --ulimit
+nofile=64:64`. `nerdctl` additionally scopes containers to the `LAMBDA_CONTAINER_NAMESPACE`
+containerd namespace via `-n`, which `docker`/`podman` do not have. `ctr` uses equivalent containerd
+flags for read-only rootfs, tmpfs `/tmp`, non-root user, `LAMBDA_CONTAINER_NETWORK`-selected
+networking, seccomp, memory/CPU limits, and dropped default capabilities. The runner binary path is
+overridable per backend via `LAMBDA_CONTAINER_NERDCTL`, `LAMBDA_CONTAINER_CTR`,
+`LAMBDA_CONTAINER_DOCKER`, and `LAMBDA_CONTAINER_PODMAN`. No host code is mounted into packaged
 function images.
 
 The manager prewarms one Node.js host worker by default via `LAMBDA_PREWARM_RUNTIMES`.
