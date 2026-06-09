@@ -1,19 +1,14 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use crate::{
-    config::{Config, SCHEMA_VERSION},
+    config::SCHEMA_VERSION,
     models::{
-        DataVizRender, DiagramArtifact, DiagramReport, DiagramRequest, InfraEdge, InfraMatch,
-        InfraNode,
+        DiagramArtifact, DiagramReport, DiagramRequest, InfraEdge, InfraMatch, InfraNode,
     },
     util::{normalize_key, now_ms},
 };
 
-pub async fn generate_infrastructure_diagram(
-    config: Arc<Config>,
-    http: reqwest::Client,
-    request: DiagramRequest,
-) -> DiagramReport {
+pub async fn generate_infrastructure_diagram(request: DiagramRequest) -> DiagramReport {
     let request_id = request
         .request_id
         .clone()
@@ -66,16 +61,6 @@ pub async fn generate_infrastructure_diagram(
         });
     }
 
-    let use_data_viz = request
-        .options
-        .as_ref()
-        .and_then(|options| options.use_data_viz)
-        .unwrap_or(true);
-    let data_viz = render_with_data_viz(&config, http, &title, &mermaid, use_data_viz).await;
-    if let Some(artifact) = data_viz.as_ref().and_then(|render| render.artifact.clone()) {
-        diagrams.push(artifact);
-    }
-
     let ok = missing_in_live.is_empty() && unexpected_live.is_empty();
     let summary = format!(
         "{} desired node(s), {} live node(s), {} match(es), {} missing, {} unexpected.",
@@ -98,11 +83,10 @@ pub async fn generate_infrastructure_diagram(
         missing_in_live,
         unexpected_live,
         diagrams,
-        data_viz,
         generated_at_ms: now_ms(),
         notes: vec![
             "Diagram parity is based on supplied Terraform, GitOps, and live inventory evidence; provide fresh dd_cluster or kubectl inventory to compare against runtime state.".to_string(),
-            "dd-compliance-rs emits Mermaid locally and can ask dd-data-viz-rs for richer rendering when that deployment is reachable.".to_string(),
+            "dd-compliance-rs emits Mermaid locally for infrastructure parity diagrams.".to_string(),
         ],
     }
 }
@@ -385,85 +369,6 @@ fn mermaid_id(value: &str) -> String {
 
 fn mermaid_label(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-async fn render_with_data_viz(
-    config: &Config,
-    http: reqwest::Client,
-    title: &str,
-    mermaid: &str,
-    use_data_viz: bool,
-) -> Option<DataVizRender> {
-    if !use_data_viz || !config.data_viz_enabled {
-        return None;
-    }
-    let base = config.data_viz_url.as_deref()?.trim_end_matches('/');
-    let path = if config.data_viz_render_path.starts_with('/') {
-        config.data_viz_render_path.as_str()
-    } else {
-        "/render/mermaid"
-    };
-    let url = format!("{base}{path}");
-    let mut builder = http
-        .post(&url)
-        .timeout(config.data_viz_timeout)
-        .json(&serde_json::json!({
-            "kind": "mermaid",
-            "format": "svg",
-            "title": title,
-            "mermaid": mermaid
-        }));
-    if let Some(secret) = config.server_auth_secret.as_deref() {
-        builder = builder.header("X-Server-Auth", secret);
-    }
-    match builder.send().await {
-        Ok(response) => {
-            let status = response.status();
-            match response.text().await {
-                Ok(body) if status.is_success() => Some(DataVizRender {
-                    attempted: true,
-                    ok: true,
-                    url,
-                    status: Some(status.as_u16()),
-                    error: None,
-                    artifact: Some(DiagramArtifact {
-                        kind: "infrastructure-parity".to_string(),
-                        format: "data-viz-response".to_string(),
-                        renderer: "dd-data-viz-rs".to_string(),
-                        content: body,
-                    }),
-                }),
-                Ok(body) => Some(DataVizRender {
-                    attempted: true,
-                    ok: false,
-                    url,
-                    status: Some(status.as_u16()),
-                    error: Some(format!(
-                        "dd-data-viz-rs returned HTTP {}: {}",
-                        status.as_u16(),
-                        body.chars().take(240).collect::<String>()
-                    )),
-                    artifact: None,
-                }),
-                Err(error) => Some(DataVizRender {
-                    attempted: true,
-                    ok: false,
-                    url,
-                    status: Some(status.as_u16()),
-                    error: Some(format!("failed to read dd-data-viz-rs response: {error}")),
-                    artifact: None,
-                }),
-            }
-        }
-        Err(error) => Some(DataVizRender {
-            attempted: true,
-            ok: false,
-            url,
-            status: None,
-            error: Some(format!("failed to call dd-data-viz-rs: {error}")),
-            artifact: None,
-        }),
-    }
 }
 
 #[cfg(test)]

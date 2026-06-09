@@ -247,7 +247,7 @@ impl QuestionChartSpec {
             .ok_or_else(|| "chart mark must be a safe identifier".to_string())?;
         if !matches!(
             mark.as_str(),
-            "bar" | "line" | "area" | "scatter" | "table" | "metric" | "pie" | "heatmap"
+            "bar" | "line" | "area" | "scatter" | "stem" | "table" | "metric" | "pie" | "heatmap"
         ) {
             return Err(format!("unsupported chart mark `{mark}`"));
         }
@@ -717,6 +717,49 @@ mod tests {
             saved.chart_summary().expect("chart summary").chart_id,
             "revenue-by-region:chart"
         );
+    }
+
+    #[test]
+    fn question_accepts_stem_mark() {
+        let saved = SaveQuestionRequest {
+            question_id: "revenue-by-region".to_string(),
+            title: "Revenue by region".to_string(),
+            description: None,
+            dataset_id: "sales".to_string(),
+            owner: None,
+            collection: None,
+            tags: None,
+            query: QuestionBuilder {
+                fields: None,
+                filters: None,
+                group_by: Some(vec!["region".to_string()]),
+                aggregations: Some(vec![QuestionAggregation {
+                    alias: "total_revenue".to_string(),
+                    op: AggregationOp::Sum,
+                    field: Some("revenue".to_string()),
+                }]),
+                limit: Some(25),
+            },
+            chart: Some(QuestionChartSpec {
+                chart_id: None,
+                title: Some("Revenue stem".to_string()),
+                mark: "stem".to_string(),
+                encodings: vec![
+                    QuestionChartEncoding {
+                        channel: "x".to_string(),
+                        field: "region".to_string(),
+                    },
+                    QuestionChartEncoding {
+                        channel: "y".to_string(),
+                        field: "total_revenue".to_string(),
+                    },
+                ],
+            }),
+        }
+        .into_saved(101, &fields())
+        .expect("stem chart validates");
+
+        assert_eq!(saved.chart_summary().expect("chart summary").mark, "stem");
     }
 
     #[test]

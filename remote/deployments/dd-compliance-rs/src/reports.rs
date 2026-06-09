@@ -82,14 +82,13 @@ pub async fn generate_system_report(
                     nodes: vec![],
                     edges: vec![],
                     options: Some(crate::models::DiagramOptions {
-                        use_data_viz: options.use_data_viz,
                         include_local_mermaid: Some(true),
                     }),
                 })
             }
         });
         if let Some(diagram_request) = diagram_request {
-            Some(generate_infrastructure_diagram(config.clone(), http, diagram_request).await)
+            Some(generate_infrastructure_diagram(diagram_request).await)
         } else {
             None
         }
@@ -426,10 +425,6 @@ mod tests {
             allowed_repo_prefixes: vec![],
             allowed_file_extensions: vec!["rs".to_string(), "md".to_string()],
             git_bin: "git".to_string(),
-            data_viz_enabled: false,
-            data_viz_url: None,
-            data_viz_render_path: "/render/mermaid".to_string(),
-            data_viz_timeout: std::time::Duration::from_secs(1),
             job_timeout: std::time::Duration::from_secs(5),
             max_jobs: 20,
             max_concurrent_jobs: 2,

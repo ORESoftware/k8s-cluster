@@ -90,7 +90,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(audit, /validate_repo_url/);
   assert.match(audit, /Automated readiness assessment only/);
   assert.match(diagrams, /generate_infrastructure_diagram/);
-  assert.match(diagrams, /dd-data-viz-rs/);
+  assert.doesNotMatch(diagrams, /dd-data-viz-rs/);
   assert.match(diagrams, /Terraform \/ GitOps desired/);
   assert.match(diagrams, /missing in live/);
   assert.match(diagrams, /unexpected live/);
@@ -167,7 +167,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(readme, /POST \/vulnerability-scan/);
   assert.match(readme, /durable JSON job records/);
   assert.match(readme, /base64-encoded PDF/);
-  assert.match(readme, /dd-data-viz-rs/);
+  assert.doesNotMatch(readme, /dd-data-viz-rs/);
   assert.match(readme, /vulnerability scans/);
   assert.match(readme, /COMPLIANCE_MAX_CONCURRENT_JOBS/);
   assert.match(readme, /SOC 2/);
@@ -183,8 +183,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(deployment, /COMPLIANCE_ALLOW_EXTERNAL_FETCH[\s\S]*value:\s*'false'/);
   assert.match(deployment, /COMPLIANCE_ALLOW_REPO_CLONE[\s\S]*value:\s*'false'/);
   assert.match(deployment, /COMPLIANCE_MAX_CONCURRENT_JOBS[\s\S]*value:\s*'2'/);
-  assert.match(deployment, /COMPLIANCE_DATA_VIZ_ENABLED[\s\S]*value:\s*'true'/);
-  assert.match(deployment, /COMPLIANCE_DATA_VIZ_URL[\s\S]*dd-data-viz-rs\.default\.svc\.cluster\.local:8127/);
+  assert.doesNotMatch(deployment, /COMPLIANCE_DATA_VIZ/);
   assert.match(deployment, /RUNTIME_CONFIG_SERVICE_NAME[\s\S]*dd-compliance-rs/);
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
@@ -200,8 +199,8 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(networkPolicy, /app:\s*dd-compliance-rs/);
   assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(networkPolicy, /app:\s*dd-runtime-config/);
-  assert.match(networkPolicy, /app:\s*dd-data-viz-rs/);
-  assert.match(networkPolicy, /port:\s*8127/);
+  assert.doesNotMatch(networkPolicy, /app:\s*dd-data-viz-rs/);
+  assert.doesNotMatch(networkPolicy, /port:\s*8127/);
   assert.match(networkPolicy, /dd-prometheus/);
   assert.match(networkPolicy, /port:\s*8118/);
 
@@ -231,7 +230,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(apiDocs, /"path":\s*"\/vulnerability-scan"/);
   assert.match(runtimeReadme, /`dd-compliance-rs`/);
   assert.match(runtimeReadme, /durable hostPath-backed job\s+records/);
-  assert.match(runtimeReadme, /COMPLIANCE_DATA_VIZ_URL=http:\/\/dd-data-viz-rs\.default\.svc\.cluster\.local:8127/);
+  assert.doesNotMatch(runtimeReadme, /COMPLIANCE_DATA_VIZ_URL/);
   assert.match(runtimeReadme, /base64 PDF output/);
   assert.match(runtimeReadme, /vulnerability scan route/);
   assert.match(runtimeReadme, /\/compliance\/standards/);

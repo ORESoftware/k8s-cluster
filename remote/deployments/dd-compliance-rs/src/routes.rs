@@ -100,9 +100,7 @@ async fn healthz(State(state): State<AppState>) -> Json<serde_json::Value> {
             "total": counts.total()
         },
         "externalFetchEnabled": state.config.allow_external_fetch,
-        "repoCloneEnabled": state.config.allow_repo_clone,
-        "dataVizEnabled": state.config.data_viz_enabled,
-        "dataVizUrlConfigured": state.config.data_viz_url.is_some()
+        "repoCloneEnabled": state.config.allow_repo_clone
     }))
 }
 
@@ -191,16 +189,8 @@ async fn diagram_infrastructure(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report =
-        generate_infrastructure_diagram(state.config.clone(), state.http.clone(), request).await;
+    let report = generate_infrastructure_diagram(request).await;
     state.metrics.diagrams_generated_total.fetch_add(1);
-    if report
-        .data_viz
-        .as_ref()
-        .is_some_and(|render| render.attempted && !render.ok)
-    {
-        state.metrics.data_viz_render_failures_total.fetch_add(1);
-    }
     Json(report).into_response()
 }
 
@@ -216,14 +206,6 @@ async fn system_report(
     let report = generate_system_report(state.config.clone(), state.http.clone(), request).await;
     if report.diagram.is_some() {
         state.metrics.diagrams_generated_total.fetch_add(1);
-    }
-    if report
-        .diagram
-        .as_ref()
-        .and_then(|diagram| diagram.data_viz.as_ref())
-        .is_some_and(|render| render.attempted && !render.ok)
-    {
-        state.metrics.data_viz_render_failures_total.fetch_add(1);
     }
     Json(report).into_response()
 }

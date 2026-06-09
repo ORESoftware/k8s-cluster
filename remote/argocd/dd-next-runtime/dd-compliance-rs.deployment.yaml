@@ -209,12 +209,6 @@ spec:
               value: '200'
             - name: COMPLIANCE_MAX_CONCURRENT_JOBS
               value: '2'
-            - name: COMPLIANCE_DATA_VIZ_ENABLED
-              value: 'true'
-            - name: COMPLIANCE_DATA_VIZ_URL
-              value: http://dd-data-viz-rs.default.svc.cluster.local:8127
-            - name: COMPLIANCE_DATA_VIZ_RENDER_PATH
-              value: /render/mermaid
             - name: COMPLIANCE_MAX_ARTIFACT_BYTES
               value: '524288'
             - name: COMPLIANCE_MAX_FILES

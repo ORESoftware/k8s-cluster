@@ -93,7 +93,6 @@ pub struct DiagramSource {
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagramOptions {
-    pub use_data_viz: Option<bool>,
     pub include_local_mermaid: Option<bool>,
 }
 
@@ -130,7 +129,6 @@ pub struct DiagramReport {
     pub missing_in_live: Vec<InfraNode>,
     pub unexpected_live: Vec<InfraNode>,
     pub diagrams: Vec<DiagramArtifact>,
-    pub data_viz: Option<DataVizRender>,
     pub generated_at_ms: u128,
     pub notes: Vec<String>,
 }
@@ -150,17 +148,6 @@ pub struct DiagramArtifact {
     pub format: String,
     pub renderer: String,
     pub content: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DataVizRender {
-    pub attempted: bool,
-    pub ok: bool,
-    pub url: String,
-    pub status: Option<u16>,
-    pub error: Option<String>,
-    pub artifact: Option<DiagramArtifact>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -229,7 +216,6 @@ pub struct SystemReportOptions {
     pub include_pdf: Option<bool>,
     pub include_vulnerability_scan: Option<bool>,
     pub include_diagram: Option<bool>,
-    pub use_data_viz: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -484,7 +470,6 @@ resource "aws_security_group" "gateway" {}
         nodes: vec![],
         edges: vec![],
         options: Some(DiagramOptions {
-            use_data_viz: Some(true),
             include_local_mermaid: Some(true),
         }),
     }
@@ -519,7 +504,6 @@ pub fn system_report_example_request() -> SystemReportRequest {
             include_pdf: Some(true),
             include_vulnerability_scan: Some(true),
             include_diagram: Some(true),
-            use_data_viz: Some(true),
         }),
     }
 }
