@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-escrow-rs",
   "language": "rust",
-  "routeCount": 18,
+  "routeCount": 19,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 9,
+    "user-generated": 10,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -213,6 +213,23 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-escrow-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/resolve",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolve_http"
       ],
       "sourceFiles": [
         "remote/deployments/dd-escrow-rs/src/main.rs"

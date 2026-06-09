@@ -321,6 +321,12 @@ container_command(Runtime, DefinitionJson) ->
                     Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
                     MemoryBytes = env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>),
                     {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime))};
+                <<"docker">> ->
+                    Docker = env_binary("LAMBDA_CONTAINER_DOCKER", <<"/usr/bin/docker">>),
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, Image))};
+                <<"podman">> ->
+                    Podman = env_binary("LAMBDA_CONTAINER_PODMAN", <<"/usr/bin/podman">>),
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image))};
                 _ ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
                     {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image))}
@@ -349,9 +355,24 @@ safe_timeout_value(Value0) ->
     end.
 
 nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image) ->
+    %% nerdctl is Docker-CLI compatible but scopes everything to a containerd
+    %% namespace via `-n`, which docker/podman do not have.
     iolist_to_binary([
         shell_word(Nerdctl),
         " -n ", shell_word(Namespace),
+        docker_compatible_run_args(Network, Memory, Cpus, Image)
+    ]).
+
+%% Shared by the Docker-CLI compatible runners (docker, podman). Same flag
+%% surface as nerdctl, minus the containerd `-n <namespace>` selector.
+docker_cli_container_command(Binary, Network, Memory, Cpus, Image) ->
+    iolist_to_binary([
+        shell_word(Binary),
+        docker_compatible_run_args(Network, Memory, Cpus, Image)
+    ]).
+
+docker_compatible_run_args(Network, Memory, Cpus, Image) ->
+    [
         " run --rm -i --pull=never --read-only",
         " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
         " --network ", shell_word(Network),
@@ -363,7 +384,7 @@ nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image) ->
         " --memory ", shell_word(Memory),
         " --cpus ", shell_word(Cpus),
         " ", shell_word(Image)
-    ]).
+    ].
 
 ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime) ->
     ContainerId = iolist_to_binary(["dd-lambda-", Runtime, "-$(date +%s%N)-$$"]),

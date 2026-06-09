@@ -51,6 +51,9 @@ resources:
   - dd-escrow-rs.deployment.yaml
   - dd-escrow-rs.networkpolicy.yaml
   - dd-escrow-rs.service.yaml
+  - dd-document-rs.deployment.yaml
+  - dd-document-rs.networkpolicy.yaml
+  - dd-document-rs.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
   - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml

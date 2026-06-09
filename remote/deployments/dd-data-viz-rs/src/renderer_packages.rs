@@ -339,6 +339,12 @@ const TRACE_BY_MARK: Record<string, string> = {
   line: "scatter",
   scatter: "scatter",
   stem: "scatter",
+  histogram: "histogram",
+  box: "box",
+  violin: "violin",
+  ecdf: "scatter",
+  map: "scattergeo",
+  choropleth: "choropleth",
   surface: "surface",
   "volume-cloud": "volume",
   "parallel-coordinates": "parcoords",
@@ -351,30 +357,102 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
   const x = fieldValues(rows, fieldFor(spec, "x"));
   const y = fieldValues(rows, fieldFor(spec, "y"));
   const z = fieldValues(rows, fieldFor(spec, "z"));
-  if (spec.mark === "stem") {
-    return {
-      data: stemTraces(x, y),
-      layout: {
-        title: spec.specId ?? "dd-data-viz",
-        showlegend: false,
-        scene: spec.layout.includes("3d") ? {} : undefined
-      },
-      config: { responsive: true, displaylogo: false }
-    };
-  }
-  const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
-  const trace: Record<string, unknown> = { type: traceType, x, y };
-  if (z.length > 0) {
-    trace.z = z;
-  }
-  if (spec.mark === "line") {
-    trace.mode = "lines+markers";
-  }
-  return {
-    data: [trace],
-    layout: { title: spec.specId ?? "dd-data-viz", scene: spec.layout.includes("3d") ? {} : undefined },
-    config: { responsive: true, displaylogo: false }
+  const layout: Record<string, unknown> = {
+    title: spec.specId ?? "dd-data-viz",
+    scene: spec.layout.includes("3d") ? {} : undefined
   };
+  const shapes = referenceLineShapes(spec);
+  if (shapes.length > 0) {
+    layout.shapes = shapes;
+  }
+
+  let data: Array<Record<string, unknown>>;
+  switch (spec.mark) {
+    case "stem":
+      layout.showlegend = false;
+      data = stemTraces(x, y);
+      break;
+    case "histogram":
+      // Plotly bins automatically; a single numeric channel is enough.
+      data = [{ type: "histogram", x: x.length > 0 ? x : y }];
+      break;
+    case "box":
+      data = [{ type: "box", y, x: x.length > 0 ? x : undefined }];
+      break;
+    case "violin":
+      data = [
+        { type: "violin", y, x: x.length > 0 ? x : undefined, box: { visible: true }, meanline: { visible: true } }
+      ];
+      break;
+    case "ecdf":
+      data = [ecdfTrace(x.length > 0 ? x : y)];
+      break;
+    case "map": {
+      // Symbol/point map: latitude + longitude markers, optionally sized by a measure.
+      const lat = fieldValues(rows, fieldFor(spec, "lat"));
+      const lon = fieldValues(rows, fieldFor(spec, "lon"));
+      const size = fieldValues(rows, fieldFor(spec, "size"));
+      data = [{ type: "scattergeo", lat, lon, mode: "markers", marker: size.length > 0 ? { size } : { size: 6 } }];
+      layout.geo = { fitbounds: "locations" };
+      break;
+    }
+    case "choropleth": {
+      // Filled map: region codes (location channel) shaded by a measure (value/z channel).
+      const locations = fieldValues(rows, fieldFor(spec, "location"));
+      const values = fieldValues(rows, fieldFor(spec, "value") ?? fieldFor(spec, "z"));
+      data = [{ type: "choropleth", locations, z: values, locationmode: geoLocationMode(spec) }];
+      layout.geo = { fitbounds: "locations" };
+      break;
+    }
+    default: {
+      const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
+      const trace: Record<string, unknown> = { type: traceType, x, y };
+      if (z.length > 0) {
+        trace.z = z;
+      }
+      if (spec.mark === "line") {
+        trace.mode = "lines+markers";
+      }
+      data = [trace];
+    }
+  }
+  return { data, layout, config: { responsive: true, displaylogo: false } };
+}
+
+// Choropleth region codes can be ISO-3 (default), country names, or USA states;
+// the spec carries the mode so the same data binds to different geographies.
+function geoLocationMode(spec: VisualizationSpec): string {
+  return (spec as { geo?: { locationMode?: string } }).geo?.locationMode ?? "ISO-3";
+}
+
+interface ReferenceLine {
+  axis?: string;
+  value?: number;
+}
+
+// Reference lines/bands are carried as an optional spec field and rendered as
+// dashed Plotly layout shapes spanning the opposite axis (x => vertical,
+// otherwise horizontal).
+function referenceLineShapes(spec: VisualizationSpec): Array<Record<string, unknown>> {
+  const lines = (spec as { referenceLines?: ReferenceLine[] }).referenceLines ?? [];
+  return lines
+    .filter((line) => typeof line.value === "number")
+    .map((line) =>
+      line.axis === "x"
+        ? { type: "line", yref: "paper", x0: line.value, x1: line.value, y0: 0, y1: 1, line: { dash: "dash", width: 1 } }
+        : { type: "line", xref: "paper", y0: line.value, y1: line.value, x0: 0, x1: 1, line: { dash: "dash", width: 1 } }
+    );
+}
+
+// Empirical cumulative distribution: sort the numeric values ascending and
+// step the cumulative fraction from 0 to 1.
+function ecdfTrace(values: unknown[]): Record<string, unknown> {
+  const nums = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+  const cumulative = nums.map((_, index) => (index + 1) / nums.length);
+  return { type: "scatter", mode: "lines", line: { shape: "hv" }, x: nums, y: cumulative };
 }
 
 // A stem plot draws a vertical line from a baseline (y = 0) to each (x, y)
@@ -538,7 +616,25 @@ mod tests {
     fn plotly_renderer_supports_stem_marks() {
         assert!(PLOTLY_TS.contains("stem: \"scatter\""));
         assert!(PLOTLY_TS.contains("function stemTraces"));
-        assert!(PLOTLY_TS.contains("spec.mark === \"stem\""));
+        assert!(PLOTLY_TS.contains("case \"stem\""));
+    }
+
+    #[test]
+    fn plotly_renderer_supports_statistical_marks() {
+        for entry in ["histogram: \"histogram\"", "box: \"box\"", "violin: \"violin\"", "ecdf: \"scatter\""] {
+            assert!(PLOTLY_TS.contains(entry), "missing trace mapping: {entry}");
+        }
+        assert!(PLOTLY_TS.contains("function ecdfTrace"));
+        assert!(PLOTLY_TS.contains("function referenceLineShapes"));
+    }
+
+    #[test]
+    fn plotly_renderer_supports_geospatial_marks() {
+        assert!(PLOTLY_TS.contains("map: \"scattergeo\""));
+        assert!(PLOTLY_TS.contains("choropleth: \"choropleth\""));
+        assert!(PLOTLY_TS.contains("function geoLocationMode"));
+        assert!(PLOTLY_TS.contains("case \"map\""));
+        assert!(PLOTLY_TS.contains("case \"choropleth\""));
     }
 
     #[test]

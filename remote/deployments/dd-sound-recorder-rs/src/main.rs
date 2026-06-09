@@ -21,6 +21,7 @@ use base64::{
     Engine as _,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
@@ -28,6 +29,7 @@ use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 use tokio_postgres::Row;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -98,6 +100,12 @@ const DEFAULT_CLOUD_BACKFILL_SEGMENTS: i64 = 240;
 const MAX_CLOUD_BACKFILL_SEGMENTS: i64 = 1000;
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
+const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
+const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
+const JWKS_CACHE_TTL: Duration = Duration::from_secs(3600);
+const DEFAULT_USE_CASE: &str = "security";
+const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
+const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
 
 #[derive(Clone)]
 struct AppState {
@@ -105,6 +113,7 @@ struct AppState {
     s3: Option<aws_sdk_s3::Client>,
     http: reqwest::Client,
     cloud_sealer: Option<CloudTokenSealer>,
+    supabase: Option<Arc<SupabaseVerifier>>,
 }
 
 #[derive(Clone)]
@@ -137,6 +146,29 @@ struct Config {
     public_base_url: Option<String>,
     alert_email_to: String,
     alert_email_webhook_url: Option<String>,
+    supabase: SupabaseConfig,
+}
+
+#[derive(Clone, Default)]
+struct SupabaseConfig {
+    /// Project base URL, e.g. https://<ref>.supabase.co. Retained for
+    /// diagnostics; the issuer and JWKS URL are derived from it at startup.
+    #[allow(dead_code)]
+    url: Option<String>,
+    /// Legacy HS256 JWT secret (Supabase "JWT Secret" under Settings -> API).
+    jwt_secret: Option<String>,
+    /// JWKS endpoint for asymmetric (RS256/ES256) signing keys.
+    jwks_url: Option<String>,
+    /// Expected `iss` claim; defaults to `<url>/auth/v1`.
+    issuer: Option<String>,
+    /// Expected `aud` claim; defaults to `authenticated`.
+    audience: String,
+}
+
+impl SupabaseConfig {
+    fn is_enabled(&self) -> bool {
+        self.jwt_secret.is_some() || self.jwks_url.is_some()
+    }
 }
 
 #[derive(Clone)]
@@ -234,6 +266,7 @@ struct HealthResponse {
     cloud_token_sealer_configured: bool,
     google_drive_configured: bool,
     microsoft_onedrive_configured: bool,
+    supabase_configured: bool,
     retention_hours: i32,
 }
 
@@ -274,6 +307,7 @@ struct MobilePolicy {
     upload_url_ttl_seconds: u64,
     download_url_ttl_seconds: u64,
     cloud_copy_supported_providers: Vec<&'static str>,
+    supported_use_cases: Vec<&'static str>,
 }
 
 #[derive(Deserialize)]
@@ -287,6 +321,13 @@ struct CreateUploadSessionRequest {
     max_segment_bytes: Option<i32>,
     client_timezone: Option<String>,
     legal_region: Option<String>,
+    /// Capture intent: `security` (default), `music`, `meeting`, `voice_note`,
+    /// or `ambient`. Drives client-side defaults (e.g. stereo high-fidelity for
+    /// music) and is recorded for playback/audit.
+    use_case: Option<String>,
+    /// Optional client audio-tuning snapshot (sensitivity, treble/mid/bass gain,
+    /// channel layout). Stored verbatim alongside session metadata.
+    audio_profile: Option<Value>,
     meta_data: Option<Value>,
 }
 
@@ -406,6 +447,39 @@ struct EvidenceExportResponse {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PermanentSaveRequest {
+    provider: Option<String>,
+    range_started_at: Option<DateTime<Utc>>,
+    range_ended_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    segments: Vec<PermanentSaveSegmentRef>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PermanentSaveSegmentRef {
+    id: Option<String>,
+    storage_key: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PermanentSaveResponse {
+    ok: bool,
+    saved_count: usize,
+    segments: Vec<PermanentSaveSegmentResult>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PermanentSaveSegmentResult {
+    id: Option<String>,
+    storage_key: String,
+    permanent_storage_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AlertRequest {
     trigger: String,
     occurred_at: DateTime<Utc>,
@@ -520,6 +594,14 @@ struct CompleteCloudLinkRequest {
     root_folder_id: Option<String>,
     folder_path: Option<String>,
     client_managed_acknowledged: Option<bool>,
+    // Supabase-brokered OAuth tokens. When the client signs the user into the
+    // cloud provider through Supabase, it forwards the provider token here and
+    // the server seals it directly instead of exchanging an authorization code.
+    provider_access_token: Option<String>,
+    provider_refresh_token: Option<String>,
+    provider_token_expires_in: Option<i64>,
+    provider_token_type: Option<String>,
+    provider_token_scope: Option<String>,
     meta_data: Option<Value>,
 }
 
@@ -884,6 +966,28 @@ fn config_from_env() -> Config {
         alert_email_to: first_env(&["SOUND_RECORDER_ALERT_EMAIL_TO"])
             .unwrap_or_else(|| "alexander.d.mills@gmail.com".to_string()),
         alert_email_webhook_url: first_env(&["SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL"]),
+        supabase: supabase_config_from_env(),
+    }
+}
+
+fn supabase_config_from_env() -> SupabaseConfig {
+    let url = first_env(&["SOUND_RECORDER_SUPABASE_URL", "SUPABASE_URL"])
+        .map(|url| url.trim_end_matches('/').to_string());
+    let jwks_url = first_env(&["SOUND_RECORDER_SUPABASE_JWKS_URL", "SUPABASE_JWKS_URL"]).or_else(
+        || {
+            url.as_ref()
+                .map(|url| format!("{url}/auth/v1/.well-known/jwks.json"))
+        },
+    );
+    let issuer = first_env(&["SOUND_RECORDER_SUPABASE_ISSUER", "SUPABASE_ISSUER"])
+        .or_else(|| url.as_ref().map(|url| format!("{url}/auth/v1")));
+    SupabaseConfig {
+        url,
+        jwt_secret: first_env(&["SOUND_RECORDER_SUPABASE_JWT_SECRET", "SUPABASE_JWT_SECRET"]),
+        jwks_url,
+        issuer,
+        audience: first_env(&["SOUND_RECORDER_SUPABASE_AUDIENCE", "SUPABASE_AUDIENCE"])
+            .unwrap_or_else(|| SUPABASE_DEFAULT_AUDIENCE.to_string()),
     }
 }
 
@@ -928,11 +1032,17 @@ async fn state_from_config(config: Config) -> AppState {
         .build()
         .expect("reqwest client can be built");
 
+    let supabase = SupabaseVerifier::from_config(&config.supabase).map(Arc::new);
+    if supabase.is_some() {
+        info!("Supabase token verification is enabled");
+    }
+
     AppState {
         config: Arc::new(config),
         s3,
         http,
         cloud_sealer,
+        supabase,
     }
 }
 
@@ -1104,6 +1214,159 @@ impl CloudTokenSealer {
     }
 }
 
+/// Verified Supabase identity derived from an access-token JWT.
+#[derive(Clone, Debug)]
+struct SupabaseIdentity {
+    subject: String,
+    email: Option<String>,
+}
+
+impl SupabaseIdentity {
+    /// Namespaced external subject stored on the account so a Supabase `sub`
+    /// can never collide with subjects minted by another identity source.
+    fn external_subject(&self) -> String {
+        format!("{SUPABASE_SUBJECT_PREFIX}{}", self.subject)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SupabaseClaims {
+    sub: String,
+    #[serde(default)]
+    email: Option<String>,
+}
+
+struct JwksCacheEntry {
+    fetched_at: Instant,
+    set: JwkSet,
+}
+
+/// Verifies Supabase-issued access tokens (HS256 legacy secret or asymmetric
+/// JWKS keys) so device registration and cloud linking can be tied to a real,
+/// server-verified identity instead of a client-asserted subject string.
+struct SupabaseVerifier {
+    audience: String,
+    issuer: Option<String>,
+    jwt_secret: Option<String>,
+    jwks_url: Option<String>,
+    jwks_cache: RwLock<Option<JwksCacheEntry>>,
+}
+
+impl SupabaseVerifier {
+    fn from_config(config: &SupabaseConfig) -> Option<Self> {
+        if !config.is_enabled() {
+            return None;
+        }
+        Some(Self {
+            audience: config.audience.clone(),
+            issuer: config.issuer.clone(),
+            jwt_secret: config.jwt_secret.clone(),
+            jwks_url: config.jwks_url.clone(),
+            jwks_cache: RwLock::new(None),
+        })
+    }
+
+    fn validation(&self, alg: Algorithm) -> Validation {
+        let mut validation = Validation::new(alg);
+        validation.set_audience(&[self.audience.as_str()]);
+        if let Some(issuer) = &self.issuer {
+            validation.set_issuer(&[issuer.as_str()]);
+        }
+        validation.validate_exp = true;
+        validation
+    }
+
+    async fn verify(
+        &self,
+        http: &reqwest::Client,
+        token: &str,
+    ) -> Result<SupabaseIdentity, ServiceError> {
+        let header = decode_header(token).map_err(|_| ServiceError::Unauthorized)?;
+        let claims = if matches!(header.alg, Algorithm::HS256) {
+            let secret = self.jwt_secret.as_deref().ok_or_else(|| {
+                ServiceError::Unavailable(
+                    "Supabase HS256 token received but SOUND_RECORDER_SUPABASE_JWT_SECRET is not configured".to_string(),
+                )
+            })?;
+            decode::<SupabaseClaims>(
+                token,
+                &DecodingKey::from_secret(secret.as_bytes()),
+                &self.validation(Algorithm::HS256),
+            )
+            .map_err(|_| ServiceError::Unauthorized)?
+            .claims
+        } else {
+            let kid = header.kid.ok_or(ServiceError::Unauthorized)?;
+            let jwk = self.jwk_for_kid(http, &kid).await?;
+            let key = DecodingKey::from_jwk(&jwk)
+                .map_err(|_| ServiceError::Unauthorized)?;
+            decode::<SupabaseClaims>(token, &key, &self.validation(header.alg))
+                .map_err(|_| ServiceError::Unauthorized)?
+                .claims
+        };
+        let subject = claims.sub.trim().to_string();
+        if subject.is_empty() {
+            return Err(ServiceError::Unauthorized);
+        }
+        Ok(SupabaseIdentity {
+            subject,
+            email: claims
+                .email
+                .map(|email| email.trim().to_string())
+                .filter(|email| !email.is_empty()),
+        })
+    }
+
+    async fn jwk_for_kid(
+        &self,
+        http: &reqwest::Client,
+        kid: &str,
+    ) -> Result<jsonwebtoken::jwk::Jwk, ServiceError> {
+        if let Some(jwk) = self.cached_jwk(kid).await {
+            return Ok(jwk);
+        }
+        self.refresh_jwks(http).await?;
+        self.cached_jwk(kid)
+            .await
+            .ok_or_else(|| ServiceError::Unauthorized)
+    }
+
+    async fn cached_jwk(&self, kid: &str) -> Option<jsonwebtoken::jwk::Jwk> {
+        let guard = self.jwks_cache.read().await;
+        let entry = guard.as_ref()?;
+        if entry.fetched_at.elapsed() > JWKS_CACHE_TTL {
+            return None;
+        }
+        entry.set.find(kid).cloned()
+    }
+
+    async fn refresh_jwks(&self, http: &reqwest::Client) -> Result<(), ServiceError> {
+        let jwks_url = self.jwks_url.as_deref().ok_or_else(|| {
+            ServiceError::Unavailable("Supabase JWKS URL is not configured".to_string())
+        })?;
+        let response = http.get(jwks_url).send().await.map_err(|err| {
+            error!(error = %err, "Supabase JWKS fetch failed");
+            ServiceError::Unavailable("Supabase JWKS fetch failed".to_string())
+        })?;
+        if !response.status().is_success() {
+            return Err(ServiceError::Unavailable(format!(
+                "Supabase JWKS fetch returned status {}",
+                response.status().as_u16()
+            )));
+        }
+        let set = response.json::<JwkSet>().await.map_err(|err| {
+            error!(error = %err, "Supabase JWKS decode failed");
+            ServiceError::Unavailable("Supabase JWKS response was invalid".to_string())
+        })?;
+        let mut guard = self.jwks_cache.write().await;
+        *guard = Some(JwksCacheEntry {
+            fetched_at: Instant::now(),
+            set,
+        });
+        Ok(())
+    }
+}
+
 fn record_request(method: &str, path: &str, status: StatusCode) {
     HTTP_REQUESTS
         .with_label_values(&[method, path, status.as_str()])
@@ -1132,6 +1395,18 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+/// Reads a Supabase access token from `x-supabase-auth` (with or without a
+/// `Bearer ` prefix). Kept distinct from `Authorization` so the device bearer
+/// token and the identity token never have to share one header.
+fn supabase_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("x-supabase-auth")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.strip_prefix("Bearer ").unwrap_or(value))
         .map(str::trim)
         .filter(|value| !value.is_empty())
 }
@@ -1282,6 +1557,21 @@ fn validate_meta(value: Option<Value>) -> Result<Value, ServiceError> {
         Some(_) => Err(ServiceError::BadRequest(
             "metaData must be a JSON object".to_string(),
         )),
+    }
+}
+
+fn validate_use_case(value: Option<String>) -> Result<String, ServiceError> {
+    let Some(value) = clean_string(value, 32) else {
+        return Ok(DEFAULT_USE_CASE.to_string());
+    };
+    let normalized = value.to_ascii_lowercase();
+    if SUPPORTED_USE_CASES.contains(&normalized.as_str()) {
+        Ok(normalized)
+    } else {
+        Err(ServiceError::BadRequest(format!(
+            "useCase must be one of: {}",
+            SUPPORTED_USE_CASES.join(", ")
+        )))
     }
 }
 
@@ -1620,6 +1910,7 @@ fn policy(config: &Config, retention_hours: i32) -> MobilePolicy {
             CloudProvider::MicrosoftOneDrive.as_str(),
             CloudProvider::AppleICloud.as_str(),
         ],
+        supported_use_cases: SUPPORTED_USE_CASES.to_vec(),
     }
 }
 
@@ -1666,19 +1957,43 @@ fn require_internal_auth(config: &Config, headers: &HeaderMap) -> Result<(), Ser
     }
 }
 
-fn require_registration_auth(config: &Config, headers: &HeaderMap) -> Result<(), ServiceError> {
-    if let Some(expected) = config.registration_bearer.as_deref() {
+/// How much we trust the caller of device registration, which decides whose
+/// account a device may attach to.
+enum RegistrationTrust {
+    /// A Supabase access token verified server-side. The account is keyed to the
+    /// verified `sub`, so it cannot be spoofed by the client.
+    Supabase(SupabaseIdentity),
+    /// The shared registration bearer matched. A trusted server-to-server caller
+    /// may assert an arbitrary `externalSubject`.
+    TrustedServer,
+    /// Open registration with no verified identity. The account is keyed to the
+    /// install id and any client-supplied `externalSubject` is ignored, so an
+    /// anonymous caller can never claim another user's account.
+    Public,
+}
+
+async fn authorize_registration(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<RegistrationTrust, ServiceError> {
+    if let Some(verifier) = &state.supabase {
+        if let Some(token) = supabase_token(headers) {
+            let identity = verifier.verify(&state.http, token).await?;
+            return Ok(RegistrationTrust::Supabase(identity));
+        }
+    }
+    if let Some(expected) = state.config.registration_bearer.as_deref() {
         let provided = bearer_token(headers).unwrap_or("");
         if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
-            return Ok(());
+            return Ok(RegistrationTrust::TrustedServer);
         }
         return Err(ServiceError::Unauthorized);
     }
-    if config.allow_public_device_registration {
-        Ok(())
+    if state.config.allow_public_device_registration {
+        Ok(RegistrationTrust::Public)
     } else {
         Err(ServiceError::Unavailable(
-            "device registration is disabled until SOUND_RECORDER_REGISTRATION_BEARER or SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION is configured".to_string(),
+            "device registration is disabled until a Supabase token, SOUND_RECORDER_REGISTRATION_BEARER, or SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION is configured".to_string(),
         ))
     }
 }
@@ -1752,16 +2067,12 @@ async fn audit_event(
 async fn find_or_create_account(
     client: &tokio_postgres::Client,
     config: &Config,
-    req: &RegisterDeviceRequest,
+    external_subject: Option<&str>,
+    display_name: Option<String>,
     legal_region: Option<&str>,
 ) -> Result<(String, i32), ServiceError> {
-    if let Some(external_subject) = req
-        .external_subject
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        let external_subject = validate_nonempty(external_subject, "externalSubject", 240)?;
+    let display_name = clean_string(display_name, 160);
+    if let Some(external_subject) = external_subject {
         if let Some(row) = client
             .query_opt(
                 "select id::text, retention_hours
@@ -1773,7 +2084,6 @@ async fn find_or_create_account(
             .map_err(db_error)?
         {
             let account_id: String = row.get("id");
-            let display_name = clean_string(req.display_name.clone(), 160);
             let _ = client
                 .execute(
                     "update sound_recorder_accounts
@@ -1788,7 +2098,6 @@ async fn find_or_create_account(
         }
 
         let account_id = Uuid::new_v4().to_string();
-        let display_name = clean_string(req.display_name.clone(), 160);
         let row = client
             .query_one(
                 "insert into sound_recorder_accounts
@@ -1809,7 +2118,6 @@ async fn find_or_create_account(
     }
 
     let account_id = Uuid::new_v4().to_string();
-    let display_name = clean_string(req.display_name.clone(), 160);
     let row = client
         .query_one(
             "insert into sound_recorder_accounts
@@ -1826,6 +2134,37 @@ async fn find_or_create_account(
         .await
         .map_err(db_error)?;
     Ok((row.get("id"), row.get("retention_hours")))
+}
+
+/// Resolves the account subject + default display name from the registration
+/// trust level. This is the single place that decides whose account a device
+/// attaches to, so a client can never assert another identity's subject.
+fn resolve_registration_subject(
+    trust: &RegistrationTrust,
+    req: &RegisterDeviceRequest,
+    install_id: &str,
+) -> Result<(Option<String>, Option<String>), ServiceError> {
+    match trust {
+        RegistrationTrust::Supabase(identity) => Ok((
+            Some(identity.external_subject()),
+            identity.email.clone().or_else(|| req.display_name.clone()),
+        )),
+        RegistrationTrust::TrustedServer => {
+            let subject = req
+                .external_subject
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| validate_nonempty(value, "externalSubject", 240))
+                .transpose()?;
+            Ok((subject, req.display_name.clone()))
+        }
+        RegistrationTrust::Public => {
+            // No verified identity: key the account to the install id and ignore
+            // any client-supplied externalSubject so accounts can't be claimed.
+            Ok((Some(format!("install:{install_id}")), req.display_name.clone()))
+        }
+    }
 }
 
 async fn home(State(state): State<AppState>) -> Html<String> {
@@ -1877,6 +2216,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
             && state.config.google_oauth.client_secret.is_some(),
         microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
             && state.config.microsoft_oauth.client_secret.is_some(),
+        supabase_configured: state.supabase.is_some(),
         retention_hours: state.config.default_retention_hours,
     })
 }
@@ -1912,6 +2252,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
                 && state.config.google_oauth.client_secret.is_some(),
             microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
                 && state.config.microsoft_oauth.client_secret.is_some(),
+            supabase_configured: state.supabase.is_some(),
             retention_hours: state.config.default_retention_hours,
         }),
     )
@@ -1952,7 +2293,7 @@ async fn register_device(
     headers: HeaderMap,
     Json(req): Json<RegisterDeviceRequest>,
 ) -> Result<Json<RegisterDeviceResponse>, ServiceError> {
-    require_registration_auth(&state.config, &headers)?;
+    let trust = authorize_registration(&state, &headers).await?;
     if !state.config.token_pepper_configured {
         return Err(ServiceError::Unavailable(
             "device token pepper is not configured".to_string(),
@@ -1967,6 +2308,8 @@ async fn register_device(
     let install_id = validate_nonempty(&req.install_id, "installId", 160)?;
     let consent_version = validate_nonempty(&req.consent_version, "consentVersion", 80)?;
     let legal_region = validate_legal_region(req.legal_region.clone())?;
+    let (external_subject, display_name_default) =
+        resolve_registration_subject(&trust, &req, &install_id)?;
     let device_label = clean_string(req.device_label.clone(), 160);
     let app_version = clean_string(req.app_version.clone(), 80);
     let os_version = clean_string(req.os_version.clone(), 80);
@@ -1977,8 +2320,14 @@ async fn register_device(
     let token_last4 = last4(&token);
 
     let client = connect_postgres(&state.config).await?;
-    let (account_id, retention_hours) =
-        find_or_create_account(&client, &state.config, &req, legal_region.as_deref()).await?;
+    let (account_id, retention_hours) = find_or_create_account(
+        &client,
+        &state.config,
+        external_subject.as_deref(),
+        display_name_default,
+        legal_region.as_deref(),
+    )
+    .await?;
     let device_id = Uuid::new_v4().to_string();
     let row = client
         .query_one(
@@ -2072,7 +2421,17 @@ async fn create_upload_session(
         .clamp(1, state.config.max_segment_bytes);
     let client_timezone = clean_string(req.client_timezone, 80);
     let legal_region = validate_legal_region(req.legal_region)?;
-    let meta_data = validate_meta(req.meta_data)?;
+    let use_case = validate_use_case(req.use_case)?;
+    let mut meta_data = validate_meta(req.meta_data)?;
+    if let Some(audio_profile) = req.audio_profile {
+        let audio_profile = validate_meta(Some(audio_profile))?;
+        if let Some(object) = meta_data.as_object_mut() {
+            object.insert("audioProfile".to_string(), audio_profile);
+            object.insert("useCase".to_string(), Value::String(use_case.clone()));
+        }
+    } else if let Some(object) = meta_data.as_object_mut() {
+        object.insert("useCase".to_string(), Value::String(use_case.clone()));
+    }
     let session_id = Uuid::new_v4().to_string();
     let storage_prefix = format!(
         "{}/account={}/device={}/session={}",
@@ -2090,10 +2449,11 @@ async fn create_upload_session(
             "insert into sound_recorder_upload_sessions
               (id, account_id, device_id, storage_bucket, storage_prefix, content_type, codec,
                sample_rate, channel_count, segment_duration_seconds, max_segment_bytes,
-               started_at, last_heartbeat_at, expires_at, client_timezone, legal_region, meta_data)
+               started_at, last_heartbeat_at, expires_at, client_timezone, legal_region,
+               use_case, meta_data)
              values
               ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7,
-               $8, $9, $10, $11, $12, $12, $13, $14, $15, $16)
+               $8, $9, $10, $11, $12, $12, $13, $14, $15, $16, $17)
              returning id::text, account_id::text, device_id::text, status, storage_prefix,
                        content_type, codec, segment_duration_seconds, max_segment_bytes,
                        started_at, expires_at",
@@ -2113,6 +2473,7 @@ async fn create_upload_session(
                 &expires_at,
                 &client_timezone,
                 &legal_region,
+                &use_case,
                 &meta_data,
             ],
         )
@@ -2126,7 +2487,8 @@ async fn create_upload_session(
         json!({
             "sessionId": session_id,
             "segmentDurationSeconds": segment_duration_seconds,
-            "contentType": content_type
+            "contentType": content_type,
+            "useCase": use_case
         }),
     )
     .await;
@@ -2710,6 +3072,127 @@ async fn create_evidence_export(
     }))
 }
 
+async fn create_permanent_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<PermanentSaveRequest>,
+) -> Result<Json<PermanentSaveResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    // The cloud provider hint (if any) is validated but not required: pinning is
+    // a server-side retention exemption independent of the mirror destination.
+    if let Some(provider) = req.provider.as_deref() {
+        CloudProvider::parse(provider)?;
+    }
+
+    // Map each requested storage key back to the caller's segment id so the
+    // response can echo client ids for the keys that were actually pinned.
+    let mut requested_ids_by_key: std::collections::HashMap<String, Option<String>> =
+        std::collections::HashMap::new();
+    for segment in &req.segments {
+        if let Some(storage_key) = segment
+            .storage_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            if storage_key.len() > 2048 {
+                return Err(ServiceError::BadRequest(
+                    "storageKey is too long".to_string(),
+                ));
+            }
+            requested_ids_by_key
+                .entry(storage_key.to_string())
+                .or_insert_with(|| clean_string(segment.id.clone(), 240));
+        }
+    }
+    if requested_ids_by_key.len() > MAX_PERMANENT_SAVE_SEGMENTS {
+        return Err(ServiceError::BadRequest(format!(
+            "at most {MAX_PERMANENT_SAVE_SEGMENTS} segments can be saved per request"
+        )));
+    }
+
+    let rows = if !requested_ids_by_key.is_empty() {
+        let keys: Vec<String> = requested_ids_by_key.keys().cloned().collect();
+        client
+            .query(
+                "update sound_recorder_segments
+                 set pinned_at = coalesce(pinned_at, now()), updated_at = now()
+                 where account_id = $1::uuid
+                   and status = 'uploaded'
+                   and storage_key = any($2::text[])
+                 returning storage_key",
+                &[&auth.account_id, &keys],
+            )
+            .await
+            .map_err(db_error)?
+    } else {
+        // No explicit segments: pin everything uploaded in the requested range.
+        let (Some(from), Some(to)) = (req.range_started_at, req.range_ended_at) else {
+            return Err(ServiceError::BadRequest(
+                "provide segments or rangeStartedAt and rangeEndedAt".to_string(),
+            ));
+        };
+        if to <= from {
+            return Err(ServiceError::BadRequest(
+                "rangeEndedAt must be later than rangeStartedAt".to_string(),
+            ));
+        }
+        client
+            .query(
+                "update sound_recorder_segments
+                 set pinned_at = coalesce(pinned_at, now()), updated_at = now()
+                 where id in (
+                   select id from sound_recorder_segments
+                   where account_id = $1::uuid
+                     and status = 'uploaded'
+                     and captured_started_at >= $2
+                     and captured_started_at <= $3
+                   order by captured_started_at asc
+                   limit $4
+                 )
+                 returning storage_key",
+                &[
+                    &auth.account_id,
+                    &from,
+                    &to,
+                    &(MAX_PERMANENT_SAVE_SEGMENTS as i64),
+                ],
+            )
+            .await
+            .map_err(db_error)?
+    };
+
+    let segments: Vec<PermanentSaveSegmentResult> = rows
+        .iter()
+        .map(|row| {
+            let storage_key: String = row.get("storage_key");
+            let id = requested_ids_by_key.get(&storage_key).cloned().flatten();
+            PermanentSaveSegmentResult {
+                id,
+                permanent_storage_key: storage_key.clone(),
+                storage_key,
+            }
+        })
+        .collect();
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.segments.pinned",
+        json!({
+            "savedCount": segments.len(),
+            "provider": req.provider,
+        }),
+    )
+    .await;
+    record_request("POST", "/api/mobile/v1/permanent-saves", StatusCode::OK);
+    Ok(Json(PermanentSaveResponse {
+        ok: true,
+        saved_count: segments.len(),
+        segments,
+    }))
+}
+
 async fn create_alert(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2887,19 +3370,9 @@ async fn listen_alert(
     Path(alert_id): Path<String>,
 ) -> Result<Html<String>, ServiceError> {
     let alert_id = validate_uuid(&alert_id, "alertId")?;
-    let database_url = state
-        .config
-        .database_url
-        .as_deref()
-        .ok_or_else(|| ServiceError::Unavailable("database is not configured".to_string()))?;
-    let (client, connection) = tokio_postgres::connect(database_url, tokio_postgres::NoTls)
-        .await
-        .map_err(db_error)?;
-    tokio::spawn(async move {
-        if let Err(err) = connection.await {
-            warn!(error = %err, "listen alert postgres connection closed");
-        }
-    });
+    // Reuse the rustls-backed connector so this public route uses the same TLS
+    // posture as every other database path (RDS rejects plaintext connections).
+    let client = connect_postgres(&state.config).await?;
     let row = client
         .query_opt(
             "select manifest, requested_from, requested_to, expires_at
@@ -3081,6 +3554,7 @@ async fn complete_cloud_link(
 ) -> Result<Json<CompleteCloudLinkResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
     let provider = CloudProvider::parse(&req.provider)?;
+    let supabase_token_set = supabase_provider_token_set(&req);
     let state_token = validate_nonempty(&req.state, "state", 160)?;
     let state_hash = oauth_state_hash(&state.config, &state_token);
     let state_row = client
@@ -3141,14 +3615,19 @@ async fn complete_cloud_link(
                 "SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY is required for server-managed cloud links".to_string(),
             )
         })?;
-        let authorization_code = validate_nonempty(
-            req.authorization_code.as_deref().unwrap_or(""),
-            "authorizationCode",
-            4096,
-        )?;
-        let token_set =
+        let token_set = if let Some(token_set) = supabase_token_set {
+            // Hybrid path: Supabase already performed the user-facing OAuth and
+            // handed us the provider access/refresh token to seal.
+            token_set
+        } else {
+            let authorization_code = validate_nonempty(
+                req.authorization_code.as_deref().unwrap_or(""),
+                "authorizationCode",
+                4096,
+            )?;
             exchange_authorization_code(&state, provider, &authorization_code, &redirect_uri)
-                .await?;
+                .await?
+        };
         let plaintext = serde_json::to_vec(&token_set)
             .map_err(|_| ServiceError::Internal("cloud token encode failed".to_string()))?;
         let sealed = sealer.seal(&auth.account_id, provider, &plaintext)?;
@@ -3816,7 +4295,9 @@ async fn retention_sweep(
         .execute(
             "update sound_recorder_segments
              set status = 'expired', updated_at = now()
-             where status in ('pending', 'uploaded') and expires_at < now()",
+             where status in ('pending', 'uploaded')
+               and pinned_at is null
+               and expires_at < now()",
             &[],
         )
         .await
@@ -4134,6 +4615,44 @@ fn token_set_from_response(response: OAuthTokenResponse) -> Result<CloudTokenSet
         refresh_token: response.refresh_token,
         token_type: response.token_type,
         scope: response.scope,
+        expires_at,
+    })
+}
+
+/// Builds a sealable token set from Supabase-brokered provider credentials on a
+/// complete-cloud-link request. Returns `None` when no provider access token was
+/// supplied so the caller falls back to the authorization-code exchange.
+fn supabase_provider_token_set(req: &CompleteCloudLinkRequest) -> Option<CloudTokenSet> {
+    let access_token = req
+        .provider_access_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?
+        .to_string();
+    let expires_at = req
+        .provider_token_expires_in
+        .filter(|seconds| *seconds > 0)
+        .and_then(|seconds| Utc::now().checked_add_signed(ChronoDuration::seconds(seconds)));
+    Some(CloudTokenSet {
+        access_token,
+        refresh_token: req
+            .provider_refresh_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string),
+        token_type: req
+            .provider_token_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string),
+        scope: req
+            .provider_token_scope
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToString::to_string),
         expires_at,
     })
 }
@@ -4616,6 +5135,10 @@ fn app(state: AppState) -> Router {
             "/api/mobile/v1/evidence-exports",
             post(create_evidence_export),
         )
+        .route(
+            "/api/mobile/v1/permanent-saves",
+            post(create_permanent_save),
+        )
         .route("/api/mobile/v1/alerts", post(create_alert))
         .route(
             "/api/mobile/v1/cloud-connections",
@@ -4801,6 +5324,7 @@ mod tests {
             public_base_url: Some("https://sound.example".to_string()),
             alert_email_to: "alexander.d.mills@gmail.com".to_string(),
             alert_email_webhook_url: None,
+            supabase: SupabaseConfig::default(),
         }
     }
 
@@ -4813,6 +5337,7 @@ mod tests {
                 .build()
                 .unwrap(),
             cloud_sealer: None,
+            supabase: None,
         }
     }
 
@@ -5006,6 +5531,98 @@ mod tests {
             initial_cloud_copy_status(CloudProvider::GoogleDrive),
             "pending"
         );
+    }
+
+    fn registration_request(external_subject: Option<&str>) -> RegisterDeviceRequest {
+        RegisterDeviceRequest {
+            platform: "ios".to_string(),
+            install_id: "install-123".to_string(),
+            device_label: None,
+            app_version: None,
+            os_version: None,
+            external_subject: external_subject.map(ToString::to_string),
+            display_name: None,
+            legal_region: None,
+            consent_version: "v1".to_string(),
+            consent_accepted_at: None,
+            recording_indicator_acknowledged: true,
+            attestation: None,
+        }
+    }
+
+    #[test]
+    fn use_case_validation_defaults_and_rejects() {
+        assert_eq!(validate_use_case(None).unwrap(), "security");
+        assert_eq!(validate_use_case(Some("Music".to_string())).unwrap(), "music");
+        assert!(validate_use_case(Some("karaoke".to_string())).is_err());
+    }
+
+    #[test]
+    fn supabase_identity_is_namespaced() {
+        let identity = SupabaseIdentity {
+            subject: "abc-123".to_string(),
+            email: Some("a@b.co".to_string()),
+        };
+        assert_eq!(identity.external_subject(), "supabase:abc-123");
+    }
+
+    #[test]
+    fn public_registration_ignores_client_subject() {
+        // The takeover fix: an unauthenticated caller cannot claim another
+        // account by asserting its externalSubject.
+        let req = registration_request(Some("supabase:victim"));
+        let (subject, _) =
+            resolve_registration_subject(&RegistrationTrust::Public, &req, "install-123").unwrap();
+        assert_eq!(subject.as_deref(), Some("install:install-123"));
+    }
+
+    #[test]
+    fn supabase_registration_uses_verified_subject() {
+        let req = registration_request(Some("supabase:victim"));
+        let trust = RegistrationTrust::Supabase(SupabaseIdentity {
+            subject: "real-user".to_string(),
+            email: Some("real@user.co".to_string()),
+        });
+        let (subject, display_name) =
+            resolve_registration_subject(&trust, &req, "install-123").unwrap();
+        assert_eq!(subject.as_deref(), Some("supabase:real-user"));
+        assert_eq!(display_name.as_deref(), Some("real@user.co"));
+    }
+
+    #[test]
+    fn trusted_server_registration_passes_subject_through() {
+        let req = registration_request(Some("partner-tenant-7"));
+        let (subject, _) =
+            resolve_registration_subject(&RegistrationTrust::TrustedServer, &req, "install-123")
+                .unwrap();
+        assert_eq!(subject.as_deref(), Some("partner-tenant-7"));
+    }
+
+    #[test]
+    fn supabase_provider_token_set_requires_access_token() {
+        let mut req = CompleteCloudLinkRequest {
+            provider: "google_drive".to_string(),
+            state: "state".to_string(),
+            authorization_code: None,
+            redirect_uri: None,
+            display_name: None,
+            provider_account_id: None,
+            root_folder_id: None,
+            folder_path: None,
+            client_managed_acknowledged: None,
+            provider_access_token: None,
+            provider_refresh_token: Some("refresh".to_string()),
+            provider_token_expires_in: Some(3600),
+            provider_token_type: Some("Bearer".to_string()),
+            provider_token_scope: None,
+            meta_data: None,
+        };
+        assert!(supabase_provider_token_set(&req).is_none());
+        req.provider_access_token = Some("access".to_string());
+        let token_set = supabase_provider_token_set(&req).unwrap();
+        assert_eq!(token_set.access_token, "access");
+        assert_eq!(token_set.refresh_token.as_deref(), Some("refresh"));
+        assert!(token_set.expires_at.is_some());
     }
 
     #[test]

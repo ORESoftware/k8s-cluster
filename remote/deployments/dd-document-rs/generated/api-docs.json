@@ -1,12 +1,13 @@
 {
   "ok": true,
   "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "dd-sound-recorder-rs",
+  "service": "dd-document-rs",
   "language": "rust",
-  "routeCount": 29,
+  "routeCount": 25,
   "routeTypeCounts": {
-    "service": 7,
-    "user-generated": 22
+    "service": 6,
+    "user-generated": 16,
+    "runtime-config": 3
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -27,7 +28,7 @@
         "home"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -44,7 +45,7 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -61,29 +62,12 @@
         "api_docs_json"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/api/mobile/v1/alerts",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "create_alert"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/cloud-connections",
+      "path": "/capabilities",
       "methods": [
         "GET"
       ],
@@ -92,15 +76,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "list_cloud_connections"
+        "capabilities_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/api/mobile/v1/cloud-connections/:connection_id/revoke",
+      "path": "/convert",
       "methods": [
         "POST"
       ],
@@ -109,15 +93,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "revoke_cloud_connection"
+        "convert_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/api/mobile/v1/cloud-connections/oauth/complete",
+      "path": "/convert-binary",
       "methods": [
         "POST"
       ],
@@ -126,214 +110,10 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "complete_cloud_link"
+        "convert_binary_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/cloud-connections/oauth/start",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "start_cloud_link"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/cloud-copy-jobs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "list_client_cloud_copy_jobs"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/cloud-copy-jobs/:job_id/complete",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "complete_client_cloud_copy_job"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/devices/register",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "register_device"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/evidence-exports",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "create_evidence_export"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/permanent-saves",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "create_permanent_save"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/timeline",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "timeline"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/upload-sessions",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "create_upload_session"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/upload-sessions/:session_id/close",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "close_session"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/upload-sessions/:session_id/heartbeat",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "heartbeat_session"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/upload-sessions/:session_id/segments/:segment_id/complete",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "complete_segment"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/mobile/v1/upload-sessions/:session_id/segments/presign",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "presign_segment"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -350,12 +130,12 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/download/android",
+      "path": "/example",
       "methods": [
         "GET"
       ],
@@ -364,15 +144,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "download_android"
+        "example_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/download/ios",
+      "path": "/formats",
       "methods": [
         "GET"
       ],
@@ -381,10 +161,27 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "download_ios"
+        "formats_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/from-ast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "from_ast_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -401,12 +198,12 @@
         "healthz"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/internal/cloud-copy/drain",
+      "path": "/image/convert",
       "methods": [
         "POST"
       ],
@@ -415,32 +212,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "drain_cloud_copy_jobs"
+        "image_convert_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/internal/retention/sweep",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "retention_sweep"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/listen/:alert_id",
+      "path": "/image/formats",
       "methods": [
         "GET"
       ],
@@ -449,10 +229,112 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "listen_alert"
+        "image_formats_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/image/identify",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "image_identify_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/image/transform",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "image_transform_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/inspect",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "inspect_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
       ],
       "notes": ""
     },
@@ -469,12 +351,12 @@
         "metrics"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/privacy",
+      "path": "/status",
       "methods": [
         "GET"
       ],
@@ -483,27 +365,78 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "privacy"
+        "status_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/readyz",
+      "path": "/stream/convert",
       "methods": [
-        "GET"
+        "POST"
       ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Readiness check.",
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "readyz"
+        "stream_convert_http"
       ],
       "sourceFiles": [
-        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/stream/image",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "stream_image_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/to-ast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "to_ast_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/validate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "validate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
       ],
       "notes": ""
     }

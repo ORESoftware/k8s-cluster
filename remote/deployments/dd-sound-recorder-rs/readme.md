@@ -23,6 +23,19 @@ the event.
   exports use short-lived S3 `GET` URLs until a CloudFront-signing layer is added.
 - Device auth uses opaque bearer tokens. Tokens are returned only on registration and stored as
   SHA-256 hashes with a server-side pepper.
+- Account identity is rooted in Supabase. When `register` is called with a verified Supabase access
+  token in the `x-supabase-auth` header, the account is keyed to the token's `sub`
+  (`external_subject = supabase:<sub>`), which is the only way to attach a device to an existing
+  account. A shared `SOUND_RECORDER_REGISTRATION_BEARER` still works for trusted server-to-server
+  callers and may assert an arbitrary `externalSubject`; public registration keys the account to the
+  install id and ignores any client-supplied `externalSubject`, so an anonymous caller can never
+  claim another user's account.
+- Google Drive / OneDrive links support a hybrid OAuth flow: the client may pass Supabase-brokered
+  `providerAccessToken`/`providerRefreshToken` to `cloud-connections/oauth/complete` to be sealed
+  directly, or omit them to fall back to the server-side authorization-code exchange.
+- Upload sessions carry a `useCase` (`security` default, `music`, `meeting`, `voice_note`,
+  `ambient`) and an optional `audioProfile` (sensitivity, treble/mid/bass gain, channel layout)
+  stored with session metadata, so the same backend serves dashcam and musician capture.
 - Registration records platform, install id, consent version, consent timestamp, and acknowledgement
   that the client exposes an active recording indicator.
 - The rolling retention cap defaults to 500 hours and is enforced in API queries. S3 lifecycle rules
@@ -48,6 +61,9 @@ the event.
   window.
 - `POST /api/mobile/v1/evidence-exports` — returns short-lived download links for an account/time
   range and writes an audit row.
+- `POST /api/mobile/v1/permanent-saves` — pins uploaded segments (by `segments[].storageKey` or by
+  `rangeStartedAt`/`rangeEndedAt`) so the retention sweep never expires them. Returns the pinned
+  storage keys.
 - `POST /api/mobile/v1/alerts` — creates a short evidence export around a mobile trigger and
   optionally posts an email payload to `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL`. Alerts are
   accepted only when uploaded retained segments overlap the requested listening window.
@@ -92,6 +108,11 @@ the event.
 | `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. |
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
 | `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
+| `SOUND_RECORDER_SUPABASE_URL` / `SUPABASE_URL` | unset | Supabase project URL. Used to derive the JWKS URL and expected issuer. |
+| `SOUND_RECORDER_SUPABASE_JWT_SECRET` / `SUPABASE_JWT_SECRET` | unset | Legacy HS256 JWT secret. Enables verifying HS256 Supabase tokens. |
+| `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. Cached for one hour. |
+| `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
+| `SOUND_RECORDER_SUPABASE_AUDIENCE` | `authenticated` | Expected `aud` claim. |
 | `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
 | `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
 | `SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL` / `SOUND_RECORDER_GOOGLE_TOKEN_URL` | Google OAuth endpoints | Optional provider endpoint overrides for local integration tests. |

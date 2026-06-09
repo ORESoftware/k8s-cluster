@@ -1,0 +1,7 @@
+packages: .
+
+-- Bake Pandoc's data files (templates, reference docs, syntax defs) into the
+-- compiled bridge so the standalone .so is self-contained and the runtime image
+-- needs no Pandoc data directory.
+package pandoc
+  flags: +embed_data_files

@@ -203,12 +203,26 @@
       ]
     },
     {
-      "service": "dd-escrow-rs",
+      "service": "dd-document-rs",
       "language": "rust",
-      "routeCount": 18,
+      "routeCount": 25,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 9,
+        "user-generated": 16,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-document-rs/generated/api-docs.json",
+        "remote/deployments/dd-document-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-escrow-rs",
+      "language": "rust",
+      "routeCount": 19,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 10,
         "runtime-config": 3
       },
       "generated": [
@@ -232,10 +246,10 @@
     {
       "service": "dd-sound-recorder-rs",
       "language": "rust",
-      "routeCount": 28,
+      "routeCount": 29,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 21
+        "user-generated": 22
       },
       "generated": [
         "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",

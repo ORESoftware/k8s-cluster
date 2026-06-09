@@ -362,6 +362,10 @@ fn verify_plotly(
         "scatterpolar",
         "heatmap",
         "histogram",
+        "box",
+        "violin",
+        "scattergeo",
+        "choropleth",
     ];
     let mut traces_with_points = 0usize;
     let mut unknown_trace_types = Vec::new();

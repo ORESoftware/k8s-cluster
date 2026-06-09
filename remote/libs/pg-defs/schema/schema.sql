@@ -303,11 +303,14 @@ create table if not exists sound_recorder_upload_sessions (
   expires_at timestamptz,
   client_timezone varchar(80),
   legal_region varchar(64),
+  use_case varchar(32) default 'security' not null,
   meta_data jsonb default '{}'::jsonb not null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   constraint sound_recorder_upload_sessions_status_chk
     check (status in ('active', 'closed', 'revoked', 'expired')),
+  constraint sound_recorder_upload_sessions_use_case_chk
+    check (use_case in ('security', 'music', 'meeting', 'voice_note', 'ambient')),
   constraint sound_recorder_upload_sessions_storage_provider_chk
     check (storage_provider in ('s3')),
   constraint sound_recorder_upload_sessions_storage_bucket_size_chk
@@ -372,6 +375,7 @@ create table if not exists sound_recorder_segments (
   etag varchar(160),
   uploaded_at timestamptz,
   expires_at timestamptz not null,
+  pinned_at timestamptz,
   meta_data jsonb default '{}'::jsonb not null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
@@ -415,7 +419,7 @@ create index if not exists sound_recorder_segments_account_capture_idx
 
 create index if not exists sound_recorder_segments_expiry_idx
   on sound_recorder_segments (expires_at asc)
-  where status in ('pending', 'uploaded');
+  where status in ('pending', 'uploaded') and pinned_at is null;
 
 alter table if exists sound_recorder_segments
   add constraint sound_recorder_segments_account_fk

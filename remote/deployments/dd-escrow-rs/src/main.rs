@@ -34,6 +34,8 @@ const LOG_SCHEMA: &str = "dd.log.v1";
 const LOG_SCOPE: &str = "dd-escrow-rs";
 const DEFAULT_COMMITMENT: &str = "confirmed";
 const SETTLEMENT_AUTH_HEADER: &str = "x-escrow-settlement-auth";
+const CONTRACT_SEND_AUTH_HEADER: &str = "x-contract-send-auth";
+const DEFAULT_CONTRACT_SERVICE_TIMEOUT_SECONDS: u64 = 20;
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
 const MAX_SIGNED_TRANSACTION_BYTES: usize = 256 * 1024;
@@ -49,11 +51,42 @@ const MAX_DISPUTE_WINDOW_SECONDS: u64 = 90 * 24 * 60 * 60;
 const MAX_INSPECTION_SECONDS: u64 = 30 * 24 * 60 * 60;
 const MAX_SEND_RETRIES: usize = 20;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettlementBackend {
+    SolanaRpc,
+    ContractService,
+}
+
+impl SettlementBackend {
+    fn as_str(self) -> &'static str {
+        match self {
+            SettlementBackend::SolanaRpc => "solana-rpc",
+            SettlementBackend::ContractService => "contract-service",
+        }
+    }
+
+    fn parse(input: &str) -> Result<Self, String> {
+        match input.trim().to_ascii_lowercase().as_str() {
+            "solana-rpc" | "solana_rpc" | "rpc" => Ok(SettlementBackend::SolanaRpc),
+            "contract-service" | "contract_service" | "contract" => {
+                Ok(SettlementBackend::ContractService)
+            }
+            other => Err(format!(
+                "ESCROW_SETTLEMENT_BACKEND must be solana-rpc or contract-service, got {other}"
+            )),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     rpc_client: reqwest::Client,
     solana_rpc_url: String,
     default_cluster: String,
+    settlement_backend: SettlementBackend,
+    contract_service_url: Option<String>,
+    contract_service_send_secret: Option<String>,
+    contract_service_timeout: Duration,
     settlement_enabled: bool,
     settlement_auth_secret: Option<String>,
     settlement_require_intent: bool,
@@ -76,6 +109,11 @@ struct Metrics {
     settlement_errors_total: AtomicU64,
     rpc_requests_total: AtomicU64,
     rpc_errors_total: AtomicU64,
+    contract_service_simulate_total: AtomicU64,
+    contract_service_send_total: AtomicU64,
+    contract_service_errors_total: AtomicU64,
+    resolution_validations_total: AtomicU64,
+    resolution_errors_total: AtomicU64,
     policy_rejections_total: AtomicU64,
     auth_failures_total: AtomicU64,
     nats_messages_total: AtomicU64,
@@ -240,6 +278,53 @@ impl SettlementAction {
             SettlementAction::DisputeAward => "dispute-award",
             SettlementAction::Expire => "expire",
             SettlementAction::Cancel => "cancel",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ResolutionOutcome {
+    Release,
+    Refund,
+    Split,
+    DisputeAward,
+    Expire,
+    Cancel,
+}
+
+impl ResolutionOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            ResolutionOutcome::Release => "release",
+            ResolutionOutcome::Refund => "refund",
+            ResolutionOutcome::Split => "split",
+            ResolutionOutcome::DisputeAward => "dispute-award",
+            ResolutionOutcome::Expire => "expire",
+            ResolutionOutcome::Cancel => "cancel",
+        }
+    }
+
+    /// The settlement action that an outcome maps onto. `Split` is satisfied by either
+    /// `SplitRelease` or `PartialRelease`, so it returns the canonical `SplitRelease`.
+    fn expected_action(self) -> SettlementAction {
+        match self {
+            ResolutionOutcome::Release => SettlementAction::Release,
+            ResolutionOutcome::Refund => SettlementAction::Refund,
+            ResolutionOutcome::Split => SettlementAction::SplitRelease,
+            ResolutionOutcome::DisputeAward => SettlementAction::DisputeAward,
+            ResolutionOutcome::Expire => SettlementAction::Expire,
+            ResolutionOutcome::Cancel => SettlementAction::Cancel,
+        }
+    }
+
+    fn matches_action(self, action: SettlementAction) -> bool {
+        match self {
+            ResolutionOutcome::Split => matches!(
+                action,
+                SettlementAction::SplitRelease | SettlementAction::PartialRelease
+            ),
+            other => action == other.expected_action(),
         }
     }
 }
@@ -409,6 +494,54 @@ struct EscrowSettlementRequest {
     max_retries: Option<usize>,
     min_context_slot: Option<u64>,
     intent: Option<EscrowIntentRequest>,
+    resolution: Option<EscrowResolution>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EscrowResolution {
+    outcome: ResolutionOutcome,
+    winner_role: Option<PartyRole>,
+    refund_role: Option<PartyRole>,
+    allocations: Option<Vec<ResolutionAllocation>>,
+    rationale: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ResolutionAllocation {
+    role: PartyRole,
+    pubkey: Option<String>,
+    payout_bps: u16,
+}
+
+/// Standalone body for `POST /resolve`: validate an intent plus its proposed resolution
+/// without touching Solana.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ResolutionRequest {
+    schema_version: String,
+    request_id: Option<String>,
+    cluster: Option<String>,
+    action: SettlementAction,
+    intent: EscrowIntentRequest,
+    resolution: EscrowResolution,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ResolutionResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    cluster: String,
+    escrow_id: String,
+    kind: EscrowKind,
+    action: SettlementAction,
+    outcome: &'static str,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    generated_at_ms: u128,
 }
 
 #[derive(Debug)]
@@ -677,6 +810,29 @@ fn normalize_request_cluster(
         ));
     }
     Ok(cluster)
+}
+
+/// Validates the in-cluster `dd-contract-service` base URL. Unlike `SOLANA_RPC_URL`, this is an
+/// internal service address, so cluster-local `http://*.svc.cluster.local` hosts are allowed; we
+/// still reject embedded credentials and require a host.
+fn validate_contract_service_url(raw: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(raw)
+        .map_err(|error| format!("CONTRACT_SERVICE_URL must be an absolute URL: {error}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(format!(
+                "CONTRACT_SERVICE_URL scheme must be http or https, got {scheme}"
+            ))
+        }
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("CONTRACT_SERVICE_URL must not include credentials".to_string());
+    }
+    if parsed.host_str().is_none() {
+        return Err("CONTRACT_SERVICE_URL must include a host".to_string());
+    }
+    Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
 fn normalize_commitment(input: Option<&str>) -> Result<String, String> {
@@ -1632,6 +1788,178 @@ fn validate_signed_transaction(transaction: &str, encoding: &str) -> Result<Vec<
     Ok(bytes)
 }
 
+fn is_refundable_role(role: PartyRole) -> bool {
+    matches!(
+        role,
+        PartyRole::Buyer
+            | PartyRole::Payer
+            | PartyRole::Depositor
+            | PartyRole::Client
+            | PartyRole::Tenant
+            | PartyRole::Contributor
+    )
+}
+
+/// Cross-checks a proposed resolution against the escrow parties, the chosen settlement action,
+/// and the release mode. Pure policy validation; never touches Solana. Errors and warnings are
+/// appended to the shared accumulators so callers can fold them into existing validation output.
+fn validate_resolution(
+    action: SettlementAction,
+    resolution: &EscrowResolution,
+    parties: &[EscrowParty],
+    spec: &KindSpec,
+    release_mode: ReleaseMode,
+    errors: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) {
+    if !resolution.outcome.matches_action(action) {
+        errors.push(format!(
+            "resolution.outcome {} is not consistent with settlement action {}",
+            resolution.outcome.as_str(),
+            action.as_str()
+        ));
+    }
+    if !spec.settlement_actions.contains(&action) {
+        errors.push(format!(
+            "{} escrow does not allow settlement action {}",
+            spec.kind.as_str(),
+            action.as_str()
+        ));
+    }
+
+    let roles: HashSet<PartyRole> = parties.iter().map(|party| party.role).collect();
+    let arbiter_present = roles.contains(&PartyRole::Arbitrator);
+    let arbiter_mode = matches!(
+        release_mode,
+        ReleaseMode::ArbiterDecision | ReleaseMode::MultiSig
+    );
+
+    match resolution.outcome {
+        ResolutionOutcome::Refund => {
+            if let Some(role) = resolution.refund_role {
+                if !is_refundable_role(role) {
+                    errors.push(format!(
+                        "resolution.refundRole {} is not a refundable role",
+                        role.as_str()
+                    ));
+                }
+                if !roles.contains(&role) {
+                    errors.push(format!(
+                        "resolution.refundRole {} has no matching party",
+                        role.as_str()
+                    ));
+                }
+            } else if !roles.iter().copied().any(is_refundable_role) {
+                errors.push(
+                    "refund resolution requires a refundable party (buyer, payer, depositor, client, tenant, or contributor)"
+                        .to_string(),
+                );
+            }
+        }
+        ResolutionOutcome::DisputeAward => {
+            if arbiter_mode && !arbiter_present {
+                errors.push(
+                    "dispute-award resolution under arbiter-decision/multi-sig release requires an arbitrator party"
+                        .to_string(),
+                );
+            }
+            match resolution.winner_role {
+                Some(role) => {
+                    if !roles.contains(&role) {
+                        errors.push(format!(
+                            "resolution.winnerRole {} has no matching party",
+                            role.as_str()
+                        ));
+                    }
+                    if role == PartyRole::Arbitrator {
+                        errors.push(
+                            "resolution.winnerRole must be a disputing party, not the arbitrator"
+                                .to_string(),
+                        );
+                    }
+                }
+                None => errors
+                    .push("dispute-award resolution requires resolution.winnerRole".to_string()),
+            }
+        }
+        ResolutionOutcome::Split => {
+            if arbiter_mode && !arbiter_present {
+                errors.push(
+                    "split resolution under arbiter-decision/multi-sig release requires an arbitrator party"
+                        .to_string(),
+                );
+            }
+            match &resolution.allocations {
+                Some(allocations) if !allocations.is_empty() => {
+                    validate_resolution_allocations(allocations, &roles, errors);
+                }
+                _ => errors
+                    .push("split resolution requires a non-empty resolution.allocations".to_string()),
+            }
+        }
+        ResolutionOutcome::Release | ResolutionOutcome::Expire | ResolutionOutcome::Cancel => {}
+    }
+
+    if resolution.winner_role.is_some() && resolution.outcome != ResolutionOutcome::DisputeAward {
+        warnings.push(format!(
+            "resolution.winnerRole is ignored for {} outcomes",
+            resolution.outcome.as_str()
+        ));
+    }
+    if resolution.allocations.is_some() && resolution.outcome != ResolutionOutcome::Split {
+        warnings.push(format!(
+            "resolution.allocations is ignored for {} outcomes",
+            resolution.outcome.as_str()
+        ));
+    }
+    if let Some(rationale) = &resolution.rationale {
+        if rationale.as_bytes().len() > MAX_MEMO_BYTES {
+            errors.push(format!(
+                "resolution.rationale must be at most {MAX_MEMO_BYTES} bytes"
+            ));
+        }
+    }
+}
+
+fn validate_resolution_allocations(
+    allocations: &[ResolutionAllocation],
+    roles: &HashSet<PartyRole>,
+    errors: &mut Vec<String>,
+) {
+    if allocations.len() > MAX_PARTIES {
+        errors.push(format!(
+            "resolution.allocations must include at most {MAX_PARTIES} entries"
+        ));
+    }
+    let mut sum: u32 = 0;
+    for (index, allocation) in allocations.iter().enumerate() {
+        sum += u32::from(allocation.payout_bps);
+        if allocation.payout_bps > 10_000 {
+            errors.push(format!(
+                "resolution.allocations[{index}].payoutBps must be at most 10000"
+            ));
+        }
+        if !roles.contains(&allocation.role) {
+            errors.push(format!(
+                "resolution.allocations[{index}].role {} has no matching party",
+                allocation.role.as_str()
+            ));
+        }
+        if let Some(pubkey) = &allocation.pubkey {
+            if let Err(error) =
+                validate_pubkey(pubkey, &format!("resolution.allocations[{index}].pubkey"))
+            {
+                errors.push(error);
+            }
+        }
+    }
+    if sum != 10_000 {
+        errors.push(
+            "resolution.allocations payoutBps values must sum to exactly 10000".to_string(),
+        );
+    }
+}
+
 fn validate_settlement_request(
     request: &EscrowSettlementRequest,
     default_cluster: &str,
@@ -1721,6 +2049,17 @@ fn validate_settlement_request(
                 );
             }
         }
+        if let Some(resolution) = &request.resolution {
+            validate_resolution(
+                request.action,
+                resolution,
+                &intent.parties,
+                &spec,
+                intent.terms.release_mode,
+                &mut errors,
+                &mut warnings,
+            );
+        }
     } else {
         if require_intent {
             errors.push(
@@ -1728,6 +2067,12 @@ fn validate_settlement_request(
             );
         } else {
             warnings.push("no intent was attached; settlement action is validated only against kind and transaction policy".to_string());
+        }
+        if request.resolution.is_some() {
+            errors.push(
+                "resolution requires an attached intent so the proposed outcome can be checked against the escrow parties"
+                    .to_string(),
+            );
         }
     }
     if !errors.is_empty() {
@@ -1846,6 +2191,156 @@ async fn rpc_json(
     Ok(value.get("result").cloned().unwrap_or(Value::Null))
 }
 
+#[derive(Clone, Copy)]
+enum ContractServiceOp {
+    Simulate,
+    Send,
+}
+
+impl ContractServiceOp {
+    fn path(self) -> &'static str {
+        match self {
+            ContractServiceOp::Simulate => "/simulate",
+            ContractServiceOp::Send => "/send",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            ContractServiceOp::Simulate => "simulate",
+            ContractServiceOp::Send => "send",
+        }
+    }
+}
+
+/// Maps an escrow settlement request onto the `dd-contract-service` `TransactionRpcRequest` body
+/// (`solana.contract.v1` transaction shape). Simulate forces `sigVerify=false` with
+/// `replaceRecentBlockhash=true`, matching the direct-RPC simulate path.
+fn contract_service_body(
+    request: &EscrowSettlementRequest,
+    op: ContractServiceOp,
+    cluster: &str,
+    encoding: &str,
+    commitment: &str,
+    request_id: &str,
+) -> Value {
+    let mut body = serde_json::Map::new();
+    body.insert("requestId".to_string(), json!(request_id));
+    body.insert("cluster".to_string(), json!(cluster));
+    body.insert("transaction".to_string(), json!(request.transaction.trim()));
+    body.insert("encoding".to_string(), json!(encoding));
+    body.insert("commitment".to_string(), json!(commitment));
+    match op {
+        ContractServiceOp::Simulate => {
+            body.insert("sigVerify".to_string(), json!(false));
+            body.insert("replaceRecentBlockhash".to_string(), json!(true));
+        }
+        ContractServiceOp::Send => {
+            body.insert(
+                "skipPreflight".to_string(),
+                json!(request.skip_preflight.unwrap_or(false)),
+            );
+            if let Some(max_retries) = request.max_retries {
+                body.insert("maxRetries".to_string(), json!(max_retries));
+            }
+            if let Some(min_context_slot) = request.min_context_slot {
+                body.insert("minContextSlot".to_string(), json!(min_context_slot));
+            }
+        }
+    }
+    Value::Object(body)
+}
+
+/// Delegates an on-chain operation to the in-cluster `dd-contract-service`. The local escrow policy
+/// gates (settlement enabled, auth header, intent/resolution validation) run before this is called.
+async fn contract_service_call(
+    state: &AppState,
+    op: ContractServiceOp,
+    body: Value,
+) -> Result<Value, String> {
+    let Some(base) = &state.contract_service_url else {
+        state
+            .metrics
+            .contract_service_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return Err(
+            "contract-service backend is not configured with CONTRACT_SERVICE_URL".to_string(),
+        );
+    };
+    match op {
+        ContractServiceOp::Simulate => state
+            .metrics
+            .contract_service_simulate_total
+            .fetch_add(1, Ordering::Relaxed),
+        ContractServiceOp::Send => state
+            .metrics
+            .contract_service_send_total
+            .fetch_add(1, Ordering::Relaxed),
+    };
+    let url = format!("{}{}", base.trim_end_matches('/'), op.path());
+    let mut builder = state
+        .rpc_client
+        .post(&url)
+        .timeout(state.contract_service_timeout)
+        .json(&body);
+    if matches!(op, ContractServiceOp::Send) {
+        let Some(secret) = &state.contract_service_send_secret else {
+            state
+                .metrics
+                .contract_service_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            return Err(
+                "contract-service send requires CONTRACT_SERVICE_SEND_AUTH_SECRET".to_string(),
+            );
+        };
+        builder = builder.header(CONTRACT_SEND_AUTH_HEADER, secret);
+    }
+    let response = builder.send().await.map_err(|error| {
+        state
+            .metrics
+            .contract_service_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        format!("contract-service {} request failed: {error}", op.label())
+    })?;
+    let status = response.status();
+    let text = response.text().await.map_err(|error| {
+        state
+            .metrics
+            .contract_service_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        format!(
+            "contract-service {} response read failed: {error}",
+            op.label()
+        )
+    })?;
+    let value = serde_json::from_str::<Value>(&text).map_err(|error| {
+        state
+            .metrics
+            .contract_service_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        format!(
+            "contract-service {} response was not JSON: {error}",
+            op.label()
+        )
+    })?;
+    let upstream_ok = value.get("ok").and_then(Value::as_bool).unwrap_or(false);
+    if !status.is_success() || !upstream_ok {
+        state
+            .metrics
+            .contract_service_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        let detail = value
+            .get("error")
+            .cloned()
+            .unwrap_or_else(|| Value::String(text.clone()));
+        return Err(format!(
+            "contract-service {} failed (status {status}): {detail}",
+            op.label()
+        ));
+    }
+    Ok(value)
+}
+
 async fn home() -> impl IntoResponse {
     Json(json!({
         "ok": true,
@@ -1859,6 +2354,7 @@ async fn home() -> impl IntoResponse {
             "example": "/example",
             "validate": "POST /validate",
             "audit": "POST /audit",
+            "resolve": "POST /resolve",
             "simulateSettlement": "POST /simulate-settlement",
             "settle": "POST /settle",
             "status": "/status",
@@ -1896,8 +2392,12 @@ async fn capabilities_http(State(state): State<AppState>) -> impl IntoResponse {
             "skipPreflightAllowed": state.allow_skip_preflight,
             "allowedProgramCount": state.allowed_program_ids.len(),
             "clientSignedTransactionsOnly": true,
-            "privateKeysStored": false
+            "privateKeysStored": false,
+            "backend": state.settlement_backend.as_str(),
+            "contractServiceConfigured": state.contract_service_url.is_some(),
+            "contractServiceSendConfigured": state.contract_service_send_secret.is_some()
         },
+        "resolutionOutcomes": ["release", "refund", "split", "dispute-award", "expire", "cancel"],
         "limits": {
             "maxHttpBodyBytes": MAX_HTTP_BODY_BYTES,
             "maxSignedTransactionBytes": MAX_SIGNED_TRANSACTION_BYTES,
@@ -2061,6 +2561,80 @@ async fn audit_http(
     }
 }
 
+async fn resolve_http(
+    State(state): State<AppState>,
+    Json(request): Json<ResolutionRequest>,
+) -> impl IntoResponse {
+    state
+        .metrics
+        .resolution_validations_total
+        .fetch_add(1, Ordering::Relaxed);
+    let req_id = request_id(request.request_id.as_ref(), "escrow-resolution");
+    let cluster = normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster)
+        .unwrap_or_else(|_| state.default_cluster.clone());
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    if request.schema_version != SCHEMA_VERSION {
+        errors.push(format!(
+            "schemaVersion must be {SCHEMA_VERSION}, got {}",
+            request.schema_version
+        ));
+    }
+    let spec = kind_spec(request.intent.kind);
+    match validate_escrow_intent(
+        &request.intent,
+        &state.default_cluster,
+        &state.allowed_program_ids,
+    ) {
+        Ok(intent_response) => warnings.extend(intent_response.warnings),
+        Err(intent_errors) => errors.extend(
+            intent_errors
+                .into_iter()
+                .map(|error| format!("intent.{error}")),
+        ),
+    }
+    validate_resolution(
+        request.action,
+        &request.resolution,
+        &request.intent.parties,
+        &spec,
+        request.intent.terms.release_mode,
+        &mut errors,
+        &mut warnings,
+    );
+
+    let ok = errors.is_empty();
+    if !ok {
+        state
+            .metrics
+            .resolution_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+    }
+    let status = if ok {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+    (
+        status,
+        Json(ResolutionResponse {
+            ok,
+            request_id: req_id,
+            schema_version: SCHEMA_VERSION,
+            cluster,
+            escrow_id: request.intent.escrow_id.clone(),
+            kind: request.intent.kind,
+            action: request.action,
+            outcome: request.resolution.outcome.as_str(),
+            errors,
+            warnings,
+            generated_at_ms: now_ms(),
+        }),
+    )
+}
+
 async fn simulate_settlement_http(
     State(state): State<AppState>,
     Json(request): Json<EscrowSettlementRequest>,
@@ -2093,14 +2667,29 @@ async fn simulate_settlement_http(
     let encoding = normalize_encoding(request.encoding.as_deref()).unwrap_or("base64");
     let commitment = normalize_commitment(request.commitment.as_deref())
         .unwrap_or_else(|_| DEFAULT_COMMITMENT.to_string());
-    match rpc_json(
-        &state,
-        "simulateTransaction",
-        simulate_params(&request, encoding, &commitment),
-        &validation.request_id,
-    )
-    .await
-    {
+    let backend_result = match state.settlement_backend {
+        SettlementBackend::SolanaRpc => {
+            rpc_json(
+                &state,
+                "simulateTransaction",
+                simulate_params(&request, encoding, &commitment),
+                &validation.request_id,
+            )
+            .await
+        }
+        SettlementBackend::ContractService => {
+            let body = contract_service_body(
+                &request,
+                ContractServiceOp::Simulate,
+                &validation.cluster,
+                encoding,
+                &commitment,
+                &validation.request_id,
+            );
+            contract_service_call(&state, ContractServiceOp::Simulate, body).await
+        }
+    };
+    match backend_result {
         Ok(result) => Json(json!({
             "ok": true,
             "requestId": validation.request_id,
@@ -2111,6 +2700,7 @@ async fn simulate_settlement_http(
             "action": request.action,
             "transactionBytes": validation.transaction_bytes.len(),
             "transactionDigest": validation.transaction_digest,
+            "backend": state.settlement_backend.as_str(),
             "rpcMethod": "simulateTransaction",
             "result": result,
             "warnings": validation.warnings,
@@ -2192,14 +2782,29 @@ async fn settle_http(
     let encoding = normalize_encoding(request.encoding.as_deref()).unwrap_or("base64");
     let commitment = normalize_commitment(request.commitment.as_deref())
         .unwrap_or_else(|_| DEFAULT_COMMITMENT.to_string());
-    match rpc_json(
-        &state,
-        "sendTransaction",
-        send_params(&request, encoding, &commitment),
-        &validation.request_id,
-    )
-    .await
-    {
+    let backend_result = match state.settlement_backend {
+        SettlementBackend::SolanaRpc => {
+            rpc_json(
+                &state,
+                "sendTransaction",
+                send_params(&request, encoding, &commitment),
+                &validation.request_id,
+            )
+            .await
+        }
+        SettlementBackend::ContractService => {
+            let body = contract_service_body(
+                &request,
+                ContractServiceOp::Send,
+                &validation.cluster,
+                encoding,
+                &commitment,
+                &validation.request_id,
+            );
+            contract_service_call(&state, ContractServiceOp::Send, body).await
+        }
+    };
+    match backend_result {
         Ok(result) => {
             publish_escrow_event(
                 &state,
@@ -2218,6 +2823,7 @@ async fn settle_http(
                 "action": request.action,
                 "transactionBytes": validation.transaction_bytes.len(),
                 "transactionDigest": validation.transaction_digest,
+                "backend": state.settlement_backend.as_str(),
                 "rpcMethod": "sendTransaction",
                 "result": result,
                 "warnings": validation.warnings,
@@ -2253,10 +2859,45 @@ async fn settle_http(
     }
 }
 
+async fn contract_service_health(state: &AppState) -> Result<Value, String> {
+    let Some(base) = &state.contract_service_url else {
+        return Err("contract-service backend is not configured with CONTRACT_SERVICE_URL".to_string());
+    };
+    let url = format!("{}/healthz", base.trim_end_matches('/'));
+    let response = state
+        .rpc_client
+        .get(&url)
+        .timeout(state.contract_service_timeout)
+        .send()
+        .await
+        .map_err(|error| format!("contract-service healthz request failed: {error}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("contract-service healthz read failed: {error}"))?;
+    if !status.is_success() {
+        return Err(format!("contract-service healthz status {status}: {body}"));
+    }
+    serde_json::from_str::<Value>(&body)
+        .map_err(|error| format!("contract-service healthz was not JSON: {error}"))
+}
+
 async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
     let health = rpc_json(&state, "getHealth", json!([]), "escrow-status-health").await;
     let version = rpc_json(&state, "getVersion", json!([]), "escrow-status-version").await;
-    let ok = health.is_ok() && version.is_ok();
+    let contract_service = match state.settlement_backend {
+        SettlementBackend::ContractService => Some(contract_service_health(&state).await),
+        SettlementBackend::SolanaRpc => None,
+    };
+    // When delegating to the contract service, its reachability gates readiness; the direct
+    // Solana RPC probe is informational only.
+    let ok = match state.settlement_backend {
+        SettlementBackend::SolanaRpc => health.is_ok() && version.is_ok(),
+        SettlementBackend::ContractService => {
+            contract_service.as_ref().map(Result::is_ok).unwrap_or(false)
+        }
+    };
     Json(json!({
         "ok": ok,
         "service": SERVICE_NAME,
@@ -2264,11 +2905,15 @@ async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
         "cluster": state.default_cluster,
         "settlementEnabled": state.settlement_enabled,
         "settlementRequiresIntent": state.settlement_require_intent,
+        "settlementBackend": state.settlement_backend.as_str(),
+        "contractServiceConfigured": state.contract_service_url.is_some(),
         "allowedProgramCount": state.allowed_program_ids.len(),
         "skipPreflightAllowed": state.allow_skip_preflight,
         "natsEnabled": state.nats.is_some(),
         "validateSubject": state.validate_subject,
         "resultSubject": state.result_subject,
+        "contractService": contract_service
+            .map(|result| result.unwrap_or_else(|error| json!({ "error": error }))),
         "solana": {
             "health": health.unwrap_or_else(|error| json!({ "error": error })),
             "version": version.unwrap_or_else(|error| json!({ "error": error }))
@@ -2315,6 +2960,19 @@ fn metrics_body(state: &AppState) -> String {
             "# HELP dd_escrow_rs_rpc_errors_total Solana JSON-RPC errors.\n",
             "# TYPE dd_escrow_rs_rpc_errors_total counter\n",
             "dd_escrow_rs_rpc_errors_total {}\n",
+            "# HELP dd_escrow_rs_contract_service_requests_total Settlement operations delegated to dd-contract-service by op.\n",
+            "# TYPE dd_escrow_rs_contract_service_requests_total counter\n",
+            "dd_escrow_rs_contract_service_requests_total{{op=\"simulate\"}} {}\n",
+            "dd_escrow_rs_contract_service_requests_total{{op=\"send\"}} {}\n",
+            "# HELP dd_escrow_rs_contract_service_errors_total dd-contract-service delegation errors.\n",
+            "# TYPE dd_escrow_rs_contract_service_errors_total counter\n",
+            "dd_escrow_rs_contract_service_errors_total {}\n",
+            "# HELP dd_escrow_rs_resolution_validations_total Resolution validations evaluated.\n",
+            "# TYPE dd_escrow_rs_resolution_validations_total counter\n",
+            "dd_escrow_rs_resolution_validations_total {}\n",
+            "# HELP dd_escrow_rs_resolution_errors_total Resolution validations rejected.\n",
+            "# TYPE dd_escrow_rs_resolution_errors_total counter\n",
+            "dd_escrow_rs_resolution_errors_total {}\n",
             "# HELP dd_escrow_rs_policy_rejections_total Requests rejected by local safety policy.\n",
             "# TYPE dd_escrow_rs_policy_rejections_total counter\n",
             "dd_escrow_rs_policy_rejections_total {}\n",
@@ -2348,6 +3006,11 @@ fn metrics_body(state: &AppState) -> String {
         metrics.settlement_errors_total.load(Ordering::Relaxed),
         metrics.rpc_requests_total.load(Ordering::Relaxed),
         metrics.rpc_errors_total.load(Ordering::Relaxed),
+        metrics.contract_service_simulate_total.load(Ordering::Relaxed),
+        metrics.contract_service_send_total.load(Ordering::Relaxed),
+        metrics.contract_service_errors_total.load(Ordering::Relaxed),
+        metrics.resolution_validations_total.load(Ordering::Relaxed),
+        metrics.resolution_errors_total.load(Ordering::Relaxed),
         metrics.policy_rejections_total.load(Ordering::Relaxed),
         metrics.auth_failures_total.load(Ordering::Relaxed),
         metrics.nats_messages_total.load(Ordering::Relaxed),
@@ -2692,6 +3355,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let allowed_program_ids =
         env_pubkey_list("ESCROW_ALLOWED_PROGRAM_IDS").map_err(config_error)?;
     let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
+    let settlement_backend =
+        SettlementBackend::parse(&env_value("ESCROW_SETTLEMENT_BACKEND", "contract-service"))
+            .map_err(config_error)?;
+    let contract_service_url = match env_secret("CONTRACT_SERVICE_URL") {
+        Some(raw) => Some(validate_contract_service_url(&raw).map_err(config_error)?),
+        None => None,
+    };
+    if settlement_backend == SettlementBackend::ContractService && contract_service_url.is_none() {
+        return Err(config_error(
+            "ESCROW_SETTLEMENT_BACKEND=contract-service requires CONTRACT_SERVICE_URL",
+        )
+        .into());
+    }
+    let contract_service_send_secret = env_secret("CONTRACT_SERVICE_SEND_AUTH_SECRET");
+    let contract_service_timeout = Duration::from_secs(env_u64(
+        "CONTRACT_SERVICE_TIMEOUT_SECONDS",
+        DEFAULT_CONTRACT_SERVICE_TIMEOUT_SECONDS,
+    ));
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
     let validate_subject = env_value("ESCROW_VALIDATE_SUBJECT", ESCROW_SOLANA_VALIDATE_SUBJECT);
     let result_subject = env_value("ESCROW_RESULT_SUBJECT", ESCROW_SOLANA_RESULTS_SUBJECT);
@@ -2725,6 +3406,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         rpc_client,
         solana_rpc_url,
         default_cluster,
+        settlement_backend,
+        contract_service_url,
+        contract_service_send_secret,
+        contract_service_timeout,
         settlement_enabled,
         settlement_auth_secret,
         settlement_require_intent,
@@ -2744,6 +3429,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "cluster": state.default_cluster,
             "settlementEnabled": state.settlement_enabled,
             "settlementRequiresIntent": state.settlement_require_intent,
+            "settlementBackend": state.settlement_backend.as_str(),
+            "contractServiceConfigured": state.contract_service_url.is_some(),
             "allowedProgramCount": state.allowed_program_ids.len(),
             "skipPreflightAllowed": state.allow_skip_preflight,
             "validateSubject": state.validate_subject,
@@ -2770,6 +3457,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/example", get(example_http))
         .route("/validate", post(validate_http))
         .route("/audit", post(audit_http))
+        .route("/resolve", post(resolve_http))
         .route("/simulate-settlement", post(simulate_settlement_http))
         .route("/settle", post(settle_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
@@ -2802,6 +3490,10 @@ mod tests {
             rpc_client: reqwest::Client::new(),
             solana_rpc_url: "https://api.devnet.solana.com".to_string(),
             default_cluster: "devnet".to_string(),
+            settlement_backend: SettlementBackend::SolanaRpc,
+            contract_service_url: None,
+            contract_service_send_secret: None,
+            contract_service_timeout: Duration::from_secs(20),
             settlement_enabled: true,
             settlement_auth_secret: Some("secret".to_string()),
             settlement_require_intent: true,
