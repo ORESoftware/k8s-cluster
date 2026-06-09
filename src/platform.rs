@@ -516,7 +516,7 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             id: "exploration-chart",
             product_analog: "Tableau / Superset / Metabase",
             data_shape: "dimension, measure, optional facet",
-            visualization_families: vec!["bar", "scatter", "histogram", "heatmap"],
+            visualization_families: vec!["bar", "scatter", "stem", "histogram", "heatmap"],
             refresh: "cached query snapshot",
         },
         DashboardPanel {

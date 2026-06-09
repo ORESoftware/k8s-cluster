@@ -338,6 +338,7 @@ const TRACE_BY_MARK: Record<string, string> = {
   bar: "bar",
   line: "scatter",
   scatter: "scatter",
+  stem: "scatter",
   surface: "surface",
   "volume-cloud": "volume",
   "parallel-coordinates": "parcoords",
@@ -350,6 +351,17 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
   const x = fieldValues(rows, fieldFor(spec, "x"));
   const y = fieldValues(rows, fieldFor(spec, "y"));
   const z = fieldValues(rows, fieldFor(spec, "z"));
+  if (spec.mark === "stem") {
+    return {
+      data: stemTraces(x, y),
+      layout: {
+        title: spec.specId ?? "dd-data-viz",
+        showlegend: false,
+        scene: spec.layout.includes("3d") ? {} : undefined
+      },
+      config: { responsive: true, displaylogo: false }
+    };
+  }
   const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
   const trace: Record<string, unknown> = { type: traceType, x, y };
   if (z.length > 0) {
@@ -363,6 +375,36 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
     layout: { title: spec.specId ?? "dd-data-viz", scene: spec.layout.includes("3d") ? {} : undefined },
     config: { responsive: true, displaylogo: false }
   };
+}
+
+// A stem plot draws a vertical line from a baseline (y = 0) to each (x, y)
+// point with a marker at the tip. Plotly has no native "stem" trace, so it is
+// emulated with one lines trace whose segments are separated by nulls plus a
+// markers trace at the stem heads.
+function stemTraces(x: unknown[], y: unknown[]): Array<Record<string, unknown>> {
+  const stemX: Array<unknown> = [];
+  const stemY: Array<unknown> = [];
+  for (let i = 0; i < x.length; i += 1) {
+    stemX.push(x[i], x[i], null);
+    stemY.push(0, y[i], null);
+  }
+  return [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: stemX,
+      y: stemY,
+      line: { width: 1.5 },
+      hoverinfo: "skip"
+    },
+    {
+      type: "scatter",
+      mode: "markers",
+      x,
+      y,
+      marker: { size: 7 }
+    }
+  ];
 }
 
 export function dashCallbackBlueprint(layer: FinalLayer, id = "dd-data-viz-figure"): DashCallbackBlueprint {
@@ -490,6 +532,13 @@ mod tests {
         assert!(all_content.contains("toPlotlyFigure"));
         assert!(all_content.contains("evidenceSqlBlocks"));
         assert!(all_content.contains("normalizeInfraGraph"));
+    }
+
+    #[test]
+    fn plotly_renderer_supports_stem_marks() {
+        assert!(PLOTLY_TS.contains("stem: \"scatter\""));
+        assert!(PLOTLY_TS.contains("function stemTraces"));
+        assert!(PLOTLY_TS.contains("spec.mark === \"stem\""));
     }
 
     #[test]
