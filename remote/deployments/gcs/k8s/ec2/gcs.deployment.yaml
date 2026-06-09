@@ -274,8 +274,8 @@ spec:
               cpu: 100m
               memory: 512Mi
             limits:
-              cpu: '4'
-              memory: 8Gi
+              cpu: '8'
+              memory: 12Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
