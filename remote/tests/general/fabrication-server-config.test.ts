@@ -189,6 +189,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   const assemblyPreflightContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/assembly_preflight_content.rs',
   );
+  const asBuiltCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/as_built_catalog_content.rs',
+  );
+  const availabilityCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/availability_catalog_content.rs',
+  );
   const boundaryCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/boundary_catalog_content.rs',
   );
@@ -200,6 +206,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   const capabilitiesContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/capabilities_content.rs',
+  );
+  const consumablesCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/consumables_catalog_content.rs',
+  );
+  const costingCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/costing_catalog_content.rs',
   );
   const decompositionCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/decomposition_catalog_content.rs',
@@ -216,8 +228,20 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   const designPreflightContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/design_preflight_content.rs',
   );
+  const dispositionCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/disposition_catalog_content.rs',
+  );
+  const energyCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/energy_catalog_content.rs',
+  );
+  const environmentCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/environment_catalog_content.rs',
+  );
   const executionPreflightContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/execution_preflight_content.rs',
+  );
+  const failureModeCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/failure_mode_catalog_content.rs',
   );
   const handoffCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/handoff_catalog_content.rs',
@@ -230,6 +254,12 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   );
   const instructionImprovementCatalogSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/instruction_improvement_catalog.rs',
+  );
+  const interventionCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/intervention_catalog_content.rs',
+  );
+  const kinematicsCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/kinematics_catalog_content.rs',
   );
   const learningModelCatalogSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/learning_model_catalog.rs',
@@ -246,6 +276,33 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   const machineCodePreflightContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/machine_code_preflight_content.rs',
   );
+  const maintenanceCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/maintenance_catalog_content.rs',
+  );
+  const manufacturabilityCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/manufacturability_catalog_content.rs',
+  );
+  const monitoringCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/monitoring_catalog_content.rs',
+  );
+  const nestingCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/nesting_catalog_content.rs',
+  );
+  const processCapabilityCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/process_capability_catalog_content.rs',
+  );
+  const processRecipeCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/process_recipe_catalog_content.rs',
+  );
+  const provenanceCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/provenance_catalog_content.rs',
+  );
+  const qualityCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/quality_catalog_content.rs',
+  );
+  const qualityPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/quality_preflight_content.rs',
+  );
   const recompositionCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/recomposition_catalog_content.rs',
   );
@@ -261,14 +318,38 @@ test('rust fabrication server exposes planning, analysis, nats, and learning hoo
   const rootInventoryContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/root_inventory_content.rs',
   );
+  const safetyCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/safety_catalog_content.rs',
+  );
+  const setupCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/setup_catalog_content.rs',
+  );
+  const supportStrategyCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/support_strategy_catalog_content.rs',
+  );
+  const toleranceCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/tolerance_catalog_content.rs',
+  );
   const simulationCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/simulation_catalog_content.rs',
   );
   const simulationPreflightContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/simulation_preflight_content.rs',
   );
+  const toolingCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/tooling_catalog_content.rs',
+  );
   const toolpathCatalogContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/toolpath_catalog_content.rs',
+  );
+  const utilitiesCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/utilities_catalog_content.rs',
+  );
+  const workholdingCatalogContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/workholding_catalog_content.rs',
+  );
+  const workholdingPreflightContentSource = await readRepoFile(
+    'remote/deployments/fabrication-server-rs/src/workholding_preflight_content.rs',
   );
   const objectiveCoverageContentSource = await readRepoFile(
     'remote/deployments/fabrication-server-rs/src/objective_coverage_content.rs',
@@ -4892,18 +4973,36 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn quality_catalog_response/);
   assert.match(source, /fn quality_catalog_inspection_contracts/);
   assert.match(source, /fn quality_catalog_measurement_contracts/);
-  assert.match(source, /dd\.fabrication\.quality-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/quality\/catalog"/);
-  assert.match(source, /"qualityPlan\.inspectionPoints"/);
+  assert.match(source, /mod quality_catalog_content;/);
+  assert.match(source, /quality_catalog_content::response\(/);
+  assert.match(
+    qualityCatalogContentSource,
+    /pub\(super\) fn response\(\s*inspection_contracts: Vec<Value>,\s*measurement_contracts: Vec<Value>,\s*families: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(qualityCatalogContentSource, /dd\.fabrication\.quality-catalog\.v1/);
+  assert.match(qualityCatalogContentSource, /"GET \/fabrication\/quality\/catalog"/);
+  assert.match(qualityCatalogContentSource, /"qualityPlan\.inspectionPoints"/);
   assert.match(source, /"interface-fit-and-assembly-lock"/);
   assert.match(source, /quality_catalog_endpoint_exposes_inspection_metrology_and_release_contract/);
   assert.match(source, /async fn quality_preflight_catalog_http/);
   assert.match(source, /fn quality_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.quality-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/quality\/preflight\/catalog"/);
-  assert.match(source, /metrology-instrument-and-datum-state/);
-  assert.match(source, /first-article-final-fit-and-surface-state/);
-  assert.match(source, /nonconformance-disposition-and-learning-state/);
+  assert.match(source, /mod quality_preflight_content;/);
+  assert.match(source, /quality_preflight_content::response\(/);
+  assert.match(
+    qualityPreflightContentSource,
+    /pub\(super\) fn response\(\s*inspection_contracts: Vec<Value>,\s*measurement_contracts: Vec<Value>,\s*families: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    qualityPreflightContentSource,
+    /dd\.fabrication\.quality-preflight-catalog\.v1/,
+  );
+  assert.match(
+    qualityPreflightContentSource,
+    /"GET \/fabrication\/quality\/preflight\/catalog"/,
+  );
+  assert.match(qualityPreflightContentSource, /metrology-instrument-and-datum-state/);
+  assert.match(qualityPreflightContentSource, /first-article-final-fit-and-surface-state/);
+  assert.match(qualityPreflightContentSource, /nonconformance-disposition-and-learning-state/);
   assert.match(
     source,
     /quality_preflight_catalog_endpoint_exposes_metrology_fit_and_disposition_gates/,
@@ -4911,9 +5010,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn disposition_catalog_http/);
   assert.match(source, /fn disposition_catalog_response/);
   assert.match(source, /fn disposition_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.disposition-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/dispositions\/catalog"/);
-  assert.match(source, /"dispositionCatalog"/);
+  assert.match(source, /mod disposition_catalog_content;/);
+  assert.match(source, /disposition_catalog_content::response\(/);
+  assert.match(
+    dispositionCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, disposition_families: Vec<String>\) -> Value/,
+  );
+  assert.match(
+    dispositionCatalogContentSource,
+    /dd\.fabrication\.disposition-catalog\.v1/,
+  );
+  assert.match(
+    dispositionCatalogContentSource,
+    /"GET \/fabrication\/dispositions\/catalog"/,
+  );
+  assert.match(dispositionCatalogContentSource, /"dispositions"/);
   assert.match(
     source,
     /disposition_catalog_endpoint_exposes_rework_scrap_and_split_learning_contract/,
@@ -4936,9 +5047,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn costing_catalog_http/);
   assert.match(source, /fn costing_catalog_response/);
   assert.match(source, /fn costing_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.costing-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/costing\/catalog"/);
-  assert.match(source, /"material-yield-estimate"/);
+  assert.match(source, /mod costing_catalog_content;/);
+  assert.match(source, /costing_catalog_content::response\(/);
+  assert.match(
+    costingCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, cost_families: Vec<String>\) -> Value/,
+  );
+  assert.match(costingCatalogContentSource, /dd\.fabrication\.costing-catalog\.v1/);
+  assert.match(costingCatalogContentSource, /"GET \/fabrication\/costing\/catalog"/);
+  assert.match(costingCatalogContentSource, /"material-yield-estimate"/);
   assert.match(source, /"split-combine-route-economics"/);
   assert.match(
     source,
@@ -4970,10 +5087,16 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn utilities_catalog_http/);
   assert.match(source, /fn utilities_catalog_response/);
   assert.match(source, /fn utilities_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.utilities-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/utilities\/catalog"/);
+  assert.match(source, /mod utilities_catalog_content;/);
+  assert.match(source, /utilities_catalog_content::response\(/);
+  assert.match(
+    utilitiesCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, utility_families: Vec<String>\) -> Value/,
+  );
+  assert.match(utilitiesCatalogContentSource, /dd\.fabrication\.utilities-catalog\.v1/);
+  assert.match(utilitiesCatalogContentSource, /"GET \/fabrication\/utilities\/catalog"/);
   assert.match(source, /"sheet-cut-process-support"/);
-  assert.match(source, /"coolant-chip-dust-state-record"/);
+  assert.match(utilitiesCatalogContentSource, /"coolant-chip-dust-state-record"/);
   assert.match(
     source,
     /utilities_catalog_endpoint_exposes_process_support_and_recovery_learning_contract/,
@@ -4981,11 +5104,17 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn energy_catalog_http/);
   assert.match(source, /fn energy_catalog_response/);
   assert.match(source, /fn energy_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.energy-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/energy\/catalog"/);
+  assert.match(source, /mod energy_catalog_content;/);
+  assert.match(source, /energy_catalog_content::response\(/);
+  assert.match(
+    energyCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, energy_families: Vec<String>\) -> Value/,
+  );
+  assert.match(energyCatalogContentSource, /dd\.fabrication\.energy-catalog\.v1/);
+  assert.match(energyCatalogContentSource, /"GET \/fabrication\/energy\/catalog"/);
   assert.match(source, /"sheet-cut-beam-jet-plasma-and-edm-energy"/);
-  assert.match(source, /"power-load-record"/);
-  assert.match(source, /"mdp-request\.artifacts\.energy"/);
+  assert.match(energyCatalogContentSource, /"power-load-record"/);
+  assert.match(energyCatalogContentSource, /"mdp-request\.artifacts\.energy"/);
   assert.match(
     source,
     /energy_catalog_endpoint_exposes_power_load_and_route_learning_contract/,
@@ -5050,10 +5179,22 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn availability_catalog_http/);
   assert.match(source, /fn availability_catalog_response/);
   assert.match(source, /fn availability_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.availability-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/availability\/catalog"/);
+  assert.match(source, /mod availability_catalog_content;/);
+  assert.match(source, /availability_catalog_content::response\(/);
+  assert.match(
+    availabilityCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, availability_families: Vec<String>\) -> Value/,
+  );
+  assert.match(
+    availabilityCatalogContentSource,
+    /dd\.fabrication\.availability-catalog\.v1/,
+  );
+  assert.match(
+    availabilityCatalogContentSource,
+    /"GET \/fabrication\/availability\/catalog"/,
+  );
   assert.match(source, /"live-machine-state-and-queue-capacity"/);
-  assert.match(source, /"machineSchedule\.machineLanes"/);
+  assert.match(availabilityCatalogContentSource, /"machineSchedule\.machineLanes"/);
   assert.match(source, /"split-combine-capacity:\*"/);
   assert.match(
     source,
@@ -5081,10 +5222,22 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn maintenance_catalog_http/);
   assert.match(source, /fn maintenance_catalog_response/);
   assert.match(source, /fn maintenance_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.maintenance-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/maintenance\/catalog"/);
+  assert.match(source, /mod maintenance_catalog_content;/);
+  assert.match(source, /maintenance_catalog_content::response\(/);
+  assert.match(
+    maintenanceCatalogContentSource,
+    /pub\(super\) fn response\(entries: Vec<Value>, maintenance_families: Vec<String>\) -> Value/,
+  );
+  assert.match(
+    maintenanceCatalogContentSource,
+    /dd\.fabrication\.maintenance-catalog\.v1/,
+  );
+  assert.match(
+    maintenanceCatalogContentSource,
+    /"GET \/fabrication\/maintenance\/catalog"/,
+  );
   assert.match(source, /"lockout-tagout-and-service-release"/);
-  assert.match(source, /"machineProfile\.evidence\.maintenance"/);
+  assert.match(maintenanceCatalogContentSource, /"machineProfile\.evidence\.maintenance"/);
   assert.match(source, /"stale-sensor-risk:\*"/);
   assert.match(
     source,
@@ -5201,9 +5354,24 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /fn intervention_catalog_response/);
   assert.match(source, /fn intervention_catalog_action_contracts/);
   assert.match(source, /fn intervention_catalog_automation_contracts/);
-  assert.match(source, /dd\.fabrication\.intervention-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/interventions\/catalog"/);
-  assert.match(source, /"operatorInterventionPlan\.requiredOperatorActions"/);
+  assert.match(source, /mod intervention_catalog_content;/);
+  assert.match(source, /intervention_catalog_content::response\(/);
+  assert.match(
+    interventionCatalogContentSource,
+    /pub\(super\) fn response\(\s*action_contracts: Vec<Value>,\s*action_types: Vec<String>,\s*action_families: Vec<String>,\s*automation_contracts: Vec<Value>,\s*automation_types: Vec<String>,\s*evidence_gates: Vec<Value>,\s*\) -> Value/,
+  );
+  assert.match(
+    interventionCatalogContentSource,
+    /dd\.fabrication\.intervention-catalog\.v1/,
+  );
+  assert.match(
+    interventionCatalogContentSource,
+    /"GET \/fabrication\/interventions\/catalog"/,
+  );
+  assert.match(
+    interventionCatalogContentSource,
+    /"operatorInterventionPlan\.requiredOperatorActions"/,
+  );
   assert.match(source, /"add-verified-automation"/);
   assert.match(
     source,
@@ -5230,17 +5398,29 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn setup_catalog_http/);
   assert.match(source, /fn setup_catalog_response/);
   assert.match(source, /fn setup_catalog_contracts/);
-  assert.match(source, /dd\.fabrication\.setup-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/setup\/catalog"/);
-  assert.match(source, /"toolingPlan\.requirements"/);
-  assert.match(source, /"fixturePlan\.setups"/);
-  assert.match(source, /"monitoringPlan\.alertRules"/);
+  assert.match(source, /mod setup_catalog_content;/);
+  assert.match(source, /setup_catalog_content::response\(/);
+  assert.match(
+    setupCatalogContentSource,
+    /pub\(super\) fn response\(\s*contracts: Vec<Value>,\s*families: Vec<String>,\s*contract_types: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(setupCatalogContentSource, /dd\.fabrication\.setup-catalog\.v1/);
+  assert.match(setupCatalogContentSource, /"GET \/fabrication\/setup\/catalog"/);
+  assert.match(setupCatalogContentSource, /"toolingPlan\.requirements"/);
+  assert.match(setupCatalogContentSource, /"fixturePlan\.setups"/);
+  assert.match(setupCatalogContentSource, /"monitoringPlan\.alertRules"/);
   assert.match(source, /async fn tooling_catalog_http/);
   assert.match(source, /fn tooling_catalog_response/);
   assert.match(source, /fn tooling_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.tooling-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/tooling\/catalog"/);
-  assert.match(source, /"toolingCatalog"/);
+  assert.match(source, /mod tooling_catalog_content;/);
+  assert.match(source, /tooling_catalog_content::response\(/);
+  assert.match(
+    toolingCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*tool_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(toolingCatalogContentSource, /dd\.fabrication\.tooling-catalog\.v1/);
+  assert.match(toolingCatalogContentSource, /"GET \/fabrication\/tooling\/catalog"/);
+  assert.match(toolingCatalogContentSource, /"toolingFamilies"/);
   assert.match(source, /tooling_catalog_endpoint_exposes_machine_tooling_release_contract/);
   assert.match(source, /struct ToolingResultReviewRequest/);
   assert.match(source, /async fn tooling_result_http/);
@@ -5265,9 +5445,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn consumables_catalog_http/);
   assert.match(source, /fn consumables_catalog_response/);
   assert.match(source, /fn consumables_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.consumables-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/consumables\/catalog"/);
-  assert.match(source, /"tool-life-record"/);
+  assert.match(source, /mod consumables_catalog_content;/);
+  assert.match(source, /consumables_catalog_content::response\(/);
+  assert.match(
+    consumablesCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*consumable_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    consumablesCatalogContentSource,
+    /dd\.fabrication\.consumables-catalog\.v1/,
+  );
+  assert.match(
+    consumablesCatalogContentSource,
+    /"GET \/fabrication\/consumables\/catalog"/,
+  );
+  assert.match(consumablesCatalogContentSource, /"tool-life-record"/);
   assert.match(source, /"support-media-depletion:\*"/);
   assert.match(
     source,
@@ -5296,20 +5488,47 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn workholding_catalog_http/);
   assert.match(source, /fn workholding_catalog_response/);
   assert.match(source, /fn workholding_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.workholding-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/workholding\/catalog"/);
-  assert.match(source, /"workholdingCatalog"/);
+  assert.match(source, /mod workholding_catalog_content;/);
+  assert.match(source, /workholding_catalog_content::response\(/);
+  assert.match(
+    workholdingCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*workholding_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    workholdingCatalogContentSource,
+    /dd\.fabrication\.workholding-catalog\.v1/,
+  );
+  assert.match(
+    workholdingCatalogContentSource,
+    /"GET \/fabrication\/workholding\/catalog"/,
+  );
+  assert.match(workholdingCatalogContentSource, /"workholdingFamiliesDetailed"/);
   assert.match(
     source,
     /workholding_catalog_endpoint_exposes_fixture_release_and_learning_contract/,
   );
   assert.match(source, /async fn workholding_preflight_catalog_http/);
   assert.match(source, /fn workholding_preflight_catalog_response/);
-  assert.match(source, /dd\.fabrication\.workholding-preflight-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/workholding\/preflight\/catalog"/);
-  assert.match(source, /stock-build-surface-and-primary-hold-state/);
-  assert.match(source, /datum-transfer-reprobe-and-clearance-state/);
-  assert.match(source, /split-combine-fixture-and-human-intervention-state/);
+  assert.match(source, /mod workholding_preflight_content;/);
+  assert.match(source, /workholding_preflight_content::response\(/);
+  assert.match(
+    workholdingPreflightContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*workholding_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    workholdingPreflightContentSource,
+    /dd\.fabrication\.workholding-preflight-catalog\.v1/,
+  );
+  assert.match(
+    workholdingPreflightContentSource,
+    /"GET \/fabrication\/workholding\/preflight\/catalog"/,
+  );
+  assert.match(workholdingPreflightContentSource, /stock-build-surface-and-primary-hold-state/);
+  assert.match(workholdingPreflightContentSource, /datum-transfer-reprobe-and-clearance-state/);
+  assert.match(
+    workholdingPreflightContentSource,
+    /split-combine-fixture-and-human-intervention-state/,
+  );
   assert.match(
     source,
     /workholding_preflight_catalog_endpoint_exposes_fixture_release_gates/,
@@ -5327,12 +5546,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn nesting_catalog_http/);
   assert.match(source, /fn nesting_catalog_response/);
   assert.match(source, /fn nesting_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.nesting-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/nesting\/catalog"/);
-  assert.match(source, /"nestingCatalog"/);
-  assert.match(source, /"designExports\.partExports\.content\.nesting"/);
-  assert.match(source, /"dd-sheet-nesting-json"/);
-  assert.match(source, /"nesting:hybrid-kit"/);
+  assert.match(source, /mod nesting_catalog_content;/);
+  assert.match(source, /nesting_catalog_content::response\(/);
+  assert.match(
+    nestingCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*nesting_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(nestingCatalogContentSource, /dd\.fabrication\.nesting-catalog\.v1/);
+  assert.match(nestingCatalogContentSource, /"GET \/fabrication\/nesting\/catalog"/);
+  assert.match(nestingCatalogContentSource, /"nestingContracts"/);
+  assert.match(nestingCatalogContentSource, /"designExports\.partExports\.content\.nesting"/);
+  assert.match(nestingCatalogContentSource, /"dd-sheet-nesting-json"/);
+  assert.match(nestingCatalogContentSource, /"nesting:hybrid-kit"/);
   assert.match(
     source,
     /nesting_catalog_endpoint_exposes_layout_traceability_and_release_contract/,
@@ -5381,9 +5606,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn support_strategy_catalog_http/);
   assert.match(source, /fn support_strategy_catalog_response/);
   assert.match(source, /fn support_strategy_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.support-strategy-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/support-strategies\/catalog"/);
-  assert.match(source, /"supportStrategyCatalog"/);
+  assert.match(source, /mod support_strategy_catalog_content;/);
+  assert.match(source, /support_strategy_catalog_content::response\(/);
+  assert.match(
+    supportStrategyCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*strategy_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    supportStrategyCatalogContentSource,
+    /dd\.fabrication\.support-strategy-catalog\.v1/,
+  );
+  assert.match(
+    supportStrategyCatalogContentSource,
+    /"GET \/fabrication\/support-strategies\/catalog"/,
+  );
+  assert.match(supportStrategyCatalogContentSource, /"supportStrategies"/);
   assert.match(
     source,
     /support_strategy_catalog_endpoint_exposes_orientation_split_and_learning_contract/,
@@ -5407,9 +5644,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn process_recipe_catalog_http/);
   assert.match(source, /fn process_recipe_catalog_response/);
   assert.match(source, /fn process_recipe_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.process-recipe-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/process-recipes\/catalog"/);
-  assert.match(source, /"processRecipeCatalog"/);
+  assert.match(source, /mod process_recipe_catalog_content;/);
+  assert.match(source, /process_recipe_catalog_content::response\(/);
+  assert.match(
+    processRecipeCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*recipe_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    processRecipeCatalogContentSource,
+    /dd\.fabrication\.process-recipe-catalog\.v1/,
+  );
+  assert.match(
+    processRecipeCatalogContentSource,
+    /"GET \/fabrication\/process-recipes\/catalog"/,
+  );
+  assert.match(processRecipeCatalogContentSource, /"processRecipes"/);
   assert.match(source, /process_recipe_catalog_endpoint_exposes_parameter_release_contract/);
   assert.match(source, /struct ProcessRecipeResultReviewRequest/);
   assert.match(source, /struct ProcessRecipeResultRecipeReview/);
@@ -5430,9 +5679,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn kinematics_catalog_http/);
   assert.match(source, /fn kinematics_catalog_response/);
   assert.match(source, /fn kinematics_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.kinematics-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/kinematics\/catalog"/);
-  assert.match(source, /"kinematicsCatalog"/);
+  assert.match(source, /mod kinematics_catalog_content;/);
+  assert.match(source, /kinematics_catalog_content::response\(/);
+  assert.match(
+    kinematicsCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*kinematic_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*axes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(kinematicsCatalogContentSource, /dd\.fabrication\.kinematics-catalog\.v1/);
+  assert.match(kinematicsCatalogContentSource, /"GET \/fabrication\/kinematics\/catalog"/);
+  assert.match(kinematicsCatalogContentSource, /"kinematics"/);
   assert.match(source, /kinematics_catalog_endpoint_exposes_axis_release_contract/);
   assert.match(source, /struct KinematicsResultReviewRequest/);
   assert.match(source, /struct KinematicsResultAxisCheck/);
@@ -5450,9 +5705,15 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn tolerance_catalog_http/);
   assert.match(source, /fn tolerance_catalog_response/);
   assert.match(source, /fn tolerance_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.tolerance-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/tolerances\/catalog"/);
-  assert.match(source, /"toleranceCatalog"/);
+  assert.match(source, /mod tolerance_catalog_content;/);
+  assert.match(source, /tolerance_catalog_content::response\(/);
+  assert.match(
+    toleranceCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*tolerance_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*geometry_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(toleranceCatalogContentSource, /dd\.fabrication\.tolerance-catalog\.v1/);
+  assert.match(toleranceCatalogContentSource, /"GET \/fabrication\/tolerances\/catalog"/);
+  assert.match(toleranceCatalogContentSource, /"toleranceContracts"/);
   assert.match(source, /tolerance_catalog_endpoint_exposes_fit_stackup_release_contract/);
   assert.match(source, /async fn tolerance_plan_http/);
   assert.match(source, /fn tolerance_planning_response/);
@@ -5480,9 +5741,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn process_capability_catalog_http/);
   assert.match(source, /fn process_capability_catalog_response/);
   assert.match(source, /fn process_capability_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.process-capability-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/process-capabilities\/catalog"/);
-  assert.match(source, /"processCapabilityCatalog"/);
+  assert.match(source, /mod process_capability_catalog_content;/);
+  assert.match(source, /process_capability_catalog_content::response\(/);
+  assert.match(
+    processCapabilityCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*capability_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*capability_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    processCapabilityCatalogContentSource,
+    /dd\.fabrication\.process-capability-catalog\.v1/,
+  );
+  assert.match(
+    processCapabilityCatalogContentSource,
+    /"GET \/fabrication\/process-capabilities\/catalog"/,
+  );
+  assert.match(processCapabilityCatalogContentSource, /"processCapabilityContracts"/);
   assert.match(
     source,
     /process_capability_catalog_endpoint_exposes_geometry_release_boundaries/,
@@ -5520,8 +5793,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn manufacturability_catalog_http/);
   assert.match(source, /fn manufacturability_catalog_response/);
   assert.match(source, /fn manufacturability_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.manufacturability-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/manufacturability\/catalog"/);
+  assert.match(source, /mod manufacturability_catalog_content;/);
+  assert.match(source, /manufacturability_catalog_content::response\(/);
+  assert.match(
+    manufacturabilityCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*review_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*check_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    manufacturabilityCatalogContentSource,
+    /dd\.fabrication\.manufacturability-catalog\.v1/,
+  );
+  assert.match(
+    manufacturabilityCatalogContentSource,
+    /"GET \/fabrication\/manufacturability\/catalog"/,
+  );
+  assert.match(manufacturabilityCatalogContentSource, /"manufacturabilityContracts"/);
   assert.match(source, /"manufacturabilityCatalog"/);
   assert.match(source, /manufacturability_catalog_endpoint_exposes_dfm_release_boundaries/);
   assert.match(source, /async fn manufacturability_plan_http/);
@@ -5550,8 +5836,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn failure_mode_catalog_http/);
   assert.match(source, /fn failure_mode_catalog_response/);
   assert.match(source, /fn failure_mode_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.failure-mode-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/failure-modes\/catalog"/);
+  assert.match(source, /mod failure_mode_catalog_content;/);
+  assert.match(source, /failure_mode_catalog_content::response\(/);
+  assert.match(
+    failureModeCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*failure_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*failure_modes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    failureModeCatalogContentSource,
+    /dd\.fabrication\.failure-mode-catalog\.v1/,
+  );
+  assert.match(
+    failureModeCatalogContentSource,
+    /"GET \/fabrication\/failure-modes\/catalog"/,
+  );
+  assert.match(failureModeCatalogContentSource, /"failureModeContracts"/);
   assert.match(source, /"failureModeCatalog"/);
   assert.match(
     source,
@@ -5591,8 +5890,18 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn safety_catalog_http/);
   assert.match(source, /fn safety_catalog_response/);
   assert.match(source, /fn safety_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.safety-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/safety\/catalog"/);
+  assert.match(source, /mod safety_catalog_content;/);
+  assert.match(source, /safety_catalog_content::response\(/);
+  assert.match(
+    safetyCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*safety_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*hazards: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(safetyCatalogContentSource, /dd\.fabrication\.safety-catalog\.v1/);
+  assert.match(
+    safetyCatalogContentSource,
+    /"GET \/fabrication\/safety\/catalog"/,
+  );
+  assert.match(safetyCatalogContentSource, /"safetyContracts"/);
   assert.match(source, /"safetyCatalog"/);
   assert.match(source, /safety_catalog_endpoint_exposes_interlock_release_contract/);
   assert.match(source, /async fn safety_plan_http/);
@@ -5627,8 +5936,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn environment_catalog_http/);
   assert.match(source, /fn environment_catalog_response/);
   assert.match(source, /fn environment_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.environment-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/environment\/catalog"/);
+  assert.match(source, /mod environment_catalog_content;/);
+  assert.match(source, /environment_catalog_content::response\(/);
+  assert.match(
+    environmentCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*environment_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*condition_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    environmentCatalogContentSource,
+    /dd\.fabrication\.environment-catalog\.v1/,
+  );
+  assert.match(
+    environmentCatalogContentSource,
+    /"GET \/fabrication\/environment\/catalog"/,
+  );
+  assert.match(environmentCatalogContentSource, /"environmentContracts"/);
   assert.match(source, /"environmentCatalog"/);
   assert.match(source, /environment_catalog_endpoint_exposes_condition_release_contract/);
   assert.match(source, /async fn environment_plan_http/);
@@ -5665,8 +5987,21 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn provenance_catalog_http/);
   assert.match(source, /fn provenance_catalog_response/);
   assert.match(source, /fn provenance_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.provenance-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/provenance\/catalog"/);
+  assert.match(source, /mod provenance_catalog_content;/);
+  assert.match(source, /provenance_catalog_content::response\(/);
+  assert.match(
+    provenanceCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*provenance_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*evidence_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(
+    provenanceCatalogContentSource,
+    /dd\.fabrication\.provenance-catalog\.v1/,
+  );
+  assert.match(
+    provenanceCatalogContentSource,
+    /"GET \/fabrication\/provenance\/catalog"/,
+  );
+  assert.match(provenanceCatalogContentSource, /"provenanceContracts"/);
   assert.match(source, /"provenanceCatalog"/);
   assert.match(source, /provenance_catalog_endpoint_exposes_traceability_release_contract/);
   assert.match(source, /async fn provenance_plan_http/);
@@ -5682,10 +6017,20 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn as_built_catalog_http/);
   assert.match(source, /fn as_built_catalog_response/);
   assert.match(source, /fn as_built_catalog_entries/);
-  assert.match(source, /dd\.fabrication\.as-built-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/as-built\/catalog"/);
+  assert.match(source, /mod as_built_catalog_content;/);
+  assert.match(source, /as_built_catalog_content::response\(/);
+  assert.match(
+    asBuiltCatalogContentSource,
+    /pub\(super\) fn response\(\s*entries: Vec<Value>,\s*as_built_families: Vec<String>,\s*machine_kinds: Vec<String>,\s*evidence_scopes: Vec<String>,\s*\) -> Value/,
+  );
+  assert.match(asBuiltCatalogContentSource, /dd\.fabrication\.as-built-catalog\.v1/);
+  assert.match(
+    asBuiltCatalogContentSource,
+    /"GET \/fabrication\/as-built\/catalog"/,
+  );
   assert.match(source, /"asBuiltCatalog"/);
-  assert.match(source, /"as-built-deviation-map"/);
+  assert.match(asBuiltCatalogContentSource, /"as-built-deviation-map"/);
+  assert.match(asBuiltCatalogContentSource, /"asBuiltContracts"/);
   assert.match(source, /"hybrid-split-combine-as-built-interface-evidence"/);
   assert.match(source, /as_built_catalog_endpoint_exposes_deviation_scan_and_learning_contract/);
   assert.match(source, /async fn as_built_plan_http/);
@@ -5782,11 +6127,24 @@ assert.match(source, /sheet-forming-evidence-missing/);
   assert.match(source, /async fn monitoring_catalog_http/);
   assert.match(source, /fn monitoring_catalog_response/);
   assert.match(source, /fn monitoring_catalog_contracts/);
-  assert.match(source, /dd\.fabrication\.monitoring-catalog\.v1/);
-  assert.match(source, /"GET \/fabrication\/monitoring\/catalog"/);
-  assert.match(source, /"GET \/monitoring\/catalog"/);
-  assert.match(source, /"monitoringPlan\.monitorPoints"/);
-  assert.match(source, /"monitoringPlan\.recoveryActions"/);
+  assert.match(source, /mod monitoring_catalog_content;/);
+  assert.match(source, /monitoring_catalog_content::response\(/);
+  assert.match(
+    monitoringCatalogContentSource,
+    /pub\(super\) fn response\(\s*contracts: Vec<Value>,\s*families: Vec<String>,?\s*\) -> Value/,
+  );
+  assert.match(
+    monitoringCatalogContentSource,
+    /dd\.fabrication\.monitoring-catalog\.v1/,
+  );
+  assert.match(
+    monitoringCatalogContentSource,
+    /"GET \/fabrication\/monitoring\/catalog"/,
+  );
+  assert.match(monitoringCatalogContentSource, /"GET \/monitoring\/catalog"/);
+  assert.match(monitoringCatalogContentSource, /"monitoringPlan\.monitorPoints"/);
+  assert.match(monitoringCatalogContentSource, /"monitoringPlan\.recoveryActions"/);
+  assert.match(monitoringCatalogContentSource, /"monitoringContracts"/);
   assert.match(source, /"safe-stop-and-restart-governance"/);
   assert.match(
     source,
