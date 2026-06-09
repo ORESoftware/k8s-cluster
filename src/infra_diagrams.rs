@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::infra_imports;
 use crate::util::{clean_identifier, now_ms, xml_escape};
 
 const MAX_TERRAFORM_FILES: usize = 64;
@@ -15,8 +16,10 @@ const MAX_DIAGRAM_EDGES: usize = 6_000;
 const SOURCE_CATALOG: &[&str] = &[
     "terraform",
     "terraform-plan",
+    "terraform-state",
     "aws-inventory",
     "aws-resource-explorer",
+    "aws-config",
     "gcp-inventory",
     "gcp-cloud-asset",
     "mixed",
@@ -67,11 +70,17 @@ pub(crate) enum InfraSource {
     TerraformPlan {
         plan: Value,
     },
+    TerraformState {
+        state: Value,
+    },
     AwsInventory {
         resources: Vec<InventoryResource>,
     },
     AwsResourceExplorer {
         resources: Vec<Value>,
+    },
+    AwsConfig {
+        configuration_items: Vec<Value>,
     },
     GcpInventory {
         resources: Vec<InventoryResource>,
@@ -82,6 +91,8 @@ pub(crate) enum InfraSource {
     Mixed {
         terraform: Option<BTreeMap<String, String>>,
         terraform_plan: Option<Value>,
+        terraform_state: Option<Value>,
+        aws_config: Option<Vec<Value>>,
         resources: Vec<InventoryResource>,
     },
 }
@@ -208,12 +219,18 @@ pub(crate) fn generate(request: InfraDiagramRequest) -> Result<InfraDiagramRespo
         InfraSource::TerraformPlan { plan } => {
             parse_terraform_plan(plan, &mut builder, &mut warnings)?
         }
+        InfraSource::TerraformState { state } => {
+            parse_terraform_state(state, &mut builder, &mut warnings)?
+        }
         InfraSource::AwsInventory { resources } => {
             parse_inventory("aws", resources, &mut builder, &mut warnings)?
         }
         InfraSource::AwsResourceExplorer { resources } => {
             parse_aws_resource_explorer(resources, &mut builder, &mut warnings)?
         }
+        InfraSource::AwsConfig {
+            configuration_items,
+        } => parse_aws_config(configuration_items, &mut builder, &mut warnings)?,
         InfraSource::GcpInventory { resources } => {
             parse_inventory("gcp", resources, &mut builder, &mut warnings)?
         }
@@ -223,6 +240,8 @@ pub(crate) fn generate(request: InfraDiagramRequest) -> Result<InfraDiagramRespo
         InfraSource::Mixed {
             terraform,
             terraform_plan,
+            terraform_state,
+            aws_config,
             resources,
         } => {
             if let Some(files) = terraform {
@@ -231,7 +250,15 @@ pub(crate) fn generate(request: InfraDiagramRequest) -> Result<InfraDiagramRespo
             if let Some(plan) = terraform_plan {
                 parse_terraform_plan(plan, &mut builder, &mut warnings)?;
             }
-            parse_inventory("mixed", resources, &mut builder, &mut warnings)?;
+            if let Some(state) = terraform_state {
+                parse_terraform_state(state, &mut builder, &mut warnings)?;
+            }
+            if let Some(configuration_items) = aws_config {
+                parse_aws_config(configuration_items, &mut builder, &mut warnings)?;
+            }
+            if !resources.is_empty() {
+                parse_inventory("mixed", resources, &mut builder, &mut warnings)?;
+            }
         }
     }
     let graph = builder.finish(max_nodes, &mut warnings)?;
@@ -305,19 +332,19 @@ pub(crate) fn tool_catalog_payload() -> Value {
         "pipelines": [
             {
                 "id": "terraform-to-review-pack",
-                "inputs": ["terraform", "terraform-plan"],
+                "inputs": ["terraform", "terraform-plan", "terraform-state"],
                 "outputs": ["mermaid", "graphviz-dot", "d2", "structurizr-dsl", "kroki-manifest"],
                 "purpose": "Generate pull-request friendly architecture diagrams from IaC."
             },
             {
                 "id": "cloud-inventory-to-live-map",
-                "inputs": ["aws-resource-explorer", "gcp-cloud-asset", "mixed"],
+                "inputs": ["aws-resource-explorer", "aws-config", "gcp-cloud-asset", "mixed"],
                 "outputs": ["cytoscape-json", "sigma-graph-json", "echarts-graph-json", "deckgl-layers-json"],
                 "purpose": "Feed interactive cloud topology browsers without exposing raw inventory attributes."
             },
             {
                 "id": "topology-to-analytics",
-                "inputs": ["terraform-plan", "aws-inventory", "gcp-inventory", "mixed"],
+                "inputs": ["terraform-plan", "terraform-state", "aws-inventory", "aws-config", "gcp-inventory", "mixed"],
                 "outputs": ["networkx-json", "json-graph", "gexf", "topology-json"],
                 "purpose": "Support graph algorithms, dependency scoring, and ownership or blast-radius analysis."
             }
@@ -331,8 +358,10 @@ impl InfraSource {
         match self {
             Self::Terraform { .. } => "terraform",
             Self::TerraformPlan { .. } => "terraform-plan",
+            Self::TerraformState { .. } => "terraform-state",
             Self::AwsInventory { .. } => "aws-inventory",
             Self::AwsResourceExplorer { .. } => "aws-resource-explorer",
+            Self::AwsConfig { .. } => "aws-config",
             Self::GcpInventory { .. } => "gcp-inventory",
             Self::GcpCloudAsset { .. } => "gcp-cloud-asset",
             Self::Mixed { .. } => "mixed",
@@ -511,33 +540,60 @@ fn parse_terraform_plan(
     builder: &mut GraphBuilder,
     warnings: &mut Vec<String>,
 ) -> Result<(), String> {
-    let estimated_bytes = plan.to_string().len();
+    parse_terraform_json(plan, builder, warnings, "terraform-plan", true)
+}
+
+fn parse_terraform_state(
+    state: Value,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    parse_terraform_json(state, builder, warnings, "terraform-state", false)
+}
+
+fn parse_terraform_json(
+    value: Value,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+    source_label: &'static str,
+    allow_planned_values: bool,
+) -> Result<(), String> {
+    let estimated_bytes = value.to_string().len();
     if estimated_bytes > MAX_IMPORT_JSON_BYTES {
         return Err(format!(
-            "terraform plan JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
+            "{source_label} JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
         ));
     }
-    let Some(root_module) = plan
-        .pointer("/planned_values/root_module")
-        .or_else(|| plan.pointer("/values/root_module"))
-    else {
-        return Err("terraform plan source requires planned_values.root_module".to_string());
+    let root_module = if allow_planned_values {
+        value
+            .pointer("/planned_values/root_module")
+            .or_else(|| value.pointer("/values/root_module"))
+    } else {
+        value
+            .pointer("/values/root_module")
+            .or_else(|| value.pointer("/planned_values/root_module"))
     };
-    parse_terraform_plan_module(root_module, builder, warnings, "root");
+    let Some(root_module) = root_module else {
+        return Err(format!(
+            "{source_label} source requires values.root_module or planned_values.root_module"
+        ));
+    };
+    parse_terraform_json_module(root_module, builder, warnings, "root", source_label);
     Ok(())
 }
 
-fn parse_terraform_plan_module(
+fn parse_terraform_json_module(
     module: &Value,
     builder: &mut GraphBuilder,
     warnings: &mut Vec<String>,
     module_path: &str,
+    source_label: &'static str,
 ) {
     if let Some(resources) = module.get("resources").and_then(Value::as_array) {
         for resource in resources {
             let Some(address) = value_string(resource, &["address"]) else {
                 warnings.push(format!(
-                    "ignored Terraform plan resource without address in {module_path}"
+                    "ignored {source_label} resource without address in {module_path}"
                 ));
                 continue;
             };
@@ -564,7 +620,7 @@ fn parse_terraform_plan_module(
                 region: value_string(resource, &["values", "region"]),
                 zone: value_string(resource, &["values", "zone"]),
                 tag_count,
-                source: format!("terraform-plan:{module_path}"),
+                source: format!("{source_label}:{module_path}"),
             });
             for dependency in string_array(resource.get("depends_on")) {
                 if let Some(dependency) =
@@ -580,7 +636,7 @@ fn parse_terraform_plan_module(
         for child in child_modules {
             let child_path =
                 value_string(child, &["address"]).unwrap_or_else(|| module_path.to_string());
-            parse_terraform_plan_module(child, builder, warnings, &child_path);
+            parse_terraform_json_module(child, builder, warnings, &child_path, source_label);
         }
     }
 }
@@ -709,6 +765,68 @@ fn parse_aws_resource_explorer(
                 warnings.push(format!(
                     "ignored invalid AWS relationship target `{reference}`"
                 ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_aws_config(
+    configuration_items: Vec<Value>,
+    builder: &mut GraphBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    if configuration_items.is_empty() {
+        return Err("AWS Config source requires at least one configuration item".to_string());
+    }
+    if configuration_items.len() > MAX_INVENTORY_RESOURCES {
+        return Err(format!(
+            "AWS Config configuration items exceeds max {MAX_INVENTORY_RESOURCES}"
+        ));
+    }
+    let estimated_bytes = Value::Array(configuration_items.clone()).to_string().len();
+    if estimated_bytes > MAX_IMPORT_JSON_BYTES {
+        return Err(format!(
+            "AWS Config JSON exceeds max {MAX_IMPORT_JSON_BYTES} bytes"
+        ));
+    }
+
+    for resource in infra_imports::aws_config_resources(&configuration_items) {
+        let id = clean_identifier(&resource.id).unwrap_or_else(|| {
+            safe_id(&resource.id).unwrap_or_else(|| format!("aws-config-{}", builder.nodes.len()))
+        });
+        let resource_type = clean_identifier(&resource.resource_type).unwrap_or_else(|| {
+            safe_id(&resource.resource_type).unwrap_or_else(|| "AWS::Resource".to_string())
+        });
+        let service = clean_identifier(&resource.service)
+            .or_else(|| safe_id(&resource.service))
+            .unwrap_or_else(|| aws_service_from_type(&resource_type));
+        builder.add_node(InfraNode {
+            id: id.clone(),
+            label: resource.label,
+            provider: "aws".to_string(),
+            service,
+            resource_type,
+            region: resource.region,
+            zone: resource.zone,
+            tag_count: resource.tag_count,
+            source: "aws-config".to_string(),
+        });
+        for relationship in resource.relationships {
+            let target =
+                clean_identifier(&relationship.target).or_else(|| safe_id(&relationship.target));
+            let relation = clean_identifier(&relationship.relation)
+                .or_else(|| safe_id(&relationship.relation));
+            match (target, relation) {
+                (Some(target), Some(relation)) => builder.add_edge(target, id.clone(), relation),
+                (None, _) => warnings.push(format!(
+                    "ignored invalid AWS Config relationship target `{}`",
+                    relationship.target
+                )),
+                (_, None) => warnings.push(format!(
+                    "ignored invalid AWS Config relationship name `{}`",
+                    relationship.relation
+                )),
             }
         }
     }
@@ -2196,7 +2314,9 @@ mod tests {
     fn diagram_tool_catalog_lists_many_interop_targets() {
         let catalog = tool_catalog_payload();
         assert!(renderer_names().len() >= 20);
+        assert!(source_names().contains(&"terraform-state"));
         assert!(source_names().contains(&"aws-resource-explorer"));
+        assert!(source_names().contains(&"aws-config"));
         assert!(catalog["renderers"]
             .as_array()
             .unwrap()
@@ -2258,6 +2378,55 @@ mod tests {
     }
 
     #[test]
+    fn terraform_state_diagram_uses_values_root_module() {
+        let response = generate(InfraDiagramRequest {
+            title: Some("State Network".to_string()),
+            source: InfraSource::TerraformState {
+                state: serde_json::json!({
+                    "values": {
+                        "root_module": {
+                            "resources": [
+                                {
+                                    "address": "google_compute_network.shared",
+                                    "type": "google_compute_network",
+                                    "name": "shared",
+                                    "values": {
+                                        "name": "shared-vpc"
+                                    }
+                                },
+                                {
+                                    "address": "google_compute_subnetwork.app",
+                                    "type": "google_compute_subnetwork",
+                                    "name": "app",
+                                    "depends_on": ["google_compute_network.shared"],
+                                    "values": {
+                                        "region": "us-central1"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }),
+            },
+            max_nodes: None,
+        })
+        .expect("terraform state diagram");
+
+        assert_eq!(response.source_kind, "terraform-state");
+        assert_eq!(response.node_count, 2);
+        assert!(response
+            .graph
+            .nodes
+            .iter()
+            .all(|node| node.source.starts_with("terraform-state:")));
+        assert!(response.graph.edges.iter().any(|edge| {
+            edge.from == "google_compute_network.shared"
+                && edge.to == "google_compute_subnetwork.app"
+                && edge.relation == "terraform-depends-on"
+        }));
+    }
+
+    #[test]
     fn aws_resource_explorer_diagram_extracts_arn_nodes() {
         let response = generate(InfraDiagramRequest {
             title: Some("AWS Inventory".to_string()),
@@ -2282,6 +2451,52 @@ mod tests {
         assert_eq!(response.graph.nodes[0].service, "ec2");
         assert_eq!(response.graph.nodes[0].tag_count, 2);
         assert!(response.renderers.markdown_inventory.contains("Core VPC"));
+    }
+
+    #[test]
+    fn aws_config_diagram_extracts_relationship_edges() {
+        let response = generate(InfraDiagramRequest {
+            title: Some("AWS Config".to_string()),
+            source: InfraSource::AwsConfig {
+                configuration_items: vec![
+                    serde_json::json!({
+                        "resourceType": "AWS::EC2::VPC",
+                        "resourceId": "vpc-123",
+                        "resourceName": "core",
+                        "awsRegion": "us-east-1"
+                    }),
+                    serde_json::json!({
+                        "resourceType": "AWS::EC2::Subnet",
+                        "resourceId": "subnet-123",
+                        "resourceName": "public",
+                        "awsRegion": "us-east-1",
+                        "relationships": [
+                            {
+                                "resourceType": "AWS::EC2::VPC",
+                                "resourceId": "vpc-123",
+                                "relationshipName": "Is contained in Vpc"
+                            }
+                        ],
+                        "configuration": "{\"vpcId\":\"vpc-123\"}"
+                    }),
+                ],
+            },
+            max_nodes: None,
+        })
+        .expect("aws config diagram");
+
+        assert_eq!(response.source_kind, "aws-config");
+        assert_eq!(response.node_count, 2);
+        assert!(response
+            .graph
+            .nodes
+            .iter()
+            .any(|node| node.id == "subnet-123" && node.service == "ec2"));
+        assert!(response.graph.edges.iter().any(|edge| {
+            edge.from == "vpc-123"
+                && edge.to == "subnet-123"
+                && (edge.relation == "Is-contained-in-Vpc" || edge.relation == "aws-config:vpcId")
+        }));
     }
 
     #[test]

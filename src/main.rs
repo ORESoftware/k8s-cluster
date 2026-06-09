@@ -30,6 +30,7 @@ mod etl;
 mod evidence_reports;
 mod hardening;
 mod infra_diagrams;
+mod infra_imports;
 mod live_panels;
 mod loki_frames;
 mod notification_dispatch;
