@@ -133,6 +133,15 @@ spec:
                   name: dd-agent-secrets
                   key: LMX_AUTH_TOKEN
                   optional: true
+            # Gateway/operator auth token (preferred). When set, the broker
+            # requires it as the `Auth` header. optional:true so auth stays off
+            # until dd-agent-secrets.ALL_DOGS exists.
+            - name: ALL_DOGS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ALL_DOGS
+                  optional: true
           ports:
             - name: http
               containerPort: 6971
