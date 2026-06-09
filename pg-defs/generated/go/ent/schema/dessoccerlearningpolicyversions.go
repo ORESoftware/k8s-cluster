@@ -59,5 +59,6 @@ func (DesSoccerLearningPolicyVersions) Indexes() []ent.Index {
 		// des_soccer_learning_policy_versions_active_idx lives in schema.sql because ent cannot model partial indexes.
 		// des_soccer_learning_policy_versions_fitness_idx lives in schema.sql because ent cannot model partial indexes.
 		// des_soccer_learning_policy_versions_branch_tip_idx lives in schema.sql because ent cannot model partial indexes.
+		// des_soccer_learning_policy_versions_single_active_uq lives in schema.sql because ent cannot model partial indexes.
 	}
 }
