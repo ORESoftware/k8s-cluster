@@ -809,6 +809,7 @@ model DesSoccerLearningPolicyVersions {
   // des_soccer_learning_policy_versions_active_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // des_soccer_learning_policy_versions_fitness_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // des_soccer_learning_policy_versions_branch_tip_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // des_soccer_learning_policy_versions_single_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("des_soccer_learning_policy_versions")
 }

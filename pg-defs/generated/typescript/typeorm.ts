@@ -1715,6 +1715,7 @@ export class DesSoccerLearningExperimentsEntity {
 // des_soccer_learning_policy_versions_active_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_soccer_learning_policy_versions_fitness_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // des_soccer_learning_policy_versions_branch_tip_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("des_soccer_learning_policy_versions_single_active_uq", ["experimentId"], { unique: true, where: "status = 'active'" })
 @Entity({ name: "des_soccer_learning_policy_versions" })
 export class DesSoccerLearningPolicyVersionsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })

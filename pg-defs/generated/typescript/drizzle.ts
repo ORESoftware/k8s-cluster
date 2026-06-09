@@ -2711,6 +2711,7 @@ export const desSoccerLearningPolicyVersions = pgTable(
     desSoccerLearningPolicyVersionsActiveIdx: index("des_soccer_learning_policy_versions_active_idx").on(table.experimentId, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("status = 'active'")),
     desSoccerLearningPolicyVersionsFitnessIdx: index("des_soccer_learning_policy_versions_fitness_idx").on(table.experimentId, table.fitnessMicros.desc(), table.updatedAt.desc()).where(sql.raw("status in ('active', 'candidate')")),
     desSoccerLearningPolicyVersionsBranchTipIdx: index("des_soccer_learning_policy_versions_branch_tip_idx").on(table.experimentId, table.branchKey, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("full_entries_retained = true")),
+    desSoccerLearningPolicyVersionsSingleActiveUq: uniqueIndex("des_soccer_learning_policy_versions_single_active_uq").on(table.experimentId).where(sql.raw("status = 'active'")),
   }),
 );
 
