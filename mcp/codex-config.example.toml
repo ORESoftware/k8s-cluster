@@ -1,0 +1,46 @@
+# Codex CLI MCP config for the dd read-only cluster MCP servers.
+#
+# Codex talks to these remote HTTPS endpoints through the `mcp-remote` stdio
+# bridge, which (a) carries the Authorization bearer header and (b) pins the
+# gateway TLS CA per-server via NODE_EXTRA_CA_CERTS — neither of which a bare
+# Codex stdio entry can do on its own.
+#
+# Copy these blocks into ~/.codex/config.toml and replace the two placeholders.
+# This file is an EXAMPLE: do not put the real token in version control. Your
+# ~/.codex/config.toml is local-only, so a literal token there is fine.
+#
+# Prereqs:
+#   * Node 18+ (for `npx mcp-remote`).
+#   * Fetch the gateway CA once:  ./mcp/fetch-gateway-ca.sh
+#     -> writes mcp/dd-gateway-ca.pem (gitignored).
+#
+# The header is passed whole via AUTH_HEADER to avoid mcp-remote's
+# space-splitting on `--header "Name: Value"`.
+
+[mcp_servers.dd-cluster-mcp]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote@latest",
+  "https://54.91.17.58/cluster-mcp",
+  "--header",
+  "Authorization:${AUTH_HEADER}",
+]
+
+[mcp_servers.dd-cluster-mcp.env]
+AUTH_HEADER = "Bearer REPLACE_WITH_DD_MCP_TOKEN"
+NODE_EXTRA_CA_CERTS = "/ABSOLUTE/PATH/TO/k8s-cluster/mcp/dd-gateway-ca.pem"
+
+[mcp_servers.dd-gleam-mcp]
+command = "npx"
+args = [
+  "-y",
+  "mcp-remote@latest",
+  "https://54.91.17.58/mcp",
+  "--header",
+  "Authorization:${AUTH_HEADER}",
+]
+
+[mcp_servers.dd-gleam-mcp.env]
+AUTH_HEADER = "Bearer REPLACE_WITH_DD_MCP_TOKEN"
+NODE_EXTRA_CA_CERTS = "/ABSOLUTE/PATH/TO/k8s-cluster/mcp/dd-gateway-ca.pem"

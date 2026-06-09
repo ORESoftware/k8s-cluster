@@ -24,6 +24,11 @@ The public gateway exposes these under:
 Ops paths are currently protected by the temporary dd gateway auth header. Do not echo the
 configured value in public responses or docs.
 
+For **local IDE access** (Cursor, VS Code, Codex), the gateway also accepts a dedicated
+read-only `Authorization: Bearer <MCP_READONLY_TOKEN>` on `/mcp` and `/cluster-mcp` only, so
+IDEs never hold the master operator cookie value. Setup, token minting, and TLS CA pinning are
+documented in [`mcp/README.md`](../../../mcp/README.md).
+
 ## Secrets
 
 The MCP server should not own raw secrets in Git. If it needs credentials later for write-capable

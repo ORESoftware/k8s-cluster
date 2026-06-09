@@ -55,7 +55,8 @@ Thumbs.db
 *.swp
 *.swo
 *~
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 .idea/
 
 # ──────────────────────────────────────────────

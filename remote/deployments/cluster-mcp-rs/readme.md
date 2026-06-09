@@ -22,6 +22,11 @@ operator-authenticated. Thread agents should use the in-cluster URL:
 http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp
 ```
 
+For **local IDE access** (Cursor, VS Code, Codex), the gateway accepts a dedicated read-only
+`Authorization: Bearer <MCP_READONLY_TOKEN>` on `/cluster-mcp` (and `/mcp`) only, separate from
+the operator cookie value. Setup, token minting, and TLS CA pinning are in
+[`mcp/README.md`](../../../mcp/README.md).
+
 ## MCP Tools
 
 The Rust service preserves the current `dd_cluster` tool catalog:

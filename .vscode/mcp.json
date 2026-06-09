@@ -1,0 +1,27 @@
+{
+  "//": "Read-only EC2 cluster MCP endpoints behind the dd-remote-gateway. VS Code prompts once for the token and stores it in its secret storage. See mcp/README.md for the TLS CA (NODE_EXTRA_CA_CERTS) step.",
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "dd-mcp-token",
+      "description": "DD read-only MCP bearer token (AWS dd/remote-dev/mcp-gateway-token : MCP_READONLY_TOKEN)",
+      "password": true
+    }
+  ],
+  "servers": {
+    "dd-cluster-mcp": {
+      "type": "http",
+      "url": "https://54.91.17.58/cluster-mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:dd-mcp-token}"
+      }
+    },
+    "dd-gleam-mcp": {
+      "type": "http",
+      "url": "https://54.91.17.58/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:dd-mcp-token}"
+      }
+    }
+  }
+}

@@ -30,6 +30,26 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
+    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
+    # only (enforced in those location blocks) so local IDE MCP clients
+    # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
+    # credential instead of the master operator cookie value. Sourced from the
+    # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
+    # secretKeyRef in the gateway Deployment is required, so the token is never
+    # empty in a running pod; do not relax it to optional or "Bearer " alone
+    # would match an empty token.
+    map $http_authorization $dd_mcp_bearer_ok {
+      default 0;
+      "Bearer ${DD_MCP_READONLY_TOKEN}" 1;
+    }
+
+    # MCP endpoints accept EITHER the operator auth (Auth header / dd_auth
+    # cookie) OR the dedicated read-only MCP bearer token.
+    map "$dd_gateway_auth_ok:$dd_mcp_bearer_ok" $dd_mcp_auth_ok {
+      default 0;
+      ~1 1;
+    }
+
     map $http_accept $dd_gateway_accepts_html {
       default 0;
       ~*text/html 1;
@@ -784,7 +804,7 @@ data:
       }
 
       location = /cluster-mcp {
-        if ($dd_gateway_auth_ok = 0) {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -794,13 +814,15 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
         set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
         proxy_pass http://$dd_cluster_mcp_upstream/mcp;
       }
 
       location /cluster-mcp/ {
-        if ($dd_gateway_auth_ok = 0) {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -810,13 +832,15 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
         set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
         proxy_pass http://$dd_cluster_mcp_upstream/;
       }
 
       location = /mcp {
-        if ($dd_gateway_auth_ok = 0) {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -826,12 +850,14 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp;
       }
 
       location /mcp/ {
-        if ($dd_gateway_auth_ok = 0) {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -841,6 +867,8 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
