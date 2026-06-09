@@ -1,0 +1,508 @@
+use serde::Serialize;
+use serde_json::{json, Value};
+
+const PACKAGE_NAME: &str = "@dd-data-viz/renderers";
+const PACKAGE_VERSION: &str = "0.1.0";
+const SCHEMA_VERSION: &str = "data-viz.renderer-client-package.v1";
+const MAX_PACKAGE_FILES: usize = 8;
+const MAX_FILE_BYTES: usize = 16 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RendererClientPackageResponse {
+    ok: bool,
+    schema_version: &'static str,
+    package_name: &'static str,
+    version: &'static str,
+    module_format: &'static str,
+    targets: Vec<RendererClientTarget>,
+    files: Vec<RendererClientPackageFile>,
+    integrity: RendererClientPackageIntegrity,
+    limits: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RendererClientTarget {
+    id: &'static str,
+    analog: &'static str,
+    entrypoint: &'static str,
+    supports: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RendererClientPackageFile {
+    path: &'static str,
+    kind: &'static str,
+    bytes: usize,
+    checksum: String,
+    content: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RendererClientPackageIntegrity {
+    file_count: usize,
+    total_bytes: usize,
+    package_checksum: String,
+}
+
+pub(crate) fn client_package() -> RendererClientPackageResponse {
+    let files = package_files();
+    let total_bytes = files.iter().map(|file| file.bytes).sum::<usize>();
+    let mut package_input = String::new();
+    for file in &files {
+        package_input.push_str(file.path);
+        package_input.push('\n');
+        package_input.push_str(file.content);
+        package_input.push('\n');
+    }
+    RendererClientPackageResponse {
+        ok: true,
+        schema_version: SCHEMA_VERSION,
+        package_name: PACKAGE_NAME,
+        version: PACKAGE_VERSION,
+        module_format: "typescript-esm",
+        targets: targets(),
+        integrity: RendererClientPackageIntegrity {
+            file_count: files.len(),
+            total_bytes,
+            package_checksum: stable_checksum(&package_input),
+        },
+        files,
+        limits: limits_payload(),
+    }
+}
+
+pub(crate) fn limits_payload() -> Value {
+    json!({
+        "maxPackageFiles": MAX_PACKAGE_FILES,
+        "maxFileBytes": MAX_FILE_BYTES,
+        "posture": "static generated TypeScript package blueprint; no user source is executed or bundled"
+    })
+}
+
+pub(crate) fn summary_payload() -> Value {
+    json!({
+        "packageName": PACKAGE_NAME,
+        "version": PACKAGE_VERSION,
+        "moduleFormat": "typescript-esm",
+        "targets": targets(),
+        "limits": limits_payload()
+    })
+}
+
+fn targets() -> Vec<RendererClientTarget> {
+    vec![
+        RendererClientTarget {
+            id: "d3-final-layer",
+            analog: "D3.js",
+            entrypoint: "src/d3.ts",
+            supports: vec![
+                "final layer validation",
+                "DOM mount contract",
+                "encoding extraction",
+            ],
+        },
+        RendererClientTarget {
+            id: "plotly-traces",
+            analog: "Plotly / Dash",
+            entrypoint: "src/plotly.ts",
+            supports: vec![
+                "figure blueprint",
+                "trace type mapping",
+                "Dash callback payloads",
+            ],
+        },
+        RendererClientTarget {
+            id: "evidence-markdown",
+            analog: "Evidence.dev",
+            entrypoint: "src/evidence.ts",
+            supports: vec![
+                "SQL block extraction",
+                "chart component discovery",
+                "frontmatter hints",
+            ],
+        },
+        RendererClientTarget {
+            id: "infra-diagrams",
+            analog: "Terraform graph / cloud architecture diagrams",
+            entrypoint: "src/infra.ts",
+            supports: vec![
+                "topology graph normalization",
+                "node/edge indexing",
+                "renderer lookup",
+            ],
+        },
+    ]
+}
+
+fn package_files() -> Vec<RendererClientPackageFile> {
+    let files = vec![
+        file("package.json", "json", PACKAGE_JSON),
+        file("README.md", "markdown", README_MD),
+        file("src/index.ts", "typescript", INDEX_TS),
+        file("src/types.ts", "typescript", TYPES_TS),
+        file("src/d3.ts", "typescript", D3_TS),
+        file("src/plotly.ts", "typescript", PLOTLY_TS),
+        file("src/evidence.ts", "typescript", EVIDENCE_TS),
+        file("src/infra.ts", "typescript", INFRA_TS),
+    ];
+    debug_assert!(files.len() <= MAX_PACKAGE_FILES);
+    debug_assert!(files.iter().all(|file| file.bytes <= MAX_FILE_BYTES));
+    files
+}
+
+fn file(
+    path: &'static str,
+    kind: &'static str,
+    content: &'static str,
+) -> RendererClientPackageFile {
+    RendererClientPackageFile {
+        path,
+        kind,
+        bytes: content.len(),
+        checksum: stable_checksum(content),
+        content,
+    }
+}
+
+fn stable_checksum(input: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("fnv1a64:{hash:016x}")
+}
+
+const PACKAGE_JSON: &str = r#"{
+  "name": "@dd-data-viz/renderers",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./d3": "./src/d3.ts",
+    "./plotly": "./src/plotly.ts",
+    "./evidence": "./src/evidence.ts",
+    "./infra": "./src/infra.ts"
+  },
+  "peerDependencies": {
+    "d3": "^7.0.0",
+    "plotly.js": "^2.0.0"
+  }
+}
+"#;
+
+const README_MD: &str = r#"# @dd-data-viz/renderers
+
+Generated client helpers for dd-data-viz-rs renderer contracts.
+
+This package is emitted by `GET /renderers/client-package`. It is a source blueprint, not a bundled
+artifact. Consumers can place these files in a frontend workspace, install their preferred D3 or
+Plotly runtime, and connect the typed helpers to app-specific rendering code.
+"#;
+
+const INDEX_TS: &str = r#"export * from "./types";
+export * from "./d3";
+export * from "./plotly";
+export * from "./evidence";
+export * from "./infra";
+"#;
+
+const TYPES_TS: &str = r#"export type Scalar = string | number | boolean | null;
+
+export interface VisualizationEncoding {
+  channel: string;
+  field: string;
+  scale?: string;
+  aggregate?: string;
+}
+
+export interface VisualizationSpec {
+  specId?: string;
+  mark: string;
+  layout: string;
+  encodings: VisualizationEncoding[];
+  fitness?: Record<string, number>;
+  data?: Record<string, Scalar>[];
+}
+
+export interface FinalLayer {
+  schemaVersion?: string;
+  spec?: VisualizationSpec;
+  specs?: VisualizationSpec[];
+  rows?: Record<string, Scalar>[];
+  metadata?: Record<string, Scalar>;
+}
+
+export interface PlotlyFigure {
+  data: Array<Record<string, unknown>>;
+  layout: Record<string, unknown>;
+  config: Record<string, unknown>;
+}
+
+export interface DashCallbackBlueprint {
+  id: string;
+  inputs: string[];
+  outputs: string[];
+  figure: PlotlyFigure;
+}
+
+export interface EvidenceReportCompileResponse {
+  ok: boolean;
+  schemaVersion: string;
+  markdown: string;
+  queryCount: number;
+  chartCount: number;
+  dependencies: Array<Record<string, unknown>>;
+}
+
+export interface InfraGraphNode {
+  id: string;
+  label?: string;
+  kind?: string;
+  provider?: string;
+}
+
+export interface InfraGraphEdge {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface InfraDiagramResponse {
+  ok: boolean;
+  graph?: {
+    nodes?: InfraGraphNode[];
+    edges?: InfraGraphEdge[];
+  };
+  renderers?: Record<string, unknown>;
+}
+"#;
+
+const D3_TS: &str = r#"import type { FinalLayer, VisualizationEncoding, VisualizationSpec } from "./types";
+
+export interface D3MountPlan {
+  specId: string;
+  mark: string;
+  layout: string;
+  encodings: VisualizationEncoding[];
+  rowCount: number;
+}
+
+export function assertD3FinalLayer(layer: FinalLayer): FinalLayer {
+  const specs = collectSpecs(layer);
+  if (specs.length === 0) {
+    throw new Error("dd-data-viz final layer must include at least one visualization spec");
+  }
+  for (const spec of specs) {
+    if (!spec.mark || !spec.layout) {
+      throw new Error("visualization spec must include mark and layout");
+    }
+  }
+  return layer;
+}
+
+export function d3MountPlans(layer: FinalLayer): D3MountPlan[] {
+  const checked = assertD3FinalLayer(layer);
+  const rows = checked.rows ?? checked.spec?.data ?? [];
+  return collectSpecs(checked).map((spec, index) => ({
+    specId: spec.specId ?? `spec-${index}`,
+    mark: spec.mark,
+    layout: spec.layout,
+    encodings: spec.encodings ?? [],
+    rowCount: rows.length
+  }));
+}
+
+export function mountD3FinalLayer(container: Element, layer: FinalLayer): D3MountPlan[] {
+  const plans = d3MountPlans(layer);
+  container.dispatchEvent(new CustomEvent("dd-data-viz:d3-plan", { detail: { plans, layer } }));
+  return plans;
+}
+
+function collectSpecs(layer: FinalLayer): VisualizationSpec[] {
+  if (Array.isArray(layer.specs)) {
+    return layer.specs;
+  }
+  return layer.spec ? [layer.spec] : [];
+}
+"#;
+
+const PLOTLY_TS: &str = r#"import type { DashCallbackBlueprint, FinalLayer, PlotlyFigure, VisualizationSpec } from "./types";
+
+const TRACE_BY_MARK: Record<string, string> = {
+  bar: "bar",
+  line: "scatter",
+  scatter: "scatter",
+  surface: "surface",
+  "volume-cloud": "volume",
+  "parallel-coordinates": "parcoords",
+  "radial-density": "scatterpolar"
+};
+
+export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
+  const spec = firstSpec(layer);
+  const rows = layer.rows ?? spec.data ?? [];
+  const x = fieldValues(rows, fieldFor(spec, "x"));
+  const y = fieldValues(rows, fieldFor(spec, "y"));
+  const z = fieldValues(rows, fieldFor(spec, "z"));
+  const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
+  const trace: Record<string, unknown> = { type: traceType, x, y };
+  if (z.length > 0) {
+    trace.z = z;
+  }
+  if (spec.mark === "line") {
+    trace.mode = "lines+markers";
+  }
+  return {
+    data: [trace],
+    layout: { title: spec.specId ?? "dd-data-viz", scene: spec.layout.includes("3d") ? {} : undefined },
+    config: { responsive: true, displaylogo: false }
+  };
+}
+
+export function dashCallbackBlueprint(layer: FinalLayer, id = "dd-data-viz-figure"): DashCallbackBlueprint {
+  return {
+    id,
+    inputs: ["dd-data-viz-store.data"],
+    outputs: [`${id}.figure`],
+    figure: toPlotlyFigure(layer)
+  };
+}
+
+function firstSpec(layer: FinalLayer): VisualizationSpec {
+  const spec = layer.spec ?? layer.specs?.[0];
+  if (!spec) {
+    throw new Error("Plotly conversion requires at least one visualization spec");
+  }
+  return spec;
+}
+
+function fieldFor(spec: VisualizationSpec, channel: string): string | undefined {
+  return spec.encodings?.find((encoding) => encoding.channel === channel)?.field;
+}
+
+function fieldValues(rows: Array<Record<string, unknown>>, field?: string): unknown[] {
+  return field ? rows.map((row) => row[field]) : [];
+}
+"#;
+
+const EVIDENCE_TS: &str = r#"import type { EvidenceReportCompileResponse } from "./types";
+
+export interface EvidenceSqlBlock {
+  queryName: string;
+  sql: string;
+}
+
+export interface EvidenceChartComponent {
+  component: string;
+  queryName?: string;
+}
+
+export function evidenceSqlBlocks(report: EvidenceReportCompileResponse | string): EvidenceSqlBlock[] {
+  const markdown = typeof report === "string" ? report : report.markdown;
+  const blocks: EvidenceSqlBlock[] = [];
+  const pattern = /```sql\s+([A-Za-z_][A-Za-z0-9_]*)\n([\s\S]*?)```/g;
+  for (const match of markdown.matchAll(pattern)) {
+    blocks.push({ queryName: match[1], sql: match[2].trim() });
+  }
+  return blocks;
+}
+
+export function evidenceChartComponents(report: EvidenceReportCompileResponse | string): EvidenceChartComponent[] {
+  const markdown = typeof report === "string" ? report : report.markdown;
+  const components: EvidenceChartComponent[] = [];
+  const pattern = /<(BarChart|LineChart|AreaChart|ScatterPlot|Table|DataTable|BigValue)([^>]*)\/>/g;
+  for (const match of markdown.matchAll(pattern)) {
+    const data = /data=\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(match[2]);
+    components.push({ component: match[1], queryName: data?.[1] });
+  }
+  return components;
+}
+"#;
+
+const INFRA_TS: &str = r#"import type { InfraDiagramResponse, InfraGraphEdge, InfraGraphNode } from "./types";
+
+export interface NormalizedInfraGraph {
+  nodes: InfraGraphNode[];
+  edges: InfraGraphEdge[];
+  nodeById: Map<string, InfraGraphNode>;
+  outgoing: Map<string, InfraGraphEdge[]>;
+}
+
+export function normalizeInfraGraph(diagram: InfraDiagramResponse): NormalizedInfraGraph {
+  const nodes = diagram.graph?.nodes ?? [];
+  const edges = diagram.graph?.edges ?? [];
+  return {
+    nodes,
+    edges,
+    nodeById: new Map(nodes.map((node) => [node.id, node])),
+    outgoing: edges.reduce((index, edge) => {
+      const bucket = index.get(edge.from) ?? [];
+      bucket.push(edge);
+      index.set(edge.from, bucket);
+      return index;
+    }, new Map<string, InfraGraphEdge[]>())
+  };
+}
+
+export function rendererPayload(diagram: InfraDiagramResponse, rendererId: string): unknown {
+  return diagram.renderers?.[rendererId];
+}
+"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_package_contains_renderer_targets_and_files() {
+        let package = client_package();
+        let paths = package
+            .files
+            .iter()
+            .map(|file| file.path)
+            .collect::<Vec<_>>();
+
+        assert_eq!(package.schema_version, SCHEMA_VERSION);
+        assert_eq!(package.targets.len(), 4);
+        assert!(paths.contains(&"src/d3.ts"));
+        assert!(paths.contains(&"src/plotly.ts"));
+        assert!(paths.contains(&"src/evidence.ts"));
+        assert!(paths.contains(&"src/infra.ts"));
+    }
+
+    #[test]
+    fn client_package_includes_expected_helper_functions() {
+        let package = client_package();
+        let all_content = package
+            .files
+            .iter()
+            .map(|file| file.content)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(all_content.contains("mountD3FinalLayer"));
+        assert!(all_content.contains("toPlotlyFigure"));
+        assert!(all_content.contains("evidenceSqlBlocks"));
+        assert!(all_content.contains("normalizeInfraGraph"));
+    }
+
+    #[test]
+    fn client_package_integrity_matches_file_set() {
+        let package = client_package();
+        let total_bytes = package.files.iter().map(|file| file.bytes).sum::<usize>();
+
+        assert_eq!(package.integrity.file_count, package.files.len());
+        assert_eq!(package.integrity.total_bytes, total_bytes);
+        assert!(package.integrity.package_checksum.starts_with("fnv1a64:"));
+        assert!(package
+            .files
+            .iter()
+            .all(|file| file.bytes <= MAX_FILE_BYTES));
+    }
+}

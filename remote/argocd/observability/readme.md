@@ -17,8 +17,8 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
   overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
   Includes the `Observability Control Plane`, `Deployment Drilldown`,
-  `Kubernetes Workload Fleet`, `Fabrication Planner`, and `GCS WSS Load
-  Collapse` dashboards.
+  `Kubernetes Workload Fleet`, `Fabrication Planner`, `Economics Server`,
+  and `GCS WSS Load Collapse` dashboards.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
@@ -30,6 +30,11 @@ The runtimes are instrumented explicitly:
 - Node worker/API emits direct OTLP/HTTP spans and Prometheus metrics.
 - Rust web-home emits Prometheus metrics.
 - Rust REST API emits Prometheus metrics for the RDS/Postgres data boundary.
+- Rust economics server emits Prometheus metrics for dashboard, forecast,
+  recommendation, pipeline, source-pull, auth, NATS, and error activity,
+  plus compact `dd.log.v1` stdout/stderr records for Loki. Its
+  OpenTelemetry posture is explicit-only service/resource metadata, not
+  runtime auto-instrumentation.
 - Gleam websocket server emits actor-backed Prometheus metrics.
 - Rust cluster MCP server emits HTTP, JSON-RPC, Kubernetes-read,
   observability-read, and OTLP-export Prometheus metrics, plus explicit OTLP
@@ -164,8 +169,8 @@ Currently opted-in:
   split/combine review rates,
   a composite release-readiness blocker rate, intervention/automation review
   pressure,
-  result fanout, MDP optimization fanout, generated-program,
-  job/artifact, learning-event, and artifact detail-request throughput, in-memory
+  result fanout, MDP optimization fanout, costing-result review throughput,
+  generated-program, job/artifact, learning-event, and artifact detail-request throughput, in-memory
   job/artifact/learning evidence ledgers, including an artifact high-watermark
   alert for retained design, machine-code, and instruction evidence,
   a machine-release readiness versus learning-fanout panel that correlates
@@ -182,12 +187,54 @@ Currently opted-in:
   `body_bytes_sent` for generated design, machine-code, and artifact responses, a catalog
   discovery, CAD intake, design export, instruction review, validation-result,
   and worker result review panel for
-  `/fabrication/design/formats`, `/fabrication/machines/catalog`,
+  `/fabrication`, `/fabrication/landing`, `/fabrication/how-it-works`,
+  `/fabrication/design/formats`, `/fabrication/design/preflight/catalog`,
+  `/fabrication/machines/catalog`,
+  `/fabrication/printers/catalog`, `/fabrication/fdm-printer/catalog`,
+  `/fabrication/resin-printer/catalog`, `/fabrication/material-jetting/catalog`,
+  `/fabrication/pellet-fgf/catalog`,
+  `/fabrication/robotic-additive/catalog`, `/fabrication/sheet-lamination/catalog`,
+  `/fabrication/directed-energy-deposition/catalog`,
+  `/fabrication/composite-fiber/catalog`,
+  `/fabrication/composite-layup/catalog`, `/fabrication/powder-bed/catalog`,
+  `/fabrication/hot-wire-foam/catalog`,
+  `/fabrication/subtractive/catalog`,
+  `/fabrication/subtractive/preflight/catalog`,
+  `/fabrication/mill-router/catalog`,
+  `/fabrication/vertical-mill/catalog`,
+  `/fabrication/horizontal-mill/catalog`,
+  `/fabrication/sheet-cutting/catalog`, `/fabrication/hot-wire-foam/catalog`,
+  `/fabrication/sheet-forming/catalog`, `/fabrication/gear-cutting/catalog`,
+  `/fabrication/precision-grinding/catalog`,
+  `/fabrication/dimensional-inspection/catalog`,
+  `/fabrication/thermal-postprocess/catalog`,
+  `/fabrication/surface-finishing/catalog`, `/fabrication/metal-joining/catalog`,
+  `/fabrication/molding-casting/catalog`,
+  `/fabrication/pcb-electronics/catalog`,
+  `/fabrication/joining/catalog`,
+  `/fabrication/bonding-joining/catalog`,
+  `/fabrication/fixture-adaptive/catalog`,
+  `/fabrication/mechanical-installation/catalog`,
+  `/fabrication/balancing-marking/catalog`,
+  `/fabrication/packaging-labeling/catalog`,
+  `/fabrication/part-separation/catalog`,
+  `/fabrication/edm/catalog`,
+  `/fabrication/turning/catalog`, `/fabrication/turning/preflight/catalog`,
+  `/fabrication/lathe/catalog`,
+  `/fabrication/cleanliness/catalog`,
+  `/fabrication/cleanliness/preflight/catalog`,
+  `/fabrication/interfaces/catalog`,
+  `/fabrication/interfaces/preflight/catalog`,
+  `/fabrication/interfaces/result`, `/fabrication/joining/result`,
+  `/fabrication/cnc/catalog`,
+  `/fabrication/hybrid/catalog`, `/fabrication/hybrid/plan`,
+  `/fabrication/cells/catalog`,
   `/fabrication/machines/select`, `/fabrication/controllers/catalog`,
-  `/fabrication/controllers/result`,
+  `/fabrication/controllers/plan`, `/fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `/fabrication/materials/plan`,
   `/fabrication/materials/result`,
-  `/fabrication/slicers/catalog`, `/fabrication/slicers/result`,
+  `/fabrication/slicers/catalog`, `/fabrication/slicers/plan`,
+  `/fabrication/slicers/result`,
   `/fabrication/mesh-repair/catalog`, `/fabrication/mesh-repair/result`,
   `/fabrication/design/import/catalog`,
   `/fabrication/design/import/review`,
@@ -197,30 +244,48 @@ Currently opted-in:
   `/fabrication/design/synthesis/result`, `/fabrication/plan`,
   `/fabrication/workflow/catalog`, `/fabrication/workflow/plan`,
   `/fabrication/handoff/catalog`, `/fabrication/handoff/result`,
-  `/fabrication/subjects/catalog`,
+  `/fabrication/subjects/catalog`, `/fabrication/workers/catalog`,
+  `/fabrication/results/catalog`,
   `/fabrication/assembly/catalog`,
+  `/fabrication/assembly/preflight/catalog`,
   `/fabrication/calibration/plan`, `/fabrication/calibration/result`,
   `/fabrication/instructions/generation/catalog`,
+  `/fabrication/instructions/generation/preflight/catalog`,
+  `/fabrication/instructions/import/catalog`,
+  `/fabrication/instructions/import/preflight/catalog`,
   `/fabrication/instructions/languages`,
   `/fabrication/instructions/validation/catalog`,
+  `/fabrication/instructions/validation/preflight/catalog`,
   `/fabrication/instructions/generate`,
   `/fabrication/instructions/generation/result`,
   `/fabrication/instructions/review/result`,
   `/fabrication/instructions/validation/result`,
+  `/fabrication/instructions/improvement/result`,
   `/fabrication/machine-code/catalog`, `/fabrication/machine-code/generate`,
+  `/fabrication/machine-code/preflight/catalog`,
   `/fabrication/machine-code/result`,
-  `/fabrication/toolpaths/plan`, `/fabrication/toolpaths/result`,
-  `/fabrication/improvements/catalog`, `/fabrication/boundaries/catalog`,
-  `/fabrication/remediation/catalog`, `/fabrication/remediation/plan`,
+  `/fabrication/toolpaths/catalog`, `/fabrication/toolpaths/plan`,
+  `/fabrication/toolpaths/result`,
+  `/fabrication/improvements/catalog`, `/fabrication/improvements/preflight/catalog`,
+  `/fabrication/boundaries/catalog`,
+  `/fabrication/boundaries/preflight/catalog`,
+  `/fabrication/boundaries/result`, `/fabrication/remediation/catalog`,
+  `/fabrication/remediation/plan`,
   `/fabrication/remediation/result`,
-  `/fabrication/decomposition/catalog`, `/fabrication/decomposition/plan`,
+  `/fabrication/decomposition/catalog`, `/fabrication/recomposition/catalog`,
+  `/fabrication/decomposition/plan`,
   `/fabrication/decomposition/result`, `/fabrication/assembly/plan`,
   `/fabrication/assembly/result`,
-  `/fabrication/release/catalog`, `/fabrication/schedule/catalog`,
+  `/fabrication/joining/result`,
+  `/fabrication/release/catalog`, `/fabrication/release/preflight/catalog`,
+  `/fabrication/schedule/catalog`,
   `/fabrication/schedule/result`,
-  `/fabrication/execution/plan`, `/fabrication/execution/result`,
-  `/fabrication/simulation/catalog`, `/fabrication/simulation/run`,
+  `/fabrication/execution/preflight/catalog`, `/fabrication/execution/plan`,
+  `/fabrication/execution/result`,
+  `/fabrication/simulation/catalog`, `/fabrication/simulation/preflight/catalog`,
+  `/fabrication/simulation/run`,
   `/fabrication/simulation/result`, `/fabrication/quality/catalog`,
+  `/fabrication/quality/preflight/catalog`,
   `/fabrication/dispositions/catalog`, `/fabrication/dispositions/result`,
   `/fabrication/costing/catalog`, `/fabrication/costing/result`,
   `/fabrication/utilities/catalog`, `/fabrication/energy/catalog`,
@@ -230,38 +295,59 @@ Currently opted-in:
   `/fabrication/maintenance/result`, `/fabrication/telemetry/result`, `/fabrication/quality/plan`,
   `/fabrication/quality/result`,
   `/fabrication/manufacturability/result`,
-  `/fabrication/interventions/catalog`, `/fabrication/setup/catalog`,
-  `/fabrication/tooling/catalog`, `/fabrication/consumables/catalog`,
+  `/fabrication/interventions/catalog`, `/fabrication/interventions/result`,
+  `/fabrication/setup/catalog`,
+  `/fabrication/tooling/catalog`, `/fabrication/tooling/result`,
+  `/fabrication/consumables/catalog`,
   `/fabrication/consumables/result`,
   `/fabrication/workholding/catalog`,
+  `/fabrication/workholding/preflight/catalog`,
+  `/fabrication/workholding/plan`,
   `/fabrication/workholding/result`,
+  `/fabrication/nesting/catalog`, `/fabrication/nesting/result`,
   `/fabrication/support-strategies/catalog`, `/fabrication/support-strategies/result`,
   `/fabrication/process-recipes/catalog`, `/fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `/fabrication/kinematics/result`,
-  `/fabrication/tolerances/catalog`, `/fabrication/tolerances/result`,
-  `/fabrication/process-capabilities/catalog`, `/fabrication/process-capabilities/result`,
+  `/fabrication/tolerances/catalog`, `/fabrication/tolerances/plan`,
+  `/fabrication/tolerances/result`,
+  `/fabrication/process-capabilities/catalog`, `/fabrication/process-capabilities/plan`,
+  `/fabrication/process-capabilities/result`,
   `/fabrication/manufacturability/catalog`,
-  `/fabrication/failure-modes/catalog`, `/fabrication/failure-modes/result`,
-  `/fabrication/safety/catalog`, `/fabrication/safety/result`,
-  `/fabrication/environment/catalog`, `/fabrication/environment/result`,
-  `/fabrication/provenance/catalog`, `/fabrication/as-built/catalog`,
-  `/fabrication/provenance/result`,
+  `/fabrication/failure-modes/catalog`, `/fabrication/failure-modes/plan`,
+  `/fabrication/failure-modes/result`,
+  `/fabrication/safety/catalog`, `/fabrication/safety/plan`,
+  `/fabrication/safety/result`,
+  `/fabrication/environment/catalog`, `/fabrication/environment/plan`,
+  `/fabrication/environment/result`,
+  `/fabrication/provenance/catalog`, `/fabrication/provenance/plan`,
+  `/fabrication/as-built/catalog`, `/fabrication/as-built/plan`,
+  `/fabrication/as-built/result`, `/fabrication/provenance/result`,
   `/fabrication/setup/plan`,
   `/fabrication/setup/result`,
   `/fabrication/monitoring/catalog`, `/fabrication/monitoring/plan`,
   `/fabrication/monitoring/result`, `/fabrication/postprocess/catalog`,
   `/fabrication/postprocess/plan`, `/fabrication/postprocess/result`,
   `/fabrication/release/preview`, `/fabrication/release/result`,
-  `/fabrication/methods/catalog`, `/fabrication/strategy/recommend`,
+  `/fabrication/evidence/catalog`,
+  `/fabrication/methods/catalog`, `/fabrication/process/catalog`,
+  `/fabrication/packages/catalog`,
+  `/fabrication/packages/plan`,
+  `/fabrication/strategy/recommend`,
   `/fabrication/strategy/result`,
   plus `/fabrication/artifacts/catalog`, `/fabrication/jobs/catalog`, `/fabrication/jobs`,
   `/fabrication/jobs/<jobId>`, `/fabrication/jobs/<jobId>/release-bundle`,
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`,
-  `/fabrication/learning/capabilities`, `/fabrication/learning/rewards/catalog`,
-  `/fabrication/learning/policy`,
+  `/fabrication/learning/capabilities`, `/fabrication/learning/engines/catalog`,
+  `/fabrication/learning/preflight/catalog`, `/fabrication/learning/rewards/catalog`,
+  `/fabrication/learning/models/catalog`, `/fabrication/learning/replay/catalog`,
+  `/fabrication/learning/scenarios/catalog`,
+  `/fabrication/learning/optimizers/catalog`, `/fabrication/learning/models/result`,
+  `/fabrication/learning/optimizers/result`,
+  `/fabrication/learning/policy`, `/fabrication/learning/corpus`,
   `/fabrication/learning/observe`, `/fabrication/learning/outcomes`,
   `/fabrication/instructions/analyze`, `/fabrication/instructions/validate`,
   `/fabrication/instructions/improve`,
+  `/fabrication/instructions/improvement/result`,
   `/fabrication/instructions/boundaries/review`, and
   `/fabrication/remediation/plan`, `/fabrication/remediation/result`
   traffic, gateway access/guardrail logs, and
@@ -313,6 +399,20 @@ Currently opted-in:
   fan-out, and MDP learning behavior.
   Promtail's own `/metrics` is scraped the same way so empty-Loki
   incidents can be diagnosed from Prometheus.
+- `dd-economics-server` is scraped explicitly by both `dd-prometheus` and
+  the OTel collector at `/metrics`, while the Deployment and Service also
+  carry Prometheus discovery annotations for future discovery-based scrapers.
+  The `Economics Server` Grafana dashboard (uid `dd-economics-server`)
+  groups service scrape health, firing economics alerts, source-pull success
+  freshness, stored observations, integration-health traffic, model/
+  recommendation/sentiment/pipeline request rates, pipeline publish/submit
+  outcomes, external source bytes/points, auth failures, server errors, NATS
+  request/result activity, Kubernetes workload state, and Loki warning or
+  error logs. Prometheus alerts when the scrape target is down, source pulls
+  start failing, the latest successful source pull grows stale, auth failures
+  rise, integration-health traffic disappears after use, pipeline publish or
+  submit failures increase, or the service records forecast/ingest/source/
+  pipeline errors.
 - The `Kubernetes Workload Fleet` Grafana dashboard (uid
   `dd-kubernetes-workload-fleet`) is the generic dashboard for every
   checked-in workload in the exporter allowlist. It is driven by

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "economics-server-rs",
   "language": "rust",
-  "routeCount": 25,
+  "routeCount": 32,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 15,
+    "user-generated": 22,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -60,6 +60,23 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/audit/hardening",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "hardening_audit"
       ],
       "sourceFiles": [
         "remote/deployments/economics-server-rs/src/main.rs"
@@ -203,6 +220,23 @@
       "notes": ""
     },
     {
+      "path": "/integrations/health",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "integrations_health"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/internal/runtime-config",
       "methods": [
         "GET"
@@ -305,6 +339,74 @@
       "notes": ""
     },
     {
+      "path": "/observability",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "observability"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/catalog",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_catalog"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_plan_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pipelines/submit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "pipeline_submit_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/readyz",
       "methods": [
         "GET"
@@ -400,6 +502,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "sources"
+      ],
+      "sourceFiles": [
+        "remote/deployments/economics-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/sources/public",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "public_sources"
       ],
       "sourceFiles": [
         "remote/deployments/economics-server-rs/src/main.rs"

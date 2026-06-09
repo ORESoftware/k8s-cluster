@@ -97,6 +97,12 @@ data:
               static_configs:
                 - targets:
                     - dd-fabrication-server.default.svc.cluster.local:8113
+            - job_name: dd-economics-server
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-economics-server.default.svc.cluster.local:8114
             - job_name: dd-fabrication-server-pods
               scrape_interval: 10s
               metrics_path: /metrics

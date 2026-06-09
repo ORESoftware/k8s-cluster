@@ -36,12 +36,19 @@ Today there are several key runtime services:
   for SOC 2, ISO, GDPR, PCI DSS, HIPAA, FedRAMP, CMMC, NIST, AI, quality, and ESG frameworks,
   scores mapped evidence against required control families, and exposes generated docs at the
   standard `/docs/api`, `/api/docs`, and `/api/docs.json` routes.
-- [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard and projection
-  service that blends public/private market history, social/news sentiment placeholders, and transparent theory priors
-  from accepted macro, asset-pricing, commodity, FX, bond, and stochastic-process equations.
+- [`deployments/economics-server-rs/`](./deployments/economics-server-rs/) — Rust economics dashboard, projection,
+  recommendation, hardening-audit, public-source template, big-data pipeline-intent, and observability service that
+  blends public/private market history, fiscal/labor/VC context, social/news sentiment placeholders, source quality
+  reports, and transparent theory priors from accepted macro, asset-pricing, commodity, FX, bond, and
+  stochastic-process equations.
 - [`deployments/apostille-services-server-rs/`](./deployments/apostille-services-server-rs/) — Rust Axum service for
   apostille/legalization, notary, immigration, English translation handoff, configured government-provider submissions,
   inbound status webhooks, and an HTMX landing page for operators and integrators.
+- [`deployments/dd-data-viz-rs/`](./deployments/dd-data-viz-rs/) — Rust columnar analytics and evolutionary data
+  visualization server. It ingests JSON records into an in-memory column store, translates SQL, GraphQL, PromQL,
+  Flux, InfluxQL, LogQL, Cypher, Gremlin, Mongo, JMESPath, Lucene, and SPL subsets into a unified logical plan,
+  synthesizes 2D/3D/4D/5D/XD visualization specs, runs mutation/scoring loops with optional AI evaluator feedback,
+  and emits PowerPoint/OpenXML, Google Slides, Reveal, and final JSON presentation layers.
 - [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
   source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
   current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
@@ -449,14 +456,18 @@ Runtime telemetry is deliberately explicit:
 - Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
 - Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
+- Rust `remote/deployments/economics-server-rs` exposes `/metrics`, `/observability`, and
+  `/integrations/health`, writes `dd.log.v1` JSON stdout/stderr records for Loki, and is scraped by
+  Prometheus and the collector as `dd-economics-server` without runtime auto-instrumentation.
 - Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
 - Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
-Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, which tracks request
-rates, Node worker events, NATS connections/throughput/resources, the Gleam MCP runtime, and the
-10k WebSocket load-test connection count.
+Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, plus dedicated
+service dashboards such as `Economics Server` for source-pull health, integration-health status,
+pipeline publish/submit telemetry, forecast/recommendation traffic, auth/errors, Kubernetes state,
+and Loki service logs.
 
 ## Messaging
 

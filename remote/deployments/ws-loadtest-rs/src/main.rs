@@ -115,6 +115,8 @@ struct Config {
     gcs_clients_per_conv: usize,
     /// gcs-mode: how many clients per conversation actually send (0 => all send).
     gcs_senders_per_conv: usize,
+    /// gcs-mode: hot-path wire format for MongoChatMessage frames.
+    gcs_message_encoding: MessageEncoding,
 }
 
 fn env_usize(name: &str, default_value: usize) -> usize {
@@ -167,6 +169,15 @@ fn parse_message_encodings() -> Vec<MessageEncoding> {
     encodings
 }
 
+fn parse_gcs_message_encoding() -> MessageEncoding {
+    env::var("GCS_MESSAGE_ENCODING")
+        .ok()
+        .or_else(|| env::var("MESSAGE_ENCODING").ok())
+        .and_then(|value| MessageEncoding::parse(&value))
+        .filter(|encoding| matches!(encoding, MessageEncoding::Json | MessageEncoding::Protobuf))
+        .unwrap_or(MessageEncoding::Json)
+}
+
 fn format_message_encodings(encodings: &[MessageEncoding]) -> String {
     encodings
         .iter()
@@ -199,6 +210,7 @@ fn load_config() -> Config {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0),
+        gcs_message_encoding: parse_gcs_message_encoding(),
     }
 }
 
@@ -558,6 +570,27 @@ fn push_protobuf_string_field(out: &mut Vec<u8>, field_number: u64, value: &str)
     out.extend_from_slice(value.as_bytes());
 }
 
+fn push_protobuf_bytes_field(out: &mut Vec<u8>, field_number: u64, value: &[u8]) {
+    push_varint(out, (field_number << 3) | 2);
+    push_varint(out, value.len() as u64);
+    out.extend_from_slice(value);
+}
+
+fn push_protobuf_varint_field(out: &mut Vec<u8>, field_number: u64, value: u64) {
+    if value == 0 {
+        return;
+    }
+    push_varint(out, field_number << 3);
+    push_varint(out, value);
+}
+
+fn push_protobuf_bool_field(out: &mut Vec<u8>, field_number: u64, value: bool) {
+    if !value {
+        return;
+    }
+    push_protobuf_varint_field(out, field_number, 1);
+}
+
 fn push_varint(out: &mut Vec<u8>, mut value: u64) {
     while value >= 0x80 {
         out.push((value as u8) | 0x80);
@@ -744,6 +777,13 @@ fn now_micros() -> u64 {
         .as_micros() as u64
 }
 
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 /// 24-hex-char value shaped like a Mongo ObjectId (8 hex seconds + 16 hex of
 /// process/counter entropy). Unique within the process; the server only needs a
 /// valid non-zero ObjectId.
@@ -805,20 +845,44 @@ fn url_encode(s: &str) -> String {
     out
 }
 
-fn gcs_connect_url(base: &str, user_id: &str, device_id: &str, conv_id: &str) -> String {
+fn gcs_connect_url(
+    base: &str,
+    user_id: &str,
+    device_id: &str,
+    conv_id: &str,
+    encoding: MessageEncoding,
+) -> String {
     let conv_ids_json = format!("[\"{}\"]", conv_id);
+    let wire = if encoding == MessageEncoding::Protobuf {
+        "&wire=protobuf"
+    } else {
+        ""
+    };
     format!(
-        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}",
+        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}{}",
         base.trim_end_matches('/'),
         user_id,
         device_id,
-        url_encode(&conv_ids_json)
+        url_encode(&conv_ids_json),
+        wire
     )
 }
 
 /// Build the outer envelope carrying one MongoChatMessage. `marker` goes into
 /// `Messages[0]` and is the latency beacon receivers parse.
-fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker: &str) -> String {
+fn build_gcs_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+    encoding: MessageEncoding,
+) -> Message {
+    if encoding == MessageEncoding::Protobuf {
+        return Message::Binary(encode_gcs_protobuf_chat_frame(
+            conv_id, user_id, members, marker,
+        ));
+    }
+
     let now = rfc3339_now();
     let priority = members
         .iter()
@@ -835,37 +899,120 @@ fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker
         conv = conv_id,
         marker = marker
     );
-    format!(
+    Message::Text(format!(
         r#"{{"Meta":{{}},"List":[{{"@vibe-meta":{{}},"@vibe-type":"MongoChatMessage","@vibe-data":"{}"}}]}}"#,
         json_escape(&inner)
-    )
+    ))
+}
+
+fn encode_gcs_protobuf_chat_frame(
+    conv_id: &str,
+    user_id: &str,
+    members: &[String],
+    marker: &str,
+) -> Vec<u8> {
+    let now_ms = now_millis();
+    let mut message = Vec::with_capacity(256 + marker.len() + members.len() * 28);
+    push_protobuf_string_field(&mut message, 1, &object_id());
+    push_protobuf_string_field(&mut message, 3, user_id);
+    push_protobuf_string_field(&mut message, 4, conv_id);
+    for member in members {
+        push_protobuf_string_field(&mut message, 5, member);
+    }
+    push_protobuf_bool_field(&mut message, 7, members.len() > 2);
+    push_protobuf_varint_field(&mut message, 9, members.len() as u64);
+    push_protobuf_string_field(&mut message, 10, marker);
+    push_protobuf_varint_field(&mut message, 15, now_ms);
+    push_protobuf_varint_field(&mut message, 16, now_ms);
+    push_protobuf_string_field(&mut message, 23, user_id);
+    push_protobuf_varint_field(&mut message, 25, now_ms);
+
+    let mut frame = Vec::with_capacity(message.len() + 32);
+    push_protobuf_string_field(&mut frame, 1, "MongoChatMessage");
+    push_protobuf_bytes_field(&mut frame, 2, &message);
+    frame
 }
 
 /// Scan a received frame for our `gcsrt-<client>-<seq>-<sendMicros>` markers,
 /// pushing an end-to-end latency (µs) for each one found.
 fn parse_gcs_markers(text: &str, out: &mut Vec<u64>) {
+    parse_gcs_marker_bytes(text.as_bytes(), out);
+}
+
+fn parse_gcs_marker_bytes(bytes: &[u8], out: &mut Vec<u64>) {
     let needle = "gcsrt-";
     let mut idx = 0usize;
-    while let Some(pos) = text[idx..].find(needle) {
+    while let Some(pos) = find_bytes(&bytes[idx..], needle.as_bytes()) {
         let start = idx + pos;
-        let rest = &text[start..];
-        // The marker is `gcsrt-<client>-<seq>-<micros>`; every char is in
-        // [0-9a-zA-Z-]. Stop at the first byte outside that set so we don't pick
-        // up a trailing quote or escape character regardless of how the frame is
-        // (re)serialized.
-        let marker_len = rest
-            .bytes()
-            .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
-            .count();
-        let marker = &rest[..marker_len];
-        if let Some(send_us) = marker
-            .rsplit('-')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-        {
+        let rest = &bytes[start..];
+        if let Some((marker_len, send_us)) = parse_gcs_marker_send_us(rest) {
             out.push(now_micros().saturating_sub(send_us));
+            idx = start + marker_len;
+        } else {
+            idx = start + needle.len();
         }
-        idx = start + marker_len.max(needle.len());
+    }
+}
+
+fn parse_gcs_marker_send_us(bytes: &[u8]) -> Option<(usize, u64)> {
+    let prefix = b"gcsrt-";
+    if !bytes.starts_with(prefix) {
+        return None;
+    }
+
+    let mut idx = prefix.len();
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+    idx = consume_ascii_digits(bytes, idx)?;
+    if *bytes.get(idx)? != b'-' {
+        return None;
+    }
+    idx += 1;
+
+    let micros_start = idx;
+    idx = consume_ascii_digits(bytes, idx)?;
+    let send_us = parse_ascii_u64(&bytes[micros_start..idx])?;
+    Some((idx, send_us))
+}
+
+fn consume_ascii_digits(bytes: &[u8], mut idx: usize) -> Option<usize> {
+    let start = idx;
+    while matches!(bytes.get(idx), Some(b'0'..=b'9')) {
+        idx += 1;
+    }
+    if idx == start {
+        None
+    } else {
+        Some(idx)
+    }
+}
+
+fn parse_ascii_u64(bytes: &[u8]) -> Option<u64> {
+    let mut value = 0u64;
+    for &b in bytes {
+        let digit = (b as char).to_digit(10)? as u64;
+        value = value.checked_mul(10)?.checked_add(digit)?;
+    }
+    Some(value)
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn reported_received_count(load_mode: &str, messages: usize, latency_samples: usize) -> usize {
+    if load_mode == LOAD_MODE_GCS {
+        messages
+    } else {
+        latency_samples
     }
 }
 
@@ -925,6 +1072,14 @@ where
                     stats.record_latency_us(latency_us, latencies);
                 }
             }
+            Ok(Message::Binary(bytes)) => {
+                stats.messages.fetch_add(1, Ordering::Relaxed);
+                lat_buf.clear();
+                parse_gcs_marker_bytes(&bytes, &mut lat_buf);
+                for latency_us in lat_buf.drain(..) {
+                    stats.record_latency_us(latency_us, latencies);
+                }
+            }
             Ok(_) => {}
             Err(_) => {
                 stats.receive_errors.fetch_add(1, Ordering::Relaxed);
@@ -950,6 +1105,7 @@ async fn run_gcs_client(
         &assignment.user_id,
         &assignment.device_id,
         &assignment.conv_id,
+        config.gcs_message_encoding,
     );
 
     loop {
@@ -965,6 +1121,7 @@ async fn run_gcs_client(
                     let conv = assignment.conv_id.clone();
                     let user = assignment.user_id.clone();
                     let members = Arc::clone(&assignment.members);
+                    let encoding = config.gcs_message_encoding;
                     let sender = tokio::spawn(async move {
                         let mut seq: u64 = 0;
                         let mut ticker = tokio::time::interval(send_interval);
@@ -973,8 +1130,9 @@ async fn run_gcs_client(
                             ticker.tick().await;
                             seq = seq.wrapping_add(1);
                             let marker = format!("gcsrt-{}-{}-{}", client_id, seq, now_micros());
-                            let frame = build_gcs_chat_frame(&conv, &user, &members, &marker);
-                            if writer.send(Message::Text(frame)).await.is_err() {
+                            let frame =
+                                build_gcs_chat_frame(&conv, &user, &members, &marker, encoding);
+                            if writer.send(frame).await.is_err() {
                                 break;
                             }
                             send_stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -1092,23 +1250,26 @@ async fn report_stats(
                 Err(_) => (0, 0, 0, 0, 0, 0.0),
             };
             let sent = stats.sent.load(Ordering::Relaxed);
-            let received = stats.received.load(Ordering::Relaxed);
+            let latency_samples = stats.received.load(Ordering::Relaxed);
+            let received = reported_received_count(&config.load_mode, messages, latency_samples);
             let receive_errors = stats.receive_errors.load(Ordering::Relaxed);
             let correlation_misses = stats.correlation_misses.load(Ordering::Relaxed);
             let in_flight = stats.in_flight.load(Ordering::Relaxed);
 
             // received/sent ratio approximates conversation fan-out in gcs mode.
             println!(
-                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} \
-                 sent={} received={} in_flight={} correlation_misses={} receive_errors={} \
+                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} messages={} \
+                 sent={} received={} latency_samples={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
                 config.load_mode,
                 attempted,
                 connected,
                 failed,
                 open,
+                messages,
                 sent,
                 received,
+                latency_samples,
                 in_flight,
                 correlation_misses,
                 receive_errors,
@@ -1151,7 +1312,7 @@ async fn main() {
         "ws-loadtest-rs starting target_ws_url={} client_count={} load_mode={} hold_seconds={} \
          connect_timeout_seconds={} receive_timeout_seconds={} reconnect_delay_ms={} \
          ramp_delay_ms={} report_interval_seconds={} messages_per_second_per_client={} \
-         message_payload={:?} message_encodings={} loadtest_transports={} \
+         message_payload={:?} message_encodings={} gcs_message_encoding={} loadtest_transports={} \
          correlation_timeout_seconds={}",
         config.target_ws_url,
         config.client_count,
@@ -1165,6 +1326,7 @@ async fn main() {
         config.messages_per_second_per_client,
         config.message_payload,
         format_message_encodings(&config.message_encodings),
+        config.gcs_message_encoding.as_str(),
         config.loadtest_transports,
         config.correlation_timeout_seconds
     );
@@ -1227,5 +1389,50 @@ async fn main() {
 
     loop {
         sleep(Duration::from_secs(60)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gcs_marker_parser_handles_text_delimiter() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let frame = format!(r#"{{"Messages":["gcsrt-12-34-{send_us}"]}}"#);
+        let mut latencies = Vec::new();
+
+        parse_gcs_markers(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_stops_before_following_protobuf_field_key() {
+        let send_us = now_micros().saturating_sub(1_000);
+        let mut frame = format!("prefix-gcsrt-12-34-{send_us}").into_bytes();
+        frame.extend_from_slice(&[0x78, 0x80, 0x81, 0x01]);
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(&frame, &mut latencies);
+
+        assert_eq!(latencies.len(), 1);
+        assert!(latencies[0] >= 1_000);
+    }
+
+    #[test]
+    fn gcs_marker_parser_skips_malformed_marker() {
+        let mut latencies = Vec::new();
+
+        parse_gcs_marker_bytes(b"gcsrt-12-nope-123 gcsrt-12-34-", &mut latencies);
+
+        assert!(latencies.is_empty());
+    }
+
+    #[test]
+    fn gcs_report_received_counts_frames_not_latency_samples() {
+        assert_eq!(reported_received_count(LOAD_MODE_GCS, 42, 0), 42);
+        assert_eq!(reported_received_count(LOAD_MODE_PIPELINE, 42, 7), 7);
     }
 }

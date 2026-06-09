@@ -72,6 +72,10 @@ spec:
               value: 'false'
             - name: SOLANA_SETTLEMENT_ENABLED
               value: 'false'
+            - name: SOLANA_MAINNET_SETTLEMENT_ENABLED
+              value: 'false'
+            - name: ESCROW_SETTLEMENT_REQUIRE_INTENT
+              value: 'true'
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
             - name: ESCROW_SETTLEMENT_AUTH_SECRET

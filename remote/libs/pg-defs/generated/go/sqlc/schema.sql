@@ -1987,6 +1987,17 @@ create index if not exists des_soccer_learning_policy_versions_branch_tip_idx
   )
   where full_entries_retained = true;
 
+-- At most one active policy version per experiment. The writer archives the
+-- prior active version and inserts the new one in a single transaction; this
+-- partial unique index makes that invariant durable under concurrent runners
+-- (a racing second activation fails to commit instead of producing two actives).
+-- Note: if a live database already holds duplicate active rows, the reviewed
+-- migration must first archive all but the newest active version per experiment
+-- before this index can be created.
+create unique index if not exists des_soccer_learning_policy_versions_single_active_uq
+  on des_soccer_learning_policy_versions (experiment_id)
+  where status = 'active';
+
 create table if not exists des_soccer_learning_policy_entries (
   id uuid primary key default gen_random_uuid(),
   policy_version_id uuid not null references des_soccer_learning_policy_versions(id),

@@ -7,7 +7,6 @@ RUN cargo build --release
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /app/target/release/dd-escrow-rs /usr/local/bin/dd-escrow-rs
 ENTRYPOINT ["/usr/local/bin/dd-escrow-rs"]

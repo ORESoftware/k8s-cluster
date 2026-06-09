@@ -20,7 +20,13 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-05-economics-server'
+        dd.dev/log-schema: dd.log.v1
+        dd.dev/otel-mode: explicit-only
+        dd.dev/telemetry-revision: '2026-06-07-economics-telemetry'
+        prometheus.io/path: /metrics
+        prometheus.io/port: '8114'
+        prometheus.io/scheme: http
+        prometheus.io/scrape: 'true'
       labels:
         app: dd-economics-server
     spec:
@@ -155,6 +161,14 @@ spec:
               value: /var/cache/dd-economics-server/target
             - name: RUST_LOG
               value: info
+            - name: OTEL_SERVICE_NAME
+              value: dd-economics-server
+            - name: OTEL_SERVICE_NAMESPACE
+              value: remote-dev
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=stage,service.version=0.1.0,k8s.namespace.name=default
+            - name: ECONOMICS_GRAFANA_DASHBOARD_UID
+              value: dd-economics-server
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -174,6 +188,8 @@ spec:
               value: 'false'
             - name: ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS
               value: 'false'
+            - name: ECONOMICS_ALLOWED_SOURCE_HOSTS
+              value: api.fiscaldata.treasury.gov,api.worldbank.org,api.coingecko.com,fred.stlouisfed.org
             # Optional sentiment-provider placeholders. Values live in AWS
             # Secrets Manager / Kubernetes secrets, never in Git.
             - name: ECONOMICS_X_BEARER_TOKEN
@@ -278,6 +294,12 @@ spec:
                   name: dd-agent-secrets
                   key: ECONOMICS_EIA_API_KEY
                   optional: true
+            - name: ECONOMICS_COINGECKO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_COINGECKO_API_KEY
+                  optional: true
             - name: ECONOMICS_SEC_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -314,6 +336,18 @@ spec:
                   name: dd-agent-secrets
                   key: ECONOMICS_PREQIN_API_KEY
                   optional: true
+            - name: ECONOMICS_DATABRICKS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_DATABRICKS_HOST
+                  optional: true
+            - name: ECONOMICS_DATABRICKS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ECONOMICS_DATABRICKS_TOKEN
+                  optional: true
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: ECONOMICS_FORECAST_REQUEST_SUBJECT
@@ -326,6 +360,22 @@ spec:
               value: dd.remote.economics.market.events
             - name: ECONOMICS_RUNTIME_EVENT_SUBJECT
               value: dd.remote.events
+            - name: ECONOMICS_PIPELINE_INTENT_SUBJECT
+              value: dd.remote.public_data.pipeline.jobs
+            - name: ECONOMICS_SPARK_PIPELINE_URL
+              value: http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085
+            - name: ECONOMICS_SPARK_PIPELINE_AUTH_ENV
+              value: SERVER_AUTH_SECRET
+            - name: ECONOMICS_SPARK_MASTER_URL
+              value: spark://spark-master.big-data.svc.cluster.local:7077
+            - name: ECONOMICS_AIRFLOW_API_URL
+              value: http://airflow.big-data.svc.cluster.local:8080
+            - name: ECONOMICS_DATA_LAKE_URI
+              value: s3a://dd-economics/market-signals
+            - name: ECONOMICS_ENABLE_PIPELINE_SUBMIT
+              value: 'false'
+            - name: ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS
+              value: 'false'
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.

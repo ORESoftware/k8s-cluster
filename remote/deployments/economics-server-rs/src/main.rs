@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     error::Error,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT;
+use dd_nats_subject_defs::{PUBLIC_DATA_PIPELINE_JOBS_SUBJECT, RUNTIME_EVENTS_SUBJECT};
 use des_engine::service::{EndpointKind, ServiceBuilder, ServiceInfo};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -33,11 +33,22 @@ const MAX_SOURCE_FETCH_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SERIES: usize = 160;
 const MAX_OBSERVATIONS_PER_SERIES: usize = 8_000;
 const MAX_TOKEN_LEN: usize = 128;
+const MAX_URL_LEN: usize = 2_048;
+const MAX_JSON_POINTER_LEN: usize = 256;
 const MAX_SENTIMENT_DOCUMENTS: usize = 512;
 const MAX_SENTIMENT_TEXT_BYTES: usize = 4_096;
+const MAX_SENTIMENT_CONTEXT_SCORES: usize = 512;
+const MAX_VC_DEALS: usize = 256;
+const MAX_VC_SECTOR_FLOWS: usize = 128;
+const MAX_PIPELINE_JOB_INTENTS: usize = 12;
 const ECONOMICS_FORECAST_REQUEST_SUBJECT: &str = "dd.remote.economics.forecast.requests";
 const ECONOMICS_FORECAST_RESULT_SUBJECT: &str = "dd.remote.economics.forecast.results";
 const ECONOMICS_MARKET_EVENT_SUBJECT: &str = "dd.remote.economics.market.events";
+const DEFAULT_SPARK_PIPELINE_URL: &str =
+    "http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085";
+const DEFAULT_SPARK_MASTER_URL: &str = "spark://spark-master.big-data.svc.cluster.local:7077";
+const DEFAULT_AIRFLOW_API_URL: &str = "http://airflow.big-data.svc.cluster.local:8080";
+const DEFAULT_DATA_LAKE_URI: &str = "s3a://dd-economics/market-signals";
 const ECONOMICS_QUEUE_GROUP: &str = "dd-economics-server";
 
 #[derive(Clone)]
@@ -54,6 +65,8 @@ struct Config {
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
     allow_private_source_urls: bool,
+    allowed_source_hosts: Vec<String>,
+    allowed_source_auth_envs: Vec<String>,
     sentiment_credentials: SentimentCredentialStatus,
     market_data_credentials: MarketDataCredentialStatus,
     history_years: u32,
@@ -64,6 +77,15 @@ struct Config {
     result_subject: String,
     market_event_subject: String,
     runtime_event_subject: String,
+    pipeline_intent_subject: String,
+    spark_pipeline_url: Option<String>,
+    spark_pipeline_auth_env: String,
+    spark_master_url: String,
+    airflow_api_url: Option<String>,
+    databricks_host: Option<String>,
+    data_lake_uri: String,
+    allow_pipeline_submit: bool,
+    allow_external_pipeline_urls: bool,
 }
 
 #[derive(Default)]
@@ -72,8 +94,22 @@ struct Metrics {
     forecasts_total: AtomicU64,
     ingest_requests_total: AtomicU64,
     source_pull_total: AtomicU64,
+    source_pull_success_total: AtomicU64,
+    source_pull_failure_total: AtomicU64,
+    source_pull_bytes_total: AtomicU64,
+    source_pull_stored_points_total: AtomicU64,
+    source_pull_last_success_unix_seconds: AtomicU64,
     sentiment_requests_total: AtomicU64,
     recommendation_requests_total: AtomicU64,
+    pipeline_plan_requests_total: AtomicU64,
+    pipeline_submit_requests_total: AtomicU64,
+    pipeline_publish_attempts_total: AtomicU64,
+    pipeline_publish_success_total: AtomicU64,
+    pipeline_publish_failure_total: AtomicU64,
+    pipeline_submit_success_total: AtomicU64,
+    pipeline_submit_failure_total: AtomicU64,
+    integration_health_requests_total: AtomicU64,
+    observability_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
@@ -226,7 +262,9 @@ struct TheoryWeights {
 #[serde(rename_all = "camelCase")]
 struct ApiPullRequest {
     request_id: Option<String>,
-    url: String,
+    source_id: Option<String>,
+    url: Option<String>,
+    parser: Option<SourceParser>,
     instrument_id: Option<String>,
     display_name: Option<String>,
     asset_class: Option<String>,
@@ -236,8 +274,19 @@ struct ApiPullRequest {
     date_field: Option<String>,
     price_field: Option<String>,
     volume_field: Option<String>,
+    date_index: Option<usize>,
+    price_index: Option<usize>,
+    volume_index: Option<usize>,
     auth_header_env: Option<String>,
     auth_header_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SourceParser {
+    JsonRecords,
+    JsonTupleArray,
+    CsvRecords,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -245,14 +294,29 @@ struct ApiPullRequest {
 struct ApiPullResponse {
     ok: bool,
     request_id: String,
+    source_id: Option<String>,
     source: String,
+    parser: Option<SourceParser>,
     url_host: String,
     http_status: u16,
     bytes: usize,
     stored_points: usize,
     instrument_id: Option<String>,
+    quality: Option<SourceQualityReport>,
     warnings: Vec<String>,
     fetched_at_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceQualityReport {
+    parser: SourceParser,
+    observed_points: usize,
+    dropped_points: usize,
+    first_date: Option<String>,
+    last_date: Option<String>,
+    min_price: Option<f64>,
+    max_price: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,6 +392,32 @@ struct SourceDescriptor {
     notes: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicSourceTemplate {
+    id: &'static str,
+    provider: &'static str,
+    name: &'static str,
+    asset_class: &'static str,
+    instrument_id: &'static str,
+    display_name: &'static str,
+    currency: &'static str,
+    source: &'static str,
+    url: &'static str,
+    host: &'static str,
+    parser: SourceParser,
+    root_pointer: Option<&'static str>,
+    date_field: Option<&'static str>,
+    price_field: Option<&'static str>,
+    volume_field: Option<&'static str>,
+    date_index: Option<usize>,
+    price_index: Option<usize>,
+    volume_index: Option<usize>,
+    cadence: &'static str,
+    documentation_url: &'static str,
+    notes: &'static str,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SentimentCredentialStatus {
@@ -353,12 +443,44 @@ struct MarketDataCredentialStatus {
     treasury_api_key: bool,
     census_api_key: bool,
     eia_api_key: bool,
+    coingecko_api_key: bool,
     sec_api_key: bool,
     crunchbase_api_key: bool,
     pitchbook_api_key: bool,
     cb_insights_api_key: bool,
     dealroom_api_key: bool,
     preqin_api_key: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineIntegrationStatus {
+    spark_pipeline_url_configured: bool,
+    spark_pipeline_auth_configured: bool,
+    spark_pipeline_submit_enabled: bool,
+    spark_pipeline_url: Option<String>,
+    spark_pipeline_auth_env: String,
+    spark_master_url: String,
+    airflow_api_url_configured: bool,
+    airflow_api_url: Option<String>,
+    databricks_host_configured: bool,
+    databricks_token_configured: bool,
+    data_lake_uri: String,
+    pipeline_intent_subject: String,
+    nats_configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IntegrationDependencyStatus {
+    id: String,
+    kind: String,
+    status: String,
+    configured: bool,
+    required_for_core_readiness: bool,
+    mode: String,
+    details: Value,
+    warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -490,6 +612,69 @@ struct RecommendationComponent {
     weight: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelinePlanRequest {
+    request_id: Option<String>,
+    schema_version: Option<String>,
+    scenario: Option<String>,
+    data_lake_uri: Option<String>,
+    include_recommendations: Option<bool>,
+    publish_to_nats: Option<bool>,
+    job_kinds: Option<Vec<String>>,
+    recommendation_request: Option<RecommendationRequest>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelinePlanResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    generated_at_ms: u128,
+    pipeline_status: PipelineIntegrationStatus,
+    recommendation_summary: Value,
+    job_intents: Vec<PipelineJobIntent>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineJobIntent {
+    id: String,
+    engine: String,
+    target: String,
+    kind: String,
+    endpoint: Option<String>,
+    auth_required: bool,
+    submit_eligible: bool,
+    params: Value,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineSubmitResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    generated_at_ms: u128,
+    plan: PipelinePlanResponse,
+    submitted_jobs: Vec<PipelineSubmittedJob>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PipelineSubmittedJob {
+    intent_id: String,
+    target: String,
+    http_status: Option<u16>,
+    accepted: bool,
+    response: Option<Value>,
+    error: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct CompanyCandidate {
     ticker: &'static str,
@@ -565,6 +750,66 @@ fn optional_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn env_list(key: &str) -> Vec<String> {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| {
+                    !item.is_empty()
+                        && item.len() <= MAX_TOKEN_LEN
+                        && !item.chars().any(char::is_control)
+                })
+                .take(64)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn default_source_auth_envs() -> Vec<String> {
+    [
+        "ECONOMICS_X_BEARER_TOKEN",
+        "ECONOMICS_X_API_KEY",
+        "ECONOMICS_X_API_SECRET",
+        "ECONOMICS_X_ACCESS_TOKEN",
+        "ECONOMICS_X_ACCESS_TOKEN_SECRET",
+        "ECONOMICS_REDDIT_CLIENT_ID",
+        "ECONOMICS_REDDIT_CLIENT_SECRET",
+        "ECONOMICS_NEWS_API_KEY",
+        "ECONOMICS_STOCKTWITS_TOKEN",
+        "ECONOMICS_GDELT_API_KEY",
+        "ECONOMICS_FRED_API_KEY",
+        "ECONOMICS_BEA_API_KEY",
+        "ECONOMICS_BLS_API_KEY",
+        "ECONOMICS_TREASURY_API_KEY",
+        "ECONOMICS_CENSUS_API_KEY",
+        "ECONOMICS_EIA_API_KEY",
+        "ECONOMICS_COINGECKO_API_KEY",
+        "ECONOMICS_SEC_API_KEY",
+        "ECONOMICS_CRUNCHBASE_API_KEY",
+        "ECONOMICS_PITCHBOOK_API_KEY",
+        "ECONOMICS_CB_INSIGHTS_API_KEY",
+        "ECONOMICS_DEALROOM_API_KEY",
+        "ECONOMICS_PREQIN_API_KEY",
+        "ECONOMICS_DATABRICKS_TOKEN",
+    ]
+    .into_iter()
+    .map(|value| value.to_ascii_lowercase())
+    .collect()
+}
+
+fn configured_source_auth_envs() -> Vec<String> {
+    let mut allowed = default_source_auth_envs()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for env_name in env_list("ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS") {
+        allowed.insert(env_name);
+    }
+    allowed.into_iter().collect()
+}
+
 fn env_bool(key: &str, fallback: bool) -> bool {
     env::var(key)
         .ok()
@@ -599,6 +844,8 @@ fn config_from_env() -> Config {
             .or_else(|| optional_env("ECONOMICS_SERVER_AUTH_SECRET")),
         allow_unauthenticated: env_bool("ECONOMICS_ALLOW_UNAUTHENTICATED", false),
         allow_private_source_urls: env_bool("ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS", false),
+        allowed_source_hosts: env_list("ECONOMICS_ALLOWED_SOURCE_HOSTS"),
+        allowed_source_auth_envs: configured_source_auth_envs(),
         sentiment_credentials: sentiment_credentials_from_env(),
         market_data_credentials: market_data_credentials_from_env(),
         history_years: env_u32("ECONOMICS_HISTORY_YEARS", DEFAULT_HISTORY_YEARS),
@@ -618,6 +865,23 @@ fn config_from_env() -> Config {
             ECONOMICS_MARKET_EVENT_SUBJECT,
         ),
         runtime_event_subject: env_value("ECONOMICS_RUNTIME_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
+        pipeline_intent_subject: env_value(
+            "ECONOMICS_PIPELINE_INTENT_SUBJECT",
+            PUBLIC_DATA_PIPELINE_JOBS_SUBJECT,
+        ),
+        spark_pipeline_url: optional_env("ECONOMICS_SPARK_PIPELINE_URL")
+            .or_else(|| Some(DEFAULT_SPARK_PIPELINE_URL.to_string())),
+        spark_pipeline_auth_env: env_value(
+            "ECONOMICS_SPARK_PIPELINE_AUTH_ENV",
+            "SERVER_AUTH_SECRET",
+        ),
+        spark_master_url: env_value("ECONOMICS_SPARK_MASTER_URL", DEFAULT_SPARK_MASTER_URL),
+        airflow_api_url: optional_env("ECONOMICS_AIRFLOW_API_URL")
+            .or_else(|| Some(DEFAULT_AIRFLOW_API_URL.to_string())),
+        databricks_host: optional_env("ECONOMICS_DATABRICKS_HOST"),
+        data_lake_uri: env_value("ECONOMICS_DATA_LAKE_URI", DEFAULT_DATA_LAKE_URI),
+        allow_pipeline_submit: env_bool("ECONOMICS_ENABLE_PIPELINE_SUBMIT", false),
+        allow_external_pipeline_urls: env_bool("ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS", false),
     }
 }
 
@@ -645,6 +909,7 @@ fn market_data_credentials_from_env() -> MarketDataCredentialStatus {
         treasury_api_key: optional_env("ECONOMICS_TREASURY_API_KEY").is_some(),
         census_api_key: optional_env("ECONOMICS_CENSUS_API_KEY").is_some(),
         eia_api_key: optional_env("ECONOMICS_EIA_API_KEY").is_some(),
+        coingecko_api_key: optional_env("ECONOMICS_COINGECKO_API_KEY").is_some(),
         sec_api_key: optional_env("ECONOMICS_SEC_API_KEY").is_some(),
         crunchbase_api_key: optional_env("ECONOMICS_CRUNCHBASE_API_KEY").is_some(),
         pitchbook_api_key: optional_env("ECONOMICS_PITCHBOOK_API_KEY").is_some(),
@@ -659,6 +924,69 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+fn now_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn now_unix_nano_string() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .to_string()
+}
+
+fn severity_number(severity_text: &str) -> u8 {
+    match severity_text {
+        "TRACE" => 1,
+        "DEBUG" => 5,
+        "INFO" => 9,
+        "WARN" => 13,
+        "ERROR" => 17,
+        _ => 9,
+    }
+}
+
+fn telemetry_log_record(
+    severity_text: &str,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) -> Value {
+    json!({
+        "schema": "dd.log.v1",
+        "time_unix_nano": now_unix_nano_string(),
+        "severity_text": severity_text,
+        "severity_number": severity_number(severity_text),
+        "body": body,
+        "resource_service_name": SERVICE_NAME,
+        "resource_service_namespace": env_value("OTEL_SERVICE_NAMESPACE", "remote-dev"),
+        "scope_name": "economics-server",
+        "event_name": event_name,
+        "attributes": attributes
+    })
+}
+
+fn emit_log(severity_text: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = telemetry_log_record(severity_text, event_name, body, attributes).to_string();
+    if severity_number(severity_text) >= 17 {
+        eprintln!("{record}");
+    } else {
+        println!("{record}");
+    }
+}
+
+fn error_summary(error: &str) -> String {
+    error
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(256)
+        .collect()
 }
 
 fn clamp(value: f64, min: f64, max: f64) -> f64 {
@@ -695,6 +1023,66 @@ fn clean_token(value: &str, label: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn clean_optional_token(value: &Option<String>, label: &str) -> Result<(), String> {
+    if let Some(value) = value.as_deref() {
+        clean_token(value, label)?;
+    }
+    Ok(())
+}
+
+fn validate_source_auth_env(config: &Config, env_name: &str) -> Result<String, String> {
+    let clean = clean_token(env_name, "authHeaderEnv")?;
+    let normalized = clean.to_ascii_lowercase();
+    if config
+        .allowed_source_auth_envs
+        .iter()
+        .any(|allowed| allowed == &normalized)
+    {
+        return Ok(clean);
+    }
+    Err(
+        "authHeaderEnv must be listed in ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS or one of the built-in ECONOMICS_* credential placeholders"
+            .to_string(),
+    )
+}
+
+fn validate_source_auth_header_name(name: &str) -> Result<reqwest::header::HeaderName, String> {
+    let clean = clean_token(name, "authHeaderName")?;
+    let lower = clean.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "host"
+            | "connection"
+            | "content-length"
+            | "transfer-encoding"
+            | "cookie"
+            | "set-cookie"
+            | "proxy-authorization"
+            | "upgrade"
+    ) {
+        return Err(
+            "authHeaderName cannot be a hop-by-hop, cookie, host, or payload framing header"
+                .to_string(),
+        );
+    }
+    clean
+        .parse::<reqwest::header::HeaderName>()
+        .map_err(|error| format!("authHeaderName is invalid: {error}"))
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let l = left.get(index).copied().unwrap_or(0);
+        let r = right.get(index).copied().unwrap_or(0);
+        diff |= usize::from(l ^ r);
+    }
+    diff == 0
+}
+
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure> {
     if state.config.allow_unauthenticated {
         return Ok(());
@@ -705,9 +1093,12 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure
     let provided = headers
         .get("x-server-auth")
         .or_else(|| headers.get("auth"))
+        .or_else(|| headers.get("authorization"))
         .and_then(|value| value.to_str().ok());
     match provided {
-        Some(value) if value == secret => Ok(()),
+        Some(value) if constant_time_eq(value.trim_start_matches("Bearer ").trim(), secret) => {
+            Ok(())
+        }
         _ => Err(AuthFailure::Unauthorized),
     }
 }
@@ -721,6 +1112,16 @@ fn auth_failure_response(state: &AppState, failure: AuthFailure) -> Response {
         AuthFailure::MissingSecret => "server auth secret is not configured",
         AuthFailure::Unauthorized => "unauthorized",
     };
+    emit_log(
+        "WARN",
+        "economics.auth.failure",
+        "economics request authentication failed",
+        json!({
+            "failure": message,
+            "authConfigured": state.config.server_auth_secret.is_some(),
+            "allowUnauthenticated": state.config.allow_unauthenticated
+        }),
+    );
     (
         StatusCode::UNAUTHORIZED,
         Json(json!({ "ok": false, "error": message })),
@@ -767,9 +1168,15 @@ fn des_service_descriptor() -> Value {
             EndpointKind::Action,
         )
         .endpoint(
+            "GET",
+            "/sources/public",
+            "Known public data source templates with parsers and documentation links.",
+            EndpointKind::Service,
+        )
+        .endpoint(
             "POST",
             "/sources/pull",
-            "Fetch JSON market history from an approved API URL.",
+            "Fetch sourceId templates or bounded custom market history from an approved API URL.",
             EndpointKind::Action,
         )
         .endpoint(
@@ -800,6 +1207,42 @@ fn des_service_descriptor() -> Value {
             "POST",
             "/recommendations",
             "Rank top company and commodity buy/sell-or-dump candidates.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/audit/hardening",
+            "Runtime hardening posture, bounds, and residual-risk audit.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/pipelines/catalog",
+            "Spark, Airflow, Databricks, data lake, and NATS pipeline integration catalog.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/observability",
+            "Prometheus, Loki, Grafana, and explicit-only OTel telemetry posture.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/integrations/health",
+            "Redacted readiness and degradation status for economics integrations.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "POST",
+            "/pipelines/plan",
+            "Create redacted big-data pipeline job intents for economics refresh work.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "POST",
+            "/pipelines/submit",
+            "Submit eligible job intents to the internal Spark pipeline server when enabled.",
             EndpointKind::Action,
         )
         .endpoint(
@@ -969,7 +1412,7 @@ fn source_catalog() -> Vec<SourceDescriptor> {
             id: "crypto",
             name: "CoinGecko, Coinbase, Kraken, Binance US",
             asset_classes: &["crypto", "fx"],
-            auth: "public/private",
+            auth: "public 365-day CoinGecko window or ECONOMICS_COINGECKO_API_KEY/private exchange keys",
             notes: "Spot, order-book, volume, market-cap, funding, and exchange metadata.",
         },
         SourceDescriptor {
@@ -1046,6 +1489,428 @@ fn source_catalog() -> Vec<SourceDescriptor> {
                 "Prices, rents, permits, starts, inventory, mortgage rates, and regional supply.",
         },
     ]
+}
+
+fn public_source_templates() -> Vec<PublicSourceTemplate> {
+    vec![
+        PublicSourceTemplate {
+            id: "treasury-debt-to-penny",
+            provider: "US Treasury FiscalData",
+            name: "US total public debt outstanding",
+            asset_class: "debt",
+            instrument_id: "US-PUBLIC-DEBT",
+            display_name: "US Total Public Debt Outstanding",
+            currency: "USD",
+            source: "treasury-fiscaldata",
+            url: "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny?fields=record_date,tot_pub_debt_out_amt&filter=record_date:gte:2011-01-01&sort=record_date&page%5Bsize%5D=8000",
+            host: "api.fiscaldata.treasury.gov",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/data"),
+            date_field: Some("record_date"),
+            price_field: Some("tot_pub_debt_out_amt"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/",
+            notes: "Official Treasury borrowing series for national-debt context.",
+        },
+        PublicSourceTemplate {
+            id: "worldbank-us-gdp-current-usd",
+            provider: "World Bank Indicators API",
+            name: "US GDP current USD",
+            asset_class: "macro",
+            instrument_id: "US-GDP-CURRENT-USD",
+            display_name: "US GDP Current USD",
+            currency: "USD",
+            source: "worldbank",
+            url: "https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD?format=json&per_page=70",
+            host: "api.worldbank.org",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/1"),
+            date_field: Some("date"),
+            price_field: Some("value"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "annual",
+            documentation_url: "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation",
+            notes: "Public GDP anchor for macro/fiscal projections.",
+        },
+        PublicSourceTemplate {
+            id: "worldbank-us-labor-participation",
+            provider: "World Bank Indicators API",
+            name: "US labor force participation rate",
+            asset_class: "labor",
+            instrument_id: "US-LABOR-PARTICIPATION",
+            display_name: "US Labor Force Participation Rate",
+            currency: "PCT",
+            source: "worldbank",
+            url: "https://api.worldbank.org/v2/country/US/indicator/SL.TLF.CACT.ZS?format=json&per_page=70",
+            host: "api.worldbank.org",
+            parser: SourceParser::JsonRecords,
+            root_pointer: Some("/1"),
+            date_field: Some("date"),
+            price_field: Some("value"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "annual",
+            documentation_url: "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation",
+            notes: "Public workforce participation proxy for labor pressure.",
+        },
+        PublicSourceTemplate {
+            id: "coingecko-bitcoin-usd",
+            provider: "CoinGecko API",
+            name: "Bitcoin market chart USD",
+            asset_class: "crypto",
+            instrument_id: "BTC-USD",
+            display_name: "Bitcoin USD",
+            currency: "USD",
+            source: "coingecko",
+            url: "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily",
+            host: "api.coingecko.com",
+            parser: SourceParser::JsonTupleArray,
+            root_pointer: Some("/prices"),
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: Some(0),
+            price_index: Some(1),
+            volume_index: None,
+            cadence: "daily",
+            documentation_url: "https://docs.coingecko.com/reference/endpoint-overview",
+            notes: "Public unauthenticated crypto history is provider-limited to the past 365 days; longer windows require a provider key or private market-data feed.",
+        },
+        PublicSourceTemplate {
+            id: "coingecko-ethereum-usd",
+            provider: "CoinGecko API",
+            name: "Ethereum market chart USD",
+            asset_class: "crypto",
+            instrument_id: "ETH-USD",
+            display_name: "Ethereum USD",
+            currency: "USD",
+            source: "coingecko",
+            url: "https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=365&interval=daily",
+            host: "api.coingecko.com",
+            parser: SourceParser::JsonTupleArray,
+            root_pointer: Some("/prices"),
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: Some(0),
+            price_index: Some(1),
+            volume_index: None,
+            cadence: "daily",
+            documentation_url: "https://docs.coingecko.com/reference/endpoint-overview",
+            notes: "Public unauthenticated crypto history is provider-limited to the past 365 days; longer windows require a provider key or private market-data feed.",
+        },
+        PublicSourceTemplate {
+            id: "fred-dgs10",
+            provider: "Federal Reserve Economic Data",
+            name: "10-year Treasury constant maturity rate",
+            asset_class: "rates",
+            instrument_id: "DGS10",
+            display_name: "10-Year Treasury Constant Maturity Rate",
+            currency: "PCT",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DGS10"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DGS10",
+            notes: "Public rate anchor for duration, discount-rate, and dollar-pressure features.",
+        },
+        PublicSourceTemplate {
+            id: "fred-wti-oil",
+            provider: "Federal Reserve Economic Data",
+            name: "WTI crude oil spot price",
+            asset_class: "oil",
+            instrument_id: "DCOILWTICO",
+            display_name: "WTI Crude Oil Spot Price",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DCOILWTICO"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DCOILWTICO",
+            notes: "Public oil benchmark for commodity and inflation scenarios.",
+        },
+        PublicSourceTemplate {
+            id: "fred-gold",
+            provider: "Federal Reserve Economic Data",
+            name: "Gold fixing price USD",
+            asset_class: "gold",
+            instrument_id: "GOLDAMGBD228NLBM",
+            display_name: "Gold Fixing Price USD",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GOLDAMGBD228NLBM&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("GOLDAMGBD228NLBM"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/GOLDAMGBD228NLBM",
+            notes: "Public precious-metals benchmark for real-rate and safe-haven modeling.",
+        },
+        PublicSourceTemplate {
+            id: "fred-silver",
+            provider: "Federal Reserve Economic Data",
+            name: "Silver price USD",
+            asset_class: "silver",
+            instrument_id: "SLVPRUSD",
+            display_name: "Silver Price USD",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SLVPRUSD&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("SLVPRUSD"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/SLVPRUSD",
+            notes: "Public silver benchmark for industrial and precious-metals modeling.",
+        },
+        PublicSourceTemplate {
+            id: "fred-sp500",
+            provider: "Federal Reserve Economic Data",
+            name: "S&P 500 index",
+            asset_class: "equities",
+            instrument_id: "SP500",
+            display_name: "S&P 500 Index",
+            currency: "USD",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SP500&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("SP500"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/SP500",
+            notes: "Public equity benchmark for broad market momentum and risk-premium context.",
+        },
+        PublicSourceTemplate {
+            id: "fred-mortgage30",
+            provider: "Federal Reserve Economic Data",
+            name: "30-year fixed mortgage average",
+            asset_class: "real-estate",
+            instrument_id: "MORTGAGE30US",
+            display_name: "30-Year Fixed Rate Mortgage Average",
+            currency: "PCT",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=MORTGAGE30US&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("MORTGAGE30US"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "weekly",
+            documentation_url: "https://fred.stlouisfed.org/series/MORTGAGE30US",
+            notes: "Public real-estate financing pressure series.",
+        },
+        PublicSourceTemplate {
+            id: "fred-usd-eur",
+            provider: "Federal Reserve Economic Data",
+            name: "US dollar to euro exchange rate",
+            asset_class: "forex",
+            instrument_id: "DEXUSEU",
+            display_name: "US Dollar to Euro Exchange Rate",
+            currency: "USD/EUR",
+            source: "fred-public-csv",
+            url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU&cosd=2011-01-01",
+            host: "fred.stlouisfed.org",
+            parser: SourceParser::CsvRecords,
+            root_pointer: None,
+            date_field: Some("observation_date"),
+            price_field: Some("DEXUSEU"),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            cadence: "business-daily",
+            documentation_url: "https://fred.stlouisfed.org/series/DEXUSEU",
+            notes: "Public FX benchmark for dollar-strength and carry scenarios.",
+        },
+    ]
+}
+
+fn public_source_template(id: &str) -> Option<PublicSourceTemplate> {
+    public_source_templates()
+        .into_iter()
+        .find(|template| template.id == id)
+}
+
+fn public_source_ids() -> Vec<&'static str> {
+    public_source_templates()
+        .into_iter()
+        .map(|template| template.id)
+        .collect()
+}
+
+fn public_source_hosts() -> Vec<&'static str> {
+    let mut hosts = public_source_templates()
+        .into_iter()
+        .map(|template| template.host)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    hosts.sort_unstable();
+    hosts
+}
+
+fn public_source_catalog_payload(config: &Config) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "sources": public_source_templates(),
+        "pullRoute": "POST /sources/pull",
+        "usage": {
+            "sourceId": "Pass one of these ids to POST /sources/pull with no url to fetch and parse a known public source.",
+            "adHoc": "Pass url plus instrumentId, assetClass, parser, and field/index metadata for authenticated custom API pulls."
+        },
+        "egressPolicy": {
+            "privateUrlsAllowed": config.allow_private_source_urls,
+            "allowedSourceHosts": config.allowed_source_hosts,
+            "knownPublicHosts": public_source_hosts(),
+            "redirectFollowing": false
+        },
+        "atMs": now_ms()
+    })
+}
+
+fn observability_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "prometheus": {
+            "metricsRoute": "GET /metrics",
+            "contentType": "text/plain; version=0.0.4",
+            "scrapePort": 8114,
+            "lowCardinalityMetrics": true,
+            "counters": [
+                "dd_economics_server_http_requests_total",
+                "dd_economics_server_forecasts_total",
+                "dd_economics_server_ingest_requests_total",
+                "dd_economics_server_source_pull_total",
+                "dd_economics_server_source_pull_success_total",
+                "dd_economics_server_source_pull_failure_total",
+                "dd_economics_server_source_pull_bytes_total",
+                "dd_economics_server_source_pull_stored_points_total",
+                "dd_economics_server_sentiment_requests_total",
+                "dd_economics_server_recommendation_requests_total",
+                "dd_economics_server_pipeline_plan_requests_total",
+                "dd_economics_server_pipeline_submit_requests_total",
+                "dd_economics_server_pipeline_publish_attempts_total",
+                "dd_economics_server_pipeline_publish_success_total",
+                "dd_economics_server_pipeline_publish_failure_total",
+                "dd_economics_server_pipeline_submit_success_total",
+                "dd_economics_server_pipeline_submit_failure_total",
+                "dd_economics_server_integration_health_requests_total",
+                "dd_economics_server_observability_requests_total",
+                "dd_economics_server_auth_failures_total",
+                "dd_economics_server_errors_total",
+                "dd_economics_server_nats_messages_total",
+                "dd_economics_server_nats_published_total"
+            ],
+            "gauges": [
+                "dd_economics_server_source_pull_last_success_unix_seconds"
+            ]
+        },
+        "loki": {
+            "collectionBoundary": "container stdout/stderr through Promtail",
+            "structuredLogSchema": "dd.log.v1",
+            "eventNames": [
+                "economics.server.start",
+                "economics.auth.failure",
+                "economics.source_pull.ok",
+                "economics.source_pull.error",
+                "economics.nats.loop.disabled",
+                "economics.nats.loop.start",
+                "economics.nats.subscribe.error",
+                "economics.nats.request.oversize",
+                "economics.nats.forecast.error",
+                "economics.nats.request.invalid",
+                "economics.pipeline.plan.encode.error",
+                "economics.pipeline.plan.publish.skipped",
+                "economics.pipeline.plan.publish.ok",
+                "economics.pipeline.plan.publish.error",
+                "economics.pipeline.submit.ok",
+                "economics.pipeline.submit.rejected",
+                "economics.pipeline.submit.error"
+            ],
+            "labelGuidance": "Promtail should promote only low-cardinality fields such as schema, severity_text, service, namespace, and app labels."
+        },
+        "otel": {
+            "mode": "explicit-only",
+            "autoInstrumentation": false,
+            "runtimeMonkeyPatching": false,
+            "serviceName": env_value("OTEL_SERVICE_NAME", SERVICE_NAME),
+            "serviceNamespace": env_value("OTEL_SERVICE_NAMESPACE", "remote-dev"),
+            "resourceAttributesConfigured": optional_env("OTEL_RESOURCE_ATTRIBUTES").is_some(),
+            "otlpEndpointConfigured": optional_env("OTEL_EXPORTER_OTLP_ENDPOINT").is_some(),
+            "collector": "dd-otel-collector handles explicit OTLP and Prometheus scrape pipelines; this service exposes Prometheus metrics and dd.log.v1 logs without auto-instrumentation."
+        },
+        "grafana": {
+            "dashboardUid": env_value("ECONOMICS_GRAFANA_DASHBOARD_UID", "dd-economics-server"),
+            "suggestedPanels": [
+                "request, error, and auth-failure rates",
+                "source pull success/failure, bytes, stored points, and last success timestamp",
+                "forecast/recommendation/pipeline plan/publish/submit rates",
+                "integration health request rate and degraded dependency count",
+                "Loki dd.log.v1 warning/error stream filtered by resource_service_name",
+                "pod readiness/restarts from k8s resource exporter"
+            ]
+        },
+        "runtime": {
+            "natsConfigured": state.nats.is_some(),
+            "publicSourceTemplateCount": public_source_templates().len(),
+            "knownPublicSourceHosts": public_source_hosts(),
+            "sourcePullAllowedHosts": state.config.allowed_source_hosts,
+            "sourceAuthHeaderEnvAllowlistCount": state.config.allowed_source_auth_envs.len(),
+            "integrationHealthRoute": "GET /integrations/health",
+            "storedSeries": state.series_store.read().map(|store| store.len()).unwrap_or(0)
+        },
+        "atMs": now_ms()
+    })
 }
 
 fn sentiment_source_catalog(credentials: &SentimentCredentialStatus) -> Value {
@@ -1137,6 +2002,11 @@ fn schema_descriptor() -> Value {
             "sources": "GET /sentiment/sources reports placeholder credential env names and configured status for X/Twitter, Reddit, news, Stocktwits, and GDELT.",
             "analyze": "POST /sentiment/analyze accepts supplied social/news snippets and returns bounded placeholder sentiment scores by source."
         },
+        "sources": {
+            "catalog": "GET /sources reports broad provider families.",
+            "publicTemplates": "GET /sources/public reports sourceId templates for known public APIs and CSV feeds.",
+            "pull": "POST /sources/pull accepts authenticated sourceId pulls or bounded ad-hoc API pulls."
+        },
         "macro": {
             "indicators": "GET /macro/indicators reports built-in fiscal/labor sample context and public/private credential placeholders."
         },
@@ -1144,6 +2014,19 @@ fn schema_descriptor() -> Value {
             "route": "POST /recommendations",
             "companies": "Returns top 20 invest candidates and top 20 dump/hedge candidates from the model universe.",
             "commodities": "Returns top 30 buy candidates and top 30 sell-or-dump candidates from major tradable commodities."
+        },
+        "pipelines": {
+            "catalog": "GET /pipelines/catalog reports Spark, Airflow, Databricks, data lake, and NATS integration status without returning secrets.",
+            "integrations": "GET /integrations/health reports redacted ready/degraded/disabled status for auth, egress, source credentials, Spark, Airflow, Databricks, NATS, runtime-config, data lake, and DES dependencies.",
+            "plan": "POST /pipelines/plan creates redacted job intents for Spark pipeline server, Spark feature builds, Airflow DAG triggers, Databricks run-now payloads, and NATS public-data pipeline events.",
+            "submit": "POST /pipelines/submit submits only spark-pipeline-server intents and only when ECONOMICS_ENABLE_PIPELINE_SUBMIT=true.",
+            "audit": "GET /audit/hardening reports auth, request bounds, SSRF controls, secret handling, and residual risks."
+        },
+        "observability": {
+            "route": "GET /observability",
+            "prometheus": "GET /metrics exposes low-cardinality counters and gauges.",
+            "loki": "stdout/stderr emits compact dd.log.v1 JSON records for Promtail/Loki.",
+            "otel": "explicit-only posture; no auto-instrumentation or runtime monkey-patching."
         }
     })
 }
@@ -1198,12 +2081,19 @@ fn service_descriptor(state: &AppState) -> Value {
             "forecast": "POST /forecast",
             "ingest": "POST /ingest",
             "sources": "GET /sources",
+            "publicSources": "GET /sources/public",
             "pullSource": "POST /sources/pull",
             "sentimentSources": "GET /sentiment/sources",
             "sentimentAnalyze": "POST /sentiment/analyze",
             "macroIndicators": "GET /macro/indicators",
             "vcInvestment": "GET /vc/investment",
             "recommendations": "POST /recommendations",
+            "auditHardening": "GET /audit/hardening",
+            "pipelineCatalog": "GET /pipelines/catalog",
+            "pipelinePlan": "POST /pipelines/plan",
+            "pipelineSubmit": "POST /pipelines/submit",
+            "observability": "GET /observability",
+            "integrationHealth": "GET /integrations/health",
             "equations": "GET /model/equations",
             "schema": "GET /schema",
             "example": "GET /example",
@@ -1217,7 +2107,8 @@ fn service_descriptor(state: &AppState) -> Value {
             "queueGroup": state.config.queue_group,
             "resultSubject": state.config.result_subject,
             "marketEventSubject": state.config.market_event_subject,
-            "runtimeEventSubject": state.config.runtime_event_subject
+            "runtimeEventSubject": state.config.runtime_event_subject,
+            "pipelineIntentSubject": state.config.pipeline_intent_subject
         },
         "desEngine": des_surface_descriptor(),
         "sentiment": {
@@ -1227,12 +2118,24 @@ fn service_descriptor(state: &AppState) -> Value {
         },
         "marketData": {
             "credentialStatus": &state.config.market_data_credentials,
+            "publicSourcesRoute": "GET /sources/public",
             "macroRoute": "GET /macro/indicators",
             "vcRoute": "GET /vc/investment",
             "recommendationsRoute": "POST /recommendations"
         },
+        "pipelines": {
+            "status": pipeline_integration_status(state),
+            "catalogRoute": "GET /pipelines/catalog",
+            "planRoute": "POST /pipelines/plan",
+            "submitRoute": "POST /pipelines/submit",
+            "integrationHealthRoute": "GET /integrations/health",
+            "auditRoute": "GET /audit/hardening"
+        },
+        "integrations": integration_health_payload(state),
+        "observability": observability_payload(state),
         "equationCount": equation_catalog().len(),
         "sourceCount": source_catalog().len(),
+        "publicSourceTemplateCount": public_source_templates().len(),
         "atMs": now_ms()
     })
 }
@@ -1249,6 +2152,9 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
     for item in series {
         clean_token(&item.instrument_id, "instrumentId")?;
         clean_token(&item.asset_class, "assetClass")?;
+        clean_optional_token(&item.display_name, "displayName")?;
+        clean_optional_token(&item.currency, "currency")?;
+        clean_optional_token(&item.source, "source")?;
         if item.observations.len() < 2 {
             return Err(format!(
                 "series {} must contain at least two observations",
@@ -1261,8 +2167,15 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
                 item.instrument_id
             ));
         }
+        let mut seen_dates = BTreeSet::new();
         for (index, point) in item.observations.iter().enumerate() {
             clean_token(&point.date, "observation.date")?;
+            if !seen_dates.insert(point.date.trim().to_string()) {
+                return Err(format!(
+                    "series {} observation {index} date is duplicated",
+                    item.instrument_id
+                ));
+            }
             if !point.price.is_finite() || point.price <= 0.0 {
                 return Err(format!(
                     "series {} observation {index} price must be finite and positive",
@@ -1278,6 +2191,285 @@ fn validate_series(series: &[MarketSeries]) -> Result<(), String> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn validate_optional_number(
+    value: Option<f64>,
+    label: &str,
+    min: f64,
+    max: f64,
+) -> Result<(), String> {
+    if let Some(value) = value {
+        if !value.is_finite() || value < min || value > max {
+            return Err(format!(
+                "{label} must be finite and between {min} and {max}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_macro_context(context: Option<&MacroContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    validate_optional_number(context.policy_rate, "macroContext.policyRate", -0.50, 1.00)?;
+    validate_optional_number(
+        context.foreign_policy_rate,
+        "macroContext.foreignPolicyRate",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(context.inflation, "macroContext.inflation", -0.50, 1.00)?;
+    validate_optional_number(
+        context.foreign_inflation,
+        "macroContext.foreignInflation",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.expected_inflation,
+        "macroContext.expectedInflation",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.money_supply_growth,
+        "macroContext.moneySupplyGrowth",
+        -1.00,
+        2.00,
+    )?;
+    validate_optional_number(context.real_growth, "macroContext.realGrowth", -1.00, 2.00)?;
+    validate_optional_number(context.output_gap, "macroContext.outputGap", -1.00, 1.00)?;
+    validate_optional_number(
+        context.unemployment_gap,
+        "macroContext.unemploymentGap",
+        -1.00,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.risk_free_rate,
+        "macroContext.riskFreeRate",
+        -0.50,
+        1.00,
+    )?;
+    validate_optional_number(
+        context.market_return,
+        "macroContext.marketReturn",
+        -1.00,
+        2.00,
+    )?;
+    Ok(())
+}
+
+fn validate_macro_fiscal_context(context: Option<&MacroFiscalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    clean_optional_token(&context.country, "macroFiscalContext.country")?;
+    clean_optional_token(&context.period, "macroFiscalContext.period")?;
+    validate_optional_number(context.gdp, "macroFiscalContext.gdp", 1.0, 1.0e17)?;
+    validate_optional_number(
+        context.gdp_growth,
+        "macroFiscalContext.gdpGrowth",
+        -1.00,
+        2.00,
+    )?;
+    validate_optional_number(
+        context.national_debt,
+        "macroFiscalContext.nationalDebt",
+        0.0,
+        1.0e17,
+    )?;
+    validate_optional_number(
+        context.debt_to_gdp,
+        "macroFiscalContext.debtToGdp",
+        0.0,
+        10.0,
+    )?;
+    validate_optional_number(
+        context.deficit,
+        "macroFiscalContext.deficit",
+        -1.0e16,
+        1.0e16,
+    )?;
+    validate_optional_number(
+        context.deficit_to_gdp,
+        "macroFiscalContext.deficitToGdp",
+        -2.0,
+        2.0,
+    )?;
+    validate_optional_number(context.receipts, "macroFiscalContext.receipts", 0.0, 1.0e17)?;
+    validate_optional_number(context.outlays, "macroFiscalContext.outlays", 0.0, 1.0e17)?;
+    validate_optional_number(
+        context.borrowing,
+        "macroFiscalContext.borrowing",
+        0.0,
+        1.0e17,
+    )?;
+    validate_optional_number(
+        context.net_interest_outlays,
+        "macroFiscalContext.netInterestOutlays",
+        0.0,
+        1.0e17,
+    )?;
+    validate_optional_number(
+        context.labor_force_participation,
+        "macroFiscalContext.laborForceParticipation",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.prime_age_participation,
+        "macroFiscalContext.primeAgeParticipation",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.unemployment_rate,
+        "macroFiscalContext.unemploymentRate",
+        0.0,
+        1.0,
+    )?;
+    validate_optional_number(
+        context.payroll_growth,
+        "macroFiscalContext.payrollGrowth",
+        -1.0,
+        2.0,
+    )?;
+    validate_optional_number(
+        context.wage_growth,
+        "macroFiscalContext.wageGrowth",
+        -1.0,
+        2.0,
+    )?;
+    validate_optional_number(
+        context.productivity_growth,
+        "macroFiscalContext.productivityGrowth",
+        -1.0,
+        2.0,
+    )?;
+    Ok(())
+}
+
+fn validate_venture_capital_context(context: Option<&VentureCapitalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    clean_optional_token(&context.period, "ventureCapitalContext.period")?;
+    if context.deals.len() > MAX_VC_DEALS {
+        return Err(format!(
+            "ventureCapitalContext.deals must contain at most {MAX_VC_DEALS} items"
+        ));
+    }
+    if context.sector_flows.len() > MAX_VC_SECTOR_FLOWS {
+        return Err(format!(
+            "ventureCapitalContext.sectorFlows must contain at most {MAX_VC_SECTOR_FLOWS} items"
+        ));
+    }
+    for (index, deal) in context.deals.iter().enumerate() {
+        clean_token(&deal.firm, "ventureCapitalContext.deals[].firm")?;
+        clean_token(&deal.company, "ventureCapitalContext.deals[].company")?;
+        clean_token(&deal.sector, "ventureCapitalContext.deals[].sector")?;
+        clean_token(&deal.stage, "ventureCapitalContext.deals[].stage")?;
+        clean_optional_token(&deal.currency, "ventureCapitalContext.deals[].currency")?;
+        clean_optional_token(&deal.country, "ventureCapitalContext.deals[].country")?;
+        clean_optional_token(
+            &deal.announced_at,
+            "ventureCapitalContext.deals[].announcedAt",
+        )?;
+        if !deal.amount.is_finite() || deal.amount < 0.0 || deal.amount > 1.0e13 {
+            return Err(format!(
+                "ventureCapitalContext.deals[{index}].amount must be finite and between 0 and 10000000000000"
+            ));
+        }
+        validate_optional_number(
+            deal.confidence,
+            "ventureCapitalContext.deals[].confidence",
+            0.0,
+            1.0,
+        )?;
+    }
+    for flow in &context.sector_flows {
+        clean_token(&flow.sector, "ventureCapitalContext.sectorFlows[].sector")?;
+        validate_optional_number(
+            Some(f64::from(flow.deal_count)),
+            "ventureCapitalContext.sectorFlows[].dealCount",
+            0.0,
+            1_000_000.0,
+        )?;
+        validate_optional_number(
+            Some(flow.invested_capital),
+            "ventureCapitalContext.sectorFlows[].investedCapital",
+            0.0,
+            1.0e15,
+        )?;
+        validate_optional_number(
+            Some(flow.yoy_growth),
+            "ventureCapitalContext.sectorFlows[].yoyGrowth",
+            -1.0,
+            10.0,
+        )?;
+        validate_optional_number(
+            flow.dry_powder,
+            "ventureCapitalContext.sectorFlows[].dryPowder",
+            0.0,
+            1.0e15,
+        )?;
+        validate_optional_number(
+            flow.exit_liquidity,
+            "ventureCapitalContext.sectorFlows[].exitLiquidity",
+            -1.0,
+            10.0,
+        )?;
+        validate_optional_number(
+            flow.confidence,
+            "ventureCapitalContext.sectorFlows[].confidence",
+            0.0,
+            1.0,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_sentiment_context(context: Option<&SentimentSignalContext>) -> Result<(), String> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    validate_optional_number(
+        context.average_sentiment,
+        "sentimentContext.averageSentiment",
+        -1.0,
+        1.0,
+    )?;
+    validate_sentiment_score_map(
+        context.instrument_scores.as_ref(),
+        "sentimentContext.instrumentScores",
+    )?;
+    validate_sentiment_score_map(
+        context.sector_scores.as_ref(),
+        "sentimentContext.sectorScores",
+    )?;
+    Ok(())
+}
+
+fn validate_sentiment_score_map(
+    map: Option<&BTreeMap<String, f64>>,
+    label: &str,
+) -> Result<(), String> {
+    let Some(map) = map else {
+        return Ok(());
+    };
+    if map.len() > MAX_SENTIMENT_CONTEXT_SCORES {
+        return Err(format!(
+            "{label} must contain at most {MAX_SENTIMENT_CONTEXT_SCORES} scores"
+        ));
+    }
+    for (key, value) in map {
+        clean_token(key, label)?;
+        validate_optional_number(Some(*value), label, -1.0, 1.0)?;
     }
     Ok(())
 }
@@ -1332,6 +2524,9 @@ fn generate_forecast(
     let series = request
         .series
         .ok_or_else(|| "series must be provided or previously ingested".to_string())?;
+    validate_macro_context(request.macro_context.as_ref())?;
+    validate_macro_fiscal_context(request.macro_fiscal_context.as_ref())?;
+    validate_venture_capital_context(request.venture_capital_context.as_ref())?;
     validate_series(&series)?;
     let macro_context = request.macro_context.unwrap_or_default();
     let weights = normalize_weights(request.theory_weights.as_ref());
@@ -2284,6 +3479,1197 @@ fn vc_investment_payload(config: &Config) -> Value {
     })
 }
 
+fn is_cluster_internal_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host.ends_with(".svc.cluster.local")
+        || host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+}
+
+fn validate_http_base_url(
+    base: &str,
+    allow_external: bool,
+    label: &str,
+) -> Result<reqwest::Url, String> {
+    let trimmed = base.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "{label} must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    let parsed =
+        reqwest::Url::parse(trimmed).map_err(|error| format!("{label} is invalid: {error}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err(format!("{label} must use http or https")),
+    }
+    if parsed.username() != "" || parsed.password().is_some() {
+        return Err(format!("{label} must not contain URL credentials"));
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(format!(
+            "{label} must not contain query strings or fragments"
+        ));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| format!("{label} must include a host"))?;
+    if !is_cluster_internal_host(host) && !allow_external {
+        return Err(format!(
+            "{label} must be cluster-local unless ECONOMICS_ALLOW_EXTERNAL_PIPELINE_URLS=true"
+        ));
+    }
+    Ok(parsed)
+}
+
+fn validate_plan_only_http_url(base: &str, label: &str) -> Result<reqwest::Url, String> {
+    validate_http_base_url(base, true, label)
+}
+
+fn integration_dependency(
+    id: &str,
+    kind: &str,
+    status: &str,
+    configured: bool,
+    required_for_core_readiness: bool,
+    mode: &str,
+    details: Value,
+    warnings: Vec<String>,
+) -> IntegrationDependencyStatus {
+    IntegrationDependencyStatus {
+        id: id.to_string(),
+        kind: kind.to_string(),
+        status: status.to_string(),
+        configured,
+        required_for_core_readiness,
+        mode: mode.to_string(),
+        details,
+        warnings,
+    }
+}
+
+fn sentiment_credential_count(credentials: &SentimentCredentialStatus) -> usize {
+    [
+        credentials.x_bearer_token,
+        credentials.x_api_key,
+        credentials.x_api_secret,
+        credentials.x_access_token,
+        credentials.x_access_token_secret,
+        credentials.reddit_client_id,
+        credentials.reddit_client_secret,
+        credentials.reddit_user_agent,
+        credentials.news_api_key,
+        credentials.stocktwits_token,
+        credentials.gdelt_api_key,
+    ]
+    .into_iter()
+    .filter(|configured| *configured)
+    .count()
+}
+
+fn market_data_credential_count(credentials: &MarketDataCredentialStatus) -> usize {
+    [
+        credentials.fred_api_key,
+        credentials.bea_api_key,
+        credentials.bls_api_key,
+        credentials.treasury_api_key,
+        credentials.census_api_key,
+        credentials.eia_api_key,
+        credentials.coingecko_api_key,
+        credentials.sec_api_key,
+        credentials.crunchbase_api_key,
+        credentials.pitchbook_api_key,
+        credentials.cb_insights_api_key,
+        credentials.dealroom_api_key,
+        credentials.preqin_api_key,
+    ]
+    .into_iter()
+    .filter(|configured| *configured)
+    .count()
+}
+
+fn integration_dependencies(state: &AppState) -> Vec<IntegrationDependencyStatus> {
+    let auth_ready =
+        state.config.allow_unauthenticated || state.config.server_auth_secret.is_some();
+    let mut dependencies = vec![integration_dependency(
+        "server-auth",
+        "security",
+        if auth_ready { "ready" } else { "not-ready" },
+        state.config.server_auth_secret.is_some(),
+        true,
+        if state.config.allow_unauthenticated {
+            "local-unauthenticated"
+        } else {
+            "shared-secret"
+        },
+        json!({
+            "acceptedHeaders": ["x-server-auth", "auth", "authorization"],
+            "allowUnauthenticated": state.config.allow_unauthenticated,
+            "secretConfigured": state.config.server_auth_secret.is_some()
+        }),
+        if state.config.allow_unauthenticated {
+            vec![
+                "ECONOMICS_ALLOW_UNAUTHENTICATED=true should stay limited to local development"
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        },
+    )];
+
+    let source_warnings = [
+        (
+            state.config.allow_private_source_urls,
+            "private/link-local source URLs are enabled",
+        ),
+        (
+            state.config.allowed_source_hosts.is_empty(),
+            "ad-hoc source host allowlist is empty",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(active, warning)| active.then(|| warning.to_string()))
+    .collect::<Vec<_>>();
+    dependencies.push(integration_dependency(
+        "source-egress",
+        "data-ingest",
+        if source_warnings.is_empty() {
+            "ready"
+        } else {
+            "degraded"
+        },
+        true,
+        false,
+        "bounded-http-pull",
+        json!({
+            "privateUrlsAllowed": state.config.allow_private_source_urls,
+            "redirectFollowing": false,
+            "allowedSourceHosts": state.config.allowed_source_hosts,
+            "knownPublicHosts": public_source_hosts(),
+            "maxSourceFetchBytes": MAX_SOURCE_FETCH_BYTES
+        }),
+        source_warnings,
+    ));
+    dependencies.push(integration_dependency(
+        "source-auth-env-allowlist",
+        "secret-boundary",
+        if state.config.allowed_source_auth_envs.is_empty() {
+            "degraded"
+        } else {
+            "ready"
+        },
+        !state.config.allowed_source_auth_envs.is_empty(),
+        false,
+        "explicit-env-allowlist",
+        json!({
+            "allowedEnvCount": state.config.allowed_source_auth_envs.len(),
+            "allowlistEnv": "ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS",
+            "valuesReturned": false
+        }),
+        Vec::new(),
+    ));
+
+    let spark_url_status = state.config.spark_pipeline_url.as_deref().map(|url| {
+        validate_http_base_url(
+            url,
+            state.config.allow_external_pipeline_urls,
+            "spark pipeline URL",
+        )
+    });
+    let spark_valid = spark_url_status
+        .as_ref()
+        .map(Result::is_ok)
+        .unwrap_or(false);
+    let spark_auth_configured = optional_env(&state.config.spark_pipeline_auth_env).is_some();
+    let spark_status = if state.config.allow_pipeline_submit {
+        if spark_valid && spark_auth_configured {
+            "ready"
+        } else {
+            "degraded"
+        }
+    } else if spark_url_status.as_ref().is_some_and(Result::is_err) {
+        "misconfigured"
+    } else {
+        "disabled"
+    };
+    dependencies.push(integration_dependency(
+        "spark-pipeline-server",
+        "big-data",
+        spark_status,
+        state.config.spark_pipeline_url.is_some(),
+        false,
+        if state.config.allow_pipeline_submit {
+            "submit-enabled"
+        } else {
+            "plan-only"
+        },
+        json!({
+            "urlConfigured": state.config.spark_pipeline_url.is_some(),
+            "urlValid": spark_valid,
+            "authEnv": state.config.spark_pipeline_auth_env,
+            "authConfigured": spark_auth_configured,
+            "externalUrlsAllowed": state.config.allow_external_pipeline_urls
+        }),
+        spark_url_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    let airflow_status = state
+        .config
+        .airflow_api_url
+        .as_deref()
+        .map(|url| validate_plan_only_http_url(url, "Airflow API URL"));
+    dependencies.push(integration_dependency(
+        "airflow",
+        "orchestrator",
+        match airflow_status.as_ref() {
+            Some(Ok(_)) => "plan-only",
+            Some(Err(_)) => "misconfigured",
+            None => "disabled",
+        },
+        state.config.airflow_api_url.is_some(),
+        false,
+        "plan-only",
+        json!({
+            "apiUrlConfigured": state.config.airflow_api_url.is_some(),
+            "dagBlueprint": "economics_market_refresh",
+            "liveSubmissionImplemented": false
+        }),
+        airflow_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    let databricks_status = state
+        .config
+        .databricks_host
+        .as_deref()
+        .map(|url| validate_plan_only_http_url(url, "Databricks host"));
+    let databricks_token_configured = optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some();
+    dependencies.push(integration_dependency(
+        "databricks",
+        "managed-big-data",
+        match databricks_status.as_ref() {
+            Some(Ok(_)) if databricks_token_configured => "plan-only",
+            Some(Ok(_)) => "degraded",
+            Some(Err(_)) => "misconfigured",
+            None => "disabled",
+        },
+        state.config.databricks_host.is_some() || databricks_token_configured,
+        false,
+        "plan-only",
+        json!({
+            "hostConfigured": state.config.databricks_host.is_some(),
+            "tokenConfigured": databricks_token_configured,
+            "credentialValuesReturned": false,
+            "liveSubmissionImplemented": false
+        }),
+        databricks_status
+            .and_then(Result::err)
+            .map(|error| vec![error])
+            .unwrap_or_else(|| {
+                if state.config.databricks_host.is_some() && !databricks_token_configured {
+                    vec!["ECONOMICS_DATABRICKS_TOKEN is not configured".to_string()]
+                } else {
+                    Vec::new()
+                }
+            }),
+    ));
+
+    let data_lake_valid = validate_data_lake_uri(&state.config.data_lake_uri);
+    dependencies.push(integration_dependency(
+        "data-lake",
+        "storage",
+        if data_lake_valid.is_ok() {
+            "ready"
+        } else {
+            "misconfigured"
+        },
+        true,
+        false,
+        "pipeline-target",
+        json!({
+            "uriSchemeAllowed": data_lake_valid.is_ok(),
+            "allowedSchemes": ["s3", "s3a", "abfss", "gs", "file:///tmp/"]
+        }),
+        data_lake_valid
+            .err()
+            .map(|error| vec![error])
+            .unwrap_or_default(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "nats",
+        "messaging",
+        if state.nats.is_some() {
+            "ready"
+        } else {
+            "disabled"
+        },
+        state.nats.is_some(),
+        false,
+        "forecast-and-pipeline-events",
+        json!({
+            "forecastRequestSubject": state.config.request_subject,
+            "forecastResultSubject": state.config.result_subject,
+            "marketEventSubject": state.config.market_event_subject,
+            "runtimeEventSubject": state.config.runtime_event_subject,
+            "pipelineIntentSubject": state.config.pipeline_intent_subject
+        }),
+        if state.nats.is_some() {
+            Vec::new()
+        } else {
+            vec!["NATS_URL is not configured or connection was not established".to_string()]
+        },
+    ));
+
+    let sentiment_count = sentiment_credential_count(&state.config.sentiment_credentials);
+    dependencies.push(integration_dependency(
+        "sentiment-providers",
+        "social-news",
+        if sentiment_count > 0 {
+            "ready"
+        } else {
+            "placeholder"
+        },
+        sentiment_count > 0,
+        false,
+        "document-analysis-now-live-fetchers-later",
+        json!({
+            "configuredCredentialCount": sentiment_count,
+            "providerCatalogRoute": "GET /sentiment/sources",
+            "analyzeRoute": "POST /sentiment/analyze"
+        }),
+        if sentiment_count > 0 {
+            Vec::new()
+        } else {
+            vec!["live sentiment provider fetchers are placeholders; POST supplied documents for scoring".to_string()]
+        },
+    ));
+
+    let market_count = market_data_credential_count(&state.config.market_data_credentials);
+    dependencies.push(integration_dependency(
+        "market-data-providers",
+        "market-macro-private-data",
+        if market_count > 0 {
+            "ready"
+        } else {
+            "public-only"
+        },
+        market_count > 0,
+        false,
+        "source-templates-and-private-credentials",
+        json!({
+            "configuredCredentialCount": market_count,
+            "publicSourceTemplateCount": public_source_templates().len(),
+            "publicSourcesRoute": "GET /sources/public"
+        }),
+        Vec::new(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "runtime-config",
+        "control-plane",
+        if optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some() {
+            "ready"
+        } else {
+            "disabled"
+        },
+        optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some(),
+        false,
+        "register-and-receive-updates",
+        json!({
+            "registerUrlConfigured": optional_env("RUNTIME_CONFIG_REGISTER_URL").is_some(),
+            "applyRouteConfigured": optional_env("RUNTIME_CONFIG_APPLY_URL").is_some(),
+            "scope": env_value("RUNTIME_CONFIG_SCOPE", "default"),
+            "env": env_value("RUNTIME_CONFIG_ENV", "stage")
+        }),
+        Vec::new(),
+    ));
+
+    dependencies.push(integration_dependency(
+        "des-engine",
+        "math-engine",
+        "ready",
+        true,
+        true,
+        "embedded-sdk-surface",
+        des_surface_descriptor(),
+        Vec::new(),
+    ));
+
+    dependencies
+}
+
+fn integration_health_payload(state: &AppState) -> Value {
+    let dependencies = integration_dependencies(state);
+    let required_ready = dependencies
+        .iter()
+        .filter(|dependency| dependency.required_for_core_readiness)
+        .all(|dependency| dependency.status == "ready");
+    let degraded_count = dependencies
+        .iter()
+        .filter(|dependency| {
+            matches!(
+                dependency.status.as_str(),
+                "degraded" | "misconfigured" | "not-ready"
+            )
+        })
+        .count();
+    let overall_status = if required_ready && degraded_count == 0 {
+        "ready"
+    } else if required_ready {
+        "degraded"
+    } else {
+        "not-ready"
+    };
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "overallStatus": overall_status,
+        "coreReady": required_ready,
+        "dependencyCount": dependencies.len(),
+        "degradedDependencyCount": degraded_count,
+        "dependencies": dependencies,
+        "telemetry": {
+            "metricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "integrationHealthRequestsMetric": "dd_economics_server_integration_health_requests_total",
+            "structuredLogSchema": "dd.log.v1"
+        },
+        "atMs": now_ms()
+    })
+}
+
+fn pipeline_integration_status(state: &AppState) -> PipelineIntegrationStatus {
+    PipelineIntegrationStatus {
+        spark_pipeline_url_configured: state.config.spark_pipeline_url.is_some(),
+        spark_pipeline_auth_configured: optional_env(&state.config.spark_pipeline_auth_env)
+            .is_some(),
+        spark_pipeline_submit_enabled: state.config.allow_pipeline_submit,
+        spark_pipeline_url: state.config.spark_pipeline_url.clone(),
+        spark_pipeline_auth_env: state.config.spark_pipeline_auth_env.clone(),
+        spark_master_url: state.config.spark_master_url.clone(),
+        airflow_api_url_configured: state.config.airflow_api_url.is_some(),
+        airflow_api_url: state.config.airflow_api_url.clone(),
+        databricks_host_configured: state.config.databricks_host.is_some(),
+        databricks_token_configured: optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some(),
+        data_lake_uri: state.config.data_lake_uri.clone(),
+        pipeline_intent_subject: state.config.pipeline_intent_subject.clone(),
+        nats_configured: state.nats.is_some(),
+    }
+}
+
+fn pipeline_catalog_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "status": pipeline_integration_status(state),
+        "engines": [
+            {
+                "id": "spark-pipeline-server",
+                "kind": "internal-http",
+                "route": "POST /v1/jobs",
+                "supportedJobKinds": ["INGEST_VALIDATE_PUBLISH", "SPARK_SUBMIT"],
+                "defaultUrl": DEFAULT_SPARK_PIPELINE_URL,
+                "submitRoute": "POST /pipelines/submit",
+                "submitGate": "ECONOMICS_ENABLE_PIPELINE_SUBMIT must be true and SERVER_AUTH_SECRET must be available"
+            },
+            {
+                "id": "spark-standalone",
+                "kind": "spark",
+                "master": state.config.spark_master_url,
+                "namespace": "big-data",
+                "notes": "Development Spark master/worker stack from remote/argocd/big-data."
+            },
+            {
+                "id": "airflow",
+                "kind": "orchestrator",
+                "apiUrl": state.config.airflow_api_url,
+                "dagBlueprint": "economics_market_refresh",
+                "notes": "Plan output includes a DAG trigger payload; live Airflow submission is intentionally not implemented until service credentials and API auth are designed."
+            },
+            {
+                "id": "databricks",
+                "kind": "managed-external",
+                "hostConfigured": state.config.databricks_host.is_some(),
+                "tokenConfigured": optional_env("ECONOMICS_DATABRICKS_TOKEN").is_some(),
+                "credentialEnv": ["ECONOMICS_DATABRICKS_HOST", "ECONOMICS_DATABRICKS_TOKEN"],
+                "notes": "Plan output includes Databricks Jobs API run-now payloads without exposing token values."
+            },
+            {
+                "id": "nats-public-data-pipeline",
+                "kind": "nats",
+                "subject": state.config.pipeline_intent_subject,
+                "defaultSubject": PUBLIC_DATA_PIPELINE_JOBS_SUBJECT,
+                "notes": "Pipeline plans can be published as redacted job intents for downstream big-data workers."
+            }
+        ],
+        "integrationHealthRoute": "GET /integrations/health",
+        "planRoute": "POST /pipelines/plan",
+        "auditRoute": "GET /audit/hardening"
+    })
+}
+
+fn hardening_audit_payload(state: &AppState) -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": SCHEMA_VERSION,
+        "service": SERVICE_NAME,
+        "auth": {
+            "required": !state.config.allow_unauthenticated,
+            "acceptedHeaders": ["x-server-auth", "auth", "authorization"],
+            "constantTimeComparison": true,
+            "allowUnauthenticated": state.config.allow_unauthenticated
+        },
+        "requestLimits": {
+            "maxHttpBodyBytes": MAX_HTTP_BODY_BYTES,
+            "maxNatsPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
+            "maxSeries": MAX_SERIES,
+            "maxObservationsPerSeries": MAX_OBSERVATIONS_PER_SERIES,
+            "maxSentimentDocuments": MAX_SENTIMENT_DOCUMENTS,
+            "maxSentimentTextBytes": MAX_SENTIMENT_TEXT_BYTES,
+            "maxSentimentContextScores": MAX_SENTIMENT_CONTEXT_SCORES,
+            "maxVentureCapitalDeals": MAX_VC_DEALS,
+            "maxVentureSectorFlows": MAX_VC_SECTOR_FLOWS,
+            "maxPipelineJobIntents": MAX_PIPELINE_JOB_INTENTS
+        },
+        "egressPolicy": {
+            "sourcePullPrivateUrlsAllowed": state.config.allow_private_source_urls,
+            "sourcePullAllowedHosts": state.config.allowed_source_hosts,
+            "knownPublicSourceHosts": public_source_hosts(),
+            "knownPublicSourceTemplates": public_source_templates().len(),
+            "sourcePullRedirectFollowing": false,
+            "externalPipelineUrlsAllowed": state.config.allow_external_pipeline_urls,
+            "sparkPipelineSubmitEnabled": state.config.allow_pipeline_submit,
+            "sparkPipelineSubmitRequiresInternalUrl": !state.config.allow_external_pipeline_urls
+        },
+        "secretHandling": {
+            "credentialValuesReturned": false,
+            "credentialStatusOnly": true,
+            "sourceAuthHeaderEnvAllowlistEnabled": true,
+            "sourceAuthHeaderEnvAllowlistCount": state.config.allowed_source_auth_envs.len(),
+            "sourceAuthHeaderEnvAllowlistVar": "ECONOMICS_ALLOWED_SOURCE_AUTH_ENVS",
+            "sparkPipelineAuthEnv": state.config.spark_pipeline_auth_env,
+            "databricksTokenEnv": "ECONOMICS_DATABRICKS_TOKEN"
+        },
+        "observability": {
+            "prometheusMetricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "integrationHealthRoute": "GET /integrations/health",
+            "structuredLogSchema": "dd.log.v1",
+            "lokiCollectionBoundary": "container stdout/stderr via Promtail",
+            "otelMode": "explicit-only",
+            "autoInstrumentation": false,
+            "runtimeMonkeyPatching": false
+        },
+        "bigData": pipeline_integration_status(state),
+        "integrationHealth": integration_health_payload(state),
+        "deploymentPosture": {
+            "expectedNoServiceAccountToken": true,
+            "expectedReadOnlyRootFilesystem": true,
+            "expectedDroppedCapabilities": true,
+            "expectedRuntimeDefaultSeccomp": true,
+            "expectedBoundedWritableVolumes": true
+        },
+        "residualRisks": [
+            "live provider connectors are placeholders until per-provider rate limits, retries, and backoff are implemented",
+            "recommendation rankings are research signals, not trade execution instructions",
+            "Airflow and Databricks submission remain plan-only until their auth and audit flows are explicitly designed",
+            "GET /integrations/health reports integration readiness but does not perform active network probes against external providers",
+            "Spark pipeline HTTP submission is disabled unless ECONOMICS_ENABLE_PIPELINE_SUBMIT=true"
+        ],
+        "atMs": now_ms()
+    })
+}
+
+fn pipeline_plan_from_request(
+    state: &AppState,
+    mut request: PipelinePlanRequest,
+) -> Result<PipelinePlanResponse, String> {
+    if let Some(schema) = request.schema_version.as_deref() {
+        if schema != SCHEMA_VERSION {
+            return Err(format!("schemaVersion must be {SCHEMA_VERSION}"));
+        }
+    }
+    let request_id = request_id(request.request_id.as_ref(), "economics-pipeline-plan");
+    let scenario = request
+        .scenario
+        .take()
+        .unwrap_or_else(|| "base".to_string())
+        .trim()
+        .to_ascii_lowercase();
+    clean_token(&scenario, "scenario")?;
+    let data_lake_uri = request
+        .data_lake_uri
+        .take()
+        .unwrap_or_else(|| state.config.data_lake_uri.clone());
+    validate_data_lake_uri(&data_lake_uri)?;
+    let job_kinds = normalize_pipeline_job_kinds(request.job_kinds.as_ref())?;
+    let include_recommendations = request.include_recommendations.unwrap_or(true);
+    let recommendation_summary = if include_recommendations {
+        let mut recommendation_request =
+            request
+                .recommendation_request
+                .take()
+                .unwrap_or_else(|| RecommendationRequest {
+                    request_id: Some(format!("{request_id}-recommendations")),
+                    schema_version: Some(SCHEMA_VERSION.to_string()),
+                    horizon_months: Some(state.config.projection_months),
+                    company_limit: Some(20),
+                    commodity_limit: Some(30),
+                    scenario: Some(scenario.clone()),
+                    series: Some(snapshot_series_or_sample(state)),
+                    macro_context: None,
+                    macro_fiscal_context: Some(default_macro_fiscal_context()),
+                    venture_capital_context: Some(sample_venture_capital_context()),
+                    sentiment_context: None,
+                });
+        if recommendation_request
+            .series
+            .as_ref()
+            .map(Vec::is_empty)
+            .unwrap_or(true)
+        {
+            recommendation_request.series = Some(snapshot_series_or_sample(state));
+        }
+        let recommendations = generate_recommendations(&state.config, recommendation_request)?;
+        json!({
+            "requestId": recommendations.request_id,
+            "companyBuyCount": recommendations.company_buys.len(),
+            "companyDumpCount": recommendations.company_dumps.len(),
+            "commodityBuyCount": recommendations.commodity_buys.len(),
+            "commoditySellOrDumpCount": recommendations.commodity_sells_or_dumps.len(),
+            "topCompanyBuys": recommendations.company_buys.iter().take(5).map(|item| json!({
+                "ticker": item.ticker,
+                "company": item.company,
+                "score": item.score,
+                "expectedReturn18m": item.expected_return_18m
+            })).collect::<Vec<_>>(),
+            "topCommodityBuys": recommendations.commodity_buys.iter().take(5).map(|item| json!({
+                "instrumentId": item.instrument_id,
+                "commodity": item.commodity,
+                "score": item.score,
+                "expectedReturn18m": item.expected_return_18m
+            })).collect::<Vec<_>>()
+        })
+    } else {
+        json!({ "included": false })
+    };
+
+    let mut job_intents = Vec::new();
+    if job_kinds.iter().any(|kind| kind == "ingest") {
+        job_intents.push(spark_ingest_intent(&request_id, &data_lake_uri));
+    }
+    if job_kinds.iter().any(|kind| kind == "spark-features") {
+        job_intents.push(spark_feature_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            &state.config.spark_master_url,
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "airflow") {
+        job_intents.push(airflow_dag_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            state.config.airflow_api_url.as_deref(),
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "databricks") {
+        job_intents.push(databricks_job_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            state.config.databricks_host.as_deref(),
+        ));
+    }
+    if job_kinds.iter().any(|kind| kind == "nats") {
+        job_intents.push(nats_pipeline_intent(
+            &request_id,
+            &scenario,
+            &data_lake_uri,
+            &state.config.pipeline_intent_subject,
+        ));
+    }
+    if job_intents.len() > MAX_PIPELINE_JOB_INTENTS {
+        return Err(format!(
+            "pipeline plan produced more than {MAX_PIPELINE_JOB_INTENTS} job intents"
+        ));
+    }
+
+    let mut warnings = vec![
+        "pipeline plans are redacted job intents; secret values are never returned".to_string(),
+        "Airflow and Databricks are plan-only until their auth flows are explicitly enabled"
+            .to_string(),
+    ];
+    if !state.config.allow_pipeline_submit {
+        warnings.push(
+            "Spark pipeline submission is disabled by ECONOMICS_ENABLE_PIPELINE_SUBMIT=false"
+                .to_string(),
+        );
+    }
+
+    Ok(PipelinePlanResponse {
+        ok: true,
+        request_id,
+        schema_version: SCHEMA_VERSION,
+        generated_at_ms: now_ms(),
+        pipeline_status: pipeline_integration_status(state),
+        recommendation_summary,
+        job_intents,
+        warnings,
+    })
+}
+
+fn normalize_pipeline_job_kinds(input: Option<&Vec<String>>) -> Result<Vec<String>, String> {
+    let values = input.cloned().unwrap_or_else(|| {
+        vec![
+            "ingest".to_string(),
+            "spark-features".to_string(),
+            "airflow".to_string(),
+            "databricks".to_string(),
+            "nats".to_string(),
+        ]
+    });
+    if values.is_empty() {
+        return Err("jobKinds must contain at least one item".to_string());
+    }
+    if values.len() > MAX_PIPELINE_JOB_INTENTS {
+        return Err(format!(
+            "jobKinds must contain at most {MAX_PIPELINE_JOB_INTENTS} items"
+        ));
+    }
+    let mut normalized = Vec::with_capacity(values.len());
+    for value in values {
+        let clean = clean_token(&value, "jobKinds[]")?.to_ascii_lowercase();
+        match clean.as_str() {
+            "ingest" | "spark-features" | "airflow" | "databricks" | "nats" => {
+                if !normalized.iter().any(|existing| existing == &clean) {
+                    normalized.push(clean);
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "jobKinds[] value `{clean}` is not supported; use ingest, spark-features, airflow, databricks, or nats"
+                ));
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_data_lake_uri(uri: &str) -> Result<(), String> {
+    let trimmed = uri.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "dataLakeUri must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !(lower.starts_with("s3://")
+        || lower.starts_with("s3a://")
+        || lower.starts_with("abfss://")
+        || lower.starts_with("gs://")
+        || lower.starts_with("file:///tmp/"))
+    {
+        return Err("dataLakeUri must use s3, s3a, abfss, gs, or file:///tmp/".to_string());
+    }
+    Ok(())
+}
+
+fn spark_ingest_intent(request_id: &str, data_lake_uri: &str) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-ingest-validate-publish"),
+        engine: "spark-pipeline-server".to_string(),
+        target: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        kind: "INGEST_VALIDATE_PUBLISH".to_string(),
+        endpoint: Some("/v1/jobs".to_string()),
+        auth_required: true,
+        submit_eligible: true,
+        params: json!({
+            "source": SERVICE_NAME,
+            "dataset": "economics-market-history",
+            "schemaVersion": SCHEMA_VERSION,
+            "requestId": request_id,
+            "dataLakeUri": data_lake_uri,
+            "publicSourceIds": public_source_ids(),
+            "inputRoutes": ["POST /sources/pull", "POST /ingest"],
+            "qualityChecks": [
+                "schema-check",
+                "finite-price-volume-check",
+                "duplicate-date-check",
+                "asset-class-partition-check"
+            ],
+            "outputs": [
+                format!("{data_lake_uri}/bronze/market_series"),
+                format!("{data_lake_uri}/manifests/economics-market-history.json")
+            ]
+        }),
+        notes: vec![
+            "compatible with dd-spark-pipeline-server JobKind.INGEST_VALIDATE_PUBLISH".to_string(),
+        ],
+    }
+}
+
+fn spark_feature_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    spark_master_url: &str,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-spark-feature-build"),
+        engine: "spark-pipeline-server".to_string(),
+        target: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        kind: "SPARK_SUBMIT".to_string(),
+        endpoint: Some("/v1/jobs".to_string()),
+        auth_required: true,
+        submit_eligible: true,
+        params: json!({
+            "source": SERVICE_NAME,
+            "appName": "economics-feature-build",
+            "requestId": request_id,
+            "master": spark_master_url,
+            "mainClass": "com.oresoftware.dd.economics.FeatureBuildJob",
+            "appResource": format!("{data_lake_uri}/jobs/economics-feature-build.jar"),
+            "args": [
+                "--scenario", scenario,
+                "--public-source-ids", public_source_ids().join(","),
+                "--input", format!("{data_lake_uri}/bronze/market_series"),
+                "--output", format!("{data_lake_uri}/silver/features"),
+                "--recommendations", format!("{data_lake_uri}/gold/recommendations")
+            ],
+            "conf": {
+                "spark.sql.shuffle.partitions": "96",
+                "spark.sql.adaptive.enabled": "true",
+                "spark.serializer": "org.apache.spark.serializer.KryoSerializer"
+            }
+        }),
+        notes: vec![
+            "placeholder Spark application contract; appResource is a data-lake artifact path, not bundled in this Rust service".to_string(),
+        ],
+    }
+}
+
+fn airflow_dag_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    airflow_api_url: Option<&str>,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-airflow-refresh"),
+        engine: "airflow".to_string(),
+        target: airflow_api_url
+            .unwrap_or(DEFAULT_AIRFLOW_API_URL)
+            .to_string(),
+        kind: "TRIGGER_DAG".to_string(),
+        endpoint: Some("/api/v1/dags/economics_market_refresh/dagRuns".to_string()),
+        auth_required: true,
+        submit_eligible: false,
+        params: json!({
+            "dagRunId": format!("{request_id}-economics-market-refresh"),
+            "conf": {
+                "source": SERVICE_NAME,
+                "schemaVersion": SCHEMA_VERSION,
+                "scenario": scenario,
+                "dataLakeUri": data_lake_uri,
+                "publicSourceIds": public_source_ids(),
+                "sparkPipelineJobKinds": ["INGEST_VALIDATE_PUBLISH", "SPARK_SUBMIT"]
+            }
+        }),
+        notes: vec![
+            "Airflow submission is plan-only until a service-account auth path is configured"
+                .to_string(),
+        ],
+    }
+}
+
+fn databricks_job_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    databricks_host: Option<&str>,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-databricks-run-now"),
+        engine: "databricks".to_string(),
+        target: databricks_host
+            .unwrap_or("databricks-managed-workspace")
+            .to_string(),
+        kind: "DATABRICKS_RUN_NOW".to_string(),
+        endpoint: Some("/api/2.1/jobs/run-now".to_string()),
+        auth_required: true,
+        submit_eligible: false,
+        params: json!({
+            "idempotencyToken": request_id,
+            "jobName": "economics-feature-and-recommendation-refresh",
+            "notebookParams": {
+                "source": SERVICE_NAME,
+                "schemaVersion": SCHEMA_VERSION,
+                "scenario": scenario,
+                "dataLakeUri": data_lake_uri,
+                "publicSourceIds": public_source_ids()
+            },
+            "credentialEnv": ["ECONOMICS_DATABRICKS_HOST", "ECONOMICS_DATABRICKS_TOKEN"]
+        }),
+        notes: vec![
+            "Databricks token status is exposed only as a boolean; token values are never returned"
+                .to_string(),
+        ],
+    }
+}
+
+fn nats_pipeline_intent(
+    request_id: &str,
+    scenario: &str,
+    data_lake_uri: &str,
+    subject: &str,
+) -> PipelineJobIntent {
+    PipelineJobIntent {
+        id: format!("{request_id}-nats-public-data-pipeline"),
+        engine: "nats".to_string(),
+        target: subject.to_string(),
+        kind: "PUBLIC_DATA_PIPELINE_INTENT".to_string(),
+        endpoint: None,
+        auth_required: false,
+        submit_eligible: false,
+        params: json!({
+            "messageKind": "economics.pipeline.intent",
+            "source": SERVICE_NAME,
+            "requestId": request_id,
+            "schemaVersion": SCHEMA_VERSION,
+            "scenario": scenario,
+            "dataLakeUri": data_lake_uri,
+            "publicSourceIds": public_source_ids(),
+            "createdAtMs": now_ms()
+        }),
+        notes: vec![
+            "published to dd.remote.public_data.pipeline.jobs or ECONOMICS_PIPELINE_INTENT_SUBJECT when NATS is configured".to_string(),
+        ],
+    }
+}
+
+async fn publish_pipeline_plan(state: &AppState, plan: &PipelinePlanResponse) {
+    state
+        .metrics
+        .pipeline_publish_attempts_total
+        .fetch_add(1, Ordering::Relaxed);
+    let Some(nats) = state.nats.as_ref() else {
+        state
+            .metrics
+            .pipeline_publish_failure_total
+            .fetch_add(1, Ordering::Relaxed);
+        emit_log(
+            "WARN",
+            "economics.pipeline.plan.publish.skipped",
+            "pipeline plan publish requested but NATS is not configured",
+            json!({
+                "requestId": &plan.request_id,
+                "subject": state.config.pipeline_intent_subject,
+                "natsConfigured": false
+            }),
+        );
+        return;
+    };
+    let payload = match serde_json::to_vec(&json!({
+        "messageKind": "economics.pipeline.plan",
+        "source": SERVICE_NAME,
+        "plan": plan
+    })) {
+        Ok(payload) => payload,
+        Err(error) => {
+            state
+                .metrics
+                .pipeline_publish_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "ERROR",
+                "economics.pipeline.plan.encode.error",
+                "failed to encode economics pipeline plan",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestId": &plan.request_id
+                }),
+            );
+            return;
+        }
+    };
+    match nats
+        .publish(state.config.pipeline_intent_subject.clone(), payload.into())
+        .await
+    {
+        Ok(()) => {
+            state
+                .metrics
+                .nats_published_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_publish_success_total
+                .fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "INFO",
+                "economics.pipeline.plan.publish.ok",
+                "pipeline plan published to NATS",
+                json!({
+                    "requestId": &plan.request_id,
+                    "subject": state.config.pipeline_intent_subject,
+                    "jobIntentCount": plan.job_intents.len()
+                }),
+            );
+        }
+        Err(error) => {
+            state
+                .metrics
+                .pipeline_publish_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "ERROR",
+                "economics.pipeline.plan.publish.error",
+                "failed to publish pipeline plan to NATS",
+                json!({
+                    "requestId": &plan.request_id,
+                    "subject": state.config.pipeline_intent_subject,
+                    "error": error_summary(&error.to_string())
+                }),
+            );
+        }
+    }
+}
+
+fn validate_pipeline_submit_url(config: &Config) -> Result<String, String> {
+    let Some(base) = config.spark_pipeline_url.as_deref() else {
+        return Err("ECONOMICS_SPARK_PIPELINE_URL is not configured".to_string());
+    };
+    validate_http_base_url(
+        base,
+        config.allow_external_pipeline_urls,
+        "spark pipeline URL",
+    )?;
+    Ok(format!("{}/v1/jobs", base.trim_end_matches('/')))
+}
+
+async fn submit_pipeline_plan(
+    state: &AppState,
+    plan: &PipelinePlanResponse,
+) -> Result<Vec<PipelineSubmittedJob>, String> {
+    if !state.config.allow_pipeline_submit {
+        return Err(
+            "pipeline submission is disabled; set ECONOMICS_ENABLE_PIPELINE_SUBMIT=true"
+                .to_string(),
+        );
+    }
+    let submit_url = validate_pipeline_submit_url(&state.config)?;
+    let auth_value = optional_env(&state.config.spark_pipeline_auth_env).ok_or_else(|| {
+        format!(
+            "spark pipeline auth env {} is not configured",
+            state.config.spark_pipeline_auth_env
+        )
+    })?;
+    let mut submitted = Vec::new();
+    for intent in plan
+        .job_intents
+        .iter()
+        .filter(|intent| intent.engine == "spark-pipeline-server" && intent.submit_eligible)
+    {
+        let payload = json!({
+            "kind": intent.kind,
+            "params": intent.params
+        });
+        let response = state
+            .http
+            .post(&submit_url)
+            .header("x-server-auth", &auth_value)
+            .json(&payload)
+            .send()
+            .await;
+        match response {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let accepted = (200..300).contains(&status);
+                let body = response.json::<Value>().await.ok();
+                if accepted {
+                    state
+                        .metrics
+                        .pipeline_submit_success_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    emit_log(
+                        "INFO",
+                        "economics.pipeline.submit.ok",
+                        "pipeline job submitted to Spark pipeline server",
+                        json!({
+                            "requestId": &plan.request_id,
+                            "intentId": &intent.id,
+                            "kind": &intent.kind,
+                            "httpStatus": status
+                        }),
+                    );
+                } else {
+                    state
+                        .metrics
+                        .pipeline_submit_failure_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    emit_log(
+                        "WARN",
+                        "economics.pipeline.submit.rejected",
+                        "Spark pipeline server rejected a submitted economics job",
+                        json!({
+                            "requestId": &plan.request_id,
+                            "intentId": &intent.id,
+                            "kind": &intent.kind,
+                            "httpStatus": status
+                        }),
+                    );
+                }
+                submitted.push(PipelineSubmittedJob {
+                    intent_id: intent.id.clone(),
+                    target: submit_url.clone(),
+                    http_status: Some(status),
+                    accepted,
+                    response: body,
+                    error: None,
+                });
+            }
+            Err(error) => {
+                state
+                    .metrics
+                    .pipeline_submit_failure_total
+                    .fetch_add(1, Ordering::Relaxed);
+                emit_log(
+                    "ERROR",
+                    "economics.pipeline.submit.error",
+                    "failed to submit economics job to Spark pipeline server",
+                    json!({
+                        "requestId": &plan.request_id,
+                        "intentId": &intent.id,
+                        "kind": &intent.kind,
+                        "error": error_summary(&error.to_string())
+                    }),
+                );
+                submitted.push(PipelineSubmittedJob {
+                    intent_id: intent.id.clone(),
+                    target: submit_url.clone(),
+                    http_status: None,
+                    accepted: false,
+                    response: None,
+                    error: Some(error_summary(&error.to_string())),
+                });
+            }
+        }
+    }
+    Ok(submitted)
+}
+
 fn generate_recommendations(
     config: &Config,
     request: RecommendationRequest,
@@ -2293,6 +4679,10 @@ fn generate_recommendations(
             return Err(format!("schemaVersion must be {SCHEMA_VERSION}"));
         }
     }
+    validate_macro_context(request.macro_context.as_ref())?;
+    validate_macro_fiscal_context(request.macro_fiscal_context.as_ref())?;
+    validate_venture_capital_context(request.venture_capital_context.as_ref())?;
+    validate_sentiment_context(request.sentiment_context.as_ref())?;
 
     let request_id = request_id(request.request_id.as_ref(), "economics-recommendations");
     let horizon_months = request
@@ -4216,6 +6606,16 @@ fn analyze_sentiment(
             "documents must contain at most {MAX_SENTIMENT_DOCUMENTS} items"
         ));
     }
+    if let Some(instrument_ids) = request.instrument_ids.as_ref() {
+        if instrument_ids.len() > MAX_SENTIMENT_CONTEXT_SCORES {
+            return Err(format!(
+                "instrumentIds must contain at most {MAX_SENTIMENT_CONTEXT_SCORES} items"
+            ));
+        }
+        for instrument_id in instrument_ids {
+            clean_token(instrument_id, "instrumentIds[]")?;
+        }
+    }
 
     let request_id = request_id(request.request_id.as_ref(), "sentiment-analyze");
     let mut weighted_sum = 0.0;
@@ -4233,6 +6633,15 @@ fn analyze_sentiment(
             return Err(format!(
                 "documents[].text must be at most {MAX_SENTIMENT_TEXT_BYTES} bytes"
             ));
+        }
+        clean_optional_token(&document.author, "documents[].author")?;
+        clean_optional_token(&document.published_at, "documents[].publishedAt")?;
+        if let Some(url) = document.url.as_deref() {
+            if url.len() > MAX_URL_LEN || url.chars().any(char::is_control) {
+                return Err(format!(
+                    "documents[].url must be at most {MAX_URL_LEN} bytes and contain no control characters"
+                ));
+            }
         }
         let weight = document
             .weight
@@ -4382,7 +6791,15 @@ async fn publish_forecast(state: &AppState, response: &ForecastResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("economics server failed to encode forecast result: {error}");
+            emit_log(
+                "ERROR",
+                "economics.forecast.result.encode.error",
+                "failed to encode economics forecast result",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestId": &response.request_id
+                }),
+            );
             return;
         }
     };
@@ -4427,12 +6844,25 @@ async fn publish_market_event(state: &AppState, event: Value) {
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("economics server nats loop disabled: NATS_URL is not configured");
+        emit_log(
+            "INFO",
+            "economics.nats.loop.disabled",
+            "economics NATS loop disabled",
+            json!({
+                "reason": "NATS_URL is not configured"
+            }),
+        );
         return;
     };
-    println!(
-        "economics server nats loop starting: subject={} queueGroup={} resultSubject={}",
-        state.config.request_subject, state.config.queue_group, state.config.result_subject
+    emit_log(
+        "INFO",
+        "economics.nats.loop.start",
+        "economics NATS loop starting",
+        json!({
+            "requestSubject": state.config.request_subject,
+            "queueGroup": state.config.queue_group,
+            "resultSubject": state.config.result_subject
+        }),
     );
     let mut subscription = match nats
         .queue_subscribe(
@@ -4443,7 +6873,16 @@ async fn run_nats_loop(state: AppState) {
     {
         Ok(subscription) => subscription,
         Err(error) => {
-            eprintln!("economics server nats subscribe failed: {error}");
+            emit_log(
+                "ERROR",
+                "economics.nats.subscribe.error",
+                "economics NATS subscribe failed",
+                json!({
+                    "error": error_summary(&error.to_string()),
+                    "requestSubject": state.config.request_subject,
+                    "queueGroup": state.config.queue_group
+                }),
+            );
             return;
         }
     };
@@ -4455,9 +6894,14 @@ async fn run_nats_loop(state: AppState) {
         let payload = message.payload.to_vec();
         if payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "economics server rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
+            emit_log(
+                "WARN",
+                "economics.nats.request.oversize",
+                "economics NATS forecast request rejected because payload is too large",
+                json!({
+                    "bytes": payload.len(),
+                    "maxBytes": MAX_NATS_PAYLOAD_BYTES
+                }),
             );
             continue;
         }
@@ -4477,7 +6921,14 @@ async fn run_nats_loop(state: AppState) {
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("economics server nats forecast failed: {error}");
+                        emit_log(
+                            "ERROR",
+                            "economics.nats.forecast.error",
+                            "economics NATS forecast failed",
+                            json!({
+                                "error": error_summary(&error)
+                            }),
+                        );
                     }
                 },
                 Err(error) => {
@@ -4485,7 +6936,14 @@ async fn run_nats_loop(state: AppState) {
                         .metrics
                         .errors_total
                         .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("economics server invalid nats forecast request: {error}");
+                    emit_log(
+                        "WARN",
+                        "economics.nats.request.invalid",
+                        "economics NATS forecast request was invalid JSON",
+                        json!({
+                            "error": error_summary(&error.to_string())
+                        }),
+                    );
                 }
             }
         });
@@ -4582,13 +7040,24 @@ async fn sources() -> impl IntoResponse {
     Json(json!({
         "ok": true,
         "sources": source_catalog(),
+        "publicSourcesRoute": "GET /sources/public",
+        "publicSourceTemplateCount": public_source_templates().len(),
         "pullRoute": "POST /sources/pull",
         "ingestRoute": "POST /ingest",
         "sentimentSourcesRoute": "GET /sentiment/sources",
         "macroIndicatorsRoute": "GET /macro/indicators",
         "vcInvestmentRoute": "GET /vc/investment",
-        "recommendationsRoute": "POST /recommendations"
+        "recommendationsRoute": "POST /recommendations",
+        "pipelineCatalogRoute": "GET /pipelines/catalog",
+        "pipelinePlanRoute": "POST /pipelines/plan",
+        "pipelineSubmitRoute": "POST /pipelines/submit",
+        "integrationHealthRoute": "GET /integrations/health",
+        "auditHardeningRoute": "GET /audit/hardening"
     }))
+}
+
+async fn public_sources(State(state): State<AppState>) -> impl IntoResponse {
+    Json(public_source_catalog_payload(&state.config))
 }
 
 async fn sentiment_sources(State(state): State<AppState>) -> impl IntoResponse {
@@ -4603,6 +7072,38 @@ async fn macro_indicators(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn vc_investment(State(state): State<AppState>) -> impl IntoResponse {
     Json(vc_investment_payload(&state.config))
+}
+
+async fn pipeline_catalog(State(state): State<AppState>) -> impl IntoResponse {
+    Json(pipeline_catalog_payload(&state))
+}
+
+async fn integrations_health(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .integration_health_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(integration_health_payload(&state))
+}
+
+async fn hardening_audit(State(state): State<AppState>) -> impl IntoResponse {
+    Json(hardening_audit_payload(&state))
+}
+
+async fn observability(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .observability_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(observability_payload(&state))
 }
 
 async fn des_engine_descriptor() -> impl IntoResponse {
@@ -4668,6 +7169,107 @@ async fn recommendations_http(
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn pipeline_plan_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PipelinePlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .pipeline_plan_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let publish_to_nats = request.publish_to_nats.unwrap_or(true);
+    match pipeline_plan_from_request(&state, request) {
+        Ok(plan) => {
+            if publish_to_nats {
+                publish_pipeline_plan(&state, &plan).await;
+            }
+            Json(plan).into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn pipeline_submit_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PipelinePlanRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .pipeline_submit_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let publish_to_nats = request.publish_to_nats.unwrap_or(true);
+    let plan = match pipeline_plan_from_request(&state, request) {
+        Ok(plan) => plan,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_submit_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error })),
+            )
+                .into_response();
+        }
+    };
+    if publish_to_nats {
+        publish_pipeline_plan(&state, &plan).await;
+    }
+    match submit_pipeline_plan(&state, &plan).await {
+        Ok(submitted_jobs) => {
+            let ok = submitted_jobs.iter().all(|job| job.accepted);
+            Json(PipelineSubmitResponse {
+                ok,
+                request_id: plan.request_id.clone(),
+                schema_version: SCHEMA_VERSION,
+                generated_at_ms: now_ms(),
+                plan,
+                submitted_jobs,
+                warnings: vec![
+                    "only spark-pipeline-server intents are submitted; Airflow and Databricks remain plan-only".to_string(),
+                ],
+            })
+            .into_response()
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .pipeline_submit_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "ok": false, "error": error, "plan": plan })),
             )
                 .into_response()
         }
@@ -4794,6 +7396,18 @@ async fn pull_source_http(
         Ok(response) => Json(response).into_response(),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .source_pull_failure_total
+                .fetch_add(1, Ordering::Relaxed);
+            emit_log(
+                "WARN",
+                "economics.source_pull.error",
+                "economics source pull failed",
+                json!({
+                    "error": error_summary(&error)
+                }),
+            );
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "ok": false, "error": error })),
@@ -4804,20 +7418,30 @@ async fn pull_source_http(
 }
 
 async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPullResponse, String> {
-    let parsed_url = reqwest::Url::parse(request.url.trim())
-        .map_err(|error| format!("url is invalid: {error}"))?;
-    validate_source_url(&parsed_url, state.config.allow_private_source_urls)?;
+    let mut request = request;
+    let source_template = apply_public_source_template(&mut request)?;
+    validate_api_pull_request(&request, source_template.as_ref())?;
+    let url = request.url.as_deref().ok_or_else(|| {
+        "url is required unless sourceId names a public source template".to_string()
+    })?;
+    let parsed_url =
+        reqwest::Url::parse(url.trim()).map_err(|error| format!("url is invalid: {error}"))?;
+    if let Some(template) = source_template.as_ref() {
+        validate_public_source_url(&parsed_url, template)?;
+    } else {
+        validate_source_url_for_config(&parsed_url, &state.config)?;
+    }
     let mut http_request = state.http.get(parsed_url.clone());
     if let Some(env_name) = request.auth_header_env.as_deref() {
-        let env_name = clean_token(env_name, "authHeaderEnv")?;
+        let env_name = validate_source_auth_env(&state.config, env_name)?;
         let header_value = optional_env(&env_name)
             .ok_or_else(|| format!("auth header env var {env_name} is not configured"))?;
-        let header_name = request
-            .auth_header_name
-            .as_deref()
-            .unwrap_or("authorization")
-            .parse::<reqwest::header::HeaderName>()
-            .map_err(|error| format!("authHeaderName is invalid: {error}"))?;
+        let header_name = validate_source_auth_header_name(
+            request
+                .auth_header_name
+                .as_deref()
+                .unwrap_or("authorization"),
+        )?;
         let header_value = reqwest::header::HeaderValue::from_str(&header_value)
             .map_err(|_| "auth header value contains invalid bytes".to_string())?;
         http_request = http_request.header(header_name, header_value);
@@ -4851,17 +7475,19 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     let mut stored_points = 0usize;
     let mut warnings = Vec::new();
     let mut instrument_id = request.instrument_id.clone();
-    if request.instrument_id.is_some()
-        && request.asset_class.is_some()
-        && request.date_field.is_some()
-        && request.price_field.is_some()
-    {
-        let json_value = serde_json::from_slice::<Value>(&bytes)
-            .map_err(|error| format!("source response is not JSON: {error}"))?;
-        let series = series_from_json(&request, &json_value)?;
+    let mut quality = None;
+    let parser = request.parser;
+    let should_parse = parser.is_some()
+        || (request.instrument_id.is_some()
+            && request.asset_class.is_some()
+            && request.date_field.is_some()
+            && request.price_field.is_some());
+    if should_parse {
+        let (series, report) = series_from_bytes(&request, &bytes)?;
         stored_points = series.observations.len();
         instrument_id = Some(series.instrument_id.clone());
         validate_series(std::slice::from_ref(&series))?;
+        quality = Some(report);
         let mut store = state
             .series_store
             .write()
@@ -4869,7 +7495,7 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
         store.insert(series.instrument_id.clone(), series);
     } else {
         warnings.push(
-            "response fetched but not stored; provide instrumentId, assetClass, dateField, and priceField to parse JSON series"
+            "response fetched but not stored; provide sourceId or instrumentId, assetClass, parser, and field/index metadata to parse a series"
                 .to_string(),
         );
     }
@@ -4877,20 +7503,55 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     let response = ApiPullResponse {
         ok: true,
         request_id,
+        source_id: request.source_id.clone(),
         source: request
             .source
             .unwrap_or_else(|| "ad-hoc-api".to_string())
             .chars()
             .take(MAX_TOKEN_LEN)
             .collect(),
+        parser,
         url_host: host,
         http_status: status.as_u16(),
         bytes: bytes.len(),
         stored_points,
         instrument_id,
+        quality,
         warnings,
         fetched_at_ms: now_ms(),
     };
+    state
+        .metrics
+        .source_pull_success_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_bytes_total
+        .fetch_add(bytes.len() as u64, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_stored_points_total
+        .fetch_add(stored_points as u64, Ordering::Relaxed);
+    state
+        .metrics
+        .source_pull_last_success_unix_seconds
+        .store(now_unix_seconds(), Ordering::Relaxed);
+    emit_log(
+        "INFO",
+        "economics.source_pull.ok",
+        "economics source pull completed",
+        json!({
+            "requestId": &response.request_id,
+            "sourceId": &response.source_id,
+            "source": &response.source,
+            "urlHost": &response.url_host,
+            "httpStatus": response.http_status,
+            "bytes": response.bytes,
+            "storedPoints": response.stored_points,
+            "instrumentId": &response.instrument_id,
+            "parser": &response.parser
+        }),
+    );
     publish_market_event(
         state,
         json!({
@@ -4907,7 +7568,155 @@ async fn pull_source(state: &AppState, request: ApiPullRequest) -> Result<ApiPul
     Ok(response)
 }
 
+fn apply_public_source_template(
+    request: &mut ApiPullRequest,
+) -> Result<Option<PublicSourceTemplate>, String> {
+    let Some(source_id) = request.source_id.as_deref() else {
+        return Ok(None);
+    };
+    let source_id = clean_token(source_id, "sourceId")?;
+    let template = public_source_template(&source_id).ok_or_else(|| {
+        format!(
+            "unknown sourceId {source_id}; use GET /sources/public for supported public templates"
+        )
+    })?;
+    if request
+        .url
+        .as_deref()
+        .map(|url| !url.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return Err("sourceId templates do not allow url overrides".to_string());
+    }
+    if request.auth_header_env.is_some() || request.auth_header_name.is_some() {
+        return Err(
+            "sourceId templates are public and do not accept auth header overrides".to_string(),
+        );
+    }
+
+    request.source_id = Some(source_id);
+    request.url = Some(template.url.to_string());
+    request.parser.get_or_insert(template.parser);
+    request
+        .instrument_id
+        .get_or_insert_with(|| template.instrument_id.to_string());
+    request
+        .display_name
+        .get_or_insert_with(|| template.display_name.to_string());
+    request
+        .asset_class
+        .get_or_insert_with(|| template.asset_class.to_string());
+    request
+        .currency
+        .get_or_insert_with(|| template.currency.to_string());
+    request
+        .source
+        .get_or_insert_with(|| template.source.to_string());
+    if request.root_pointer.is_none() {
+        request.root_pointer = template.root_pointer.map(str::to_string);
+    }
+    if request.date_field.is_none() {
+        request.date_field = template.date_field.map(str::to_string);
+    }
+    if request.price_field.is_none() {
+        request.price_field = template.price_field.map(str::to_string);
+    }
+    if request.volume_field.is_none() {
+        request.volume_field = template.volume_field.map(str::to_string);
+    }
+    request.date_index = request.date_index.or(template.date_index);
+    request.price_index = request.price_index.or(template.price_index);
+    request.volume_index = request.volume_index.or(template.volume_index);
+    Ok(Some(template))
+}
+
+fn validate_api_pull_request(
+    request: &ApiPullRequest,
+    source_template: Option<&PublicSourceTemplate>,
+) -> Result<(), String> {
+    clean_optional_token(&request.source_id, "sourceId")?;
+    clean_optional_token(&request.instrument_id, "instrumentId")?;
+    clean_optional_token(&request.display_name, "displayName")?;
+    clean_optional_token(&request.asset_class, "assetClass")?;
+    clean_optional_token(&request.currency, "currency")?;
+    clean_optional_token(&request.source, "source")?;
+    clean_optional_token(&request.date_field, "dateField")?;
+    clean_optional_token(&request.price_field, "priceField")?;
+    clean_optional_token(&request.volume_field, "volumeField")?;
+    clean_optional_token(&request.auth_header_env, "authHeaderEnv")?;
+    clean_optional_token(&request.auth_header_name, "authHeaderName")?;
+    if let Some(url) = request.url.as_deref() {
+        if url.trim().is_empty() || url.len() > MAX_URL_LEN || url.chars().any(char::is_control) {
+            return Err(format!(
+                "url must be non-empty, contain no control characters, and be at most {MAX_URL_LEN} bytes"
+            ));
+        }
+    }
+    if let Some(pointer) = request.root_pointer.as_deref() {
+        validate_json_pointer(pointer, "rootPointer")?;
+    }
+    for (label, index) in [
+        ("dateIndex", request.date_index),
+        ("priceIndex", request.price_index),
+        ("volumeIndex", request.volume_index),
+    ] {
+        if let Some(index) = index {
+            if index > 16 {
+                return Err(format!("{label} must be between 0 and 16"));
+            }
+        }
+    }
+    if source_template.is_none() && request.source_id.is_some() {
+        return Err("sourceId did not resolve to a public source template".to_string());
+    }
+    Ok(())
+}
+
+fn validate_json_pointer(pointer: &str, label: &str) -> Result<(), String> {
+    let trimmed = pointer.trim();
+    if trimmed.len() > MAX_JSON_POINTER_LEN || trimmed.chars().any(char::is_control) {
+        return Err(format!(
+            "{label} must contain no control characters and be at most {MAX_JSON_POINTER_LEN} bytes"
+        ));
+    }
+    if !trimmed.is_empty() && !trimmed.starts_with('/') {
+        return Err(format!("{label} must be a JSON pointer starting with /"));
+    }
+    Ok(())
+}
+
+fn validate_public_source_url(
+    url: &reqwest::Url,
+    template: &PublicSourceTemplate,
+) -> Result<(), String> {
+    validate_source_url(url, false)?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source URL must include a host".to_string())?
+        .to_ascii_lowercase();
+    if host != template.host {
+        return Err(format!(
+            "sourceId {} must resolve to host {}",
+            template.id, template.host
+        ));
+    }
+    Ok(())
+}
+
+fn validate_source_url_for_config(url: &reqwest::Url, config: &Config) -> Result<(), String> {
+    validate_source_url(url, config.allow_private_source_urls)?;
+    validate_source_host_allowlist(url, &config.allowed_source_hosts)
+}
+
 fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), String> {
+    if url.as_str().len() > MAX_URL_LEN || url.as_str().chars().any(char::is_control) {
+        return Err(format!(
+            "source URL must contain no control characters and be at most {MAX_URL_LEN} bytes"
+        ));
+    }
+    if url.fragment().is_some() {
+        return Err("source URL fragments are not allowed".to_string());
+    }
     match url.scheme() {
         "https" => {}
         "http" if allow_private => {}
@@ -4922,21 +7731,14 @@ fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), St
         .host_str()
         .ok_or_else(|| "source URL must include a host".to_string())?
         .to_ascii_lowercase();
-    let private_host = host == "localhost"
-        || host == "127.0.0.1"
-        || host == "::1"
-        || host.starts_with("10.")
-        || host.starts_with("192.168.")
-        || host.starts_with("172.16.")
-        || host.starts_with("172.17.")
-        || host.starts_with("172.18.")
-        || host.starts_with("172.19.")
-        || host.starts_with("172.2")
-        || host.starts_with("172.30.")
-        || host.starts_with("172.31.");
-    if private_host && !allow_private {
+    if source_host_is_private(&host) && !allow_private {
         return Err(
             "private source hosts require ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true".to_string(),
+        );
+    }
+    if url.port().is_some() && !allow_private {
+        return Err(
+            "custom source URL ports require ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS=true".to_string(),
         );
     }
     if url.username() != "" || url.password().is_some() {
@@ -4945,7 +7747,92 @@ fn validate_source_url(url: &reqwest::Url, allow_private: bool) -> Result<(), St
     Ok(())
 }
 
+fn source_host_is_private(host: &str) -> bool {
+    if matches!(
+        host,
+        "localhost" | "host.docker.internal" | "metadata.google.internal"
+    ) || host.ends_with(".localhost")
+        || host.ends_with(".local")
+    {
+        return true;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => {
+            let [a, b, _, _] = ip.octets();
+            a == 0
+                || a == 10
+                || a == 127
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..=31).contains(&b))
+                || (a == 192 && b == 168)
+                || a >= 224
+        }
+        Ok(IpAddr::V6(ip)) => {
+            let first = ip.segments()[0];
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80
+        }
+        Err(_) => false,
+    }
+}
+
+fn validate_source_host_allowlist(
+    url: &reqwest::Url,
+    allowed_hosts: &[String],
+) -> Result<(), String> {
+    if allowed_hosts.is_empty() {
+        return Ok(());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source URL must include a host".to_string())?
+        .to_ascii_lowercase();
+    if allowed_hosts
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")))
+    {
+        return Ok(());
+    }
+    Err(format!(
+        "source host {host} is not in ECONOMICS_ALLOWED_SOURCE_HOSTS"
+    ))
+}
+
+fn series_from_bytes(
+    request: &ApiPullRequest,
+    bytes: &[u8],
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    match request.parser.unwrap_or(SourceParser::JsonRecords) {
+        SourceParser::JsonRecords => {
+            let json_value = serde_json::from_slice::<Value>(bytes)
+                .map_err(|error| format!("source response is not JSON: {error}"))?;
+            series_from_json_records_with_quality(request, &json_value)
+        }
+        SourceParser::JsonTupleArray => {
+            let json_value = serde_json::from_slice::<Value>(bytes)
+                .map_err(|error| format!("source response is not JSON: {error}"))?;
+            series_from_json_tuple_array(request, &json_value)
+        }
+        SourceParser::CsvRecords => {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|error| format!("source response is not UTF-8 CSV: {error}"))?;
+            series_from_csv_records(request, text)
+        }
+    }
+}
+
+#[cfg(test)]
 fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSeries, String> {
+    series_from_json_records_with_quality(request, value).map(|(series, _)| series)
+}
+
+fn series_from_json_records_with_quality(
+    request: &ApiPullRequest,
+    value: &Value,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
     let root = match request.root_pointer.as_deref() {
         Some(pointer) if !pointer.trim().is_empty() => value
             .pointer(pointer)
@@ -4959,23 +7846,145 @@ fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSer
     let price_field = request.price_field.as_deref().unwrap_or("price");
     let volume_field = request.volume_field.as_deref();
     let mut observations = Vec::with_capacity(items.len().min(MAX_OBSERVATIONS_PER_SERIES));
+    let mut dropped_points = 0usize;
     for item in items.iter().take(MAX_OBSERVATIONS_PER_SERIES) {
-        let date = field_value(item, date_field)
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("dateField {date_field} missing or not a string"))?;
-        let price = field_value(item, price_field)
-            .and_then(number_from_value)
-            .ok_or_else(|| format!("priceField {price_field} missing or not numeric"))?;
+        let Some(date) = field_value(item, date_field).and_then(date_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = field_value(item, price_field).and_then(number_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
         let volume = volume_field
             .and_then(|field| field_value(item, field))
             .and_then(number_from_value);
         observations.push(MarketObservation {
-            date: date.to_string(),
+            date,
             price,
             volume,
         });
     }
-    Ok(MarketSeries {
+    build_series_with_quality(
+        request,
+        SourceParser::JsonRecords,
+        observations,
+        dropped_points,
+    )
+}
+
+fn series_from_json_tuple_array(
+    request: &ApiPullRequest,
+    value: &Value,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    let root = match request.root_pointer.as_deref() {
+        Some(pointer) if !pointer.trim().is_empty() => value
+            .pointer(pointer)
+            .ok_or_else(|| format!("rootPointer {pointer} did not match JSON response"))?,
+        _ => value,
+    };
+    let items = root
+        .as_array()
+        .ok_or_else(|| "selected JSON value must be an array".to_string())?;
+    let date_index = request.date_index.unwrap_or(0);
+    let price_index = request.price_index.unwrap_or(1);
+    let volume_index = request.volume_index;
+    let mut observations = Vec::with_capacity(items.len().min(MAX_OBSERVATIONS_PER_SERIES));
+    let mut dropped_points = 0usize;
+    for item in items.iter().take(MAX_OBSERVATIONS_PER_SERIES) {
+        let Some(tuple) = item.as_array() else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(date) = tuple.get(date_index).and_then(date_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = tuple.get(price_index).and_then(number_from_value) else {
+            dropped_points += 1;
+            continue;
+        };
+        let volume = volume_index
+            .and_then(|index| tuple.get(index))
+            .and_then(number_from_value);
+        observations.push(MarketObservation {
+            date,
+            price,
+            volume,
+        });
+    }
+    build_series_with_quality(
+        request,
+        SourceParser::JsonTupleArray,
+        observations,
+        dropped_points,
+    )
+}
+
+fn series_from_csv_records(
+    request: &ApiPullRequest,
+    text: &str,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let header_line = lines
+        .next()
+        .ok_or_else(|| "CSV response must include a header row".to_string())?;
+    let headers = parse_csv_line(header_line)?;
+    let date_field = request.date_field.as_deref().unwrap_or("date");
+    let price_field = request.price_field.as_deref().unwrap_or("price");
+    let volume_field = request.volume_field.as_deref();
+    let date_index = csv_header_index(&headers, date_field)?;
+    let price_index = csv_header_index(&headers, price_field)?;
+    let volume_index = volume_field
+        .map(|field| csv_header_index(&headers, field))
+        .transpose()?;
+    let mut observations = Vec::with_capacity(MAX_OBSERVATIONS_PER_SERIES.min(1024));
+    let mut dropped_points = 0usize;
+    for line in lines.take(MAX_OBSERVATIONS_PER_SERIES) {
+        let fields = parse_csv_line(line)?;
+        let Some(date) = fields
+            .get(date_index)
+            .and_then(|value| date_from_text(value))
+        else {
+            dropped_points += 1;
+            continue;
+        };
+        let Some(price) = fields
+            .get(price_index)
+            .and_then(|value| number_from_text(value))
+        else {
+            dropped_points += 1;
+            continue;
+        };
+        let volume = volume_index
+            .and_then(|index| fields.get(index))
+            .and_then(|value| number_from_text(value));
+        observations.push(MarketObservation {
+            date,
+            price,
+            volume,
+        });
+    }
+    build_series_with_quality(
+        request,
+        SourceParser::CsvRecords,
+        observations,
+        dropped_points,
+    )
+}
+
+fn build_series_with_quality(
+    request: &ApiPullRequest,
+    parser: SourceParser,
+    mut observations: Vec<MarketObservation>,
+    dropped_points: usize,
+) -> Result<(MarketSeries, SourceQualityReport), String> {
+    observations.sort_by(|left, right| left.date.cmp(&right.date));
+    let before_dedupe = observations.len();
+    observations.dedup_by(|left, right| left.date == right.date);
+    let dropped_points = dropped_points + before_dedupe.saturating_sub(observations.len());
+    let quality = source_quality_report(parser, &observations, dropped_points);
+    let series = MarketSeries {
         instrument_id: request
             .instrument_id
             .clone()
@@ -4992,7 +8001,67 @@ fn series_from_json(request: &ApiPullRequest, value: &Value) -> Result<MarketSer
             .or_else(|| Some("api-pull".to_string())),
         observations,
         features: None,
-    })
+    };
+    Ok((series, quality))
+}
+
+fn source_quality_report(
+    parser: SourceParser,
+    observations: &[MarketObservation],
+    dropped_points: usize,
+) -> SourceQualityReport {
+    let min_price = observations
+        .iter()
+        .map(|point| point.price)
+        .reduce(f64::min)
+        .map(round6);
+    let max_price = observations
+        .iter()
+        .map(|point| point.price)
+        .reduce(f64::max)
+        .map(round6);
+    SourceQualityReport {
+        parser,
+        observed_points: observations.len(),
+        dropped_points,
+        first_date: observations.first().map(|point| point.date.clone()),
+        last_date: observations.last().map(|point| point.date.clone()),
+        min_price,
+        max_price,
+    }
+}
+
+fn parse_csv_line(line: &str) -> Result<Vec<String>, String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                field.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                fields.push(field.trim().to_string());
+                field.clear();
+            }
+            _ => field.push(ch),
+        }
+    }
+    if in_quotes {
+        return Err("CSV row has an unterminated quoted field".to_string());
+    }
+    fields.push(field.trim().to_string());
+    Ok(fields)
+}
+
+fn csv_header_index(headers: &[String], field: &str) -> Result<usize, String> {
+    headers
+        .iter()
+        .position(|header| header.eq_ignore_ascii_case(field))
+        .ok_or_else(|| format!("CSV field {field} was not found in header row"))
 }
 
 fn field_value<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
@@ -5003,18 +8072,64 @@ fn field_value<'a>(value: &'a Value, field: &str) -> Option<&'a Value> {
     }
 }
 
+fn date_from_value(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .and_then(date_from_text)
+        .or_else(|| value.as_i64().map(|number| number.to_string()))
+        .or_else(|| value.as_u64().map(|number| number.to_string()))
+        .or_else(|| {
+            value.as_f64().and_then(|number| {
+                if number.is_finite() {
+                    Some(format!("{number:.0}"))
+                } else {
+                    None
+                }
+            })
+        })
+}
+
+fn date_from_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed.eq_ignore_ascii_case("null") {
+        None
+    } else {
+        Some(trimmed.chars().take(MAX_TOKEN_LEN).collect())
+    }
+}
+
 fn number_from_value(value: &Value) -> Option<f64> {
     value
         .as_f64()
-        .or_else(|| {
-            value
-                .as_str()
-                .and_then(|text| text.trim().parse::<f64>().ok())
-        })
+        .or_else(|| value.as_str().and_then(number_from_text))
+        .filter(|number| number.is_finite())
+}
+
+fn number_from_text(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed == "."
+        || trimmed.eq_ignore_ascii_case("null")
+        || trimmed.eq_ignore_ascii_case("nan")
+    {
+        return None;
+    }
+    let normalized = trimmed
+        .trim_start_matches('$')
+        .chars()
+        .filter(|ch| *ch != ',')
+        .collect::<String>();
+    normalized
+        .parse::<f64>()
+        .ok()
         .filter(|number| number.is_finite())
 }
 
 async fn metrics(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
     let body = format!(
         "# HELP dd_economics_server_http_requests_total HTTP requests observed by the economics service.\n\
          # TYPE dd_economics_server_http_requests_total counter\n\
@@ -5028,12 +8143,54 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_economics_server_source_pull_total Source pull requests attempted.\n\
          # TYPE dd_economics_server_source_pull_total counter\n\
          dd_economics_server_source_pull_total {}\n\
+         # HELP dd_economics_server_source_pull_success_total Source pull requests that fetched and parsed/stored or fetched successfully.\n\
+         # TYPE dd_economics_server_source_pull_success_total counter\n\
+         dd_economics_server_source_pull_success_total {}\n\
+         # HELP dd_economics_server_source_pull_failure_total Source pull requests rejected or failed before a successful response.\n\
+         # TYPE dd_economics_server_source_pull_failure_total counter\n\
+         dd_economics_server_source_pull_failure_total {}\n\
+         # HELP dd_economics_server_source_pull_bytes_total Total response bytes fetched by successful source pulls.\n\
+         # TYPE dd_economics_server_source_pull_bytes_total counter\n\
+         dd_economics_server_source_pull_bytes_total {}\n\
+         # HELP dd_economics_server_source_pull_stored_points_total Total normalized observations stored by source pulls.\n\
+         # TYPE dd_economics_server_source_pull_stored_points_total counter\n\
+         dd_economics_server_source_pull_stored_points_total {}\n\
+         # HELP dd_economics_server_source_pull_last_success_unix_seconds Unix timestamp of the latest successful source pull.\n\
+         # TYPE dd_economics_server_source_pull_last_success_unix_seconds gauge\n\
+         dd_economics_server_source_pull_last_success_unix_seconds {}\n\
          # HELP dd_economics_server_sentiment_requests_total Sentiment analysis requests accepted.\n\
          # TYPE dd_economics_server_sentiment_requests_total counter\n\
          dd_economics_server_sentiment_requests_total {}\n\
          # HELP dd_economics_server_recommendation_requests_total Recommendation requests accepted.\n\
          # TYPE dd_economics_server_recommendation_requests_total counter\n\
          dd_economics_server_recommendation_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_plan_requests_total Pipeline plan requests accepted.\n\
+         # TYPE dd_economics_server_pipeline_plan_requests_total counter\n\
+         dd_economics_server_pipeline_plan_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_requests_total Pipeline submit requests accepted.\n\
+         # TYPE dd_economics_server_pipeline_submit_requests_total counter\n\
+         dd_economics_server_pipeline_submit_requests_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_attempts_total Pipeline plan NATS publish attempts requested.\n\
+         # TYPE dd_economics_server_pipeline_publish_attempts_total counter\n\
+         dd_economics_server_pipeline_publish_attempts_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_success_total Pipeline plans published to NATS successfully.\n\
+         # TYPE dd_economics_server_pipeline_publish_success_total counter\n\
+         dd_economics_server_pipeline_publish_success_total {}\n\
+         # HELP dd_economics_server_pipeline_publish_failure_total Pipeline plan publish attempts skipped or failed.\n\
+         # TYPE dd_economics_server_pipeline_publish_failure_total counter\n\
+         dd_economics_server_pipeline_publish_failure_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_success_total Spark pipeline jobs accepted by the pipeline server.\n\
+         # TYPE dd_economics_server_pipeline_submit_success_total counter\n\
+         dd_economics_server_pipeline_submit_success_total {}\n\
+         # HELP dd_economics_server_pipeline_submit_failure_total Spark pipeline job submits rejected or failed before submit.\n\
+         # TYPE dd_economics_server_pipeline_submit_failure_total counter\n\
+         dd_economics_server_pipeline_submit_failure_total {}\n\
+         # HELP dd_economics_server_integration_health_requests_total Integration health requests served.\n\
+         # TYPE dd_economics_server_integration_health_requests_total counter\n\
+         dd_economics_server_integration_health_requests_total {}\n\
+         # HELP dd_economics_server_observability_requests_total Observability descriptor requests served.\n\
+         # TYPE dd_economics_server_observability_requests_total counter\n\
+         dd_economics_server_observability_requests_total {}\n\
          # HELP dd_economics_server_auth_failures_total Rejected requests with missing or invalid auth.\n\
          # TYPE dd_economics_server_auth_failures_total counter\n\
          dd_economics_server_auth_failures_total {}\n\
@@ -5050,10 +8207,66 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.forecasts_total.load(Ordering::Relaxed),
         state.metrics.ingest_requests_total.load(Ordering::Relaxed),
         state.metrics.source_pull_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_bytes_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_stored_points_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .source_pull_last_success_unix_seconds
+            .load(Ordering::Relaxed),
         state.metrics.sentiment_requests_total.load(Ordering::Relaxed),
         state
             .metrics
             .recommendation_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_plan_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_attempts_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_publish_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_success_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .pipeline_submit_failure_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .integration_health_requests_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .observability_requests_total
             .load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
@@ -5095,6 +8308,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         nats,
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("dd-economics-server/0.1 source-pull")
             .build()?,
         series_store: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -5110,12 +8325,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/schema", get(schema))
         .route("/example", get(example))
         .route("/sources", get(sources))
+        .route("/sources/public", get(public_sources))
         .route("/sources/pull", post(pull_source_http))
         .route("/sentiment/sources", get(sentiment_sources))
         .route("/sentiment/analyze", post(sentiment_analyze_http))
         .route("/macro/indicators", get(macro_indicators))
         .route("/vc/investment", get(vc_investment))
         .route("/recommendations", post(recommendations_http))
+        .route("/audit/hardening", get(hardening_audit))
+        .route("/observability", get(observability))
+        .route("/integrations/health", get(integrations_health))
+        .route("/pipelines/catalog", get(pipeline_catalog))
+        .route("/pipelines/plan", post(pipeline_plan_http))
+        .route("/pipelines/submit", post(pipeline_submit_http))
         .route("/model/equations", get(equations))
         .route("/engine/des", get(des_engine_descriptor))
         .route("/forecast", post(forecast_http))
@@ -5130,7 +8352,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    emit_log(
+        "INFO",
+        "economics.server.start",
+        "dd-economics-server listening",
+        json!({
+            "address": addr.to_string(),
+            "metricsRoute": "GET /metrics",
+            "observabilityRoute": "GET /observability",
+            "otelMode": "explicit-only"
+        }),
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -5474,6 +8706,8 @@ mod tests {
             server_auth_secret: Some("secret".to_string()),
             allow_unauthenticated: false,
             allow_private_source_urls: false,
+            allowed_source_hosts: Vec::new(),
+            allowed_source_auth_envs: default_source_auth_envs(),
             sentiment_credentials: SentimentCredentialStatus {
                 x_bearer_token: true,
                 x_api_key: false,
@@ -5494,6 +8728,7 @@ mod tests {
                 treasury_api_key: false,
                 census_api_key: false,
                 eia_api_key: false,
+                coingecko_api_key: true,
                 sec_api_key: false,
                 crunchbase_api_key: true,
                 pitchbook_api_key: false,
@@ -5509,6 +8744,53 @@ mod tests {
             result_subject: ECONOMICS_FORECAST_RESULT_SUBJECT.to_string(),
             market_event_subject: ECONOMICS_MARKET_EVENT_SUBJECT.to_string(),
             runtime_event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
+            pipeline_intent_subject: PUBLIC_DATA_PIPELINE_JOBS_SUBJECT.to_string(),
+            spark_pipeline_url: Some(DEFAULT_SPARK_PIPELINE_URL.to_string()),
+            spark_pipeline_auth_env: "SERVER_AUTH_SECRET".to_string(),
+            spark_master_url: DEFAULT_SPARK_MASTER_URL.to_string(),
+            airflow_api_url: Some(DEFAULT_AIRFLOW_API_URL.to_string()),
+            databricks_host: Some("https://example.cloud.databricks.com".to_string()),
+            data_lake_uri: DEFAULT_DATA_LAKE_URI.to_string(),
+            allow_pipeline_submit: false,
+            allow_external_pipeline_urls: false,
+        }
+    }
+
+    fn test_state() -> AppState {
+        AppState {
+            config: Arc::new(test_config()),
+            metrics: Arc::new(Metrics::default()),
+            nats: None,
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("dd-economics-server/0.1 test-source-pull")
+                .build()
+                .unwrap(),
+            series_store: Arc::new(RwLock::new(BTreeMap::new())),
+        }
+    }
+
+    fn source_id_pull_request(source_id: &str) -> ApiPullRequest {
+        ApiPullRequest {
+            request_id: None,
+            source_id: Some(source_id.to_string()),
+            url: None,
+            parser: None,
+            instrument_id: None,
+            display_name: None,
+            asset_class: None,
+            currency: None,
+            source: None,
+            root_pointer: None,
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: None,
+            auth_header_name: None,
         }
     }
 
@@ -5568,7 +8850,9 @@ mod tests {
     fn parses_json_series_from_pointer_fields() {
         let request = ApiPullRequest {
             request_id: None,
-            url: "https://example.com/data.json".to_string(),
+            source_id: None,
+            url: Some("https://example.com/data.json".to_string()),
+            parser: Some(SourceParser::JsonRecords),
             instrument_id: Some("TEST".to_string()),
             display_name: Some("Test".to_string()),
             asset_class: Some("equities".to_string()),
@@ -5578,6 +8862,9 @@ mod tests {
             date_field: Some("d".to_string()),
             price_field: Some("p".to_string()),
             volume_field: Some("v".to_string()),
+            date_index: None,
+            price_index: None,
+            volume_index: None,
             auth_header_env: None,
             auth_header_name: None,
         };
@@ -5690,5 +8977,448 @@ mod tests {
             .methodology
             .iter()
             .any(|item| item.contains("VC sector flow")));
+    }
+
+    #[test]
+    fn pipeline_plan_emits_spark_airflow_databricks_and_nats_intents() {
+        let state = test_state();
+        let plan = pipeline_plan_from_request(
+            &state,
+            PipelinePlanRequest {
+                request_id: Some("pipeline-unit".to_string()),
+                schema_version: Some(SCHEMA_VERSION.to_string()),
+                scenario: Some("soft-landing".to_string()),
+                data_lake_uri: Some("s3a://dd-economics/unit".to_string()),
+                include_recommendations: Some(true),
+                publish_to_nats: Some(false),
+                job_kinds: None,
+                recommendation_request: None,
+            },
+        )
+        .expect("pipeline plan succeeds");
+
+        assert_eq!(plan.request_id, "pipeline-unit");
+        assert_eq!(plan.job_intents.len(), 5);
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "spark-pipeline-server"
+                && intent.kind == "INGEST_VALIDATE_PUBLISH"
+                && intent.submit_eligible));
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "airflow" && !intent.submit_eligible));
+        assert!(plan
+            .job_intents
+            .iter()
+            .any(|intent| intent.engine == "databricks" && !intent.submit_eligible));
+        assert_eq!(
+            plan.pipeline_status.pipeline_intent_subject,
+            PUBLIC_DATA_PIPELINE_JOBS_SUBJECT
+        );
+    }
+
+    #[test]
+    fn recommendation_validation_rejects_unbounded_vc_context() {
+        let mut context = sample_venture_capital_context();
+        context.deals[0].amount = f64::INFINITY;
+        let error = generate_recommendations(
+            &test_config(),
+            RecommendationRequest {
+                request_id: Some("bad-vc".to_string()),
+                schema_version: Some(SCHEMA_VERSION.to_string()),
+                horizon_months: Some(18),
+                company_limit: Some(20),
+                commodity_limit: Some(30),
+                scenario: Some("base".to_string()),
+                series: Some(sample_market_series()),
+                macro_context: None,
+                macro_fiscal_context: Some(default_macro_fiscal_context()),
+                venture_capital_context: Some(context),
+                sentiment_context: None,
+            },
+        )
+        .expect_err("invalid vc amount rejected");
+
+        assert!(error.contains("ventureCapitalContext.deals"));
+    }
+
+    #[test]
+    fn pipeline_submit_url_rejects_external_hosts_by_default() {
+        let mut config = test_config();
+        config.spark_pipeline_url = Some("https://spark.example.com".to_string());
+        config.allow_external_pipeline_urls = false;
+
+        let error = validate_pipeline_submit_url(&config).expect_err("external URL rejected");
+
+        assert!(error.contains("cluster-local"));
+    }
+
+    #[test]
+    fn pipeline_submit_url_rejects_credentials_queries_and_fragments() {
+        let mut config = test_config();
+        config.spark_pipeline_url = Some(
+            "http://user:secret@dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085".to_string(),
+        );
+        let error = validate_pipeline_submit_url(&config).expect_err("credentials rejected");
+        assert!(error.contains("credentials"));
+
+        config.spark_pipeline_url = Some(
+            "http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085?token=secret".to_string(),
+        );
+        let error = validate_pipeline_submit_url(&config).expect_err("query rejected");
+        assert!(error.contains("query strings"));
+
+        config.spark_pipeline_url =
+            Some("http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085/#frag".to_string());
+        let error = validate_pipeline_submit_url(&config).expect_err("fragment rejected");
+        assert!(error.contains("fragments"));
+    }
+
+    #[tokio::test]
+    async fn source_auth_header_env_must_be_allowed() {
+        let state = test_state();
+        let request = ApiPullRequest {
+            request_id: Some("auth-env-unit".to_string()),
+            source_id: None,
+            url: Some("https://api.worldbank.org/v2/country/US".to_string()),
+            parser: None,
+            instrument_id: None,
+            display_name: None,
+            asset_class: None,
+            currency: None,
+            source: Some("unit".to_string()),
+            root_pointer: None,
+            date_field: None,
+            price_field: None,
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: Some("SERVER_AUTH_SECRET".to_string()),
+            auth_header_name: Some("authorization".to_string()),
+        };
+
+        let error = pull_source(&state, request)
+            .await
+            .expect_err("non-economics auth env rejected before request");
+        assert!(error.contains("authHeaderEnv"));
+    }
+
+    #[test]
+    fn source_auth_header_name_blocks_transport_headers() {
+        let error = validate_source_auth_header_name("host").expect_err("host header rejected");
+
+        assert!(error.contains("hop-by-hop"));
+    }
+
+    #[test]
+    fn public_source_catalog_covers_tradeable_and_macro_assets() {
+        let ids = public_source_ids();
+
+        assert!(ids.contains(&"treasury-debt-to-penny"));
+        assert!(ids.contains(&"worldbank-us-gdp-current-usd"));
+        assert!(ids.contains(&"coingecko-bitcoin-usd"));
+        assert!(ids.contains(&"fred-wti-oil"));
+        assert!(ids.contains(&"fred-gold"));
+        assert!(ids.contains(&"fred-silver"));
+        assert!(ids.contains(&"fred-sp500"));
+        assert!(ids.contains(&"fred-mortgage30"));
+        assert!(ids.contains(&"fred-usd-eur"));
+        assert!(public_source_hosts().contains(&"api.fiscaldata.treasury.gov"));
+    }
+
+    #[test]
+    fn source_id_template_fills_pull_metadata_and_rejects_url_override() {
+        let mut request = source_id_pull_request("treasury-debt-to-penny");
+        let template = apply_public_source_template(&mut request)
+            .expect("source template resolves")
+            .expect("template present");
+
+        assert_eq!(template.host, "api.fiscaldata.treasury.gov");
+        assert_eq!(request.instrument_id.as_deref(), Some("US-PUBLIC-DEBT"));
+        assert_eq!(request.parser, Some(SourceParser::JsonRecords));
+        validate_api_pull_request(&request, Some(&template)).expect("template request validates");
+
+        let mut override_request = source_id_pull_request("treasury-debt-to-penny");
+        override_request.url = Some("https://example.com/not-the-template.json".to_string());
+        let error = apply_public_source_template(&mut override_request)
+            .expect_err("sourceId URL override rejected");
+        assert!(error.contains("url overrides"));
+    }
+
+    #[test]
+    fn parses_treasury_fiscaldata_json_and_reports_quality() {
+        let mut request = source_id_pull_request("treasury-debt-to-penny");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        let body = br#"{
+            "data": [
+                {"record_date":"2026-06-03","tot_pub_debt_out_amt":"39204974715248.65"},
+                {"record_date":"2026-06-04","tot_pub_debt_out_amt":"39232150577283.87"},
+                {"record_date":"2026-06-05","tot_pub_debt_out_amt":null}
+            ]
+        }"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("treasury series parsed");
+
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "US-PUBLIC-DEBT");
+        assert_eq!(series.observations.len(), 2);
+        assert_eq!(quality.dropped_points, 1);
+        assert_eq!(quality.first_date.as_deref(), Some("2026-06-03"));
+        assert_eq!(quality.last_date.as_deref(), Some("2026-06-04"));
+    }
+
+    #[test]
+    fn parses_worldbank_records_and_skips_latest_null() {
+        let mut request = source_id_pull_request("worldbank-us-gdp-current-usd");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        let body = br#"[
+            {"page":1,"pages":1,"per_page":3,"total":3},
+            [
+                {"date":"2025","value":null},
+                {"date":"2024","value":28750956130731.2},
+                {"date":"2023","value":27292170793214.4}
+            ]
+        ]"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("worldbank series parsed");
+
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "US-GDP-CURRENT-USD");
+        assert_eq!(series.observations[0].date, "2023");
+        assert_eq!(quality.dropped_points, 1);
+    }
+
+    #[test]
+    fn parses_coingecko_tuple_arrays() {
+        let mut request = source_id_pull_request("coingecko-bitcoin-usd");
+        let template = apply_public_source_template(&mut request)
+            .expect("template resolves")
+            .expect("template present");
+        let body = br#"{
+            "prices": [
+                [1780790400000,60861.88012897632],
+                [1780704000000,60921.79441516493]
+            ],
+            "market_caps": [],
+            "total_volumes": []
+        }"#;
+
+        let (series, quality) = series_from_bytes(&request, body).expect("coingecko series parsed");
+
+        validate_api_pull_request(&request, Some(&template)).expect("request validates");
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.instrument_id, "BTC-USD");
+        assert_eq!(series.observations[0].date, "1780704000000");
+        assert_eq!(quality.parser, SourceParser::JsonTupleArray);
+        assert_eq!(quality.observed_points, 2);
+    }
+
+    #[test]
+    fn parses_csv_records_and_drops_missing_values() {
+        let request = ApiPullRequest {
+            request_id: None,
+            source_id: None,
+            url: Some("https://example.com/dgs10.csv".to_string()),
+            parser: Some(SourceParser::CsvRecords),
+            instrument_id: Some("DGS10".to_string()),
+            display_name: Some("10-Year Treasury".to_string()),
+            asset_class: Some("rates".to_string()),
+            currency: Some("PCT".to_string()),
+            source: Some("unit-csv".to_string()),
+            root_pointer: None,
+            date_field: Some("observation_date".to_string()),
+            price_field: Some("DGS10".to_string()),
+            volume_field: None,
+            date_index: None,
+            price_index: None,
+            volume_index: None,
+            auth_header_env: None,
+            auth_header_name: None,
+        };
+        let body = "observation_date,DGS10\n2026-06-01,4.45\n2026-06-02,.\n2026-06-03,4.41\n";
+
+        let (series, quality) =
+            series_from_bytes(&request, body.as_bytes()).expect("csv series parsed");
+
+        validate_series(std::slice::from_ref(&series)).expect("series validates");
+        assert_eq!(series.observations.len(), 2);
+        assert_eq!(quality.dropped_points, 1);
+        assert_eq!(quality.min_price, Some(4.41));
+    }
+
+    #[test]
+    fn source_policy_blocks_private_redirect_targets_and_custom_ports() {
+        let link_local = reqwest::Url::parse("https://169.254.169.254/latest/meta-data").unwrap();
+        let error = validate_source_url(&link_local, false).expect_err("link-local blocked");
+        assert!(error.contains("ECONOMICS_ALLOW_PRIVATE_SOURCE_URLS"));
+
+        let custom_port = reqwest::Url::parse("https://api.worldbank.org:8443/v2").unwrap();
+        let error = validate_source_url(&custom_port, false).expect_err("custom port blocked");
+        assert!(error.contains("custom source URL ports"));
+
+        let public_172 = reqwest::Url::parse("https://172.200.1.1/data.json").unwrap();
+        validate_source_url(&public_172, false).expect("172.200/16 is not RFC1918 private");
+    }
+
+    #[test]
+    fn source_host_allowlist_restricts_ad_hoc_public_pulls() {
+        let allowed = vec!["api.worldbank.org".to_string()];
+        let worldbank = reqwest::Url::parse("https://api.worldbank.org/v2/country/US").unwrap();
+        let coingecko = reqwest::Url::parse("https://api.coingecko.com/api/v3/ping").unwrap();
+
+        validate_source_host_allowlist(&worldbank, &allowed).expect("worldbank allowed");
+        let error = validate_source_host_allowlist(&coingecko, &allowed)
+            .expect_err("coingecko blocked by allowlist");
+        assert!(error.contains("ECONOMICS_ALLOWED_SOURCE_HOSTS"));
+    }
+
+    #[test]
+    fn duplicate_ingested_observation_dates_are_rejected() {
+        let series = MarketSeries {
+            instrument_id: "DUP".to_string(),
+            display_name: None,
+            asset_class: "equities".to_string(),
+            currency: Some("USD".to_string()),
+            source: Some("unit".to_string()),
+            observations: vec![
+                MarketObservation {
+                    date: "2026-01-01".to_string(),
+                    price: 100.0,
+                    volume: None,
+                },
+                MarketObservation {
+                    date: "2026-01-01".to_string(),
+                    price: 101.0,
+                    volume: None,
+                },
+            ],
+            features: None,
+        };
+
+        let error = validate_series(&[series]).expect_err("duplicate date rejected");
+        assert!(error.contains("duplicated"));
+    }
+
+    #[test]
+    fn observability_payload_advertises_explicit_otel_and_dd_log_schema() {
+        let state = test_state();
+        let payload = observability_payload(&state);
+
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["loki"]["structuredLogSchema"], "dd.log.v1");
+        assert_eq!(payload["otel"]["mode"], "explicit-only");
+        assert_eq!(payload["otel"]["autoInstrumentation"], false);
+        assert_eq!(payload["otel"]["runtimeMonkeyPatching"], false);
+        assert_eq!(payload["prometheus"]["metricsRoute"], "GET /metrics");
+    }
+
+    #[test]
+    fn integration_health_payload_reports_dependency_status_without_secrets() {
+        let mut config = test_config();
+        config.server_auth_secret = Some("ultra-private-unit-token".to_string());
+        let state = AppState {
+            config: Arc::new(config),
+            metrics: Arc::new(Metrics::default()),
+            nats: None,
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(20))
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent("dd-economics-server/0.1 test-source-pull")
+                .build()
+                .unwrap(),
+            series_store: Arc::new(RwLock::new(BTreeMap::new())),
+        };
+        let payload = integration_health_payload(&state);
+        let dependencies = payload["dependencies"]
+            .as_array()
+            .expect("dependencies array");
+
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["coreReady"], true);
+        assert!(dependencies
+            .iter()
+            .any(|dependency| dependency["id"] == "source-auth-env-allowlist"
+                && dependency["status"] == "ready"));
+        assert!(dependencies
+            .iter()
+            .any(|dependency| dependency["id"] == "spark-pipeline-server"));
+        assert!(!payload.to_string().contains("ultra-private-unit-token"));
+    }
+
+    #[test]
+    fn telemetry_log_record_uses_dd_log_v1_envelope() {
+        let record = telemetry_log_record(
+            "INFO",
+            "economics.unit.test",
+            "unit test log",
+            json!({ "requestId": "unit" }),
+        );
+
+        assert_eq!(record["schema"], "dd.log.v1");
+        assert_eq!(record["severity_text"], "INFO");
+        assert_eq!(record["severity_number"], 9);
+        assert_eq!(record["resource_service_name"], SERVICE_NAME);
+        assert_eq!(record["event_name"], "economics.unit.test");
+        assert_eq!(record["attributes"]["requestId"], "unit");
+    }
+
+    #[tokio::test]
+    async fn metrics_expose_source_and_observability_counters() {
+        let response = metrics(State(test_state())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("metrics body bytes");
+        let body = String::from_utf8(bytes.to_vec()).expect("metrics utf8");
+
+        assert!(body.contains("dd_economics_server_source_pull_success_total"));
+        assert!(body.contains("dd_economics_server_source_pull_failure_total"));
+        assert!(body.contains("dd_economics_server_source_pull_bytes_total"));
+        assert!(body.contains("dd_economics_server_source_pull_stored_points_total"));
+        assert!(body.contains("dd_economics_server_source_pull_last_success_unix_seconds"));
+        assert!(body.contains("dd_economics_server_observability_requests_total"));
+        assert!(body.contains("dd_economics_server_integration_health_requests_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_attempts_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_success_total"));
+        assert!(body.contains("dd_economics_server_pipeline_publish_failure_total"));
+        assert!(body.contains("dd_economics_server_pipeline_submit_success_total"));
+        assert!(body.contains("dd_economics_server_pipeline_submit_failure_total"));
+    }
+
+    #[tokio::test]
+    #[ignore = "uses live public APIs and should be run manually"]
+    async fn public_source_templates_fetch_live_external_data_when_available() {
+        let state = test_state();
+        let mut successes = 0usize;
+        for source_id in [
+            "treasury-debt-to-penny",
+            "worldbank-us-gdp-current-usd",
+            "coingecko-bitcoin-usd",
+        ] {
+            match pull_source(&state, source_id_pull_request(source_id)).await {
+                Ok(response) => {
+                    assert!(response.stored_points >= 2);
+                    assert!(response.quality.is_some());
+                    successes += 1;
+                }
+                Err(error) => {
+                    eprintln!("live public source {source_id} unavailable or changed: {error}");
+                }
+            }
+        }
+        if successes == 0 {
+            eprintln!("no live public sources were reachable; skipping external assertions");
+            return;
+        }
+        let stored = state.series_store.read().unwrap().len();
+        assert!(stored >= successes);
     }
 }

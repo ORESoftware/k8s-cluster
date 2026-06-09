@@ -100,49 +100,111 @@ Gateway path map:
   (gateway auth required)
 - `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
   `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
-- `/fabrication/`, `/fabrication/healthz`, `/fabrication/metrics`, `/fabrication/docs/api`,
-  `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
-  `/fabrication/machines/catalog`, `POST /fabrication/machines/select`,
-  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/result`,
+- `/fabrication/`, `/fabrication`, `/fabrication/landing`,
+  `/fabrication/how-it-works`, `/fabrication/healthz`, `/fabrication/metrics`,
+  `/fabrication/docs/api`, `/fabrication/capabilities`, `/fabrication/schema`, `/fabrication/examples`,
+  `/fabrication/machines/catalog`, `/fabrication/printers/catalog`,
+  `/fabrication/fdm-printer/catalog`, `/fabrication/resin-printer/catalog`,
+  `/fabrication/material-jetting/catalog`, `/fabrication/pellet-fgf/catalog`,
+  `/fabrication/robotic-additive/catalog`, `/fabrication/sheet-lamination/catalog`,
+  `/fabrication/directed-energy-deposition/catalog`,
+  `/fabrication/composite-fiber/catalog`,
+  `/fabrication/composite-layup/catalog`, `/fabrication/powder-bed/catalog`,
+  `/fabrication/hot-wire-foam/catalog`,
+  `/fabrication/subtractive/catalog`, `/fabrication/subtractive/preflight/catalog`,
+  `/fabrication/mill-router/catalog`, `/fabrication/vertical-mill/catalog`,
+  `/fabrication/horizontal-mill/catalog`,
+  `/fabrication/sheet-cutting/catalog`,
+  `/fabrication/sheet-forming/catalog`,
+  `/fabrication/gear-cutting/catalog`,
+  `/fabrication/precision-grinding/catalog`,
+  `/fabrication/dimensional-inspection/catalog`,
+  `/fabrication/thermal-postprocess/catalog`,
+  `/fabrication/surface-finishing/catalog`,
+  `/fabrication/metal-joining/catalog`,
+  `/fabrication/molding-casting/catalog`,
+  `/fabrication/pcb-electronics/catalog`,
+  `/fabrication/joining/catalog`,
+  `/fabrication/bonding-joining/catalog`,
+  `/fabrication/fixture-adaptive/catalog`,
+  `/fabrication/mechanical-installation/catalog`,
+  `/fabrication/balancing-marking/catalog`,
+  `/fabrication/packaging-labeling/catalog`,
+  `/fabrication/part-separation/catalog`,
+  `/fabrication/edm/catalog`, `/fabrication/turning/catalog`,
+  `/fabrication/lathe/catalog`,
+  `/fabrication/turning/preflight/catalog`,
+  `/fabrication/cleanliness/catalog`,
+  `/fabrication/cleanliness/preflight/catalog`,
+  `/fabrication/interfaces/catalog`,
+  `/fabrication/interfaces/preflight/catalog`,
+  `/fabrication/cnc/catalog`, `/fabrication/hybrid/catalog`,
+  `POST /fabrication/hybrid/plan`,
+  `/fabrication/cells/catalog`,
+  `POST /fabrication/machines/select`,
+  `/fabrication/controllers/catalog`, `POST /fabrication/controllers/plan`,
+  `POST /fabrication/controllers/result`,
   `/fabrication/materials/catalog`, `POST /fabrication/materials/plan`,
   `POST /fabrication/materials/result`,
   `/fabrication/design/formats`, `/fabrication/slicers/catalog`,
-  `POST /fabrication/slicers/result`,
+  `POST /fabrication/slicers/plan`, `POST /fabrication/slicers/result`,
   `/fabrication/mesh-repair/catalog`, `POST /fabrication/mesh-repair/result`,
   `/fabrication/design/import/catalog`,
+  `/fabrication/design/preflight/catalog`,
   `POST /fabrication/design/import/review`,
   `POST /fabrication/design/import/result`,
   `POST /fabrication/design/convert/plan`, `POST /fabrication/design/convert/result`,
   `/fabrication/design/generation/catalog`, `POST /fabrication/design/generate`,
   `POST /fabrication/design/synthesis/result`,
   `/fabrication/handoff/catalog`, `POST /fabrication/handoff/result`,
-  `/fabrication/subjects/catalog`,
-  `/fabrication/instructions/languages`, `/fabrication/instructions/validation/catalog`,
+  `/fabrication/subjects/catalog`, `/fabrication/workers/catalog`,
+  `/fabrication/results/catalog`,
+  `/fabrication/instructions/languages`, `/fabrication/instructions/import/catalog`,
+  `/fabrication/instructions/import/preflight/catalog`,
+  `/fabrication/instructions/validation/catalog`,
+  `/fabrication/instructions/validation/preflight/catalog`,
   `/fabrication/instructions/generation/catalog`,
+  `/fabrication/instructions/generation/preflight/catalog`,
   `POST /fabrication/instructions/generate`,
   `POST /fabrication/instructions/generation/result`,
   `POST /fabrication/instructions/review/result`,
   `POST /fabrication/instructions/validation/result`,
+  `POST /fabrication/instructions/improvement/result`,
   `/fabrication/machine-code/catalog`,
+  `/fabrication/machine-code/preflight/catalog`,
   `POST /fabrication/machine-code/generate`,
-  `POST /fabrication/machine-code/result`, `POST /fabrication/toolpaths/plan`,
+  `POST /fabrication/machine-code/result`, `/fabrication/toolpaths/catalog`,
+  `POST /fabrication/toolpaths/plan`,
   `POST /fabrication/toolpaths/result`,
-  `/fabrication/improvements/catalog`,
-  `/fabrication/boundaries/catalog`, `/fabrication/remediation/catalog`,
+  `/fabrication/improvements/catalog`, `/fabrication/improvements/preflight/catalog`,
+  `/fabrication/boundaries/catalog`, `/fabrication/boundaries/preflight/catalog`,
+  `POST /fabrication/boundaries/result`,
+  `/fabrication/remediation/catalog`,
   `POST /fabrication/remediation/plan`, `POST /fabrication/remediation/result`,
   `/fabrication/decomposition/catalog`,
+  `/fabrication/recomposition/catalog`,
   `POST /fabrication/decomposition/plan`, `POST /fabrication/decomposition/result`,
-  `/fabrication/assembly/catalog`, `POST /fabrication/assembly/plan`,
+  `/fabrication/assembly/catalog`, `/fabrication/assembly/preflight/catalog`,
+  `POST /fabrication/interfaces/result`,
+  `POST /fabrication/joining/result`,
+  `POST /fabrication/assembly/plan`,
   `POST /fabrication/assembly/result`,
-  `/fabrication/release/catalog`, `POST /fabrication/release/preview`,
+  `/fabrication/release/catalog`, `/fabrication/release/preflight/catalog`,
+  `POST /fabrication/release/preview`,
   `POST /fabrication/release/result`,
+  `/fabrication/evidence/catalog`,
   `/fabrication/strategy/catalog`, `/fabrication/methods/catalog`,
+  `/fabrication/process/catalog`, `/fabrication/packages/catalog`,
+  `POST /fabrication/packages/plan`,
   `POST /fabrication/strategy/recommend`, `POST /fabrication/strategy/result`,
   `/fabrication/schedule/catalog`, `POST /fabrication/schedule/result`,
+  `/fabrication/execution/preflight/catalog`,
   `POST /fabrication/execution/plan`, `POST /fabrication/execution/result`,
-  `/fabrication/simulation/catalog`, `POST /fabrication/simulation/run`,
+  `/fabrication/simulation/catalog`, `/fabrication/simulation/preflight/catalog`,
+  `POST /fabrication/simulation/run`,
   `POST /fabrication/simulation/result`,
-  `/fabrication/quality/catalog`, `/fabrication/dispositions/catalog`,
+  `/fabrication/quality/catalog`, `/fabrication/quality/preflight/catalog`,
+  `/fabrication/dispositions/catalog`,
   `POST /fabrication/dispositions/result`, `/fabrication/costing/catalog`,
   `POST /fabrication/costing/result`, `/fabrication/utilities/catalog`,
   `/fabrication/energy/catalog`, `POST /fabrication/energy/result`,
@@ -153,24 +215,36 @@ Gateway path map:
   `POST /fabrication/telemetry/result`,
   `POST /fabrication/quality/plan`,
   `POST /fabrication/quality/result`, `POST /fabrication/manufacturability/result`,
+  `POST /fabrication/manufacturability/plan`,
   `/fabrication/calibration/catalog`, `POST /fabrication/calibration/plan`,
   `POST /fabrication/calibration/result`,
-  `/fabrication/interventions/catalog`, `/fabrication/setup/catalog`,
-  `/fabrication/tooling/catalog`, `/fabrication/consumables/catalog`,
+  `/fabrication/interventions/catalog`, `POST /fabrication/interventions/result`,
+  `/fabrication/setup/catalog`,
+  `/fabrication/tooling/catalog`, `POST /fabrication/tooling/result`,
+  `/fabrication/consumables/catalog`,
   `POST /fabrication/consumables/result`,
   `/fabrication/workholding/catalog`,
+  `/fabrication/workholding/preflight/catalog`,
+  `POST /fabrication/workholding/plan`,
   `POST /fabrication/workholding/result`,
+  `/fabrication/nesting/catalog`, `POST /fabrication/nesting/result`,
   `/fabrication/support-strategies/catalog`, `POST /fabrication/support-strategies/result`,
   `/fabrication/process-recipes/catalog`, `POST /fabrication/process-recipes/result`,
   `/fabrication/kinematics/catalog`, `POST /fabrication/kinematics/result`,
-  `/fabrication/tolerances/catalog`, `POST /fabrication/tolerances/result`,
-  `/fabrication/process-capabilities/catalog`, `POST /fabrication/process-capabilities/result`,
-  `/fabrication/manufacturability/catalog`,
-  `/fabrication/failure-modes/catalog`, `POST /fabrication/failure-modes/result`,
-  `/fabrication/safety/catalog`, `POST /fabrication/safety/result`,
-  `/fabrication/environment/catalog`, `POST /fabrication/environment/result`,
-  `/fabrication/provenance/catalog`, `/fabrication/as-built/catalog`,
-  `POST /fabrication/provenance/result`,
+  `/fabrication/tolerances/catalog`, `POST /fabrication/tolerances/plan`,
+  `POST /fabrication/tolerances/result`,
+  `/fabrication/process-capabilities/catalog`, `POST /fabrication/process-capabilities/plan`,
+  `POST /fabrication/process-capabilities/result`,
+  `/fabrication/manufacturability/catalog`, `POST /fabrication/manufacturability/plan`,
+  `/fabrication/failure-modes/catalog`, `POST /fabrication/failure-modes/plan`,
+  `POST /fabrication/failure-modes/result`,
+  `/fabrication/safety/catalog`, `POST /fabrication/safety/plan`,
+  `POST /fabrication/safety/result`,
+  `/fabrication/environment/catalog`, `POST /fabrication/environment/plan`,
+  `POST /fabrication/environment/result`,
+  `/fabrication/provenance/catalog`, `POST /fabrication/provenance/plan`,
+  `/fabrication/as-built/catalog`, `POST /fabrication/as-built/plan`,
+  `POST /fabrication/as-built/result`, `POST /fabrication/provenance/result`,
   `POST /fabrication/setup/plan`,
   `POST /fabrication/setup/result`,
   `/fabrication/monitoring/catalog`, `POST /fabrication/monitoring/plan`,
@@ -178,11 +252,16 @@ Gateway path map:
   `/fabrication/postprocess/catalog`, `POST /fabrication/postprocess/plan`,
   `POST /fabrication/postprocess/result`,
   `/fabrication/artifacts/catalog`, `/fabrication/jobs/catalog`,
-  `/fabrication/learning/capabilities`, `/fabrication/learning/rewards/catalog`,
+  `/fabrication/learning/capabilities`, `/fabrication/learning/engines/catalog`,
+  `/fabrication/learning/preflight/catalog`, `/fabrication/learning/rewards/catalog`,
+  `/fabrication/learning/models/catalog`, `/fabrication/learning/replay/catalog`,
+  `/fabrication/learning/scenarios/catalog`,
+  `/fabrication/learning/optimizers/catalog`, `POST /fabrication/learning/models/result`,
+  `POST /fabrication/learning/optimizers/result`,
   `/fabrication/jobs`, `/fabrication/jobs/<jobId>`,
   `/fabrication/jobs/<jobId>/release-bundle`,
   `/fabrication/jobs/<jobId>/artifacts/<artifactId>`, `/fabrication/learning/policy`,
-  `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
+  `/fabrication/learning/corpus`, `GET /fabrication/learning/outcomes`, `POST /fabrication/learning/observe`,
   `POST /fabrication/learning/outcomes`, `POST /fabrication/plan`,
   `/fabrication/workflow/catalog`, `POST /fabrication/workflow/plan`,
   `POST /fabrication/instructions/analyze`, `POST /fabrication/instructions/validate`,
@@ -198,8 +277,9 @@ Gateway path map:
 - `/api/usacc`, `/api/usacc/*`, `/usacc/healthz`, `/usacc/metrics`, `/usacc/docs/api`,
   `/usacc/api/docs`, `/usacc/api/docs.json` -> `usacc-rest-api-backend-rs:8121`
   (gateway auth required)
-- `/escrow/`, `/escrow/types`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
-  `POST /escrow/simulate-settlement`, `POST /escrow/settle` -> `dd-escrow-rs:8115`
+- `/escrow/`, `/escrow/types`, `/escrow/capabilities`, `/escrow/schema`, `/escrow/example`,
+  `POST /escrow/validate`, `POST /escrow/audit`, `POST /escrow/simulate-settlement`,
+  `POST /escrow/settle` -> `dd-escrow-rs:8115`
   (internal auth required)
 - `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
@@ -213,11 +293,15 @@ Gateway path map:
   `POST /compliance/audits`, `POST /compliance/audit-sync`, `/compliance/docs/api`,
   `/compliance/api/docs`, `/compliance/api/docs.json` -> `dd-compliance-rs:8118`
   (internal auth required)
-- `/economics/`, `/economics/dashboard.json`, `/economics/model/equations`,
-  `/economics/sources`, `POST /economics/forecast`, `POST /economics/ingest`,
-  `POST /economics/sources/pull`, `/economics/sentiment/sources`,
+- `/economics/`, `/economics/healthz`, `/economics/readyz`, `/economics/metrics`,
+  `/economics/observability`, `/economics/integrations/health`, `/economics/dashboard.json`,
+  `/economics/model/equations`, `/economics/sources`, `/economics/sources/public`,
+  `POST /economics/forecast`,
+  `POST /economics/ingest`, `POST /economics/sources/pull`, `/economics/sentiment/sources`,
   `POST /economics/sentiment/analyze`, `/economics/macro/indicators`,
-  `/economics/vc/investment`, `POST /economics/recommendations` ->
+  `/economics/vc/investment`, `POST /economics/recommendations`,
+  `/economics/audit/hardening`, `/economics/pipelines/catalog`,
+  `POST /economics/pipelines/plan`, `POST /economics/pipelines/submit` ->
   `dd-economics-server:8114` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
@@ -302,8 +386,9 @@ Prometheus alerts if those direct pod scrape targets disappear or go down while 
 scrape still looks healthy. Operators can open `/grafana/fabrication` from the web-home service
 directory to land on the dedicated `dd-fabrication-planner` dashboard for request intake,
 validation findings, machine-failure boundaries, required operator actions, fixture/setup
-blockers, split/combine reviews, CAD/design format discovery, design-import review,
-design-import result review, design-generation catalog discovery, validation-result and
+blockers, split/combine reviews, capabilities/schema/example discovery, CAD/design format
+discovery, format-import catalog discovery, design-import review, design-import result review,
+instruction import preflight discovery, design-generation catalog discovery, strategy and calibration catalog discovery, validation-result and
 worker result-review route traffic, instruction-improvement review, instruction-boundary review,
 NATS/MDP fan-out, runtime-config delivery, HPA pressure, and logs.
 The observability stack also scrapes `dd-runtime-config` metrics so missed subscriber registration,
@@ -702,18 +787,23 @@ maintained `usacc_*` Postgres contract tables.
 ## Solana escrow service
 
 `dd-escrow-rs` runs `remote/deployments/dd-escrow-rs` as a Rust Solana escrow intent gateway. It
-serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`, `/escrow/schema`,
-`/escrow/example`, `POST /escrow/validate`, `POST /escrow/simulate-settlement`, and
-`POST /escrow/settle`. The service validates `solana.escrow.v1` intents for ten escrow shapes:
-marketplace order, milestone, freelance contract, digital delivery, OTC trade, rental deposit,
-bounty, subscription release, group buy, and dispute resolution.
+serves `/escrow/healthz`, `/escrow/metrics`, `/escrow/status`, `/escrow/types`,
+`/escrow/capabilities`, `/escrow/schema`, `/escrow/example`, `POST /escrow/validate`,
+`POST /escrow/audit`, `POST /escrow/simulate-settlement`, and `POST /escrow/settle`. The service
+validates `solana.escrow.v1` intents for ten escrow shapes: marketplace order, milestone, freelance
+contract, digital delivery, OTC trade, rental deposit, bounty, subscription release, group buy, and
+dispute resolution.
 
 The service does not hold private keys or sign transactions. Settlement callers submit a signed
 Solana transaction; `POST /escrow/simulate-settlement` calls `simulateTransaction`, while
 `POST /escrow/settle` calls `sendTransaction` only when `SOLANA_SETTLEMENT_ENABLED=true` plus
 `ESCROW_SETTLEMENT_AUTH_SECRET` are configured and the request includes `x-escrow-settlement-auth`.
-Request `cluster` must match `SOLANA_CLUSTER`, private RPC URLs require
-`SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight` requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
+Live settlement also requires an attached validated `intent` by default
+(`ESCROW_SETTLEMENT_REQUIRE_INTENT=true`), mainnet settlement has a second
+`SOLANA_MAINNET_SETTLEMENT_ENABLED=true` gate, and `ESCROW_ALLOWED_PROGRAM_IDS` can restrict
+`settlementPlan.programId` to an operator-reviewed allowlist. Request `cluster` must match
+`SOLANA_CLUSTER`, private RPC URLs require `SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight`
+requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 
 The deployment queue-subscribes to `dd.remote.escrow.solana.validate` with queue group
 `dd-escrow-rs`, publishes validation results to `dd.remote.escrow.solana.results`, and emits compact

@@ -56,6 +56,8 @@ struct AppState {
     default_cluster: String,
     settlement_enabled: bool,
     settlement_auth_secret: Option<String>,
+    settlement_require_intent: bool,
+    allowed_program_ids: Vec<String>,
     allow_skip_preflight: bool,
     nats: Option<async_nats::Client>,
     validate_subject: String,
@@ -349,7 +351,44 @@ struct EscrowValidationResponse {
     required_roles: Vec<&'static str>,
     allowed_settlement_actions: Vec<&'static str>,
     on_chain_settlement_ready: bool,
+    readiness: EscrowReadiness,
+    checks: Vec<EscrowPolicyCheck>,
     digest: String,
+    warnings: Vec<String>,
+    generated_at_ms: u128,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EscrowReadiness {
+    risk_tier: &'static str,
+    risk_score: u8,
+    required_signer_count: usize,
+    required_approval_count: usize,
+    on_chain_settlement_ready: bool,
+    recommended_next_actions: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EscrowPolicyCheck {
+    name: &'static str,
+    ok: bool,
+    severity: &'static str,
+    detail: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct EscrowAuditResponse {
+    ok: bool,
+    request_id: String,
+    schema_version: &'static str,
+    cluster: String,
+    escrow_id: String,
+    kind: EscrowKind,
+    validation: Option<EscrowValidationResponse>,
+    errors: Vec<String>,
     warnings: Vec<String>,
     generated_at_ms: u128,
 }
@@ -435,6 +474,29 @@ fn env_secret(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn env_pubkey_list(key: &str) -> Result<Vec<String>, String> {
+    let Some(raw) = env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let mut values = Vec::new();
+    let mut seen = HashSet::new();
+    for item in raw.split(',') {
+        let value = item.trim();
+        if value.is_empty() {
+            continue;
+        }
+        validate_pubkey(value, key)?;
+        if seen.insert(value.to_string()) {
+            values.push(value.to_string());
+        }
+    }
+    Ok(values)
 }
 
 fn severity_number(severity: &str) -> i32 {
@@ -1251,12 +1313,23 @@ fn validate_milestones(
     milestones.len()
 }
 
-fn validate_settlement_plan(plan: &Option<SettlementPlan>, errors: &mut Vec<String>) {
+fn validate_settlement_plan(
+    plan: &Option<SettlementPlan>,
+    allowed_program_ids: &[String],
+    errors: &mut Vec<String>,
+) {
     let Some(plan) = plan else {
         return;
     };
     if let Err(error) = validate_pubkey(&plan.program_id, "settlementPlan.programId") {
         errors.push(error);
+    }
+    if !allowed_program_ids.is_empty()
+        && !allowed_program_ids
+            .iter()
+            .any(|program_id| program_id == &plan.program_id)
+    {
+        errors.push("settlementPlan.programId is not in ESCROW_ALLOWED_PROGRAM_IDS".to_string());
     }
     if let Some(vault) = &plan.vault_pubkey {
         if let Err(error) = validate_pubkey(vault, "settlementPlan.vaultPubkey") {
@@ -1267,6 +1340,171 @@ fn validate_settlement_plan(plan: &Option<SettlementPlan>, errors: &mut Vec<Stri
         if fee_bps > 1000 {
             errors.push("settlementPlan.feeBps must be at most 1000".to_string());
         }
+    }
+}
+
+fn required_signer_count(request: &EscrowIntentRequest) -> usize {
+    request
+        .parties
+        .iter()
+        .filter(|party| party.required_signer.unwrap_or(false))
+        .count()
+}
+
+fn required_approval_count(request: &EscrowIntentRequest) -> usize {
+    request
+        .terms
+        .required_approvals
+        .as_ref()
+        .map(Vec::len)
+        .unwrap_or(0)
+}
+
+fn configured_settlement_actions(request: &EscrowIntentRequest) -> usize {
+    request
+        .terms
+        .settlement_actions
+        .as_ref()
+        .map(Vec::len)
+        .unwrap_or(0)
+}
+
+fn policy_checks(request: &EscrowIntentRequest, spec: &KindSpec) -> Vec<EscrowPolicyCheck> {
+    let signer_count = required_signer_count(request);
+    let approval_count = required_approval_count(request);
+    let has_dispute_window = request.terms.dispute_window_seconds.unwrap_or(0) > 0;
+    let has_timeout = request.terms.timeout_unix_seconds.is_some();
+    let has_settlement_plan = request.settlement_plan.is_some();
+    let has_action_list = configured_settlement_actions(request) > 0;
+    let has_required_roles = spec
+        .required_roles
+        .iter()
+        .all(|role| request.parties.iter().any(|party| &party.role == role));
+    vec![
+        EscrowPolicyCheck {
+            name: "required-roles",
+            ok: has_required_roles,
+            severity: "error",
+            detail: format!("{} requires {:?}", spec.kind.as_str(), spec.required_roles),
+        },
+        EscrowPolicyCheck {
+            name: "required-signers",
+            ok: signer_count > 0,
+            severity: "warn",
+            detail: format!("{signer_count} party record(s) are marked requiredSigner=true"),
+        },
+        EscrowPolicyCheck {
+            name: "approval-policy",
+            ok: approval_count > 0
+                || matches!(
+                    request.terms.release_mode,
+                    ReleaseMode::MultiSig | ReleaseMode::ArbiterDecision
+                ),
+            severity: "warn",
+            detail: format!("{approval_count} explicit approval role(s) configured"),
+        },
+        EscrowPolicyCheck {
+            name: "settlement-actions",
+            ok: has_action_list,
+            severity: "warn",
+            detail: format!(
+                "{} settlement action(s) explicitly configured",
+                configured_settlement_actions(request)
+            ),
+        },
+        EscrowPolicyCheck {
+            name: "settlement-plan",
+            ok: has_settlement_plan,
+            severity: "warn",
+            detail: if has_settlement_plan {
+                "settlementPlan is present for on-chain readiness".to_string()
+            } else {
+                "settlementPlan is missing; validation can pass but live settlement will require stronger evidence".to_string()
+            },
+        },
+        EscrowPolicyCheck {
+            name: "dispute-window",
+            ok: has_dispute_window
+                || !matches!(request.terms.release_mode, ReleaseMode::ArbiterDecision),
+            severity: "warn",
+            detail: if has_dispute_window {
+                "disputeWindowSeconds is configured".to_string()
+            } else {
+                "no disputeWindowSeconds configured".to_string()
+            },
+        },
+        EscrowPolicyCheck {
+            name: "timeout",
+            ok: has_timeout
+                || !matches!(
+                    request.terms.release_mode,
+                    ReleaseMode::TimeLocked | ReleaseMode::ExpiryRefund
+                ),
+            severity: "warn",
+            detail: if has_timeout {
+                "timeoutUnixSeconds is configured".to_string()
+            } else {
+                "no timeoutUnixSeconds configured".to_string()
+            },
+        },
+    ]
+}
+
+fn readiness_for(
+    request: &EscrowIntentRequest,
+    on_chain_settlement_ready: bool,
+) -> EscrowReadiness {
+    let signer_count = required_signer_count(request);
+    let approval_count = required_approval_count(request);
+    let mut score = 10_u8;
+    if on_chain_settlement_ready {
+        score = score.saturating_add(25);
+    }
+    if signer_count > 0 {
+        score = score.saturating_add(20);
+    }
+    if approval_count > 0 {
+        score = score.saturating_add(15);
+    }
+    if request.terms.dispute_window_seconds.unwrap_or(0) > 0 {
+        score = score.saturating_add(10);
+    }
+    if request.terms.timeout_unix_seconds.is_some() {
+        score = score.saturating_add(10);
+    }
+    if configured_settlement_actions(request) > 0 {
+        score = score.saturating_add(10);
+    }
+    let risk_tier = if score >= 80 {
+        "low"
+    } else if score >= 55 {
+        "medium"
+    } else {
+        "high"
+    };
+    let mut recommended_next_actions = Vec::new();
+    if !on_chain_settlement_ready {
+        recommended_next_actions.push("attach-settlement-plan");
+    }
+    if signer_count == 0 {
+        recommended_next_actions.push("mark-required-signers");
+    }
+    if approval_count == 0 {
+        recommended_next_actions.push("configure-required-approvals");
+    }
+    if request.terms.dispute_window_seconds.unwrap_or(0) == 0 {
+        recommended_next_actions.push("set-dispute-window");
+    }
+    if recommended_next_actions.is_empty() {
+        recommended_next_actions.push("simulate-settlement");
+    }
+    EscrowReadiness {
+        risk_tier,
+        risk_score: score.min(100),
+        required_signer_count: signer_count,
+        required_approval_count: approval_count,
+        on_chain_settlement_ready,
+        recommended_next_actions,
     }
 }
 
@@ -1302,6 +1540,7 @@ fn transaction_digest(bytes: &[u8]) -> String {
 fn validate_escrow_intent(
     request: &EscrowIntentRequest,
     default_cluster: &str,
+    allowed_program_ids: &[String],
 ) -> Result<EscrowValidationResponse, Vec<String>> {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -1330,11 +1569,14 @@ fn validate_escrow_intent(
     validate_asset(&request.asset, request, &mut errors, &mut warnings);
     validate_terms(request, &spec, &mut errors, &mut warnings);
     let milestone_count = validate_milestones(&request.terms.milestones, &mut errors);
-    validate_settlement_plan(&request.settlement_plan, &mut errors);
+    validate_settlement_plan(&request.settlement_plan, allowed_program_ids, &mut errors);
     validate_memo_and_metadata(request, &mut errors);
     if !errors.is_empty() {
         return Err(errors);
     }
+    let on_chain_settlement_ready = request.settlement_plan.is_some();
+    let readiness = readiness_for(request, on_chain_settlement_ready);
+    let checks = policy_checks(request, &spec);
     Ok(EscrowValidationResponse {
         ok: true,
         request_id: request_id(request.request_id.as_ref(), "escrow-validation"),
@@ -1358,7 +1600,9 @@ fn validate_escrow_intent(
             .copied()
             .map(SettlementAction::as_str)
             .collect(),
-        on_chain_settlement_ready: request.settlement_plan.is_some(),
+        on_chain_settlement_ready,
+        readiness,
+        checks,
         digest: escrow_digest(request),
         warnings,
         generated_at_ms: now_ms(),
@@ -1392,6 +1636,8 @@ fn validate_settlement_request(
     request: &EscrowSettlementRequest,
     default_cluster: &str,
     allow_skip_preflight: bool,
+    allowed_program_ids: &[String],
+    require_intent: bool,
 ) -> Result<ValidatedSettlement, Vec<String>> {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -1454,7 +1700,7 @@ fn validate_settlement_request(
         }
     };
     if let Some(intent) = &request.intent {
-        match validate_escrow_intent(intent, default_cluster) {
+        match validate_escrow_intent(intent, default_cluster, allowed_program_ids) {
             Ok(intent_response) => {
                 if intent.kind != request.kind {
                     errors.push("intent.kind must match settlement kind".to_string());
@@ -1476,7 +1722,13 @@ fn validate_settlement_request(
             }
         }
     } else {
-        warnings.push("no intent was attached; settlement action is validated only against kind and transaction policy".to_string());
+        if require_intent {
+            errors.push(
+                "intent is required for live settlement; set ESCROW_SETTLEMENT_REQUIRE_INTENT=false only for a reviewed operator exception".to_string(),
+            );
+        } else {
+            warnings.push("no intent was attached; settlement action is validated only against kind and transaction policy".to_string());
+        }
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -1602,9 +1854,11 @@ async fn home() -> impl IntoResponse {
         "supportedKinds": kind_catalog(),
         "endpoints": {
             "types": "/types",
+            "capabilities": "/capabilities",
             "schema": "/schema",
             "example": "/example",
             "validate": "POST /validate",
+            "audit": "POST /audit",
             "simulateSettlement": "POST /simulate-settlement",
             "settle": "POST /settle",
             "status": "/status",
@@ -1626,6 +1880,34 @@ async fn types_http() -> impl IntoResponse {
         "ok": true,
         "schemaVersion": SCHEMA_VERSION,
         "kinds": kind_catalog(),
+    }))
+}
+
+async fn capabilities_http(State(state): State<AppState>) -> impl IntoResponse {
+    Json(json!({
+        "ok": true,
+        "service": SERVICE_NAME,
+        "schemaVersion": SCHEMA_VERSION,
+        "supportedKinds": kind_catalog(),
+        "settlement": {
+            "enabled": state.settlement_enabled,
+            "requiresIntent": state.settlement_require_intent,
+            "authHeader": SETTLEMENT_AUTH_HEADER,
+            "skipPreflightAllowed": state.allow_skip_preflight,
+            "allowedProgramCount": state.allowed_program_ids.len(),
+            "clientSignedTransactionsOnly": true,
+            "privateKeysStored": false
+        },
+        "limits": {
+            "maxHttpBodyBytes": MAX_HTTP_BODY_BYTES,
+            "maxSignedTransactionBytes": MAX_SIGNED_TRANSACTION_BYTES,
+            "maxParties": MAX_PARTIES,
+            "maxMilestones": MAX_MILESTONES,
+            "maxMemoBytes": MAX_MEMO_BYTES,
+            "maxMetadataBytes": MAX_METADATA_BYTES,
+            "maxSendRetries": MAX_SEND_RETRIES
+        },
+        "generatedAtMs": now_ms(),
     }))
 }
 
@@ -1724,7 +2006,7 @@ async fn validate_http(
         .metrics
         .validations_total
         .fetch_add(1, Ordering::Relaxed);
-    match validate_escrow_intent(&request, &state.default_cluster) {
+    match validate_escrow_intent(&request, &state.default_cluster, &state.allowed_program_ids) {
         Ok(response) => Json(response).into_response(),
         Err(errors) => {
             state
@@ -1741,6 +2023,44 @@ async fn validate_http(
     }
 }
 
+async fn audit_http(
+    State(state): State<AppState>,
+    Json(request): Json<EscrowIntentRequest>,
+) -> impl IntoResponse {
+    let request_id = request_id(request.request_id.as_ref(), "escrow-audit");
+    let cluster = normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster)
+        .unwrap_or_else(|_| state.default_cluster.clone());
+    match validate_escrow_intent(&request, &state.default_cluster, &state.allowed_program_ids) {
+        Ok(validation) => {
+            let warnings = validation.warnings.clone();
+            Json(EscrowAuditResponse {
+                ok: true,
+                request_id,
+                schema_version: SCHEMA_VERSION,
+                cluster,
+                escrow_id: request.escrow_id,
+                kind: request.kind,
+                validation: Some(validation),
+                errors: Vec::new(),
+                warnings,
+                generated_at_ms: now_ms(),
+            })
+        }
+        Err(errors) => Json(EscrowAuditResponse {
+            ok: false,
+            request_id,
+            schema_version: SCHEMA_VERSION,
+            cluster,
+            escrow_id: request.escrow_id,
+            kind: request.kind,
+            validation: None,
+            errors,
+            warnings: Vec::new(),
+            generated_at_ms: now_ms(),
+        }),
+    }
+}
+
 async fn simulate_settlement_http(
     State(state): State<AppState>,
     Json(request): Json<EscrowSettlementRequest>,
@@ -1753,6 +2073,8 @@ async fn simulate_settlement_http(
         &request,
         &state.default_cluster,
         state.allow_skip_preflight,
+        &state.allowed_program_ids,
+        false,
     ) {
         Ok(validation) => validation,
         Err(errors) => {
@@ -1841,9 +2163,20 @@ async fn settle_http(
         &request,
         &state.default_cluster,
         state.allow_skip_preflight,
+        &state.allowed_program_ids,
+        state.settlement_require_intent,
     ) {
         Ok(validation) => validation,
         Err(errors) => {
+            if errors
+                .iter()
+                .any(|error| error.contains("intent is required"))
+            {
+                state
+                    .metrics
+                    .policy_rejections_total
+                    .fetch_add(1, Ordering::Relaxed);
+            }
             state
                 .metrics
                 .settlement_errors_total
@@ -1930,6 +2263,8 @@ async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
         "schemaVersion": SCHEMA_VERSION,
         "cluster": state.default_cluster,
         "settlementEnabled": state.settlement_enabled,
+        "settlementRequiresIntent": state.settlement_require_intent,
+        "allowedProgramCount": state.allowed_program_ids.len(),
         "skipPreflightAllowed": state.allow_skip_preflight,
         "natsEnabled": state.nats.is_some(),
         "validateSubject": state.validate_subject,
@@ -2249,7 +2584,11 @@ async fn run_nats_loop(state: AppState) {
                     .validations_total
                     .fetch_add(1, Ordering::Relaxed);
                 let request_id = request_id(request.request_id.as_ref(), "escrow-validation");
-                let result = match validate_escrow_intent(&request, &state.default_cluster) {
+                let result = match validate_escrow_intent(
+                    &request,
+                    &state.default_cluster,
+                    &state.allowed_program_ids,
+                ) {
                     Ok(response) => {
                         json!({
                             "messageKind": "solana.escrow.validation.result",
@@ -2335,6 +2674,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .map_err(config_error)?;
     let settlement_enabled = env_bool("SOLANA_SETTLEMENT_ENABLED", false);
+    let mainnet_settlement_enabled = env_bool("SOLANA_MAINNET_SETTLEMENT_ENABLED", false);
     let settlement_auth_secret = env_secret("ESCROW_SETTLEMENT_AUTH_SECRET");
     if settlement_enabled && settlement_auth_secret.is_none() {
         return Err(config_error(
@@ -2342,6 +2682,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
+    if settlement_enabled && default_cluster == "mainnet-beta" && !mainnet_settlement_enabled {
+        return Err(config_error(
+            "mainnet settlement requires SOLANA_MAINNET_SETTLEMENT_ENABLED=true",
+        )
+        .into());
+    }
+    let settlement_require_intent = env_bool("ESCROW_SETTLEMENT_REQUIRE_INTENT", true);
+    let allowed_program_ids =
+        env_pubkey_list("ESCROW_ALLOWED_PROGRAM_IDS").map_err(config_error)?;
     let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
     let validate_subject = env_value("ESCROW_VALIDATE_SUBJECT", ESCROW_SOLANA_VALIDATE_SUBJECT);
@@ -2378,6 +2727,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         default_cluster,
         settlement_enabled,
         settlement_auth_secret,
+        settlement_require_intent,
+        allowed_program_ids,
         allow_skip_preflight,
         nats,
         validate_subject,
@@ -2392,6 +2743,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         json!({
             "cluster": state.default_cluster,
             "settlementEnabled": state.settlement_enabled,
+            "settlementRequiresIntent": state.settlement_require_intent,
+            "allowedProgramCount": state.allowed_program_ids.len(),
             "skipPreflightAllowed": state.allow_skip_preflight,
             "validateSubject": state.validate_subject,
             "resultSubject": state.result_subject,
@@ -2412,9 +2765,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/metrics", get(metrics))
         .route("/status", get(status_http))
         .route("/types", get(types_http))
+        .route("/capabilities", get(capabilities_http))
         .route("/schema", get(schema_http))
         .route("/example", get(example_http))
         .route("/validate", post(validate_http))
+        .route("/audit", post(audit_http))
         .route("/simulate-settlement", post(simulate_settlement_http))
         .route("/settle", post(settle_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
@@ -2449,6 +2804,8 @@ mod tests {
             default_cluster: "devnet".to_string(),
             settlement_enabled: true,
             settlement_auth_secret: Some("secret".to_string()),
+            settlement_require_intent: true,
+            allowed_program_ids: Vec::new(),
             allow_skip_preflight: false,
             nats: None,
             validate_subject: ESCROW_SOLANA_VALIDATE_SUBJECT.to_string(),
@@ -2473,17 +2830,23 @@ mod tests {
     fn marketplace_order_validates() {
         let request = sample_request();
         let response =
-            validate_escrow_intent(&request, "devnet").expect("sample escrow should validate");
+            validate_escrow_intent(&request, "devnet", &[]).expect("sample escrow should validate");
         assert_eq!(response.kind, EscrowKind::MarketplaceOrder);
         assert!(response.on_chain_settlement_ready);
         assert_eq!(response.party_count, 2);
+        assert_eq!(response.readiness.risk_tier, "low");
+        assert!(response
+            .checks
+            .iter()
+            .any(|check| check.name == "settlement-plan" && check.ok));
     }
 
     #[test]
     fn invalid_pubkey_is_rejected() {
         let mut request = sample_request();
         request.parties[0].pubkey = "not-a-solana-key".to_string();
-        let errors = validate_escrow_intent(&request, "devnet").expect_err("must reject pubkey");
+        let errors =
+            validate_escrow_intent(&request, "devnet", &[]).expect_err("must reject pubkey");
         assert!(errors.iter().any(|error| error.contains("valid base58")));
     }
 
@@ -2492,7 +2855,8 @@ mod tests {
         let mut request = sample_request();
         request.kind = EscrowKind::GroupBuy;
         request.parties[0].role = PartyRole::Contributor;
-        let errors = validate_escrow_intent(&request, "devnet").expect_err("must reject group-buy");
+        let errors =
+            validate_escrow_intent(&request, "devnet", &[]).expect_err("must reject group-buy");
         assert!(errors
             .iter()
             .any(|error| error.contains("at least two contributor")));
@@ -2515,9 +2879,51 @@ mod tests {
             min_context_slot: None,
             intent: None,
         };
-        let errors =
-            validate_settlement_request(&request, "devnet", false).expect_err("must reject action");
+        let errors = validate_settlement_request(&request, "devnet", false, &[], false)
+            .expect_err("must reject action");
         assert!(errors.iter().any(|error| error.contains("does not allow")));
+    }
+
+    #[test]
+    fn live_settlement_requires_intent_by_default() {
+        let request = EscrowSettlementRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            request_id: Some("settle-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            kind: EscrowKind::MarketplaceOrder,
+            escrow_id: "order.demo.001".to_string(),
+            action: SettlementAction::Release,
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            skip_preflight: None,
+            max_retries: None,
+            min_context_slot: None,
+            intent: None,
+        };
+        let errors = validate_settlement_request(&request, "devnet", false, &[], true)
+            .expect_err("must require intent for live settlement");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("intent is required")));
+    }
+
+    #[test]
+    fn settlement_plan_respects_program_allowlist() {
+        let request = sample_request();
+        let different_program = bs58::encode([9_u8; 32]).into_string();
+        let errors = validate_escrow_intent(&request, "devnet", &[different_program])
+            .expect_err("must reject non-allowlisted program");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("ESCROW_ALLOWED_PROGRAM_IDS")));
+
+        let allowed = request
+            .settlement_plan
+            .as_ref()
+            .map(|plan| plan.program_id.clone())
+            .unwrap();
+        assert!(validate_escrow_intent(&request, "devnet", &[allowed]).is_ok());
     }
 
     #[test]

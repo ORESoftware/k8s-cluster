@@ -205,10 +205,10 @@
     {
       "service": "dd-escrow-rs",
       "language": "rust",
-      "routeCount": 16,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 7,
+        "user-generated": 9,
         "runtime-config": 3
       },
       "generated": [
@@ -273,10 +273,10 @@
     {
       "service": "economics-server-rs",
       "language": "rust",
-      "routeCount": 25,
+      "routeCount": 32,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 15,
+        "user-generated": 22,
         "runtime-config": 3
       },
       "generated": [
@@ -287,10 +287,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 286,
+      "routeCount": 505,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 276,
+        "user-generated": 495,
         "runtime-config": 3
       },
       "generated": [

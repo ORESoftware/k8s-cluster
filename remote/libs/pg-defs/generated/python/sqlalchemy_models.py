@@ -3455,6 +3455,7 @@ class DesSoccerLearningPolicyVersions(Base):
         Index("des_soccer_learning_policy_versions_active_idx", "experiment_id", text("generation desc"), text("updated_at desc"), postgresql_where=text("status = 'active'")),
         Index("des_soccer_learning_policy_versions_fitness_idx", "experiment_id", text("fitness_micros desc"), text("updated_at desc"), postgresql_where=text("status in ('active', 'candidate')")),
         Index("des_soccer_learning_policy_versions_branch_tip_idx", "experiment_id", "branch_key", text("generation desc"), text("updated_at desc"), postgresql_where=text("full_entries_retained = true")),
+        Index("des_soccer_learning_policy_versions_single_active_uq", "experiment_id", unique=True, postgresql_where=text("status = 'active'")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
