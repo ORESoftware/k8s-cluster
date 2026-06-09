@@ -64,35 +64,62 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
+mod as_built_catalog_content;
 mod assembly_catalog_content;
 mod assembly_preflight_content;
+mod availability_catalog_content;
 mod boundary_catalog_content;
 mod boundary_preflight_content;
 mod boundary_remediation_content;
 mod capabilities_content;
+mod consumables_catalog_content;
+mod costing_catalog_content;
 mod decomposition_catalog_content;
 mod design_format_content;
 mod design_generation_content;
 mod design_import_content;
 mod design_preflight_content;
+mod disposition_catalog_content;
+mod energy_catalog_content;
+mod environment_catalog_content;
 mod execution_preflight_content;
+mod failure_mode_catalog_content;
 mod handoff_catalog_content;
 mod how_it_works_content;
 mod instruction_improvement_catalog;
+mod intervention_catalog_content;
+mod kinematics_catalog_content;
 mod landing_page_content;
 mod learning_model_catalog;
 mod machine_code_catalog_content;
 mod machine_code_preflight_content;
+mod maintenance_catalog_content;
+mod manufacturability_catalog_content;
+mod monitoring_catalog_content;
+mod nesting_catalog_content;
 mod objective_coverage_content;
+mod process_capability_catalog_content;
+mod process_recipe_catalog_content;
+mod provenance_catalog_content;
+mod quality_catalog_content;
+mod quality_preflight_content;
 mod recomposition_catalog_content;
 mod release_catalog_content;
 mod release_gate_catalog_content;
 mod release_preflight_content;
 mod root_inventory_content;
+mod safety_catalog_content;
+mod setup_catalog_content;
 mod simulation_catalog_content;
 mod simulation_preflight_content;
 mod slicer_catalog;
+mod support_strategy_catalog_content;
+mod tolerance_catalog_content;
+mod tooling_catalog_content;
 mod toolpath_catalog_content;
+mod utilities_catalog_content;
+mod workholding_catalog_content;
+mod workholding_preflight_content;
 
 const SERVICE_NAME: &str = "dd-fabrication-server";
 const SCHEMA_VERSION: &str = "fabrication.plan.v1";
@@ -69979,51 +70006,7 @@ fn quality_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.quality-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /quality/catalog", "GET /fabrication/quality/catalog"],
-        "inspectionContractCount": inspection_contracts.len(),
-        "measurementContractCount": measurement_contracts.len(),
-        "families": families,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "qualityPlan.status",
-            "qualityPlan.inspectionPoints",
-            "qualityPlan.measurementTargets",
-            "qualityPlan.releaseGates",
-            "validation.failureBoundaries",
-            "machineRelease.blockers",
-            "postprocessPlan.blockers",
-            "releasePackagePlan.releaseGates",
-            "interfaceControlPlan.controls"
-        ],
-        "artifactSurfaces": [
-            "quality-plan",
-            "mdp-request.artifacts.qualityPlan",
-            "first-article-metrology-record",
-            "final-fit-metrology-record",
-            "surface-finish-inspection-record",
-            "material-process-coupon-record"
-        ],
-        "learningSurfaces": [
-            "qualityPlan.learningObservations",
-            "quality-gate:*",
-            "measurement-target:*",
-            "quality-boundary:*",
-            "assembly-quality-interfaces:*"
-        ],
-        "releasePolicy": [
-            "quality catalog entries describe inspection and measurement evidence contracts, not certified acceptance results",
-            "machine-ready release remains blocked while required quality inspection, postprocess, material traceability, interface fit, or metrology evidence is absent",
-            "quality observations are retained for MDP/POMDP/neural workers so future planning can learn when to add inspection, split parts, adjust processes, or require human signoff"
-        ],
-        "inspectionContracts": inspection_contracts,
-        "measurementContracts": measurement_contracts
-    })
+    quality_catalog_content::response(inspection_contracts, measurement_contracts, families)
 }
 
 fn quality_preflight_catalog_response() -> Value {
@@ -70035,86 +70018,7 @@ fn quality_preflight_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.quality-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /quality/preflight/catalog",
-            "GET /fabrication/quality/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/quality/catalog",
-            "GET /fabrication/cleanliness/preflight/catalog",
-            "GET /fabrication/release/catalog",
-            "POST /fabrication/quality/result",
-            "POST /fabrication/dispositions/result",
-            "POST /fabrication/release/result",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "inspectionContractCount": inspection_contracts.len(),
-        "measurementContractCount": measurement_contracts.len(),
-        "families": families,
-        "preflightGroups": [
-            {
-                "group": "metrology-instrument-and-datum-state",
-                "requiredEvidence": [
-                    "calibrated instrument, probe, gauge, fixture, vision scale, CMM program, or scan setup evidence",
-                    "datum scheme, coordinate frame, temperature soak, uncertainty, measurement units, and acceptance-band evidence",
-                    "measurement artifact URI, checksum, feature map, revision, and operator or automation owner"
-                ],
-                "releaseBlockers": [
-                    "measurement taken with expired calibration, missing datum reference, or implicit acceptance criteria",
-                    "metrology artifact missing checksum, feature ID, tolerance source, or retained raw/result data",
-                    "hidden interface, internal channel, lattice, or assembled feature not inspectable by the proposed method"
-                ]
-            },
-            {
-                "group": "first-article-final-fit-and-surface-state",
-                "requiredEvidence": [
-                    "first-article, in-process, final-fit, surface-finish, edge-quality, cleanliness, and material-process witness evidence",
-                    "interface fit, hole/thread gauge, bearing/seal land, bondline, torque, leak, pull, functional, or visual acceptance evidence",
-                    "sampling plan, critical-to-quality features, disposition owner, and reinspection trigger evidence"
-                ],
-                "releaseBlockers": [
-                    "machine-ready release requested before first-article or final-fit evidence",
-                    "surface finish, support scar, burr, FOD, residue, edge quality, or process witness evidence missing",
-                    "assembly, packaging, coating, or human handoff before required quality gates clear"
-                ]
-            },
-            {
-                "group": "nonconformance-disposition-and-learning-state",
-                "requiredEvidence": [
-                    "nonconformance finding with measured deviation, affected feature, root cause, and disposition authority",
-                    "rework, reinspect, scrap/remake, waiver, split/combine redesign, or human-intervention plan",
-                    "learning observation for quality gate, measurement target, route risk, split/combine outcome, and recovered release"
-                ],
-                "releaseBlockers": [
-                    "failed quality gate without disposition, reinspection, or release-owner evidence",
-                    "rework route would violate material allowance, interface, strength, thermal, or surface requirements",
-                    "split/combine or human-fit recovery expected but not planned as an intervention"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "qualityPlan.inspectionPoints",
-            "qualityPlan.measurementTargets",
-            "qualityResult.measurements",
-            "qualityResult.findings",
-            "dispositionResult.decisions",
-            "releasePackagePlan.releaseGates",
-            "machineRelease.releaseBlockers",
-            "learningOutcome.observations"
-        ],
-        "releasePolicy": [
-            "quality preflight entries describe evidence required before machine-ready release, assembly, packaging, or human handoff; they are not certified acceptance results",
-            "quality preflight evidence cannot bypass retained measurements, calibrated instruments, cleanliness checks, disposition authority, release packages, or operator/automation signoff",
-            "failed quality preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can add inspection, split parts, reroute manufacturing, or require human intervention earlier"
-        ],
-        "inspectionContracts": inspection_contracts,
-        "measurementContracts": measurement_contracts
-    })
+    quality_preflight_content::response(inspection_contracts, measurement_contracts, families)
 }
 
 fn disposition_catalog_entries() -> Vec<Value> {
@@ -70216,53 +70120,7 @@ fn disposition_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.disposition-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /dispositions/catalog", "GET /fabrication/dispositions/catalog"],
-        "dispositionFamilyCount": entries.len(),
-        "dispositionFamilies": disposition_families,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /remediation/plan", "POST /fabrication/remediation/plan"],
-        "reviewRoutes": [
-            "POST /quality/result",
-            "POST /fabrication/quality/result",
-            "POST /failure-modes/result",
-            "POST /fabrication/failure-modes/result",
-            "POST /learning/observe",
-            "POST /fabrication/learning/observe",
-            "POST /release/result",
-            "POST /fabrication/release/result"
-        ],
-        "responseSurfaces": [
-            "qualityResult.measurements",
-            "qualityResult.findings",
-            "simulation.findings",
-            "failureModeResult.failureEvents",
-            "boundaryRemediationPlan.actions",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.interfaces",
-            "assemblyPlan.requiredEvidence",
-            "releasePackagePlan.releaseGates",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "quality-result",
-            "failure-mode-result",
-            "nonconformance-disposition-record",
-            "boundary-remediation-plan",
-            "release-readiness-result",
-            "learning-outcomes"
-        ],
-        "releasePolicy": [
-            "disposition catalog entries describe post-inspection, post-simulation, and post-failure decision evidence contracts, not certified quality acceptance",
-            "machine-ready or customer release remains blocked while pass, rework, scrap, waiver, or split/combine redesign decisions lack retained evidence and human or automation authority",
-            "disposition outcomes are retained as MDP/POMDP/neural learning signals so future planners can avoid failed routes, change fixtures, split parts, remake, or add inspection earlier"
-        ],
-        "dispositions": entries
-    })
+    disposition_catalog_content::response(entries, disposition_families)
 }
 
 async fn disposition_catalog_http() -> impl IntoResponse {
@@ -71049,49 +70907,7 @@ fn costing_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.costing-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /costing/catalog", "GET /fabrication/costing/catalog"],
-        "costFamilyCount": entries.len(),
-        "costFamilies": cost_families,
-        "planningRoutes": [
-            "POST /plan",
-            "POST /fabrication/plan",
-            "POST /schedule/result",
-            "POST /fabrication/schedule/result",
-            "POST /learning/observe",
-            "POST /fabrication/learning/observe"
-        ],
-        "responseSurfaces": [
-            "machineSchedule.lanes",
-            "materialPlan.quantity",
-            "qualityPlan.releaseGates",
-            "boundaryRemediationPlan.actions",
-            "decompositionPlan.parts",
-            "assemblyPlan.requiredEvidence",
-            "releasePackagePlan.requiredArtifacts",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "quote-assumption-record",
-            "machine-time-estimate",
-            "material-yield-estimate",
-            "quality-risk-estimate",
-            "split-combine-route-comparison",
-            "controller-review-effort-record",
-            "mdp-request.artifacts.costing"
-        ],
-        "releasePolicy": [
-            "costing catalog entries describe estimation evidence contracts, not binding quotes, certified cost accounting, or shop-floor release authorization",
-            "machine-ready and customer release remain blocked when route economics omit setup, material yield, scrap, quality, review, human intervention, or split/combine evidence",
-            "cost, yield, scrap, cycle-time, and rework outcomes are retained as MDP/POMDP/neural learning signals so future planners can choose cheaper, safer, or more reliable routes"
-        ],
-        "costContracts": entries
-    })
+    costing_catalog_content::response(entries, cost_families)
 }
 
 async fn costing_catalog_http() -> impl IntoResponse {
@@ -71852,52 +71668,7 @@ fn utilities_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.utilities-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /utilities/catalog", "GET /fabrication/utilities/catalog"],
-        "utilityFamilyCount": entries.len(),
-        "utilityFamilies": utility_families,
-        "planningRoutes": [
-            "POST /plan",
-            "POST /fabrication/plan",
-            "POST /monitoring/result",
-            "POST /fabrication/monitoring/result",
-            "POST /failure-modes/result",
-            "POST /fabrication/failure-modes/result",
-            "POST /learning/observe",
-            "POST /fabrication/learning/observe"
-        ],
-        "responseSurfaces": [
-            "validation.failureBoundaries",
-            "supportStrategyPlan.requirements",
-            "monitoringPlan.alerts",
-            "fixturePlan.setups",
-            "toolingPlan.requirements",
-            "executionPlan.stopPoints",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "scheduleResult.holds",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "utility-readiness-record",
-            "facility-power-recovery-record",
-            "coolant-chip-dust-state-record",
-            "sheet-cut-support-media-record",
-            "additive-thermal-material-state-record",
-            "hybrid-cell-service-state-record",
-            "mdp-request.artifacts.utilities"
-        ],
-        "releasePolicy": [
-            "utilities catalog entries describe process-support and facility-readiness evidence contracts, not certified machine safety approval or facility compliance",
-            "machine-ready release remains blocked while power, network, thermal, material-supply, coolant, chip, dust, gas, pump, abrasive, fume, vacuum, fixture, robot, or recovery utilities lack retained evidence",
-            "utility outages, restarts, operator recovery, and environmental excursions are retained as MDP/POMDP/neural learning signals so future planners can resequence, add checkpoints, split work, or avoid brittle unattended routes"
-        ],
-        "utilityContracts": entries
-    })
+    utilities_catalog_content::response(entries, utility_families)
 }
 
 async fn utilities_catalog_http() -> impl IntoResponse {
@@ -71986,52 +71757,7 @@ fn energy_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.energy-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /energy/catalog", "GET /fabrication/energy/catalog"],
-        "energyFamilyCount": entries.len(),
-        "energyFamilies": energy_families,
-        "planningRoutes": [
-            "POST /plan",
-            "POST /fabrication/plan",
-            "POST /costing/result",
-            "POST /fabrication/costing/result",
-            "POST /utilities/result",
-            "POST /fabrication/utilities/result",
-            "POST /availability/result",
-            "POST /fabrication/availability/result",
-            "POST /learning/observe",
-            "POST /fabrication/learning/observe"
-        ],
-        "responseSurfaces": [
-            "scheduleResult.lanes",
-            "costingResult.estimateFamilies",
-            "utilitiesResult.checks",
-            "availabilityResult.capacityWindows",
-            "monitoringPlan.alerts",
-            "telemetryResult.channels",
-            "machineRelease.blockers",
-            "learning.outcomes"
-        ],
-        "artifactSurfaces": [
-            "energy-budget-record",
-            "power-load-record",
-            "thermal-load-record",
-            "ups-recovery-record",
-            "carbon-window-record",
-            "energy-learning-observations",
-            "mdp-request.artifacts.energy"
-        ],
-        "releasePolicy": [
-            "energy catalog entries describe machine, process, and facility power evidence contracts, not utility billing, certified electrical design, or carbon-compliance approval",
-            "machine-ready release remains blocked while heater, spindle, axis, beam, jet, pump, compressor, chiller, UPS, facility circuit, or thermal-load evidence is missing for the selected route",
-            "energy outcomes are retained as costing, availability, schedule, maintenance, and MDP/POMDP/neural learning signals so future planners can split, combine, defer, or reroute brittle fabrication work"
-        ],
-        "energyContracts": entries
-    })
+    energy_catalog_content::response(entries, energy_families)
 }
 
 async fn energy_catalog_http() -> impl IntoResponse {
@@ -73516,55 +73242,7 @@ fn availability_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.availability-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /availability/catalog", "GET /fabrication/availability/catalog"],
-        "availabilityFamilyCount": entries.len(),
-        "availabilityFamilies": availability_families,
-        "reviewRoutes": [
-            "POST /machines/select",
-            "POST /fabrication/machines/select",
-            "POST /schedule/result",
-            "POST /fabrication/schedule/result",
-            "POST /utilities/result",
-            "POST /fabrication/utilities/result",
-            "GET /maintenance/catalog",
-            "GET /fabrication/maintenance/catalog",
-            "POST /learning/outcomes",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "responseSurfaces": [
-            "machineSelection.candidates",
-            "machineSchedule.machineLanes",
-            "scheduleResult.holds",
-            "materialPlan.routeRequirements",
-            "toolingPlan.requirements",
-            "utilitiesResult.checks",
-            "maintenanceContracts",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "machineRelease.blockers",
-            "learning.outcomes"
-        ],
-        "artifactSurfaces": [
-            "availability-snapshot",
-            "machine-capacity-window",
-            "queue-depth-report",
-            "operator-coverage-plan",
-            "fallback-machine-plan",
-            "split-combine-capacity-model",
-            "availability-learning-observations",
-            "mdp-request.artifacts.availability"
-        ],
-        "releasePolicy": [
-            "availability catalog entries describe capacity and readiness evidence contracts, not certified shop scheduling authority or guaranteed machine uptime",
-            "machine-ready and unattended release remain blocked when live machine state, queue, material, tooling, fixture, utility, maintenance, operator, or automation capacity evidence is stale or missing",
-            "availability outcomes feed DES, MDP, POMDP, and neural workers so future planners can learn fallback machines, split/combine capacity, queue-delay risk, and reliable unattended windows"
-        ],
-        "availabilityContracts": entries
-    })
+    availability_catalog_content::response(entries, availability_families)
 }
 
 async fn availability_catalog_http() -> impl IntoResponse {
@@ -74274,54 +73952,7 @@ fn maintenance_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.maintenance-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /maintenance/catalog", "GET /fabrication/maintenance/catalog"],
-        "maintenanceFamilyCount": entries.len(),
-        "maintenanceFamilies": maintenance_families,
-        "reviewRoutes": [
-            "POST /setup/result",
-            "POST /fabrication/setup/result",
-            "POST /calibration/result",
-            "POST /fabrication/calibration/result",
-            "POST /utilities/result",
-            "POST /fabrication/utilities/result",
-            "POST /monitoring/result",
-            "POST /fabrication/monitoring/result",
-            "POST /telemetry/result",
-            "POST /fabrication/telemetry/result"
-        ],
-        "responseSurfaces": [
-            "machineProfile.evidence.maintenance",
-            "setupResult.datumReviews",
-            "calibrationResult.probeReviews",
-            "utilitiesResult.checks",
-            "monitoringResult.alerts",
-            "telemetryResult.boundaryCorrelations",
-            "safetyResult.interlocks",
-            "machineRelease.blockers",
-            "learning.outcomes"
-        ],
-        "artifactSurfaces": [
-            "maintenance-release-record",
-            "service-work-order",
-            "lockout-clearance-proof",
-            "post-service-dry-run",
-            "sensor-calibration-certificate",
-            "safety-channel-test",
-            "maintenance-learning-observations",
-            "mdp-request.artifacts.maintenance"
-        ],
-        "releasePolicy": [
-            "maintenance catalog entries describe service-readiness evidence contracts, not certified machine maintenance approval or regulatory lockout/tagout procedure",
-            "machine-ready, unattended, and customer-ready release remain blocked when lockout, service, wear, calibration, sensor, process-support, or safety-channel evidence is stale or missing",
-            "maintenance outcomes feed MDP/POMDP/neural workers so future planners can avoid brittle machines, add operator checkpoints, split work across healthier equipment, or schedule service before release"
-        ],
-        "maintenanceContracts": entries
-    })
+    maintenance_catalog_content::response(entries, maintenance_families)
 }
 
 async fn maintenance_catalog_http() -> impl IntoResponse {
@@ -79922,52 +79553,14 @@ fn intervention_catalog_response() -> Value {
     }));
     let evidence_gates = intervention_catalog_evidence_gate_contracts();
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.intervention-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /interventions/catalog", "GET /fabrication/interventions/catalog"],
-        "actionCount": action_contracts.len(),
-        "automationTypeCount": automation_contracts.len(),
-        "evidenceGateCount": evidence_gates.len(),
-        "actionTypes": action_types,
-        "actionFamilies": action_families,
-        "automationTypes": automation_types,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "boundarySummary.automationRequirements",
-            "interventionMap.humanInterventionPoints",
-            "interventionMap.automationPaths",
-            "interventionMap.splitCombineDecisions",
-            "interventionMap.programBoundaries",
-            "executionPlan.stopPoints",
-            "executionPlan.checkpoints",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "operatorInterventionPlan.evidenceGates",
-            "operatorInterventionPlan.automationCandidates",
-            "operatorInterventionPlan.splitCombineReviews",
-            "releaseProbePlan.probes",
-            "pomdpBeliefState.hiddenStates"
-        ],
-        "learningSurfaces": [
-            "interventionMap.learningObservations",
-            "operatorInterventionPlan.learningObservations",
-            "executionPlan.learningObservations",
-            "learning.interventionSignals",
-            "neuralTrainingCorpus.examples",
-            "mdp-request.artifacts.operatorInterventionPlan"
-        ],
-        "releasePolicy": [
-            "intervention catalog entries describe preflight evidence contracts, not controller-certified restart instructions",
-            "machine-ready release remains blocked while required operator actions, unresolved execution stop points, split/combine reviews, or unverified automation candidates remain open",
-            "human-intervention and automation observations are emitted for MDP/POMDP/neural workers so future planning can learn when to add automation, split jobs, or keep human checkpoints"
-        ],
-        "actionContracts": action_contracts,
-        "automationContracts": automation_contracts,
-        "evidenceGateContracts": evidence_gates
-    })
+    intervention_catalog_content::response(
+        action_contracts,
+        action_types,
+        action_families,
+        automation_contracts,
+        automation_types,
+        evidence_gates,
+    )
 }
 
 async fn intervention_catalog_http() -> impl IntoResponse {
@@ -80835,72 +80428,7 @@ fn setup_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.setup-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /setup/catalog", "GET /fabrication/setup/catalog"],
-        "setupContractCount": contracts.len(),
-        "families": families,
-        "contractTypes": contract_types,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "toolingPlan",
-            "toolingPlan.requirements",
-            "toolingPlan.requirements.requiredTools",
-            "toolingPlan.requirements.workholding",
-            "toolingPlan.requirements.consumables",
-            "toolingPlan.requirements.setupChecks",
-            "toolingPlan.requirements.automationDependencies",
-            "toolingPlan.releaseGates",
-            "fixturePlan",
-            "fixturePlan.setups",
-            "fixturePlan.setups.datumScheme",
-            "fixturePlan.setups.requiredEvidence",
-            "fixturePlan.setups.clearanceChecks",
-            "fixturePlan.setups.automationCandidate",
-            "fixturePlan.datumTransfers",
-            "monitoringPlan",
-            "monitoringPlan.monitorPoints",
-            "monitoringPlan.alertRules",
-            "monitoringPlan.recoveryActions",
-            "monitoringPlan.releaseGates",
-            "machineRelease.blockers",
-            "releasePackagePlan.requiredArtifacts"
-        ],
-        "artifactSurfaces": [
-            "tooling-plan",
-            "fixture-plan",
-            "monitoring-plan",
-            "parametric-design.toolingPlan",
-            "parametric-design.fixturePlan",
-            "parametric-design.monitoringPlan",
-            "mdp-request.artifacts.toolingPlan",
-            "mdp-request.artifacts.fixturePlan",
-            "mdp-request.artifacts.monitoringPlan"
-        ],
-        "learningSurfaces": [
-            "toolingPlan.learningObservations",
-            "fixturePlan.learningObservations",
-            "monitoringPlan.learningObservations",
-            "releaseProbePlan.probes",
-            "neuralTrainingCorpus.examples",
-            "learning.interventionSignals"
-        ],
-        "releasePolicy": [
-            "setup catalog entries describe tooling, fixture, datum, workholding, monitoring, recovery, and operator or automation evidence contracts, not certified fixture designs or safety procedures",
-            "machine-ready release remains blocked while required tools, workholding, setup checks, fixture evidence, datum transfer, monitoring channels, alert rules, recovery actions, or signoff gates are unresolved",
-            "setup, fixture, and monitoring observations are retained for MDP/POMDP/neural workers so future planning can learn when to change workholding, split setups, add automation, or require human intervention"
-        ],
-        "schemas": [
-            "dd.fabrication.tooling-plan.v1",
-            "dd.fabrication.fixture-plan.v1",
-            "dd.fabrication.monitoring-plan.v1"
-        ],
-        "setupContracts": contracts
-    })
+    setup_catalog_content::response(contracts, families, contract_types)
 }
 
 fn tooling_catalog_entries() -> Vec<Value> {
@@ -81016,55 +80544,7 @@ fn tooling_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.tooling-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /tooling/catalog", "GET /fabrication/tooling/catalog"],
-        "toolFamilyCount": entries.len(),
-        "toolFamilies": tool_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan"],
-        "reviewRoutes": [
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /machine-code/generate",
-            "POST /fabrication/machine-code/generate",
-            "POST /toolpaths/plan",
-            "POST /fabrication/toolpaths/plan",
-            "POST /simulation/run",
-            "POST /fabrication/simulation/run",
-            "POST /tooling/result",
-            "POST /fabrication/tooling/result"
-        ],
-        "responseSurfaces": [
-            "toolingPlan.requirements.requiredTools",
-            "toolingPlan.requirements.consumables",
-            "toolingPlan.requirements.setupChecks",
-            "toolingPlan.releaseGates",
-            "fixturePlan.setups.requiredEvidence",
-            "controllerPlan.requiredControllerChecks",
-            "calibrationPlan.offsetEvidence",
-            "qualityPlan.measurementTargets",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "tooling-plan",
-            "fixture-plan",
-            "calibration-plan",
-            "quality-plan",
-            "controller-plan",
-            "machine-release",
-            "mdp-request.artifacts.toolingPlan"
-        ],
-        "releasePolicy": [
-            "tooling catalog entries describe required tool, consumable, offset, holder, probe, and support evidence, not certified tooling setup sheets",
-            "machine-ready release remains blocked until tool identity, geometry, offsets, wear/tool-life, process support, calibration, and operator or automation signoff evidence clear",
-            "tool selection, tool-life, offset, feed/speed, support-media, and inspection outcomes are retained as MDP/POMDP/neural learning signals for future planning and instruction repair"
-        ],
-        "toolingFamilies": entries
-    })
+    tooling_catalog_content::response(entries, tool_families, machine_kinds)
 }
 
 async fn tooling_catalog_http() -> impl IntoResponse {
@@ -82074,55 +81554,7 @@ fn consumables_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.consumables-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /consumables/catalog", "GET /fabrication/consumables/catalog"],
-        "consumableFamilyCount": entries.len(),
-        "consumableFamilies": consumable_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /materials/plan", "POST /fabrication/materials/plan"],
-        "reviewRoutes": [
-            "POST /materials/result",
-            "POST /fabrication/materials/result",
-            "POST /utilities/result",
-            "POST /fabrication/utilities/result",
-            "POST /toolpaths/result",
-            "POST /fabrication/toolpaths/result",
-            "POST /telemetry/result",
-            "POST /fabrication/telemetry/result"
-        ],
-        "responseSurfaces": [
-            "materialPlan.routeRequirements",
-            "toolingPlan.requirements.consumables",
-            "utilitiesResult.checks",
-            "supportStrategyPlan.requirements",
-            "monitoringPlan.alerts",
-            "qualityResult.measurements",
-            "postprocessPlan.requiredArtifacts",
-            "provenanceResult.lineage",
-            "machineRelease.blockers",
-            "learning.outcomes"
-        ],
-        "artifactSurfaces": [
-            "consumable-lot-record",
-            "tool-life-record",
-            "wear-inspection-record",
-            "kerf-coupon-record",
-            "powder-reuse-record",
-            "purge-prime-record",
-            "consumables-learning-observations",
-            "mdp-request.artifacts.consumables"
-        ],
-        "releasePolicy": [
-            "consumables catalog entries describe material, tool, support-media, and process-consumable evidence contracts, not certified inventory, tooling, or hazardous-material approval",
-            "machine-ready and unattended release remain blocked when material quantity, lot, shelf-life, dry state, tool life, wear, nozzle, gas, abrasive, coolant, wire, resin, powder, binder, solvent, media, or postprocess consumable evidence is stale or missing",
-            "consumable outcomes feed MDP/POMDP/neural workers so future planners can learn tool-life risk, material capacity, support-media depletion, split/combine reroutes, and operator refill checkpoints"
-        ],
-        "consumableContracts": entries
-    })
+    consumables_catalog_content::response(entries, consumable_families, machine_kinds)
 }
 
 async fn consumables_catalog_http() -> impl IntoResponse {
@@ -83130,57 +82562,7 @@ fn workholding_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.workholding-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /workholding/catalog", "GET /fabrication/workholding/catalog"],
-        "workholdingFamilyCount": entries.len(),
-        "workholdingFamilies": workholding_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /setup/plan", "POST /fabrication/setup/plan", "POST /workholding/plan", "POST /fabrication/workholding/plan"],
-        "reviewRoutes": [
-            "POST /instructions/analyze",
-            "POST /fabrication/instructions/analyze",
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /simulation/run",
-            "POST /fabrication/simulation/run",
-            "POST /quality/plan",
-            "POST /fabrication/quality/plan"
-        ],
-        "responseSurfaces": [
-            "toolingPlan.requirements.workholding",
-            "fixturePlan.setups",
-            "fixturePlan.setups.requiredEvidence",
-            "fixturePlan.setups.clearanceChecks",
-            "fixturePlan.setups.workholding",
-            "fixturePlan.datumTransfers",
-            "simulation.riskProfile.programRisks",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "interfaceControlPlan.interfaces",
-            "decompositionPlan.parts",
-            "assemblyPlan.requiredEvidence",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "fixture-plan",
-            "tooling-plan",
-            "setup-plan",
-            "simulation-report",
-            "assembly-plan",
-            "interface-control-plan",
-            "mdp-request.artifacts.fixturePlan"
-        ],
-        "releasePolicy": [
-            "workholding catalog entries describe evidence contracts for stock, build, fixture, support, retention, and recomposition holding, not certified fixture designs",
-            "machine-ready release remains blocked while build-surface, clamp, vacuum, chuck, support, tab, nest, datum-transfer, or split/combine fixture evidence is unresolved",
-            "workholding failures and successful fixture choices are retained as MDP/POMDP/neural learning signals so future planners can split jobs, change fixtures, add probes, or require human intervention earlier"
-        ],
-        "workholdingFamiliesDetailed": entries
-    })
+    workholding_catalog_content::response(entries, workholding_families, machine_kinds)
 }
 
 fn workholding_preflight_catalog_response() -> Value {
@@ -83201,91 +82583,7 @@ fn workholding_preflight_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.workholding-preflight-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": [
-            "GET /workholding/preflight/catalog",
-            "GET /fabrication/workholding/preflight/catalog"
-        ],
-        "relatedRoutes": [
-            "GET /fabrication/workholding/catalog",
-            "GET /fabrication/setup/catalog",
-            "GET /fabrication/tooling/catalog",
-            "GET /fabrication/interfaces/preflight/catalog",
-            "GET /fabrication/quality/preflight/catalog",
-            "POST /fabrication/workholding/result",
-            "POST /fabrication/simulation/run",
-            "POST /fabrication/release/result",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "workholdingFamilyCount": entries.len(),
-        "workholdingFamilies": workholding_families,
-        "machineKinds": machine_kinds,
-        "preflightGroups": [
-            {
-                "group": "stock-build-surface-and-primary-hold-state",
-                "requiredEvidence": [
-                    "build plate, vacuum table, vise, chuck, collet, pallet, fixture, nest, or support surface evidence",
-                    "clamp force, adhesive tape, tab, brim, raft, tailstock, steady rest, or pin/support proof before the first material-removal or deposition move",
-                    "stock stick-out, overhang, collision envelope, thermal drift, chip/debris clearance, and access-for-inspection evidence"
-                ],
-                "releaseBlockers": [
-                    "machine motion begins before primary hold and support evidence is retained",
-                    "part, stock, printed layer, slug, or cutoff can shift, tip, lift, vibrate, or collide without a retained mitigation",
-                    "operator is expected to recover or re-clamp without a planned stop, re-probe, and release-owner signoff"
-                ]
-            },
-            {
-                "group": "datum-transfer-reprobe-and-clearance-state",
-                "requiredEvidence": [
-                    "datum scheme, work offset, probe/touch-off, fixture coordinate frame, orientation key, and setup-revision evidence",
-                    "tool, nozzle, head, gripper, spindle, jaw, clamp, fixture, support, and robot path clearance proof",
-                    "re-probe, re-zero, thermal soak, fixture-change, material-change, and machine-pause restart evidence"
-                ],
-                "releaseBlockers": [
-                    "datum or work offset changes after setup without re-probe or operator/automation confirmation",
-                    "toolpath, printhead, spindle, cutter, robot, slug, or transfer path can intersect the fixture or support hardware",
-                    "restart after pause, tool change, media change, or fixture adjustment lacks retained verification"
-                ]
-            },
-            {
-                "group": "split-combine-fixture-and-human-intervention-state",
-                "requiredEvidence": [
-                    "assembly jig, bond clamp, press fixture, heat-set support, datum-transfer fixture, or recomposition nest proof",
-                    "interface control, dry-fit, torque, cure, adhesive, vision/fiducial, gripper, and final metrology evidence for recomposed parts",
-                    "human intervention stop point, operator instruction, hold/release authority, and learning observation for recoveries or failures"
-                ],
-                "releaseBlockers": [
-                    "printed, milled, cut, or postprocessed pieces are combined before fixture and datum-transfer evidence",
-                    "bond, press, torque, cure, heat-set, or robotic assembly operation lacks a retained hold and inspection plan",
-                    "split/combine recovery or manual fit is expected but not represented as an intervention, disposition, and learning outcome"
-                ]
-            }
-        ],
-        "responseSurfaces": [
-            "fixturePlan.setups",
-            "fixturePlan.setups.requiredEvidence",
-            "fixturePlan.setups.clearanceChecks",
-            "fixturePlan.datumTransfers",
-            "toolingPlan.requirements.workholding",
-            "simulation.riskProfile.programRisks",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "interfaceControlPlan.interfaces",
-            "assemblyPlan.requiredEvidence",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.releaseBlockers",
-            "learningOutcome.observations"
-        ],
-        "releasePolicy": [
-            "workholding preflight entries describe evidence required before machine-ready release, unattended motion, recomposition, or human handoff; they are not certified fixture designs",
-            "release remains blocked while stock, build plate, clamp, vacuum, chuck, support, datum transfer, clearance, or split/combine fixture evidence is absent",
-            "failed workholding preflight checks should feed DES, MDP/POMDP, and neural workers so future plans can split jobs, add fixtures, insert re-probes, or require human intervention earlier"
-        ],
-        "workholdingFamiliesDetailed": entries
-    })
+    workholding_preflight_content::response(entries, workholding_families, machine_kinds)
 }
 
 fn workholding_planning_response(
@@ -84586,76 +83884,7 @@ fn nesting_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.nesting-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /nesting/catalog", "GET /fabrication/nesting/catalog"],
-        "nestingFamilyCount": entries.len(),
-        "nestingFamilies": nesting_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": [
-            "POST /plan",
-            "POST /fabrication/plan",
-            "POST /design/convert/plan",
-            "POST /fabrication/design/convert/plan",
-            "POST /toolpaths/plan",
-            "POST /fabrication/toolpaths/plan",
-            "POST /setup/plan",
-            "POST /fabrication/setup/plan",
-            "POST /execution/plan",
-            "POST /fabrication/execution/plan"
-        ],
-        "reviewRoutes": [
-            "POST /simulation/result",
-            "POST /fabrication/simulation/result",
-            "POST /workholding/result",
-            "POST /fabrication/workholding/result",
-            "POST /nesting/result",
-            "POST /fabrication/nesting/result",
-            "POST /support-strategies/result",
-            "POST /fabrication/support-strategies/result",
-            "POST /release/result",
-            "POST /fabrication/release/result"
-        ],
-        "responseSurfaces": [
-            "designExports.partExports",
-            "designExports.partExports.content.nesting",
-            "slicerPlan.profileEvidence",
-            "toolingPlan.requirements.consumables",
-            "fixturePlan.setups.workholding",
-            "supportStrategyPlan",
-            "postprocessPlan.steps",
-            "executionPlan.stopPoints",
-            "qualityPlan.measurementTargets",
-            "releasePackagePlan.packages",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "dd-sheet-nesting-json",
-            "dd-plate-layout-json",
-            "powder-bed-build-map",
-            "flat-blank-layout",
-            "hybrid-kit-layout",
-            "release-package",
-            "mdp-request.artifacts.nestingCatalog"
-        ],
-        "learningSurfaces": [
-            "nesting:additive-plate",
-            "nesting:powder-bed",
-            "nesting:sheet-cut",
-            "nesting:sheet-forming",
-            "nesting:hybrid-kit",
-            "learning.outcomes"
-        ],
-        "releasePolicy": [
-            "nesting catalog entries describe build-plate, powder-bed, sheet, flat-blank, and hybrid kit layout evidence contracts, not certified CAM or slicer nests",
-            "machine-ready release remains blocked while layout envelope, material, support, tab/drop, thermal, traceability, fixture, postprocess, or operator/automation evidence is unresolved",
-            "nesting observations are retained for MDP/POMDP/neural workers so future plans can adjust orientation, split jobs, change batch layout, add retention, or require human intervention earlier"
-        ],
-        "nestingContracts": entries
-    })
+    nesting_catalog_content::response(entries, nesting_families, machine_kinds)
 }
 
 async fn nesting_catalog_http() -> impl IntoResponse {
@@ -85516,58 +84745,7 @@ fn support_strategy_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.support-strategy-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /support-strategies/catalog", "GET /fabrication/support-strategies/catalog"],
-        "supportStrategyFamilyCount": entries.len(),
-        "strategyFamilies": strategy_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /decomposition/plan", "POST /fabrication/decomposition/plan"],
-        "reviewRoutes": [
-            "POST /instructions/analyze",
-            "POST /fabrication/instructions/analyze",
-            "POST /design/generate",
-            "POST /fabrication/design/generate",
-            "POST /simulation/run",
-            "POST /fabrication/simulation/run",
-            "POST /assembly/plan",
-            "POST /fabrication/assembly/plan"
-        ],
-        "responseSurfaces": [
-            "designInputReview.manufacturabilityEvidence",
-            "slicerProfileCatalog",
-            "fixturePlan.setups",
-            "toolingPlan.requirements.workholding",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.interfaces",
-            "interventionMap.requiredInterventions",
-            "interventionMap.splitCombineDecisions",
-            "executionPlan.stopPoints",
-            "postprocessPlan.requiredArtifacts",
-            "qualityPlan.measurementTargets",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "decomposition-plan",
-            "interface-control-plan",
-            "fixture-plan",
-            "tooling-plan",
-            "simulation-report",
-            "assembly-plan",
-            "learning-outcomes",
-            "mdp-request.artifacts.decompositionPlan"
-        ],
-        "releasePolicy": [
-            "support strategy catalog entries describe orientation, support, sacrificial-holding, tab, bridge, split/combine, and support-removal evidence contracts, not certified manufacturing instructions",
-            "machine-ready release remains blocked while orientation, supports, tabs, bridges, sacrificial stock, support removal, postprocess access, or split/combine interface evidence is unresolved",
-            "orientation, support, split/combine, and intervention outcomes are retained as MDP/POMDP/neural learning signals so future planners can choose one-piece, split, combine, or alternate-machine routes earlier"
-        ],
-        "supportStrategies": entries
-    })
+    support_strategy_catalog_content::response(entries, strategy_families, machine_kinds)
 }
 
 async fn support_strategy_catalog_http() -> impl IntoResponse {
@@ -86516,50 +85694,7 @@ fn process_recipe_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.process-recipe-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /process-recipes/catalog", "GET /fabrication/process-recipes/catalog"],
-        "recipeFamilyCount": entries.len(),
-        "recipeFamilies": recipe_families,
-        "machineKinds": machine_kinds,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan", "POST /toolpaths/plan", "POST /fabrication/toolpaths/plan"],
-        "reviewRoutes": [
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /machine-code/generate",
-            "POST /fabrication/machine-code/generate",
-            "POST /simulation/run",
-            "POST /fabrication/simulation/run",
-            "POST /postprocess/plan",
-            "POST /fabrication/postprocess/plan"
-        ],
-        "responseSurfaces": [
-            "materialPlan.routeRequirements",
-            "toolingPlan.requirements",
-            "controllerPlan.requiredControllerChecks",
-            "simulation.riskProfile",
-            "qualityPlan.measurementTargets",
-            "postprocessPlan.requiredArtifacts",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "tooling-plan",
-            "controller-plan",
-            "simulation-report",
-            "quality-plan",
-            "postprocess-plan",
-            "mdp-request.artifacts.processRecipes"
-        ],
-        "releasePolicy": [
-            "process recipe catalog entries describe required parameter, cut-chart, slicer-profile, thermal, chemical, and inspection evidence, not certified production recipes",
-            "machine-ready release remains blocked until recipe provenance, material/tool/machine compatibility, simulation, first-article or coupon evidence, and operator or automation signoff clear",
-            "recipe selections, parameter revisions, feed/speed outcomes, thermal cycles, edge quality, first-layer behavior, and postprocess results are retained as MDP/POMDP/neural learning signals"
-        ],
-        "processRecipes": entries
-    })
+    process_recipe_catalog_content::response(entries, recipe_families, machine_kinds)
 }
 
 async fn process_recipe_catalog_http() -> impl IntoResponse {
@@ -87310,42 +86445,7 @@ fn kinematics_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.kinematics-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /kinematics/catalog", "GET /fabrication/kinematics/catalog"],
-        "kinematicFamilyCount": entries.len(),
-        "kinematicFamilies": kinematic_families,
-        "machineKinds": machine_kinds,
-        "axes": axes,
-        "reviewRoutes": [
-            "POST /simulation/run",
-            "POST /fabrication/simulation/run",
-            "POST /toolpaths/plan",
-            "POST /fabrication/toolpaths/plan",
-            "POST /machine-code/generate",
-            "POST /fabrication/machine-code/generate",
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate"
-        ],
-        "responseSurfaces": [
-            "simulation.axisExtents",
-            "simulation.riskProfile.programRisks",
-            "controllerPlan.requiredControllerChecks",
-            "fixturePlan.setups.requiredEvidence",
-            "monitoringPlan.monitorPoints",
-            "releaseProbePlan.probes",
-            "machineRelease.blockers"
-        ],
-        "releasePolicy": [
-            "kinematics catalog entries describe required axis, coordinate-mode, TCP/frame, envelope, fixture-clearance, synchronization, and probe evidence, not certified kinematic calibration records",
-            "machine-ready release remains blocked until homing, units, coordinate state, axis envelope, rotary/robot frame, fixture clearance, simulation, and operator or automation signoff evidence clear",
-            "axis-envelope, coordinate-mode, TCP/frame, external-axis, spindle-sync, and clearance observations are retained as MDP/POMDP/neural learning signals for future program generation and validation"
-        ],
-        "kinematics": entries
-    })
+    kinematics_catalog_content::response(entries, kinematic_families, machine_kinds, axes)
 }
 
 async fn kinematics_catalog_http() -> impl IntoResponse {
@@ -88761,58 +87861,7 @@ fn tolerance_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.tolerance-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /tolerances/catalog", "GET /fabrication/tolerances/catalog"],
-        "toleranceFamilyCount": entries.len(),
-        "toleranceFamilies": tolerance_families,
-        "machineKinds": machine_kinds,
-        "geometryScopes": geometry_scopes,
-        "planningRoutes": [
-            "POST /quality/plan",
-            "POST /fabrication/quality/plan",
-            "POST /decomposition/plan",
-            "POST /fabrication/decomposition/plan",
-            "POST /assembly/plan",
-            "POST /fabrication/assembly/plan"
-        ],
-        "reviewRoutes": [
-            "POST /quality/result",
-            "POST /fabrication/quality/result",
-            "POST /release/preview",
-            "POST /fabrication/release/preview",
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate"
-        ],
-        "responseSurfaces": [
-            "designInputReview.pmi",
-            "materialPlan.routeRequirements",
-            "slicerPlan.profileEvidence",
-            "fixturePlan.datumTransfers",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.interfaces",
-            "assemblyPlan.requiredEvidence",
-            "qualityPlan.measurementTargets",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "quality-plan",
-            "interface-control-plan",
-            "assembly-plan",
-            "inspection-report",
-            "release-package-plan",
-            "mdp-request.artifacts.toleranceEvidence"
-        ],
-        "releasePolicy": [
-            "tolerance catalog entries describe dimensional, GD&T/PMI, fit, kerf, datum-transfer, and interface-control evidence, not certified inspection plans",
-            "machine-ready release remains blocked until tolerance-critical features have material/process allowance, datum, metrology, inspection, and operator or automation signoff evidence",
-            "coupon measurements, first-article results, gauge outcomes, kerf offsets, fit-up interventions, and split/combine stackups are retained as MDP/POMDP/neural learning signals"
-        ],
-        "toleranceContracts": entries
-    })
+    tolerance_catalog_content::response(entries, tolerance_families, machine_kinds, geometry_scopes)
 }
 
 async fn tolerance_catalog_http() -> impl IntoResponse {
@@ -89131,61 +88180,12 @@ fn process_capability_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.process-capability-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /process-capabilities/catalog", "GET /fabrication/process-capabilities/catalog"],
-        "capabilityFamilyCount": entries.len(),
-        "capabilityFamilies": capability_families,
-        "machineKinds": machine_kinds,
-        "capabilityScopes": capability_scopes,
-        "planningRoutes": [
-            "POST /process-capabilities/plan",
-            "POST /fabrication/process-capabilities/plan",
-            "POST /design/import/review",
-            "POST /fabrication/design/import/review",
-            "POST /machine-code/generate",
-            "POST /fabrication/machine-code/generate",
-            "POST /decomposition/plan",
-            "POST /fabrication/decomposition/plan",
-            "POST /release/preview",
-            "POST /fabrication/release/preview"
-        ],
-        "reviewRoutes": [
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /simulation/result",
-            "POST /fabrication/simulation/result",
-            "POST /quality/result",
-            "POST /fabrication/quality/result"
-        ],
-        "responseSurfaces": [
-            "designInputReview.capabilityFindings",
-            "slicerPlan.profileEvidence",
-            "toolingPlan.requirements",
-            "processRecipe.cutChart",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.interfaces",
-            "qualityPlan.measurementTargets",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "process-capability-catalog",
-            "design-input-review",
-            "tooling-plan",
-            "decomposition-plan",
-            "simulation-report",
-            "mdp-request.artifacts.processCapabilityEvidence"
-        ],
-        "releasePolicy": [
-            "process-capability catalog entries describe printability, tool-access, workholding, kerf, and split/combine evidence, not certified machine capability studies",
-            "machine-ready release remains blocked when requested geometry exceeds reviewed process capability and no redesign, alternate route, split/combine plan, or human intervention evidence is present",
-            "capability failures, alternate routes, split boundaries, and measured process outcomes are retained as MDP/POMDP/neural learning signals"
-        ],
-        "processCapabilityContracts": entries
-    })
+    process_capability_catalog_content::response(
+        entries,
+        capability_families,
+        machine_kinds,
+        capability_scopes,
+    )
 }
 
 async fn process_capability_catalog_http() -> impl IntoResponse {
@@ -90382,61 +89382,12 @@ fn manufacturability_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.manufacturability-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /manufacturability/catalog", "GET /fabrication/manufacturability/catalog"],
-        "reviewFamilyCount": entries.len(),
-        "reviewFamilies": review_families,
-        "machineKinds": machine_kinds,
-        "checkScopes": check_scopes,
-        "planningRoutes": [
-            "POST /design/import/review",
-            "POST /fabrication/design/import/review",
-            "POST /design/generate",
-            "POST /fabrication/design/generate",
-            "POST /decomposition/plan",
-            "POST /fabrication/decomposition/plan",
-            "POST /machine-code/generate",
-            "POST /fabrication/machine-code/generate"
-        ],
-        "reviewRoutes": [
-            "POST /design/import/result",
-            "POST /fabrication/design/import/result",
-            "POST /manufacturability/result",
-            "POST /fabrication/manufacturability/result",
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /release/preview",
-            "POST /fabrication/release/preview"
-        ],
-        "responseSurfaces": [
-            "designInputReview.manufacturabilityEvidence",
-            "designInputReview.conversionPlan",
-            "processCapabilityContracts",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.interfaces",
-            "assemblyPlan.requiredEvidence",
-            "qualityPlan.measurementTargets",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "manufacturability-catalog",
-            "design-input-review",
-            "process-capability-catalog",
-            "decomposition-plan",
-            "interface-control-plan",
-            "mdp-request.artifacts.manufacturabilityEvidence"
-        ],
-        "releasePolicy": [
-            "manufacturability catalog entries describe DFM, DfAM, tool-access, flat-pattern, and hybrid interface review evidence, not certified design approval",
-            "machine-ready release remains blocked when CAD, mesh, sheet, or assembly geometry needs redesign, repair, alternate routing, split/combine planning, or human intervention evidence",
-            "manufacturability failures, redesign actions, split/combine decisions, and successful route outcomes are retained as MDP/POMDP/neural learning signals"
-        ],
-        "manufacturabilityContracts": entries
-    })
+    manufacturability_catalog_content::response(
+        entries,
+        review_families,
+        machine_kinds,
+        check_scopes,
+    )
 }
 
 async fn manufacturability_catalog_http() -> impl IntoResponse {
@@ -91534,62 +90485,7 @@ fn failure_mode_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.failure-mode-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /failure-modes/catalog", "GET /fabrication/failure-modes/catalog"],
-        "failureFamilyCount": entries.len(),
-        "failureFamilies": failure_families,
-        "machineKinds": machine_kinds,
-        "failureModes": failure_modes,
-        "planningRoutes": [
-            "POST /failure-modes/plan",
-            "POST /fabrication/failure-modes/plan",
-            "POST /instructions/analyze",
-            "POST /fabrication/instructions/analyze",
-            "POST /instructions/boundaries/review",
-            "POST /fabrication/instructions/boundaries/review",
-            "POST /decomposition/plan",
-            "POST /fabrication/decomposition/plan",
-            "POST /strategy/recommend",
-            "POST /fabrication/strategy/recommend"
-        ],
-        "reviewRoutes": [
-            "POST /failure-modes/result",
-            "POST /fabrication/failure-modes/result",
-            "POST /simulation/result",
-            "POST /fabrication/simulation/result",
-            "POST /execution/result",
-            "POST /fabrication/execution/result",
-            "POST /learning/outcomes",
-            "POST /fabrication/learning/outcomes"
-        ],
-        "responseSurfaces": [
-            "boundarySummary.boundaries",
-            "interventionMap.requiredInterventions",
-            "simulation.riskProfile.programRisks",
-            "decompositionPlan.parts",
-            "executionPlan.stopPoints",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "failure-mode-catalog",
-            "boundary-summary",
-            "intervention-map",
-            "simulation-report",
-            "execution-plan",
-            "mdp-request.artifacts.failureModes"
-        ],
-        "releasePolicy": [
-            "failure-mode catalog entries describe process-failure signatures and evidence gates, not certified machine diagnostics",
-            "machine-ready release remains blocked while likely failure modes require unresolved human intervention, redesign, support restart, tool/process state recovery, or split/combine planning",
-            "failure signatures, remediation choices, split/combine outcomes, and operator interventions are retained as MDP/POMDP/neural learning signals"
-        ],
-        "failureModeContracts": entries
-    })
+    failure_mode_catalog_content::response(entries, failure_families, machine_kinds, failure_modes)
 }
 
 async fn failure_mode_catalog_http() -> impl IntoResponse {
@@ -92762,59 +91658,7 @@ fn safety_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.safety-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /safety/catalog", "GET /fabrication/safety/catalog"],
-        "safetyFamilyCount": entries.len(),
-        "safetyFamilies": safety_families,
-        "machineKinds": machine_kinds,
-        "hazards": hazards,
-        "planningRoutes": [
-            "POST /safety/plan",
-            "POST /fabrication/safety/plan",
-            "POST /monitoring/plan",
-            "POST /fabrication/monitoring/plan",
-            "POST /execution/plan",
-            "POST /fabrication/execution/plan",
-            "POST /release/preview",
-            "POST /fabrication/release/preview"
-        ],
-        "reviewRoutes": [
-            "POST /monitoring/result",
-            "POST /fabrication/monitoring/result",
-            "POST /execution/result",
-            "POST /fabrication/execution/result",
-            "POST /release/result",
-            "POST /fabrication/release/result"
-        ],
-        "responseSurfaces": [
-            "executionPlan.stopPoints",
-            "executionPlan.operatorActions",
-            "interventionMap.requiredInterventions",
-            "monitoringPlan.monitorPoints",
-            "monitoringPlan.alertRules",
-            "monitoringPlan.recoveryActions",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "monitoring-plan",
-            "execution-plan",
-            "operator-intervention-plan",
-            "release-package-plan",
-            "machine-release",
-            "mdp-request.artifacts.safetyEvidence"
-        ],
-        "releasePolicy": [
-            "safety catalog entries describe guarding, interlock, extraction, emergency-stop, lockout, and human-intervention evidence, not certified machine-safety approvals",
-            "machine-ready release remains blocked until machine guarding, process support, operator intervention, emergency response, monitoring, alerting, and release signoff evidence clear",
-            "interlock states, operator stops, extraction failures, E-stop events, recovery actions, and unattended-release outcomes are retained as MDP/POMDP/neural learning signals"
-        ],
-        "safetyContracts": entries
-    })
+    safety_catalog_content::response(entries, safety_families, machine_kinds, hazards)
 }
 
 async fn safety_catalog_http() -> impl IntoResponse {
@@ -93946,60 +92790,12 @@ fn environment_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.environment-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /environment/catalog", "GET /fabrication/environment/catalog"],
-        "environmentFamilyCount": entries.len(),
-        "environmentFamilies": environment_families,
-        "machineKinds": machine_kinds,
-        "conditionScopes": condition_scopes,
-        "planningRoutes": [
-            "POST /environment/plan",
-            "POST /fabrication/environment/plan",
-            "POST /materials/plan",
-            "POST /fabrication/materials/plan",
-            "POST /monitoring/plan",
-            "POST /fabrication/monitoring/plan",
-            "POST /quality/plan",
-            "POST /fabrication/quality/plan"
-        ],
-        "reviewRoutes": [
-            "POST /materials/result",
-            "POST /fabrication/materials/result",
-            "POST /monitoring/result",
-            "POST /fabrication/monitoring/result",
-            "POST /quality/result",
-            "POST /fabrication/quality/result"
-        ],
-        "responseSurfaces": [
-            "materialPlan.routeRequirements",
-            "processRecipe.materialConditioning",
-            "processRecipe.coolant",
-            "monitoringPlan.monitorPoints",
-            "monitoringPlan.alertRules",
-            "qualityPlan.measurementTargets",
-            "calibrationPlan.requiredEvidence",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "material-plan",
-            "monitoring-plan",
-            "quality-plan",
-            "calibration-plan",
-            "environment-evidence",
-            "mdp-request.artifacts.environmentEvidence"
-        ],
-        "releasePolicy": [
-            "environment catalog entries describe humidity, thermal, coolant, chip, utility, extraction, vibration, and metrology-environment evidence, not certified facility qualifications",
-            "machine-ready release remains blocked until material conditioning, ambient/process utilities, extraction, thermal stability, monitoring, inspection environment, and signoff evidence clear",
-            "humidity, drying, coolant, extraction, utility, vibration, temperature, and metrology outcomes are retained as MDP/POMDP/neural learning signals"
-        ],
-        "environmentContracts": entries
-    })
+    environment_catalog_content::response(
+        entries,
+        environment_families,
+        machine_kinds,
+        condition_scopes,
+    )
 }
 
 async fn environment_catalog_http() -> impl IntoResponse {
@@ -95167,60 +93963,12 @@ fn provenance_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.provenance-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /provenance/catalog", "GET /fabrication/provenance/catalog"],
-        "provenanceFamilyCount": entries.len(),
-        "provenanceFamilies": provenance_families,
-        "machineKinds": machine_kinds,
-        "evidenceScopes": evidence_scopes,
-        "planningRoutes": [
-            "POST /provenance/plan",
-            "POST /fabrication/provenance/plan",
-            "POST /design/import/review",
-            "POST /fabrication/design/import/review",
-            "POST /instructions/validate",
-            "POST /fabrication/instructions/validate",
-            "POST /release/preview",
-            "POST /fabrication/release/preview"
-        ],
-        "reviewRoutes": [
-            "GET /jobs/:job_id/release-bundle",
-            "GET /fabrication/jobs/:job_id/release-bundle",
-            "GET /learning/outcomes",
-            "GET /fabrication/learning/outcomes",
-            "POST /outcomes",
-            "POST /fabrication/outcomes"
-        ],
-        "responseSurfaces": [
-            "designInputReview.conversionPlan",
-            "designPackage.parts",
-            "materialPlan.routeRequirements",
-            "machineCodePackage.programs",
-            "qualityPlan.measurementTargets",
-            "releasePackagePlan.packages",
-            "learning.policySnapshot",
-            "learning.outcomes",
-            "machineRelease.blockers"
-        ],
-        "artifactSurfaces": [
-            "design-package",
-            "material-plan",
-            "machine-code-package",
-            "inspection-report",
-            "release-bundle",
-            "mdp-request.artifacts.provenanceLedger"
-        ],
-        "releasePolicy": [
-            "provenance catalog entries describe design, material, machine-program, inspection, release, and learning lineage evidence, not certified quality records",
-            "machine-ready release remains blocked until source artifacts, material lots, generated or imported programs, inspection results, release bundles, and learning outcomes have traceable hashes, revisions, review status, and signoff evidence",
-            "artifact hashes, conversion logs, lot records, controller program digests, inspection dispositions, nonconformance decisions, and learning outcome lineage are retained as MDP/POMDP/neural learning signals"
-        ],
-        "provenanceContracts": entries
-    })
+    provenance_catalog_content::response(
+        entries,
+        provenance_families,
+        machine_kinds,
+        evidence_scopes,
+    )
 }
 
 async fn provenance_catalog_http() -> impl IntoResponse {
@@ -95535,58 +94283,7 @@ fn as_built_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.as-built-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /as-built/catalog", "GET /fabrication/as-built/catalog"],
-        "asBuiltFamilyCount": entries.len(),
-        "asBuiltFamilies": as_built_families,
-        "machineKinds": machine_kinds,
-        "evidenceScopes": evidence_scopes,
-        "planningRoutes": [
-            "POST /quality/result",
-            "POST /fabrication/quality/result",
-            "POST /handoff/result",
-            "POST /fabrication/handoff/result",
-            "POST /release/preview",
-            "POST /fabrication/release/preview"
-        ],
-        "reviewRoutes": [
-            "GET /quality/catalog",
-            "GET /fabrication/quality/catalog",
-            "GET /provenance/catalog",
-            "GET /fabrication/provenance/catalog",
-            "GET /learning/outcomes",
-            "GET /fabrication/learning/outcomes"
-        ],
-        "responseSurfaces": [
-            "qualityResult.measurements",
-            "toolpathResult.simulationChecks",
-            "releasePackagePlan.requiredArtifacts",
-            "machineRelease.blockers",
-            "decompositionPlan.parts",
-            "interfaceControlPlan.controls",
-            "handoffResult.evidence",
-            "learning.outcomes"
-        ],
-        "artifactSurfaces": [
-            "as-built-deviation-map",
-            "as-built-scan-mesh",
-            "as-built-cmm-report",
-            "as-built-interface-fit-record",
-            "as-built-learning-observations",
-            "mdp-request.artifacts.asBuilt"
-        ],
-        "releasePolicy": [
-            "as-built catalog entries describe actual geometry evidence contracts, not certified metrology acceptance",
-            "machine-ready release remains blocked while scan, CMM, deviation-map, datum-alignment, interface-fit, or as-built lineage artifacts are absent or unresolved",
-            "split/combine and hybrid-route release requires as-built interface evidence showing the recomposed actual geometry still satisfies the intended design package",
-            "as-built deviations are retained for MDP/POMDP/neural workers so future planning can learn when to add inspection, split parts, change machines, reroute features, or require human signoff"
-        ],
-        "asBuiltContracts": entries
-    })
+    as_built_catalog_content::response(entries, as_built_families, machine_kinds, evidence_scopes)
 }
 
 async fn as_built_catalog_http() -> impl IntoResponse {
@@ -97673,67 +96370,7 @@ fn monitoring_catalog_response() -> Value {
             .map(ToOwned::to_owned)
     }));
 
-    json!({
-        "ok": true,
-        "service": SERVICE_NAME,
-        "schemaVersion": "dd.fabrication.monitoring-catalog.v1",
-        "serviceSchemaVersion": SCHEMA_VERSION,
-        "routes": ["GET /monitoring/catalog", "GET /fabrication/monitoring/catalog"],
-        "monitoringContractCount": contracts.len(),
-        "families": families,
-        "planningRoutes": ["POST /plan", "POST /fabrication/plan"],
-        "resultRoutes": ["POST /monitoring/result", "POST /fabrication/monitoring/result"],
-        "instructionAnalysisRoutes": ["POST /instructions/analyze", "POST /fabrication/instructions/analyze"],
-        "responseSurfaces": [
-            "monitoringPlan",
-            "monitoringPlan.monitorPoints",
-            "monitoringPlan.monitorPoints.channels",
-            "monitoringPlan.monitorPoints.expectedSignals",
-            "monitoringPlan.monitorPoints.requiredEvidence",
-            "monitoringPlan.alertRules",
-            "monitoringPlan.recoveryActions",
-            "monitoringPlan.releaseGates",
-            "monitoringResult.channels",
-            "monitoringResult.alerts",
-            "monitoringResult.recoveryActions",
-            "monitoringResult.operatorInterventions",
-            "machineRelease.blockers",
-            "operatorInterventionPlan.requiredOperatorActions",
-            "validation.failureBoundaries",
-            "releaseProbePlan.probes"
-        ],
-        "artifactSurfaces": [
-            "monitoring-plan",
-            "monitoring-result",
-            "monitoring-alerts",
-            "monitoring-recovery-actions",
-            "monitoring-operator-interventions",
-            "parametric-design.monitoringPlan",
-            "mdp-request.artifacts.monitoringPlan",
-            "mdp-request.artifacts.monitoringResult",
-            "analysis-mdp-request.artifacts.monitoringPlan"
-        ],
-        "learningSurfaces": [
-            "monitoringPlan.learningObservations",
-            "monitoringResult.learning.observations",
-            "learning.interventionSignals",
-            "pomdpBeliefState.hiddenStates",
-            "neuralTrainingCorpus.examples",
-            "monitoring-route:*",
-            "monitoring-alert:*",
-            "monitoring-blockers:*",
-            "monitoring-result:*",
-            "monitoring-recovery:*",
-            "verify-monitoring-plan-*",
-            "clear-monitoring-blockers-*"
-        ],
-        "releasePolicy": [
-            "monitoring catalog entries describe runtime evidence contracts, not certified safety systems or controller restart procedures",
-            "machine-ready and unattended release remain blocked while monitor channels, alert rules, safe-stop behavior, recovery actions, or restart authority are unresolved",
-            "monitoring and recovery observations are retained for MDP/POMDP/neural workers so future planning can learn when to add sensors, split jobs, require operators, or improve generated instructions"
-        ],
-        "monitoringContracts": contracts
-    })
+    monitoring_catalog_content::response(contracts, families)
 }
 
 fn monitoring_planning_response(
