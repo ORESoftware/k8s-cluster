@@ -117,7 +117,7 @@ spec:
             - name: GOMEMLIMIT
               value: 7168MiB
             - name: GOMAXPROCS
-              value: '4'
+              value: '6'
             - name: GOGC
               value: '300'
             - name: GCS_PPROF_ENABLED
