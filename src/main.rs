@@ -80,6 +80,14 @@ async fn main() -> anyhow::Result<()> {
     // BILLING_CDC_NATS_URL is set — see src/cdc.rs).
     cdc::spawn();
 
+    // Inbound NATS sync-command subscriber (silent no-op when the event bus
+    // is disabled). Turns dd.remote.billing.commands.sync messages into the
+    // same one-shot sync.connection jobs the HTTP "Sync now" path enqueues.
+    {
+        let s = state.clone();
+        tokio::spawn(async move { events::run_sync_command_loop(s).await });
+    }
+
     let app = api::build_router(state);
     // Strip trailing slashes before routing so `/admin/` matches the same
     // handler as `/admin` (which `Router::nest` does not provide on its own).
@@ -99,6 +107,21 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
+}
+
+/// Build the NATS event bus from config. Off unless
+/// `BILLING_NATS_PUBLISH_ENABLED` is set and a URL resolves; a failed
+/// connection degrades to a no-op bus (logged) rather than aborting boot.
+async fn build_event_bus(cfg: &Config) -> events::EventBus {
+    if cfg.nats_publish_enabled {
+        if let Some(url) = &cfg.nats_url {
+            return events::EventBus::connect(url, cfg.nats_max_payload_bytes).await;
+        }
+        tracing::warn!(
+            "BILLING_NATS_PUBLISH_ENABLED=true but no BILLING_NATS_URL/NATS_URL set; event bus disabled"
+        );
+    }
+    events::EventBus::disabled()
 }
 
 fn init_tracing() {
