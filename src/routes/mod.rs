@@ -41,7 +41,7 @@ use crate::{
 };
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
+    let api = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
@@ -78,9 +78,22 @@ pub fn router(state: AppState) -> Router {
         .route("/api/usacc/contracts/simulate", post(simulate_contract))
         .route("/api/usacc/simulations", post(run_simulation_route))
         .route("/api/usacc/simulations/:id", get(get_simulation_run))
+        // Permissive CORS is for cross-origin JSON API consumers and is
+        // scoped to the API routes here, before the merge, so it does NOT
+        // wrap the same-origin-only `/app` console.
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+        .layer(TraceLayer::new_for_http());
+
+    // The HTMX operator console is a parallel surface over the same pool.
+    // Its security middleware (and its own trace layer) are scoped to
+    // `/app` because they are attached inside `ui::router` before the merge.
+    let app = if state.config.app_ui_enabled {
+        api.merge(crate::ui::router(&state))
+    } else {
+        api
+    };
+
+    app.with_state(state)
 }
 
 async fn root(State(state): State<AppState>) -> Json<Value> {

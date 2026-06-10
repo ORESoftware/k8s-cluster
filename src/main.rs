@@ -11,6 +11,7 @@ mod models;
 mod routes;
 mod simulation;
 mod state;
+mod ui;
 
 use std::net::SocketAddr;
 
@@ -25,11 +26,17 @@ const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     init_tracing();
 
+    // Fail loudly at startup if the vendored htmx bytes drift from the
+    // pinned SRI hash, rather than letting browsers refuse the script.
+    ui::verify_asset_integrity();
+
     let config = Config::from_env();
     tracing::info!(
         host = %config.host,
         port = config.port,
         database_configured = config.database_url.is_some(),
+        app_ui_enabled = config.app_ui_enabled,
+        app_base_path = %config.app_base_path,
         "usacc-rest-api-backend-rs starting"
     );
 
