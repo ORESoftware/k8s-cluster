@@ -107,3 +107,35 @@ cargo test            # 11 passed (incl. R1 + R7 regression tests)
 cargo clippy          # clean
 KUBECTL_NO_CONFIRM=1 kubectl kustomize k8s/ec2   # 7 resources
 ```
+
+## Pass 3 (2026-06-09)
+
+Audited the surfaces the first two passes didn't: the merged
+`dd-runtime-config-client` `/internal/*` router, the vendored NATS wire parser,
+and the gateway bearer check. Two fixes here, both small:
+
+- **RC1 (Med, shared lib `runtime-config-client-rs`).** `register_with_control_plane`
+  built its reqwest client without a redirect policy. That POST carries the
+  `X-Server-Auth` control-plane secret, and reqwest only strips the standard
+  `Authorization`/`Cookie` headers on a cross-origin redirect — a **custom**
+  header like `X-Server-Auth` is forwarded to the redirect target. A redirecting
+  `RUNTIME_CONFIG_REGISTER_URL` would leak the secret. Fixed with
+  `.redirect(reqwest::redirect::Policy::none())`. Blast radius: every Rust
+  service using this lib (all strictly safer).
+- **RC3 (Low, this server).** `main()` applied `DefaultBodyLimit::max(1 MiB)`
+  *before* `.merge(runtime_config_client::router())`, so the merged `/internal/*`
+  routes fell back to axum's 2 MiB default instead of the intended 1 MiB. Moved
+  the layer after the merge. (The routes are `X-Server-Auth`-gated, so this is
+  hygiene, not a hole.)
+
+Verified sound, left as-is: the gateway validates the IDE bearer with an nginx
+`map` exact-match on `"Bearer <token>"` (default-deny) and strips it before
+proxying to the pod — no bypass. The runtime-config auth uses a constant-time
+compare. `GET /internal/runtime-config` is unauthenticated by shared-lib design
+(non-secret runtime toggles) — fine as long as nothing secret is pushed into the
+snapshot. The vendored `dd_nats.erl` parser `binary_to_integer`s wire-supplied
+lengths and grows its buffer unbounded, but the broker is a trusted, egress-
+restricted in-cluster service and a crash only triggers a supervised reconnect;
+left unchanged to stay byte-identical with the `gleamlang-presence-server` source.
+
+`cargo test` 11 passed, clippy clean.

@@ -207,3 +207,22 @@ cardinality DoS). One new fix:
   not be retargetable). Mirrors the Rust `.redirect(Policy::none())` fix.
 
 Build + 14 tests still green.
+
+## Pass 3 (2026-06-09)
+
+Audited the merged `dd-runtime-config-client` `/internal/*` surface. One fix:
+
+- **RC4 (defect, shared lib `runtime-config-client-gleam`).** `escape_json` in
+  `dd_runtime_config_client.gleam` was a no-op (returned its input) despite its
+  name, while being used to embed an error `reason` into a JSON error envelope.
+  Today the reasons are fixed FFI strings (no quotes), so it was latent, but a
+  function named `escape_json` must escape — implemented the standard
+  backslash/quote/control-char escaping. Blast radius: every Gleam service using
+  this lib (strictly safer).
+
+The Gleam-side equivalents of the Rust pass-3 findings do **not** apply: the
+Gleam register path is a raw `gen_tcp` HTTP/1.1 request that ignores 3xx (no
+redirect-secret-leak), and `handle_apply` already bounds the body to 1 MiB via
+`mist.read_body(req, 1_048_576)`. Auth uses a constant-time compare.
+
+Build + 14 tests still green.
