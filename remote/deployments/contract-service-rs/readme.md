@@ -59,6 +59,10 @@ action may enact them.
 - `/settle` and `/resolve` require `SOLANA_SETTLEMENT_ENABLED`/`SOLANA_RESOLUTION_ENABLED` plus
   `CONTRACT_SETTLEMENT_AUTH_SECRET` (a separate secret from the raw-send secret), checked in constant
   time.
+- **Mainnet second gate.** When `SOLANA_CLUSTER=mainnet-beta`, the service refuses to start if any
+  broadcast capability (`SOLANA_SEND_ENABLED`, `SOLANA_SETTLEMENT_ENABLED`, or
+  `SOLANA_RESOLUTION_ENABLED`) is enabled without an explicit `SOLANA_MAINNET_SETTLEMENT_ENABLED=true`,
+  so a single misconfigured flag cannot move real funds. Mirrors the dd-escrow-rs mainnet gate.
 - **NATS-initiated broadcast is off by default.** NATS messages carry no auth header, so the `settle`/
   `resolve` subjects only validate, simulate, and confirm unless `CONTRACT_NATS_SETTLEMENT_ENABLED=true`
   (which additionally requires `SOLANA_SEND_ENABLED=true`).

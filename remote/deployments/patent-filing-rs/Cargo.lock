@@ -147,6 +147,7 @@ version = "0.2.0"
 dependencies = [
  "axum",
  "dd-runtime-config-client",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

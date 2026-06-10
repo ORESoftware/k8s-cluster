@@ -18,8 +18,9 @@ On-chain `simulate`/`send` are routed through a pluggable backend selected by
   header from `CONTRACT_SERVICE_SEND_AUTH_SECRET`. The escrow service keeps all of its local policy
   gates (settlement enabled, auth header, intent + resolution validation) and only delegates the raw
   RPC step, so contract-service stays the single Solana egress point in the cluster.
-- `solana-rpc` - calls Solana JSON-RPC (`SOLANA_RPC_URL`) directly, the original behavior, kept as a
-  fallback.
+- `solana-rpc` - calls Solana JSON-RPC (`SOLANA_RPC_URL`) directly, the original behavior. Kept as a
+  fallback, but the hardened NetworkPolicy grants no public egress, so using it requires re-adding a
+  `443` egress rule.
 
 `GET /capabilities` and `GET /status` report the active backend and contract-service reachability.
 
@@ -47,8 +48,9 @@ that do not belong to the selected kind.
 
 - `GET /healthz` - liveness/readiness probe.
 - `GET /metrics` - Prometheus metrics.
-- `GET /status` - reports the active settlement backend, probes `dd-contract-service` health when
-  delegating, and checks `getHealth`/`getVersion` against `SOLANA_RPC_URL`.
+- `GET /status` - reports the active settlement backend. When delegating it probes
+  `dd-contract-service` health; only the `solana-rpc` backend probes `getHealth`/`getVersion`
+  against `SOLANA_RPC_URL` directly (which needs public egress).
 - `GET /types` - escrow kind catalog.
 - `GET /capabilities` - runtime settlement posture, limits, and supported escrow kinds.
 - `GET /schema` - JSON Schema sketch for `solana.escrow.v1`.
@@ -107,8 +109,10 @@ can be checked against the escrow parties.
   the contract-service `SOLANA_SEND_ENABLED=true` + matching `x-contract-send-auth`.
 - The Kubernetes deployment runs as a non-root UID, disables service-account token mounting, uses a
   read-only root filesystem, and limits ingress/egress with NetworkPolicy. Egress is restricted to
-  DNS, NATS, runtime-config, `dd-contract-service:8101`, and public HTTPS (retained for the
-  `solana-rpc` fallback backend and `/status` probes).
+  DNS, NATS, runtime-config, and `dd-contract-service:8101` only — the pod has **no public-internet
+  egress**, so `dd-contract-service` is the sole Solana egress point. `/status` probes the contract
+  service's health rather than Solana RPC when delegating. The `solana-rpc` fallback backend is
+  inert under this policy unless a public `443` egress rule is re-added.
 
 ## NATS API
 
