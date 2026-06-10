@@ -113,6 +113,17 @@ impl AppState {
         guard.insert(key.to_string(), now);
         true
     }
+
+    /// Releases a previously claimed idempotency key so a legitimately failed
+    /// broadcast can be retried with the same request id. Safe because Solana
+    /// dedupes resubmissions of the same signed transaction by signature.
+    fn release_idempotency_key(&self, key: &str) {
+        let mut guard = match self.idempotency.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.remove(key);
+    }
 }
 
 #[derive(Default)]
@@ -2401,11 +2412,14 @@ async fn confirm_http(
         .poll_interval_ms
         .unwrap_or(DEFAULT_CONFIRM_POLL_INTERVAL_MS);
 
-    let mut outcomes = Vec::with_capacity(signatures.len());
-    for signature in &signatures {
-        outcomes
-            .push(confirm_signature(&state, signature, &target, timeout_ms, poll_interval_ms).await);
-    }
+    // Confirm the batch concurrently so wall-clock is bounded by a single
+    // timeout window, not the sum across signatures.
+    let outcomes = futures_util::future::join_all(
+        signatures
+            .iter()
+            .map(|signature| confirm_signature(&state, signature, &target, timeout_ms, poll_interval_ms)),
+    )
+    .await;
     let all_reached = outcomes.iter().all(|outcome| outcome.reached);
     json_response(
         StatusCode::OK,
@@ -2564,8 +2578,9 @@ async fn settle_http(
         };
 
     // Idempotency: only an explicitly provided request id guards a broadcast.
-    if let Some(key) = explicit_request_id(request.request_id.as_ref()) {
-        if !state.claim_idempotency_key(&format!("settle:{key}")) {
+    let idem_key = explicit_request_id(request.request_id.as_ref()).map(|key| format!("settle:{key}"));
+    if let Some(key) = &idem_key {
+        if !state.claim_idempotency_key(key) {
             state
                 .metrics
                 .settlement_idempotent_hits_total
@@ -2582,11 +2597,17 @@ async fn settle_http(
             );
         }
     }
+    let release = |state: &AppState| {
+        if let Some(key) = &idem_key {
+            state.release_idempotency_key(key);
+        }
+    };
 
     let tx = core.tx_request(false);
     let send = match send_params(&tx, encoding, state.allow_skip_preflight) {
         Ok(params) => params,
         Err(error) => {
+            release(&state);
             state
                 .metrics
                 .settlement_errors_total
@@ -2600,6 +2621,7 @@ async fn settle_http(
     let signature_value = match solana_rpc(&state, "sendTransaction", send).await {
         Ok(value) => value,
         Err(error) => {
+            release(&state);
             state
                 .metrics
                 .settlement_errors_total
@@ -2619,6 +2641,17 @@ async fn settle_http(
         }
     };
     let signature = signature_value.as_str().unwrap_or_default().to_string();
+    if signature.is_empty() {
+        release(&state);
+        state
+            .metrics
+            .settlement_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::BAD_GATEWAY,
+            json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
+        );
+    }
     let confirmation = confirm_signature(
         &state,
         &signature,
@@ -2753,8 +2786,10 @@ async fn resolve_http(
         );
     }
 
-    if let Some(key) = explicit_request_id(request.request_id.as_ref()) {
-        if !state.claim_idempotency_key(&format!("resolve:{key}")) {
+    let idem_key =
+        explicit_request_id(request.request_id.as_ref()).map(|key| format!("resolve:{key}"));
+    if let Some(key) = &idem_key {
+        if !state.claim_idempotency_key(key) {
             state
                 .metrics
                 .settlement_idempotent_hits_total
@@ -2771,11 +2806,17 @@ async fn resolve_http(
             );
         }
     }
+    let release = |state: &AppState| {
+        if let Some(key) = &idem_key {
+            state.release_idempotency_key(key);
+        }
+    };
 
     let tx = core.tx_request(false);
     let send = match send_params(&tx, encoding, state.allow_skip_preflight) {
         Ok(params) => params,
         Err(error) => {
+            release(&state);
             state
                 .metrics
                 .resolution_errors_total
@@ -2789,6 +2830,7 @@ async fn resolve_http(
     let signature_value = match solana_rpc(&state, "sendTransaction", send).await {
         Ok(value) => value,
         Err(error) => {
+            release(&state);
             state
                 .metrics
                 .resolution_errors_total
@@ -2808,6 +2850,17 @@ async fn resolve_http(
         }
     };
     let signature = signature_value.as_str().unwrap_or_default().to_string();
+    if signature.is_empty() {
+        release(&state);
+        state
+            .metrics
+            .resolution_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::BAD_GATEWAY,
+            json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
+        );
+    }
     let confirmation = confirm_signature(
         &state,
         &signature,
@@ -3946,6 +3999,7 @@ async fn nats_settlement_flow(
     event_type: &str,
     core: &SettlementCore,
     confirm: &Option<ConfirmOptions>,
+    idem_key: Option<String>,
     mut extra: Map<String, Value>,
 ) {
     let (cluster, encoding, decoded_bytes) =
@@ -4001,22 +4055,31 @@ async fn nats_settlement_flow(
         return;
     }
 
-    // Broadcast path: guard double-broadcast on explicit ids.
-    if !state.claim_idempotency_key(&format!("nats:{message_kind}:{req_id}")) {
-        state
-            .metrics
-            .settlement_idempotent_hits_total
-            .fetch_add(1, Ordering::Relaxed);
-        outcome.insert("idempotent".to_string(), json!(true));
-        outcome.insert("broadcast".to_string(), json!(false));
-        publish_settlement_outcome(state, Value::Object(outcome)).await;
-        return;
+    // Broadcast path: guard double-broadcast only on explicit request ids
+    // (an absent id must not collapse distinct messages onto one key).
+    if let Some(key) = &idem_key {
+        if !state.claim_idempotency_key(key) {
+            state
+                .metrics
+                .settlement_idempotent_hits_total
+                .fetch_add(1, Ordering::Relaxed);
+            outcome.insert("idempotent".to_string(), json!(true));
+            outcome.insert("broadcast".to_string(), json!(false));
+            publish_settlement_outcome(state, Value::Object(outcome)).await;
+            return;
+        }
     }
+    let release = |state: &AppState| {
+        if let Some(key) = &idem_key {
+            state.release_idempotency_key(key);
+        }
+    };
 
     let send_tx = core.tx_request(false);
     let send = match send_params(&send_tx, encoding, state.allow_skip_preflight) {
         Ok(params) => params,
         Err(error) => {
+            release(state);
             outcome.insert("broadcast".to_string(), json!(false));
             outcome.insert("error".to_string(), json!(error));
             publish_settlement_outcome(state, Value::Object(outcome)).await;
@@ -4027,6 +4090,17 @@ async fn nats_settlement_flow(
     match solana_rpc(state, "sendTransaction", send).await {
         Ok(signature_value) => {
             let signature = signature_value.as_str().unwrap_or_default().to_string();
+            if signature.is_empty() {
+                release(state);
+                outcome.insert("broadcast".to_string(), json!(false));
+                outcome.insert(
+                    "error".to_string(),
+                    json!("sendTransaction did not return a signature"),
+                );
+                publish_settlement_outcome(state, Value::Object(outcome)).await;
+                publish_contract_event(state, event_type, req_id, false).await;
+                return;
+            }
             let (target, timeout_ms, poll_ms) =
                 resolve_confirm_target(confirm).unwrap_or_else(|_| {
                     (
@@ -4047,6 +4121,7 @@ async fn nats_settlement_flow(
             publish_contract_event(state, event_type, req_id, reached).await;
         }
         Err(error) => {
+            release(state);
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             outcome.insert("broadcast".to_string(), json!(false));
             outcome.insert("error".to_string(), json!(error.clone()));
@@ -4107,6 +4182,8 @@ async fn process_nats_settle(state: &AppState, payload: &[u8]) {
             extra.insert("action".to_string(), json!(request.action.as_str()));
             extra.insert("escrowId".to_string(), json!(request.escrow_id));
             extra.insert("contractId".to_string(), json!(request.contract_id));
+            let idem_key = explicit_request_id(request.request_id.as_ref())
+                .map(|key| format!("nats:settle:{key}"));
             nats_settlement_flow(
                 state,
                 &req_id,
@@ -4115,6 +4192,7 @@ async fn process_nats_settle(state: &AppState, payload: &[u8]) {
                 "solana.contract.settlement",
                 &request.core(),
                 &request.confirm,
+                idem_key,
                 extra,
             )
             .await;
@@ -4157,6 +4235,8 @@ async fn process_nats_resolve(state: &AppState, payload: &[u8]) {
             extra.insert("escrowId".to_string(), json!(request.escrow_id));
             extra.insert("disputeId".to_string(), json!(request.dispute_id));
             extra.insert("arbiter".to_string(), json!(request.arbiter));
+            let idem_key = explicit_request_id(request.request_id.as_ref())
+                .map(|key| format!("nats:resolve:{key}"));
             nats_settlement_flow(
                 state,
                 &req_id,
@@ -4165,6 +4245,7 @@ async fn process_nats_resolve(state: &AppState, payload: &[u8]) {
                 "solana.contract.resolution",
                 &request.core(),
                 &request.confirm,
+                idem_key,
                 extra,
             )
             .await;

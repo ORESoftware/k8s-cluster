@@ -1,8 +1,31 @@
 import 'package:dd_dart_server/server/conversation_registry.dart';
+import 'package:dd_dart_server/server/isolate_session.dart';
 import 'package:dd_dart_server/server/presence.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('clockIsoForSecond', () {
+    test('truncates to whole seconds so cache keys collide within a second',
+        () {
+      final a = clockIsoForSecond(DateTime.utc(2026, 6, 9, 12, 34, 56, 789));
+      final b = clockIsoForSecond(DateTime.utc(2026, 6, 9, 12, 34, 56, 12));
+      // Different millis in the same second → identical key (cache hit).
+      expect(a, b);
+      expect(a, '2026-06-09T12:34:56.000Z');
+    });
+
+    test('crossing a second boundary changes the key', () {
+      final a = clockIsoForSecond(DateTime.utc(2026, 6, 9, 12, 34, 56, 999));
+      final b = clockIsoForSecond(DateTime.utc(2026, 6, 9, 12, 34, 57, 1));
+      expect(a, isNot(b));
+    });
+
+    test('normalises a local DateTime to UTC', () {
+      final local = DateTime.utc(2026, 6, 9, 12, 0, 0).toLocal();
+      expect(clockIsoForSecond(local), '2026-06-09T12:00:00.000Z');
+    });
+  });
+
   group('Presence display-name lifecycle', () {
     test('drops the display name once the user has no live sessions', () {
       final presence = Presence();

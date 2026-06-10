@@ -233,6 +233,14 @@ Future<void> main(List<String> args) async {
   // AGENTS.md access posture); never enable on an Internet-exposed path.
   final wsDebugCrash = const {'1', 'true'}.contains(
       Platform.environment['WS_DEBUG_CRASH']?.toLowerCase().trim());
+  // Optional shared-secret gate on the mutating/sensitive admin surface
+  // (`/dart/admin/*`, incl. the debug crash-host hook). Defense-in-depth on
+  // top of the "admin port is not routed publicly" posture. Unset/empty
+  // disables the check (current behaviour). Probes (`/healthz`, `/readyz`)
+  // and `/metrics` are intentionally NOT gated so Prometheus keeps scraping
+  // without credentials. Callers present the token as `Authorization: Bearer
+  // <token>` or `X-Admin-Token: <token>`.
+  final adminAuthToken = Platform.environment['ADMIN_AUTH_TOKEN']?.trim();
 
   // ---- MDP isolate-pool autotuner config --------------------------------
   final mdpMode = _parseMdpMode(Platform.environment['WS_MDP_MODE']);
@@ -898,6 +906,16 @@ Future<void> main(List<String> args) async {
   // ---- Admin request loop ------------------------------------------------
   await for (final req in adminServer) {
     metrics.inc('dart_admin_requests_total');
+    // Gate the admin surface behind the shared secret when configured. Only
+    // `/dart/admin/*` is protected; probes + `/metrics` fall through so the
+    // kubelet and Prometheus keep working uncredentialed.
+    if (req.uri.path.startsWith('/dart/admin') &&
+        !_adminAuthorized(req, adminAuthToken)) {
+      metrics.inc('dart_admin_auth_rejected_total');
+      await _plain(req, 'unauthorized\n',
+          status: HttpStatus.unauthorized);
+      continue;
+    }
     // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
     // shard carrying the most sessions and tell it to hard-kill one host
     // isolate, simulating a crash so we can measure the real blast radius.
@@ -1135,6 +1153,31 @@ Future<void> _routeAdmin(
 
   metrics.inc('dart_http_404_total');
   await _plain(req, 'not_found\n', status: HttpStatus.notFound);
+}
+
+/// True when [req] may touch the admin surface. Auth is disabled (always
+/// true) when [token] is null/empty. Otherwise the request must present the
+/// token as `Authorization: Bearer <token>` or `X-Admin-Token: <token>`.
+/// Comparison is length-then-constant-time to avoid leaking the token via
+/// response timing on the (already non-public) admin port.
+bool _adminAuthorized(HttpRequest req, String? token) {
+  if (token == null || token.isEmpty) return true;
+  final bearer = req.headers.value('authorization');
+  final presented = (bearer != null && bearer.startsWith('Bearer '))
+      ? bearer.substring(7).trim()
+      : req.headers.value('x-admin-token')?.trim();
+  if (presented == null) return false;
+  return _constantTimeEquals(presented, token);
+}
+
+/// Constant-time string compare (length-independent short-circuit only).
+bool _constantTimeEquals(String a, String b) {
+  if (a.length != b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+  }
+  return diff == 0;
 }
 
 Future<void> _plain(

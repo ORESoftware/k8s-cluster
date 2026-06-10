@@ -685,6 +685,9 @@ prefixed `dart_*`:
 | `dart_wss_upgrade_total`                    | counter | WS upgrade requests                        |
 | `dart_wss_upgrade_rejected_origin_total`    | counter | WS upgrades refused by the `WS_ALLOWED_ORIGINS` allowlist (CSWSH) |
 | `dart_conv_create_refused_total`            | counter | conversation creation refused at `kMaxConversationsPerShard` |
+| `dart_admin_auth_rejected_total`            | counter | `/dart/admin/*` requests rejected by the `ADMIN_AUTH_TOKEN` gate |
+| `dart_clock_renders_total`                  | counter | clock fragments actually Jaspr-rendered (shared-render cache misses) |
+| `dart_clock_render_cache_hits_total`        | counter | clock fragments served from the shared per-host render cache |
 | `dart_sessions_spawned_total`               | counter | isolates ever spawned                      |
 | `dart_sessions_opened_total`                | counter | isolates that completed boot               |
 | `dart_sessions_closed_total`                | counter | clean session shutdown                     |
@@ -853,7 +856,16 @@ so every accepted peer is treated as hostile input and bounded:
   `dart_conv_create_refused_total`) and members per conversation
   (`maxMembersPerConversation`, 10K); `Presence` releases a user's
   display-name entry once their last session disconnects so `_displayNames`
-  can't leak one row per connection.
+  can't leak one row per connection; and each session trims its lobby / echo
+  buffers at store time (`_maxLobbyRows` / `_maxHistoryRows`, 64) so a
+  long-lived peer on a busy lobby can't grow its in-memory buffer unbounded
+  (only the last 16 / 8 are ever rendered).
+* **Admin auth (defense-in-depth)** — set `ADMIN_AUTH_TOKEN` to require
+  `Authorization: Bearer <token>` (or `X-Admin-Token`) on every `/dart/admin/*`
+  route, including the chaos crash-host hook; rejects count as
+  `dart_admin_auth_rejected_total`. Probes and `/metrics` stay open so the
+  kubelet and Prometheus scrape uncredentialed. Unset = open (current
+  behaviour), so it's safe to enable incrementally.
 * **Origin allowlist (CSWSH)** — the same-origin policy does *not* block
   cross-origin WebSocket handshakes, so a browser page on any site could
   otherwise open `/dart/wss` and drive the protocol as the victim. Set

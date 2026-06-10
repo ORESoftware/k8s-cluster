@@ -65,6 +65,19 @@ const String contractsSolanaValidateQueueGroup = "dd-contract-service";
 const String cronPromptsSubject = "dd.remote.cron.prompts";
 const String cronPromptsStream = "DD_REMOTE_CRON";
 
+/// Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.
+/// Service: dd-data-viz-rs
+const String dataVizAlertsEventsSubject = "dd.remote.dataviz.alerts.events";
+
+/// Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.
+/// Service: dd-data-viz-rs
+const String dataVizNotificationsDispatchSubject = "dd.remote.dataviz.notifications.dispatch";
+const String dataVizNotificationsDispatchQueueGroup = "dd-data-viz-notifiers";
+
+/// Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.
+/// Service: dd-data-viz-rs
+const String dataVizPublishEventsSubject = "dd.remote.dataviz.publish.events";
+
 /// Discrete-event simulation results. Default for DES_RESULT_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 const String desResultsSubject = "dd.remote.des.results";
@@ -252,6 +265,23 @@ const String mlDeadLetterSubject = "dd.remote.ml.deadletter";
 /// Derived ML features (z-scores, EWMA baselines) published by ai-ml-pipeline. Default for ML_FEATURE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 const String mlFeaturesSubject = "dd.remote.ml.features";
+
+/// Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. Default for MUSIC_GENERATION_REQUEST_SUBJECT.
+/// Service: dd-music-rs
+const String musicGenerationRequestsSubject = "dd.remote.music.generation.requests";
+const String musicGenerationRequestsQueueGroup = "dd-music-rs";
+
+/// Generation outcomes (published / discarded-below-listenability / failed) emitted after a generation sweep. Default for MUSIC_GENERATION_RESULT_SUBJECT.
+/// Service: dd-music-rs
+const String musicGenerationResultsSubject = "dd.remote.music.generation.results";
+
+/// Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it. Default for MUSIC_SONGS_PUBLISHED_SUBJECT.
+/// Service: dd-music-rs
+const String musicSongsPublishedSubject = "dd.remote.music.songs.published";
+
+/// Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). Default for MUSIC_VOTES_EVENT_SUBJECT.
+/// Service: dd-music-rs
+const String musicVotesEventsSubject = "dd.remote.music.votes.events";
 
 /// Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 /// Service: dd-remote-rest-api
@@ -700,6 +730,10 @@ const String billingServerQueueGroup = "dd-billing-server";
 /// Service: shared
 const String criticalEventsLoggerQueueGroup = "dd-runtime-critical-events";
 
+/// Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
+/// Service: dd-data-viz-rs
+const String dataVizNotificationDispatchQueueGroup = "dd-data-viz-notifiers";
+
 /// Shared queue group used by dd-economics-server replicas consuming forecast requests.
 /// Service: dd-economics-server
 const String economicsServerQueueGroup = "dd-economics-server";
@@ -711,6 +745,10 @@ const String lambdaRunnerQueueGroup = "dd-gleam-lambda-runner";
 /// Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
 /// Service: dd-ai-ml-pipeline
 const String mipSolverWorkersQueueGroup = "dd-in-house-mip-solver-node-workers";
+
+/// Shared queue group used by dd-music-rs replicas consuming generation requests.
+/// Service: dd-music-rs
+const String musicGenerationQueueGroup = "dd-music-rs";
 
 /// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 /// Service: dd-public-data-server

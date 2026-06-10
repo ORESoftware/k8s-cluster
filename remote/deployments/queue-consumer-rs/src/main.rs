@@ -1,8 +1,10 @@
 use std::{
     collections::HashSet,
+    collections::hash_map::DefaultHasher,
     env,
     error::Error,
     fs,
+    hash::{Hash, Hasher},
     path::PathBuf,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -22,6 +24,53 @@ const SERVICE_NAME: &str = "dd-remote-queue-consumer";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
 const LOG_SCOPE: &str = "dd-remote-queue-consumer";
+const DEFAULT_SERVER_SECRET: &str = "dd-k8s-home";
+const MAX_IDENTIFIER_LEN: usize = 200;
+// Caps the in-memory duplicate-suppression cache so a long-lived pod can't
+// grow it without bound. The on-disk receipt files remain the durable check;
+// this set is only a fast path, so trimming it is safe.
+const MAX_RECEIPT_CACHE: usize = 50_000;
+
+/// Reject identifiers that are empty, overlong, or carry characters that would
+/// let a NATS payload steer the REST request path (`/api/agents/threads/{id}/
+/// prepare`) or escape the receipts directory. Thread/task ids are UUIDs in
+/// the producer, so this never rejects legitimate traffic; it only blocks
+/// crafted values like `../../admin` or ids with embedded slashes/NULs.
+fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if value.len() > MAX_IDENTIFIER_LEN {
+        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+    }
+    if value.contains("..") {
+        return Err(format!("{label} must not contain '..'"));
+    }
+    if value
+        .chars()
+        .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
+    {
+        return Err(format!(
+            "{label} must not contain control characters, '/', or '\\'"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_task_identifiers(task: &QueueTaskMessage) -> Result<(), String> {
+    validate_identifier(&task.thread_id, "threadId")?;
+    validate_identifier(&task.task_id, "taskId")?;
+    Ok(())
+}
+
+/// Record a processed task id in the in-memory fast-path cache, trimming it if
+/// it has grown past the cap. The durable check is the on-disk receipt.
+fn record_receipt(receipts: &mut HashSet<String>, task_id: &str) {
+    if receipts.len() >= MAX_RECEIPT_CACHE {
+        receipts.clear();
+    }
+    receipts.insert(task_id.to_string());
+}
 
 fn env_value(key: &str, fallback: &str) -> String {
     env::var(key)

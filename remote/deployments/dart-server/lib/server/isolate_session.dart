@@ -26,6 +26,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 
 import 'package:jaspr/jaspr.dart';
@@ -44,6 +45,62 @@ const String _lobbyTopic = 'lobby';
 /// boot so they see identity churn + conversation directory mutations.
 const String _presenceTopic = 'presence';
 const String _convListTopic = 'conv-list';
+
+/// Hard caps on the number of rows a session retains in its per-session
+/// lobby / echo buffers. The render pipelines only ever show the last
+/// 16 / 8 rows, but the *stored* `BehaviorSubject` list was append-only —
+/// so a long-lived session on a busy lobby grew its in-memory buffer without
+/// bound (a slow per-session leak). We trim at store time to a small multiple
+/// of the render window; output is unchanged, memory is bounded.
+const int _maxLobbyRows = 64;
+const int _maxHistoryRows = 64;
+
+/// Trim [rows] to at most [max] newest entries (keeps the tail).
+List<T> _trimTail<T>(List<T> rows, int max) =>
+    rows.length <= max ? rows : rows.sublist(rows.length - max);
+
+// ---------------------------------------------------------------------------
+// Shared clock-render cache (perf A/B: WS_CLOCK_SHARED_RENDER).
+// ---------------------------------------------------------------------------
+//
+// The 1 Hz `Clock` fragment is the only steady-state emitter, and its HTML is
+// a pure function of the (second-granularity) UTC timestamp — identical for
+// every session. The original code re-ran a full Jaspr render per session per
+// tick, which is the dominant idle-CPU cost at scale (≈one render × live
+// sessions every `clockIntervalSeconds`). This module-level cache, shared by
+// every session on a host isolate, collapses that to ONE render per distinct
+// second across the whole host: the first session to want a given second
+// kicks off the render Future and all others await the same Future. Gated by
+// `WS_CLOCK_SHARED_RENDER` (default on) so the per-session-render arm can be
+// A/B'd; `dart_clock_renders_total` vs `dart_clock_render_cache_hits_total`
+// quantify the win.
+
+/// Whether sessions share the cached clock render. Read once per host isolate.
+final bool _clockSharedRender =
+    (Platform.environment['WS_CLOCK_SHARED_RENDER']?.toLowerCase().trim() ??
+            'true') !=
+        'false';
+
+/// iso-second → in-flight/settled render. Bounded to a few entries: across
+/// phase-spread tickers at most ~2 distinct seconds are live at any boundary.
+final _clockRenderCache = <String, Future<String>>{};
+
+void _clockCachePut(String iso, Future<String> html) {
+  if (_clockRenderCache.length >= 4) {
+    _clockRenderCache.remove(_clockRenderCache.keys.first);
+  }
+  _clockRenderCache[iso] = html;
+}
+
+/// UTC ISO-8601 timestamp truncated to whole seconds. Stable within a
+/// 1-second window so every session ticking in the same second produces the
+/// same cache key (`toIso8601String()` would otherwise include milliseconds
+/// and defeat the cache). Pure + top-level so it can be unit-tested.
+String clockIsoForSecond(DateTime now) {
+  final u = now.toUtc();
+  return DateTime.utc(u.year, u.month, u.day, u.hour, u.minute, u.second)
+      .toIso8601String();
+}
 
 /// Hard length caps on client-supplied text fields accepted from an HTMX
 /// trigger. Inbound frames are already byte-capped (`WS_MAX_INBOUND_BYTES`,
@@ -379,9 +436,7 @@ class Session {
         tickCount++;
         final clockInterval = _boot.clockIntervalSeconds;
         if (clockInterval > 0 && tickCount % clockInterval == 0) {
-          unawaited(_emitFragment(
-            Clock(DateTime.now().toUtc().toIso8601String()),
-          ));
+          unawaited(_emitClock());
         }
         _checkIdle();
       } catch (_) {
@@ -580,6 +635,36 @@ class Session {
     }
   }
 
+  /// Emit the 1 Hz clock fragment, sharing one Jaspr render per second across
+  /// every session on this host when `WS_CLOCK_SHARED_RENDER` is on (the
+  /// default). See the cache notes at the top of this file. Errors are
+  /// swallowed + counted exactly like [_emitFragment] so a render failure
+  /// drops one clock frame instead of escaping to the host loop.
+  Future<void> _emitClock() async {
+    try {
+      final iso = clockIsoForSecond(DateTime.now());
+      final String html;
+      if (_clockSharedRender) {
+        final pending = _clockRenderCache[iso];
+        if (pending != null) {
+          _send(const MetricEvent('dart_clock_render_cache_hits_total'));
+          html = await pending;
+        } else {
+          final fut = renderFragment(Clock(iso));
+          _clockCachePut(iso, fut);
+          _send(const MetricEvent('dart_clock_renders_total'));
+          html = await fut;
+        }
+      } else {
+        _send(const MetricEvent('dart_clock_renders_total'));
+        html = await renderFragment(Clock(iso));
+      }
+      _emitText(html);
+    } catch (_) {
+      _send(const MetricEvent('dart_session_render_errors_total'));
+    }
+  }
+
   // ---- HTMX trigger handling ---------------------------------------------
 
   void _handleHtmxTrigger(HtmxInbound msg) {
@@ -593,7 +678,7 @@ class Session {
       case 'echo':
         final text = _cap(msg.stringField('message').trim(), _maxTextLen);
         if (text.isEmpty) return;
-        _history.add([..._history.value, text]);
+        _history.add(_trimTail([..._history.value, text], _maxHistoryRows));
         _send(const MetricEvent('dart_session_echoes_total'));
       case 'say':
         final text = _cap(msg.stringField('text').trim(), _maxTextLen);
@@ -675,7 +760,7 @@ class Session {
     if (delivery.topic == _lobbyTopic && delivery.kind == 'chat.say') {
       final text = delivery.data['text'] as String? ?? '';
       if (text.isEmpty) return;
-      _lobby.add([
+      _lobby.add(_trimTail([
         ..._lobby.value,
         LobbyRow(
           name: (delivery.data['displayName'] as String?) ??
@@ -684,7 +769,7 @@ class Session {
           text: text,
           self: delivery.fromSessionId == _boot.sessionId,
         ),
-      ]);
+      ], _maxLobbyRows));
       _send(const MetricEvent('dart_session_lobby_deliveries_total'));
       return;
     }

@@ -140,10 +140,22 @@ function renderTypeScriptIndex() {
 }
 
 function renderDrizzleTypeScript(contract) {
+  // Tables that live in a non-public Postgres schema use Drizzle's `pgSchema("x").table(...)`
+  // builder; `pgSchema` is only imported when such a schema is present, so a public-only
+  // contract emits the exact same import line as before.
+  const customSchemas = [
+    ...new Set(contract.tables.map((table) => table.schema).filter((schema) => schema && schema !== 'public')),
+  ];
+  const pgCoreImports = ['bigint', 'bigserial', 'boolean', 'check', 'index', 'integer', 'jsonb'];
+  if (customSchemas.length > 0) {
+    pgCoreImports.push('pgSchema');
+  }
+  pgCoreImports.push('pgTable', 'text', 'timestamp', 'uniqueIndex', 'uuid', 'varchar');
+
   const lines = [
     ...generatedNotice('//'),
     'import { sql } from "drizzle-orm";',
-    'import { bigint, bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";',
+    `import { ${pgCoreImports.join(', ')} } from "drizzle-orm/pg-core";`,
     'import { z } from "zod";',
     '',
     'const textEncoder = new TextEncoder();',
@@ -153,8 +165,17 @@ function renderDrizzleTypeScript(contract) {
     '',
   ];
 
+  for (const schema of customSchemas) {
+    lines.push(`export const ${camel(schema)}Schema = pgSchema(${JSON.stringify(schema)});`);
+  }
+  if (customSchemas.length > 0) {
+    lines.push('');
+  }
+
   for (const table of contract.tables) {
     const tableVar = table.names?.typescript ?? camel(table.name);
+    const tableBuilder =
+      table.schema && table.schema !== 'public' ? `${camel(table.schema)}Schema.table` : 'pgTable';
     const baseName = table.names?.rust ?? pascal(table.name);
     const enumColumns = table.columns.filter((column) => column.kind === 'enum');
     const literalColumns = table.columns.filter((column) => column.validation?.literal);
@@ -176,7 +197,7 @@ function renderDrizzleTypeScript(contract) {
       lines.push('');
     }
 
-    lines.push(`export const ${tableVar} = pgTable(`);
+    lines.push(`export const ${tableVar} = ${tableBuilder}(`);
     lines.push(`  ${JSON.stringify(table.name)},`);
     lines.push('  {');
     for (const column of table.columns) {
@@ -578,7 +599,7 @@ function renderGoGorm(contract) {
 
   for (const table of contract.tables) {
     const baseName = table.names?.rust ?? pascal(table.name);
-    lines.push(`const ${baseName}Table = ${JSON.stringify(table.name)}`);
+    lines.push(`const ${baseName}Table = ${JSON.stringify(physicalName(table))}`);
     lines.push(`const ${baseName}SelectSQL = ${goRawString(renderSelectSql(table))}`);
     lines.push('');
 
@@ -656,7 +677,7 @@ function renderGoBun(contract) {
 
   for (const table of contract.tables) {
     const baseName = table.names?.rust ?? pascal(table.name);
-    lines.push(`const ${baseName}Table = ${JSON.stringify(table.name)}`);
+    lines.push(`const ${baseName}Table = ${JSON.stringify(physicalName(table))}`);
     lines.push(`const ${baseName}SelectSQL = ${goRawString(renderSelectSql(table))}`);
     lines.push('');
     for (const column of table.columns.filter((column) => column.kind === 'enum')) {
@@ -667,7 +688,7 @@ function renderGoBun(contract) {
     }
 
     lines.push(`type ${baseName}Bun struct {`);
-    lines.push(`\tbun.BaseModel \`bun:"table:${table.name}"\``);
+    lines.push(`\tbun.BaseModel \`bun:"table:${physicalName(table)}"\``);
     for (const column of table.columns) {
       lines.push(`\t${pascal(column.name)} ${goBunType(column)} \`${goBunTag(column)} json:"${camel(column.name)}${column.notNull ? '' : ',omitempty'}"\``);
     }
@@ -1069,7 +1090,7 @@ function renderDart(contract) {
 
   for (const table of contract.tables) {
     const baseName = table.names?.rust ?? pascal(table.name);
-    lines.push(`const ${camel(baseName)}Table = ${JSON.stringify(table.name)};`);
+    lines.push(`const ${camel(baseName)}Table = ${JSON.stringify(physicalName(table))};`);
     lines.push(`const ${camel(baseName)}SelectSql = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))};`);
     lines.push('');
 
@@ -1809,7 +1830,7 @@ function renderRust(contract) {
     const selectConst = `${screaming(table.name)}_SELECT_SQL`;
     const columnsConst = `${screaming(table.name)}_COLUMNS`;
 
-    lines.push(`pub const ${tableConst}: &str = ${JSON.stringify(table.name)};`);
+    lines.push(`pub const ${tableConst}: &str = ${JSON.stringify(physicalName(table))};`);
     lines.push(
       `pub const ${columnsConst}: &[&str] = &[${table.columns.map((column) => JSON.stringify(column.name)).join(', ')}];`,
     );
@@ -2320,7 +2341,7 @@ function renderGleam(contract) {
 
   for (const table of contract.tables) {
     const baseName = table.names?.gleam ?? pascal(table.name);
-    lines.push(`pub const ${table.name}_table = ${JSON.stringify(table.name)}`);
+    lines.push(`pub const ${table.name}_table = ${JSON.stringify(physicalName(table))}`);
     lines.push(
       `pub const ${table.name}_select_sql = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))}`,
     );
@@ -2463,7 +2484,7 @@ function renderErlang(contract) {
     exports.push(`${table.name}_table/0`);
     exports.push(`${table.name}_columns/0`);
     exports.push(`${table.name}_select_sql/0`);
-    functions.push(`${table.name}_table() -> ${erlangBinary(table.name)}.`);
+    functions.push(`${table.name}_table() -> ${erlangBinary(physicalName(table))}.`);
     functions.push('');
     functions.push(
       `${table.name}_columns() -> [${table.columns.map((column) => erlangBinary(column.name)).join(', ')}].`,
@@ -3458,7 +3479,7 @@ function renderCreateTable(table) {
   for (const checkConstraint of table.checks ?? []) {
     definitions.push(`  constraint ${checkConstraint.name}\n    check (${checkConstraint.sql})`);
   }
-  return `create table if not exists ${table.name} (\n${definitions.join(',\n')}\n);`;
+  return `create table if not exists ${physicalName(table)} (\n${definitions.join(',\n')}\n);`;
 }
 
 function renderCreateIndex(table, tableIndex) {
@@ -3471,7 +3492,13 @@ function renderCreateIndex(table, tableIndex) {
     return `${column.name}${column.order ? ` ${column.order}` : ''}`;
   });
   const where = tableIndex.where ? `\n  where ${tableIndex.where}` : '';
-  return `create ${unique}index if not exists ${tableIndex.name}\n  on ${table.name}${method} (${columns.join(', ')})${where};`;
+  return `create ${unique}index if not exists ${tableIndex.name}\n  on ${physicalName(table)}${method} (${columns.join(', ')})${where};`;
+}
+
+// Schema-qualified physical table name (e.g. `benefactor.benefactor_leads`). For the default
+// `public` schema this returns the bare name, so existing tables emit byte-identically.
+function physicalName(table) {
+  return table.schema && table.schema !== 'public' ? `${table.schema}.${table.name}` : table.name;
 }
 
 function columnTypeSql(column) {
@@ -3485,7 +3512,7 @@ function renderSelectSql(table, options = {}) {
   const columns = table.columns
     .map((column) => `      ${selectExpression(column, options)}`)
     .join(',\n');
-  return `select\n${columns}\n    from ${table.name}`;
+  return `select\n${columns}\n    from ${physicalName(table)}`;
 }
 
 function selectExpression(column, options = {}) {

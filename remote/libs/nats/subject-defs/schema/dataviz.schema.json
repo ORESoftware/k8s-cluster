@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/dataviz.schema.json",
+  "title": "DataVizNats",
+  "description": "NATS subjects owned by dd-data-viz-rs (dashboards, alerts, self-service analytics). The server publishes alert-rule firings and workbook/dashboard publish events as a best-effort fan-out, and exposes a notification-dispatch lane consumed by notifiers. Payloads carry a dd.dataviz.v1 envelope and must not contain row-level query results or secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-data-viz-rs",
+    "summary": "Dashboard alert + publish fan-out plus notification-dispatch lane.",
+    "subjects": [
+      {
+        "name": "DataVizAlertsEvents",
+        "description": "Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.dataviz.alerts.events",
+        "direction": "publish"
+      },
+      {
+        "name": "DataVizNotificationsDispatch",
+        "description": "Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.dataviz.notifications.dispatch",
+        "queueGroup": "dd-data-viz-notifiers",
+        "direction": "both"
+      },
+      {
+        "name": "DataVizPublishEvents",
+        "description": "Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.dataviz.publish.events",
+        "direction": "publish"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "DataVizNotificationDispatchQueueGroup",
+        "value": "dd-data-viz-notifiers",
+        "description": "Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane."
+      }
+    ]
+  }
+}
