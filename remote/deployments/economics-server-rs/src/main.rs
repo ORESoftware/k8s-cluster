@@ -8304,8 +8304,17 @@ async fn api_docs_json() -> impl IntoResponse {
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8114").parse::<u16>()?;
+    // Degrade gracefully if the broker is unreachable at boot: the HTTP API
+    // (forecasts, readiness, ingestion) must come up even when messaging is down.
+    // async-nats serves a reconnecting client, so a later recovery is picked up.
     let nats = match optional_env("NATS_URL") {
-        Some(url) => Some(async_nats::connect(url).await?),
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("dd-economics-server NATS connect failed ({url}): {error}");
+                None
+            }
+        },
         None => None,
     };
     let state = AppState {

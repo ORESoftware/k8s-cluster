@@ -1960,11 +1960,20 @@ async fn main() {
         eprintln!("dd-music-rs generator disabled until postgres and storage are configured");
     }
 
-    if state.nats.is_some()
-        && state.config.database_url.is_some()
-        && storage_ready(&state.config.storage, state.s3.is_some())
-    {
-        tokio::spawn(run_generation_request_consumer(state.clone()));
+    // The NATS publish fan-out (songs/votes/results) is always on when NATS_URL
+    // is set. The inbound generation *trigger* is a privileged, expensive,
+    // unauthenticated capability (any publisher to the subject drives WAV
+    // synthesis + S3 + Postgres writes), so it stays opt-in: setting NATS_URL
+    // alone must not enable it. Gate behind MUSIC_NATS_GENERATION_ENABLED.
+    if env_bool("MUSIC_NATS_GENERATION_ENABLED", false) {
+        if state.nats.is_some()
+            && state.config.database_url.is_some()
+            && storage_ready(&state.config.storage, state.s3.is_some())
+        {
+            tokio::spawn(run_generation_request_consumer(state.clone()));
+        } else {
+            eprintln!("dd-music-rs NATS generation consumer disabled until NATS, postgres, and storage are configured");
+        }
     }
 
     let addr: SocketAddr = format!("{host}:{port}")
