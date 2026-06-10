@@ -90,6 +90,12 @@ spec:
             # resolve subjects only validate, simulate, and confirm.
             - name: CONTRACT_NATS_SETTLEMENT_ENABLED
               value: 'false'
+            # Required acknowledgement before NATS-initiated broadcast can be
+            # enabled: the shared NATS bus has no per-subject authz, so any pod
+            # reaching it could publish to settle/resolve. Lock the bus down
+            # (subject authz + messaging NetworkPolicy) before setting this true.
+            - name: CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS
+              value: 'false'
             # Executor/verifier surface: confirm escrow settlement signatures to
             # finality and publish confirmations. Off by default.
             - name: CONTRACT_ESCROW_CONFIRM_ENABLED
