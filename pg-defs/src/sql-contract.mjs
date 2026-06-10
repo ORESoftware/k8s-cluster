@@ -240,6 +240,16 @@ export function parseSchemaSql(sourceSql) {
     }
 
     tables.push(table);
+    // Indexes and foreign keys associate to tables by bare name, so two tables sharing a bare
+    // name across schemas (e.g. public.foo and benefactor.foo) would silently mis-associate.
+    // Fail loudly instead — disambiguating the index/FK `on`/`references` schema is the fix.
+    const existing = tableByName.get(table.name);
+    if (existing) {
+      throw new Error(
+        `Duplicate table name "${table.name}" across schemas "${existing.schema}" and "${table.schema}". ` +
+          `Index/FK association is keyed by bare table name and cannot disambiguate; rename one table.`,
+      );
+    }
     tableByName.set(table.name, table);
   }
 
