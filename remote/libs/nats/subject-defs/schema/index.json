@@ -1,6 +1,7 @@
 {
   "$comment": "Index of every nats subject-defs schema file. The generator iterates this list (alphabetised) so adding a new schema is a one-line change.",
   "schemas": [
+    "agent-mcp.schema.json",
     "agent-orchestration.schema.json",
     "ai-ml-platform.schema.json",
     "container-pool.schema.json",

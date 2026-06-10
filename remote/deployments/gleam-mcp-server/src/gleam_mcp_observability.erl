@@ -282,10 +282,27 @@ env_bin(Name, Default) ->
 
 clip(Bin, Limit) when byte_size(Bin) =< Limit -> Bin;
 clip(Bin, Limit) when Limit > 32 ->
-    Prefix = binary:part(Bin, 0, Limit),
+    Prefix = utf8_prefix(Bin, Limit),
     <<Prefix/binary, "\n... clipped ...">>;
 clip(Bin, Limit) ->
-    binary:part(Bin, 0, Limit).
+    utf8_prefix(Bin, Limit).
+
+%% Truncating at a raw byte offset can split a multi-byte UTF-8 sequence,
+%% which then renders the surrounding JSON string (and so the whole
+%% structuredContent envelope) invalid for the MCP client. Back the cut off
+%% to the nearest valid UTF-8 boundary — at most 3 bytes for valid input,
+%% since a code point is 4 bytes max.
+utf8_prefix(Bin, Max) when Max >= byte_size(Bin) -> Bin;
+utf8_prefix(Bin, Max) -> valid_prefix(Bin, Max, 3).
+
+valid_prefix(_Bin, Take, _Tries) when Take =< 0 -> <<>>;
+valid_prefix(Bin, Take, 0) -> binary:part(Bin, 0, Take);
+valid_prefix(Bin, Take, Tries) ->
+    Candidate = binary:part(Bin, 0, Take),
+    case unicode:characters_to_binary(Candidate, utf8, utf8) of
+        Valid when is_binary(Valid) -> Candidate;
+        _ -> valid_prefix(Bin, Take - 1, Tries - 1)
+    end.
 
 json_obj(Pairs) ->
     <<"{", (join([json_pair(K, V) || {K, V} <- Pairs], <<",">>))/binary, "}">>.

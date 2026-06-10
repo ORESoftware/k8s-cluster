@@ -165,6 +165,45 @@ default and can be overridden per deployment:
 | `MCP_OBSERVABILITY_TIMEOUT_MS` | `1200` |
 | `MCP_OBSERVABILITY_BODY_LIMIT_BYTES` | `32768` |
 
+## NATS transport
+
+Separate from the HTTP `nats_metrics` scrape above, the server joins the NATS
+bus as a client when `NATS_URL` is set (the manifest points it at
+`nats://dd-nats.messaging.svc.cluster.local:4222`). Subjects come from
+`remote/libs/nats/subject-defs` — the cross-language source of truth — so there
+are no magic strings:
+
+- **publishes** `dd.remote.mcp.tool.events` (`McpToolEvents`): a `dd.mcp_event.v1`
+  lifecycle event on boot and one audit event per `tools/call` (tool name, ok
+  flag, request id);
+- **subscribes** `dd.remote.mcp.control` (`McpControl`): read-only ops commands.
+  `{"command":"ping"}` echoes a `pong` back onto `McpToolEvents`. Commands never
+  mutate the cluster — the service account is list/read only.
+
+The transport is optional: unset `NATS_URL` and the HTTP surface is unchanged.
+The NetworkPolicy must allow egress to `dd-nats:4222` (the client port) for this
+to connect — `:8222`/`:7777` only cover the HTTP monitor/metrics scrape.
+
+| Env var | Default |
+| --- | --- |
+| `NATS_URL` | _unset_ (manifest: `nats://dd-nats.messaging.svc.cluster.local:4222`) |
+
+## Authentication on `/mcp`
+
+`POST /mcp` is unauthenticated by default — host-network pool workers call it
+over the node network and the tools are read-only. To require a bearer token
+(e.g. to restrict the cluster-inventory tools without touching the
+NetworkPolicy), set `MCP_REQUIRE_AUTH=true` and provide `MCP_AUTH_SECRET`; every
+JSON-RPC call must then send `Authorization: Bearer <secret>` or
+`X-Server-Auth: <secret>`, else `401`. With require-auth on but no secret set,
+the gate fails closed. The `/internal/*` runtime-config paths keep their own
+`X-Server-Auth` check independent of this flag.
+
+| Env var | Default |
+| --- | --- |
+| `MCP_REQUIRE_AUTH` | `false` |
+| `MCP_AUTH_SECRET` | _unset_ |
+
 ## Telemetry
 
 The service exports:

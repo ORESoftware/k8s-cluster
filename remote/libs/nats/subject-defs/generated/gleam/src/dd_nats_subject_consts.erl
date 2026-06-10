@@ -59,6 +59,8 @@
     git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
+    mcp_control_subject/0,
+    mcp_tool_events_subject/0,
     mdp_optimize_subject/0,
     mdp_optimize_queue_group/0,
     mdp_results_subject/0,
@@ -188,6 +190,8 @@ fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
 lambdas_functions_subject() -> <<"dd.remote.lambdas.functions"/utf8>>.
 lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.
+mcp_control_subject() -> <<"dd.remote.mcp.control"/utf8>>.
+mcp_tool_events_subject() -> <<"dd.remote.mcp.tool.events"/utf8>>.
 mdp_optimize_subject() -> <<"dd.remote.mdp.optimize"/utf8>>.
 mdp_optimize_queue_group() -> <<"dd-mdp-optimizer"/utf8>>.
 mdp_results_subject() -> <<"dd.remote.mdp.results"/utf8>>.

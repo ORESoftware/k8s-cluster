@@ -97,6 +97,15 @@ spec:
             matchLabels:
               app: dd-nats
       ports:
+        # 4222: NATS client protocol. Required for the server's NATS
+        # transport (publish McpToolEvents / subscribe McpControl). Without
+        # this the dd_nats gen_server would log "connect failed" + reconnect
+        # forever while the HTTP surface kept working — the same silent
+        # half-failure mode as the runtime-config egress rule below.
+        - protocol: TCP
+          port: 4222
+        # 7777 (Prometheus exporter) + 8222 (monitoring API): scraped over
+        # HTTP by the nats_metrics / observability tools.
         - protocol: TCP
           port: 7777
         - protocol: TCP

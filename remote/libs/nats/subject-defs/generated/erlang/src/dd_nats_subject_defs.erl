@@ -52,6 +52,8 @@
     git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
+    mcp_control_subject/0,
+    mcp_tool_events_subject/0,
     mdp_optimize_subject/0,
     mdp_optimize_queue_group/0,
     mdp_results_subject/0,
@@ -334,6 +336,14 @@ lambdas_functions_subject() -> <<"dd.remote.lambdas.functions"/utf8>>.
 %% Results fan-out from lambda runs. Default for NATS_LAMBDA_RESULT_SUBJECT.
 %% Service: dd-gleam-lambda-runner
 lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.
+
+%% Read-only operational control commands addressed to MCP servers, e.g. {"command":"ping"} for a liveness echo onto McpToolEvents. Broadcast with no queue group so every MCP replica receives each command. Commands must never mutate cluster state; the MCP service account only has list/read RBAC.
+%% Service: dd-gleam-mcp-server
+mcp_control_subject() -> <<"dd.remote.mcp.control"/utf8>>.
+
+%% Tool-call audit and lifecycle telemetry emitted by MCP servers: one event per tools/call (tool name, ok/error flag, duration) plus a lifecycle event on boot. Fan-out telemetry consumed by observability/log shippers. Payloads carry a dd.mcp_event.v1 envelope and must not contain secrets or raw cluster data.
+%% Service: dd-gleam-mcp-server
+mcp_tool_events_subject() -> <<"dd.remote.mcp.tool.events"/utf8>>.
 
 %% MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 %% Service: dd-ai-ml-pipeline
