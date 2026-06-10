@@ -60,6 +60,9 @@ const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
 const MAX_CONFIRM_POLLS: u32 = 240;
 const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
 const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
+// Bounds concurrent background confirmations spawned by the escrow-results
+// verifier so a burst of escrow results can't fan out unbounded confirm work.
+const MAX_VERIFIER_CONFIRMS_IN_FLIGHT: u64 = 32;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
@@ -84,6 +87,30 @@ struct AppState {
     critical_event_subject: String,
     metrics: Arc<Metrics>,
     idempotency: Arc<Mutex<HashMap<String, u128>>>,
+    verifier_in_flight: Arc<AtomicU64>,
+}
+
+/// RAII slot for a background verifier confirmation. Decrements the in-flight
+/// counter on drop so a panicking or early-returning task can't leak a slot.
+struct VerifierSlot(Arc<AtomicU64>);
+
+impl VerifierSlot {
+    /// Reserves a slot if the in-flight count is under the cap, else `None`.
+    fn try_acquire(counter: &Arc<AtomicU64>) -> Option<Self> {
+        let prior = counter.fetch_add(1, Ordering::AcqRel);
+        if prior >= MAX_VERIFIER_CONFIRMS_IN_FLIGHT {
+            counter.fetch_sub(1, Ordering::AcqRel);
+            None
+        } else {
+            Some(VerifierSlot(counter.clone()))
+        }
+    }
+}
+
+impl Drop for VerifierSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl AppState {
@@ -3319,6 +3346,7 @@ mod tests {
             critical_event_subject: "events.critical".to_string(),
             metrics: Arc::new(Metrics::default()),
             idempotency: Arc::new(Mutex::new(HashMap::new())),
+            verifier_in_flight: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -3592,6 +3620,21 @@ mod tests {
         assert!(!state.claim_idempotency_key("settle:abc"));
         // A distinct key is independent.
         assert!(state.claim_idempotency_key("settle:def"));
+    }
+
+    #[test]
+    fn verifier_slot_bounds_in_flight_and_releases_on_drop() {
+        let counter = Arc::new(AtomicU64::new(0));
+        let mut slots = Vec::new();
+        for _ in 0..MAX_VERIFIER_CONFIRMS_IN_FLIGHT {
+            slots.push(VerifierSlot::try_acquire(&counter).expect("under cap"));
+        }
+        // At the cap, further acquisitions are shed (and do not leak a slot).
+        assert!(VerifierSlot::try_acquire(&counter).is_none());
+        assert_eq!(counter.load(Ordering::Acquire), MAX_VERIFIER_CONFIRMS_IN_FLIGHT);
+        // Dropping a slot frees capacity again.
+        slots.pop();
+        assert!(VerifierSlot::try_acquire(&counter).is_some());
     }
 
     #[test]
@@ -3938,6 +3981,17 @@ async fn run_nats_loop(
             NatsKind::EscrowResults => process_nats_escrow_result(&state, &payload).await,
         }
     }
+
+    // The stream only ends when the subscription is closed or the connection is
+    // torn down without async-nats restoring it. That silently kills a consumer,
+    // so alert instead of dying quietly.
+    publish_runtime_critical_event(
+        &state,
+        "contract-nats-loop-ended",
+        "Contract service NATS subscription loop ended unexpectedly; the subject is no longer consumed.",
+        json!({ "subject": &subject, "kind": kind.label() }),
+    )
+    .await;
 }
 
 fn nats_payload_invalid(state: &AppState, kind: NatsKind, error: &str) {
@@ -4291,26 +4345,41 @@ async fn process_nats_escrow_result(state: &AppState, payload: &[u8]) {
         .and_then(Value::as_str)
         .unwrap_or("escrow-result")
         .to_string();
-    let confirmation = confirm_signature(
-        state,
-        &signature,
-        "finalized",
-        DEFAULT_CONFIRM_TIMEOUT_MS,
-        DEFAULT_CONFIRM_POLL_INTERVAL_MS,
-    )
-    .await;
-    let outcome = json!({
-        "messageKind": "solana.escrow.confirmation",
-        "source": SERVICE_NAME,
-        "ok": confirmation.reached,
-        "status": "verified",
-        "requestId": req_id,
-        "kind": "escrow-confirmation",
-        "signature": signature,
-        "confirmation": confirmation,
-        "generatedAtMs": now_ms()
+
+    // Confirm to finality off the subscription loop so a slow poll can't
+    // head-of-line block draining; bound the concurrent fan-out.
+    let Some(slot) = VerifierSlot::try_acquire(&state.verifier_in_flight) else {
+        log_warn(
+            "contract-escrow-confirm-shed",
+            "Escrow confirmation shed because the in-flight verifier cap was reached.",
+            json!({ "requestId": req_id, "maxInFlight": MAX_VERIFIER_CONFIRMS_IN_FLIGHT }),
+        );
+        return;
+    };
+    let task_state = state.clone();
+    tokio::spawn(async move {
+        let _slot = slot;
+        let confirmation = confirm_signature(
+            &task_state,
+            &signature,
+            "finalized",
+            DEFAULT_CONFIRM_TIMEOUT_MS,
+            DEFAULT_CONFIRM_POLL_INTERVAL_MS,
+        )
+        .await;
+        let outcome = json!({
+            "messageKind": "solana.escrow.confirmation",
+            "source": SERVICE_NAME,
+            "ok": confirmation.reached,
+            "status": "verified",
+            "requestId": req_id,
+            "kind": "escrow-confirmation",
+            "signature": signature,
+            "confirmation": confirmation,
+            "generatedAtMs": now_ms()
+        });
+        publish_settlement_outcome(&task_state, outcome).await;
     });
-    publish_settlement_outcome(state, outcome).await;
 }
 
 async fn shutdown_signal() {
@@ -4454,6 +4523,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         critical_event_subject,
         metrics: Arc::new(Metrics::default()),
         idempotency: Arc::new(Mutex::new(HashMap::new())),
+        verifier_in_flight: Arc::new(AtomicU64::new(0)),
     };
 
     log_info(
