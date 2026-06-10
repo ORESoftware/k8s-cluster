@@ -41,6 +41,19 @@ DD_NAMESPACE="dd-dev"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFESTS_DIR="${MANIFESTS_DIR:-$SCRIPT_DIR/../k8s}"
 
+# Pinned add-on versions — pin for reproducible bootstraps instead of pulling
+# "latest", so a bad/breaking upstream release can never silently land on a
+# re-bootstrap. Review and bump these deliberately when you upgrade Kubernetes
+# (verify each is compatible with the cluster's k8s version first).
+CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.16.2}"
+INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.11.3}"
+EBS_CSI_CHART_VERSION="${EBS_CSI_CHART_VERSION:-2.35.0}"
+
+# K8s API TLS for external (Vercel) clients. Default stays permissive so the
+# existing integration keeps working; set to false once Vercel is configured to
+# trust K8S_CA_CERT (printed at the end) so the API connection can verify TLS.
+K8S_INSECURE_TLS="${K8S_INSECURE_TLS:-true}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pod-cidr) POD_CIDR="$2"; shift 2 ;;
@@ -221,15 +234,17 @@ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/nul
 helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver >/dev/null 2>&1 || true
 helm repo update >/dev/null
 
-echo "==> Installing ingress-nginx"
+echo "==> Installing ingress-nginx (chart $INGRESS_NGINX_CHART_VERSION)"
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --version "$INGRESS_NGINX_CHART_VERSION" \
   --namespace ingress-nginx --create-namespace
 
-echo "==> Installing cert-manager"
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+echo "==> Installing cert-manager $CERT_MANAGER_VERSION"
+kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
 
-echo "==> Installing AWS EBS CSI driver"
+echo "==> Installing AWS EBS CSI driver (chart $EBS_CSI_CHART_VERSION)"
 helm upgrade --install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+  --version "$EBS_CSI_CHART_VERSION" \
   --namespace kube-system
 
 echo "==> Applying gp3 default StorageClass"
@@ -268,6 +283,23 @@ done
 SA_TOKEN="$(kubectl -n "$DD_NAMESPACE" get secret dd-control-plane-token \
             -o jsonpath='{.data.token}' | base64 -d)"
 K8S_API="https://${NODE_IP}:6443"
+# Cluster CA (base64 PEM) so external clients can verify TLS instead of skipping it.
+K8S_CA_CERT="$(kubectl config view --raw \
+  -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' 2>/dev/null || true)"
+
+# Write the Vercel env to a private file (mode 600) instead of leaving the SA
+# token only in terminal scrollback / CI logs.
+ENV_FILE="$TARGET_HOME/dd-vercel-env.txt"
+( umask 077; cat > "$ENV_FILE" <<ENVEOF
+K8S_API_SERVER=$K8S_API
+K8S_NAMESPACE=$DD_NAMESPACE
+K8S_SA_TOKEN=$SA_TOKEN
+K8S_INSECURE_TLS=$K8S_INSECURE_TLS
+K8S_CA_CERT=$K8S_CA_CERT
+ENVEOF
+)
+chown "$TARGET_USER:$TARGET_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 echo ""
 echo "============================================"
@@ -278,12 +310,16 @@ echo "  K8s API:      $K8S_API"
 echo "  ArgoCD UI:    https://${NODE_IP}:30443"
 echo "  Namespace:    $DD_NAMESPACE"
 echo ""
-echo "  --- Vercel env vars (paste into the project) ---"
+echo "  --- Vercel env vars (full values in $ENV_FILE, mode 600) ---"
 echo ""
 echo "  K8S_API_SERVER=$K8S_API"
 echo "  K8S_NAMESPACE=$DD_NAMESPACE"
-echo "  K8S_SA_TOKEN=$SA_TOKEN"
-echo "  K8S_INSECURE_TLS=true"
+echo "  K8S_SA_TOKEN=${SA_TOKEN:0:6}…(${#SA_TOKEN} chars — see $ENV_FILE)"
+echo "  K8S_INSECURE_TLS=$K8S_INSECURE_TLS"
+echo ""
+echo "  # Retrieve the full env (incl. token + CA) to paste into Vercel:"
+echo "  cat $ENV_FILE"
+echo "  # To drop insecure TLS: load K8S_CA_CERT into Vercel, re-run with K8S_INSECURE_TLS=false"
 echo ""
 echo "  --- ArgoCD admin password ---"
 echo "  kubectl -n argocd get secret argocd-initial-admin-secret \\"
