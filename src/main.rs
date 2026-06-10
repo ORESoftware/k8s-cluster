@@ -84,6 +84,7 @@ mod energy_catalog_content;
 mod environment_catalog_content;
 mod execution_preflight_content;
 mod failure_mode_catalog_content;
+mod geometry;
 mod handoff_catalog_content;
 mod how_it_works_content;
 mod instruction_improvement_catalog;
@@ -116690,6 +116691,7 @@ fn mesh_repair_catalog_response() -> Value {
         "schemaVersion": "dd.fabrication.mesh-repair-catalog.v1",
         "serviceSchemaVersion": SCHEMA_VERSION,
         "routes": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+        "geometryPlanRoutes": ["POST /mesh-repair/plan", "POST /fabrication/mesh-repair/plan"],
         "repairDomainCount": entries.len(),
         "repairDomains": repair_domains,
         "supportedMeshAndSlicerFormats": supported_mesh_formats,
@@ -120162,6 +120164,9 @@ async fn request_schema() -> impl IntoResponse {
             "slicerProfilePlan": ["POST /slicers/plan", "POST /fabrication/slicers/plan"],
             "slicerProfileResult": ["POST /slicers/result", "POST /fabrication/slicers/result"],
             "meshRepairCatalog": ["GET /mesh-repair/catalog", "GET /fabrication/mesh-repair/catalog"],
+            "meshRepairPlan": ["POST /mesh-repair/plan", "POST /fabrication/mesh-repair/plan"],
+            "toolpathGenerate": ["POST /toolpaths/generate", "POST /fabrication/toolpaths/generate"],
+            "costingEstimate": ["POST /costing/estimate", "POST /fabrication/costing/estimate"],
             "fdmPrinterCatalog": ["GET /fdm-printer/catalog", "GET /fabrication/fdm-printer/catalog"],
             "pelletFgfCatalog": ["GET /pellet-fgf/catalog", "GET /fabrication/pellet-fgf/catalog"],
             "resinPrinterCatalog": ["GET /resin-printer/catalog", "GET /fabrication/resin-printer/catalog"],
@@ -121160,6 +121165,51 @@ async fn mesh_repair_result_http(
 
 async fn design_conversion_plan_http(Json(request): Json<DesignImportReviewRequest>) -> Response {
     match design_conversion_plan_response(request) {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+/// Real STL geometry repair: weld, heal holes, unify winding, report watertight
+/// status. Computes geometry rather than reviewing a submitted result.
+async fn mesh_repair_plan_http(
+    Json(request): Json<geometry::api::MeshRepairPlanRequest>,
+) -> Response {
+    match geometry::api::mesh_repair_plan_response(request) {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+/// Real toolpath generation: planar-slice repaired STL geometry into perimeter
+/// contours plus an optional G-code sample.
+async fn toolpath_generate_http(
+    Json(request): Json<geometry::api::ToolpathGenerateRequest>,
+) -> Response {
+    match geometry::api::toolpath_generate_response(request) {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+/// Real manufacturing cost estimate from STL geometry: material from watertight
+/// volume, machine time from sliced path length, plus setup and overhead.
+async fn cost_estimate_http(
+    Json(request): Json<geometry::api::CostEstimateRequest>,
+) -> Response {
+    match geometry::api::cost_estimate_response(request) {
         Ok(response) => Json(response).into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
@@ -123708,6 +123758,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "/fabrication/mesh-repair/result",
             post(mesh_repair_result_http),
         )
+        .route("/mesh-repair/plan", post(mesh_repair_plan_http))
+        .route(
+            "/fabrication/mesh-repair/plan",
+            post(mesh_repair_plan_http),
+        )
         .route("/formats/catalog", get(design_import_catalog_http))
         .route(
             "/fabrication/formats/catalog",
@@ -123915,6 +123970,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/toolpaths/catalog", get(toolpath_catalog_http))
         .route("/toolpaths/plan", post(toolpath_plan_http))
         .route("/fabrication/toolpaths/plan", post(toolpath_plan_http))
+        .route("/toolpaths/generate", post(toolpath_generate_http))
+        .route(
+            "/fabrication/toolpaths/generate",
+            post(toolpath_generate_http),
+        )
         .route("/toolpaths/result", post(toolpath_result_http))
         .route("/fabrication/toolpaths/result", post(toolpath_result_http))
         .route(
@@ -124103,6 +124163,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/fabrication/costing/catalog", get(costing_catalog_http))
         .route("/costing/result", post(costing_result_http))
         .route("/fabrication/costing/result", post(costing_result_http))
+        .route("/costing/estimate", post(cost_estimate_http))
+        .route("/fabrication/costing/estimate", post(cost_estimate_http))
         .route("/utilities/catalog", get(utilities_catalog_http))
         .route(
             "/fabrication/utilities/catalog",
