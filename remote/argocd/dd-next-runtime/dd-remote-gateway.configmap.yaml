@@ -2339,6 +2339,27 @@ data:
         proxy_pass http://$api_up$api_path;
       }
 
+      # Same Referer routing for the app's other root-relative client calls: /pub/* (assignments)
+      # and /data/* (generated help-intel JSON). No specific locations exist for these, and /public-data/
+      # is separate, so this is collision-free.
+      location ~ ^/(pub|data)/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffer_size 32k;
+        proxy_buffers 8 32k;
+        proxy_busy_buffers_size 64k;
+        proxy_read_timeout 120;
+        set $pd_up dd-remote-web-home.default.svc.cluster.local:8080;
+        set $pd_path $request_uri;
+        if ($api_referer_ddn1) {
+          set $pd_up dd-next-1-js.default.svc.cluster.local:3000;
+          set $pd_path /dd-next-1$request_uri;
+        }
+        proxy_pass http://$pd_up$pd_path;
+      }
+
       location / {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
