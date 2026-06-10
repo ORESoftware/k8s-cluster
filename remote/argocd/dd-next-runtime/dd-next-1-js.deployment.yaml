@@ -94,8 +94,10 @@ spec:
             # (e.g. a re-exported route-segment config that breaks the turbopack build).
             - name: DD_REPO_REF
               value: prod
-            # No DD_BASE_PATH: dd-next-1 is served at the gateway ROOT (catch-all `location /`), so
-            # the app's root-relative client fetches (/api/pub/skills, ...) work like on Vercel.
+            # Served at the /dd-next-1 subpath (web-home keeps the canonical /). The app's root-relative
+            # client /api fetches are handled by the gateway's Referer-based /api routing, not basePath.
+            - name: DD_BASE_PATH
+              value: /dd-next-1
             - name: NODE_OPTIONS
               value: '--max-old-space-size=14336'
             - name: NATS_URL
@@ -126,13 +128,13 @@ spec:
               memory: 40Gi
           startupProbe:
             httpGet:
-              path: /
+              path: /dd-next-1
               port: http
             periodSeconds: 10
             failureThreshold: 540
           readinessProbe:
             httpGet:
-              path: /
+              path: /dd-next-1
               port: http
             periodSeconds: 10
             timeoutSeconds: 10

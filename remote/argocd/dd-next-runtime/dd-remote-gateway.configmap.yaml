@@ -104,6 +104,13 @@ data:
     access_log /dev/stdout dd_gateway_json;
     error_log /dev/stderr warn;
 
+    # dd-next-1 is served at /dd-next-1, but its browser code makes ROOT-relative /api fetches.
+    # Key on the Referer so those (and only those) are forwarded to dd-next-1 with the basePath.
+    map $http_referer $api_referer_ddn1 {
+      default 0;
+      "~*/dd-next-1" 1;
+    }
+
     server {
       listen 80 default_server;
       server_name _;
@@ -238,13 +245,7 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_buffer_size 32k;
-        proxy_buffers 8 32k;
-        proxy_busy_buffers_size 64k;
-        proxy_read_timeout 120;
-        # dd-next-1 is the ROOT app; root-relative client fetches (/api/...) reach it here.
-        set $dd_up_5 dd-next-1-js.default.svc.cluster.local:3000;
+        set $dd_up_5 dd-remote-web-home.default.svc.cluster.local:8080;
         proxy_pass http://$dd_up_5;
       }
 
@@ -1954,6 +1955,22 @@ data:
         proxy_pass http://$dd_up_38;
       }
 
+      # dd-next-1-js: the standalone Next app (basePath /dd-next-1, so assets resolve here).
+      location /dd-next-1 {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120;
+        # /match, /blog etc. return large auth/session-cookie headers; without bigger buffers nginx
+        # 502s with "upstream sent too big header".
+        proxy_buffer_size 32k;
+        proxy_buffers 8 32k;
+        proxy_busy_buffers_size 64k;
+        set $dd_up_55 dd-next-1-js.default.svc.cluster.local:3000;
+        proxy_pass http://$dd_up_55;
+      }
+
       location = /browser-test {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2301,17 +2318,32 @@ data:
         proxy_pass http://$dd_thread_service:8080$dd_thread_proxy_path;
       }
 
-      location / {
+      # Referer-routed /api: requests from a /dd-next-1 page -> dd-next-1 (with basePath prefix);
+      # all other /api keeps the prior default (web-home). More-specific /api/<svc>/ locations above
+      # still win, so infra APIs (lambdas, agents, db, ...) are unaffected.
+      location /api/ {
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
         proxy_buffer_size 32k;
         proxy_buffers 8 32k;
         proxy_busy_buffers_size 64k;
         proxy_read_timeout 120;
-        # dd-next-1 is the ROOT app; all unmatched paths (/match,/blog,/api/...) reach it here.
-        set $dd_up_54 dd-next-1-js.default.svc.cluster.local:3000;
+        set $api_up dd-remote-web-home.default.svc.cluster.local:8080;
+        set $api_path $request_uri;
+        if ($api_referer_ddn1) {
+          set $api_up dd-next-1-js.default.svc.cluster.local:3000;
+          set $api_path /dd-next-1$request_uri;
+        }
+        proxy_pass http://$api_up$api_path;
+      }
+
+      location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_54 dd-remote-web-home.default.svc.cluster.local:8080;
         proxy_pass http://$dd_up_54;
       }
 
