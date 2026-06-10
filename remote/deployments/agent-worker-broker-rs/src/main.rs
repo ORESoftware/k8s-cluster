@@ -23,10 +23,18 @@ use dd_shared_interfaces::AgentTaskQueueMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+const MAX_HTTP_BODY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_IDENTIFIER_LEN: usize = 200;
+const MAX_PROMPT_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone)]
 struct AppState {
     config: Config,
     http: reqwest::Client,
+    // A single shared NATS client. Connected once at startup and reused for
+    // every dispatch; the previous code opened a fresh TCP connection per
+    // request, which is both slow and unauthenticated.
+    nats: async_nats::Client,
     metrics: Arc<Metrics>,
 }
 
@@ -209,12 +217,63 @@ fn config_from_env() -> Config {
     }
 }
 
+/// Compare two secrets without leaking length-independent timing. A plain `==`
+/// short-circuits on the first differing byte, which is a (small) side channel
+/// on the shared auth secret.
+fn constant_time_equals(candidate: &str, expected: &str) -> bool {
+    let candidate = candidate.as_bytes();
+    let expected = expected.as_bytes();
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in candidate.iter().zip(expected.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
+}
+
 fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
     headers
         .get("x-server-auth")
         .or_else(|| headers.get("x-agent-auth"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret)
+        .is_some_and(|value| constant_time_equals(value, secret))
+}
+
+/// Validate a `thread_id`/`task_id` against a strict allowlist. `thread_id` is
+/// interpolated **raw** into the NATS subject `dd.remote.thread.{id}.tasks`, so
+/// a value containing `.`, `*`, or `>` would inject extra subject tokens or
+/// wildcards and break per-thread isolation. Allow only ASCII alphanumerics,
+/// `-`, and `_` (UUIDs qualify); notably `.` is rejected because it is the NATS
+/// token separator.
+fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if value.len() > MAX_IDENTIFIER_LEN {
+        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
+    }
+    if let Some(bad) = value
+        .chars()
+        .find(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_')))
+    {
+        return Err(format!(
+            "{label} must contain only ASCII alphanumerics, '-', or '_' (found {bad:?})"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_prompt(prompt: &str) -> Result<(), String> {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return Err("prompt must not be empty".to_string());
+    }
+    if prompt.len() > MAX_PROMPT_BYTES {
+        return Err(format!("prompt must be at most {MAX_PROMPT_BYTES} bytes"));
+    }
+    Ok(())
 }
 
 async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
@@ -514,6 +573,24 @@ async fn dispatch_task(
             )
                 .into_response();
         }
+    }
+    // Validate identifiers before they reach the NATS subject / worker URL.
+    // threadId in particular is interpolated into the task subject.
+    for (value, label) in [(&thread_id, "threadId"), (&request.task_id, "taskId")] {
+        if let Err(error) = validate_identifier(value, label) {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    }
+    if let Err(error) = validate_prompt(&request.prompt) {
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
     }
     let repo = match required_repo(&request) {
         Ok(value) => value,
