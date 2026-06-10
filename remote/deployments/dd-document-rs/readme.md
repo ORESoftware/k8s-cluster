@@ -51,12 +51,29 @@ cargo build --no-default-features --features magick-bridge
 docker build -f deployments/dd-document-rs/Dockerfile -t dd-document-rs .
 ```
 
+### PDF generation (opt-in)
+
+PDF can't use the `runPure` sandbox — pandoc's `makePDF` shells out to an engine
+and uses temp files (`runIO`). To keep the default image lean it is **opt-in**:
+
+```bash
+# default: no PDF engine, /convert-pdf returns 503 (~560MB image)
+docker build -f deployments/dd-document-rs/Dockerfile -t dd-document-rs .
+# with PDF via Typst (~30MB, self-contained, no TeX, no network) -> ~640MB
+docker build -f deployments/dd-document-rs/Dockerfile \
+  --build-arg PDF_ENGINE=typst -t dd-document-rs .
+```
+
+`/status` reports `pdfEnabled`. The service detects the `typst` binary on PATH at
+startup; if absent, the PDF routes return `503`.
+
 ### Image size
 
-The runtime image is ~560 MB. The heavyweight is **not** ImageMagick (~78 MB of
-codec libs) but the Pandoc bridge `.so` (~234 MB stripped): `standalone`
-statically bundles the entire GHC runtime + all of pandoc + embedded templates.
-The multi-stage build discards the GHC toolchain and `libmagick++-dev`.
+The default runtime image is ~560 MB (~640 MB with the Typst PDF engine). The
+heavyweight is **not** ImageMagick (~78 MB of codec libs) but the Pandoc bridge
+`.so` (~234 MB stripped): `standalone` statically bundles the entire GHC runtime
++ all of pandoc + embedded templates. The multi-stage build discards the GHC
+toolchain and `libmagick++-dev`.
 
 ## Supported formats
 
@@ -92,6 +109,9 @@ names may carry Pandoc extensions, e.g. `markdown+hard_line_breaks`.
 | `POST /convert-binary` | JSON, base64 in/out | **binary formats** (docx/odt/pptx/epub) |
 | `POST /stream/convert` | raw bytes in/out, params on headers | **big documents** — no base64 inflation |
 | `POST /stream/image` | raw bytes in/out, params on headers | **big images** |
+| `POST /convert-pdf` | JSON, base64 PDF out | **PDF** (opt-in engine) |
+
+PDF is also reachable via `/stream/convert` with `x-to: pdf` (raw PDF bytes out).
 
 `/convert` and `/convert-binary` also accept `standalone` (wrap in the format's
 default template) and `metadata` (`{title, author:[...], date, ...}`).
@@ -156,6 +176,7 @@ events to `dd.remote.events`, and failures to `dd.remote.events.critical`.
 | `DOCUMENT_MAX_STREAM_BYTES` | `67108864` | Max body for `/convert-binary` + streaming routes. |
 | `DOCUMENT_CACHE_CAPACITY` | `256` | Conversion cache entries (0 disables). |
 | `DOCUMENT_IMAGE_CONCURRENCY` | `4` | Max concurrent image ops. |
+| `DOCUMENT_PDF_ENGINE` | `typst` | PDF engine binary to detect/use. |
 | `DOCUMENT_CONVERT_SUBJECT` | `dd.remote.document.convert` | NATS request subject. |
 | `DOCUMENT_RESULT_SUBJECT` | `dd.remote.document.results` | NATS result subject. |
 | `DOCUMENT_EVENT_SUBJECT` | `dd.remote.events` | Lifecycle event subject. |

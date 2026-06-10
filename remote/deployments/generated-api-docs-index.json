@@ -205,10 +205,10 @@
     {
       "service": "dd-document-rs",
       "language": "rust",
-      "routeCount": 25,
+      "routeCount": 26,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 16,
+        "user-generated": 17,
         "runtime-config": 3
       },
       "generated": [

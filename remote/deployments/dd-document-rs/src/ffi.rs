@@ -32,6 +32,7 @@ extern "C" {
     // foreign library does NOT auto-initialise the RTS.
     fn hs_init(argc: *mut c_int, argv: *mut *mut *mut c_char);
     fn dd_pandoc_convert(request: *const c_char) -> *mut c_char;
+    fn dd_pandoc_make_pdf(request: *const c_char) -> *mut c_char;
     fn dd_pandoc_version() -> *mut c_char;
     fn dd_pandoc_free(ptr: *mut c_char);
 }
@@ -122,8 +123,59 @@ pub fn convert(
     // SAFETY: request pointer is valid for the call; the returned pointer is
     // owned by us and freed below.
     let raw = unsafe { dd_pandoc_convert(c_request.as_ptr()) };
-    let envelope = take_owned_string(raw)?;
+    parse_envelope(take_owned_string(raw)?)
+}
 
+#[cfg(not(feature = "haskell-bridge"))]
+pub fn convert(
+    _from: &str,
+    _to: &str,
+    _content: &[u8],
+    _standalone: bool,
+    _metadata: &Value,
+) -> Result<ConvertOutcome, BridgeError> {
+    Err(BridgeError::Disabled)
+}
+
+/// Render `content` (from the `from` format) to a PDF via the Typst engine.
+///
+/// Requires `typst` on PATH in the image (opt-in). Not sandboxed — see the
+/// Haskell side. Blocking + CPU-bound — invoke from `spawn_blocking`.
+#[cfg(feature = "haskell-bridge")]
+pub fn make_pdf(
+    from: &str,
+    content: &[u8],
+    standalone: bool,
+    metadata: &Value,
+) -> Result<ConvertOutcome, BridgeError> {
+    ensure_hs_init();
+    let request = json!({
+        "from": from,
+        "to": "pdf",
+        "contentB64": BASE64.encode(content),
+        "standalone": standalone,
+        "metadata": metadata,
+    });
+    let c_request =
+        CString::new(request.to_string()).map_err(|_| BridgeError::NulInput("request"))?;
+    // SAFETY: request pointer valid for the call; returned pointer owned by us.
+    let raw = unsafe { dd_pandoc_make_pdf(c_request.as_ptr()) };
+    parse_envelope(take_owned_string(raw)?)
+}
+
+#[cfg(not(feature = "haskell-bridge"))]
+pub fn make_pdf(
+    _from: &str,
+    _content: &[u8],
+    _standalone: bool,
+    _metadata: &Value,
+) -> Result<ConvertOutcome, BridgeError> {
+    Err(BridgeError::Disabled)
+}
+
+/// Parse a `{ ok, outputB64?, error? }` envelope into a [`ConvertOutcome`].
+#[cfg(feature = "haskell-bridge")]
+fn parse_envelope(envelope: String) -> Result<ConvertOutcome, BridgeError> {
     let value: Value =
         serde_json::from_str(&envelope).map_err(|e| BridgeError::BadEnvelope(e.to_string()))?;
     let ok = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -143,17 +195,6 @@ pub fn convert(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
     })
-}
-
-#[cfg(not(feature = "haskell-bridge"))]
-pub fn convert(
-    _from: &str,
-    _to: &str,
-    _content: &[u8],
-    _standalone: bool,
-    _metadata: &Value,
-) -> Result<ConvertOutcome, BridgeError> {
-    Err(BridgeError::Disabled)
 }
 
 /// The linked Pandoc library version, e.g. `3.10`.

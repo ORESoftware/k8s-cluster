@@ -10,6 +10,20 @@ pub struct Config {
     pub contract_service_url: String,
     pub request_timeout: Duration,
     pub max_page_limit: i64,
+    /// Server-rendered HTMX operator console under `/app`.
+    pub app_ui_enabled: bool,
+    /// External path prefix the console is reached through (e.g. `/usacc`
+    /// behind the gateway, empty for direct access). Every link, form
+    /// action, and HTMX target the console renders is prefixed with this so
+    /// the same binary works directly and behind the path-stripping gateway.
+    pub app_base_path: String,
+    /// Optional `Authorization: Bearer` token gating every `/app` request.
+    /// When unset the console is open and intended for trusted networks
+    /// (front it with the gateway auth, as the JSON API already is).
+    pub app_ui_bearer: Option<String>,
+    /// Extra origins allowed to issue console writes (CSRF allow-list). The
+    /// request `Host` is always treated as same-origin.
+    pub app_ui_allowed_origins: Vec<String>,
 }
 
 impl Config {
@@ -31,8 +45,34 @@ impl Config {
             ),
             request_timeout: Duration::from_secs(env_u64("USACC_REQUEST_TIMEOUT_SECONDS", 20)),
             max_page_limit: env_i64("USACC_MAX_PAGE_LIMIT", 250).clamp(1, 1000),
+            app_ui_enabled: env_bool("USACC_APP_UI_ENABLED", true),
+            app_base_path: normalize_base_path(&env_value("USACC_APP_BASE_PATH", "")),
+            app_ui_bearer: first_env(&["USACC_APP_UI_BEARER"]),
+            app_ui_allowed_origins: split_origins(&env_value("USACC_APP_UI_ALLOWED_ORIGINS", "")),
         }
     }
+}
+
+/// Trim a base path to the `/foo` shape: no trailing slash, a single
+/// leading slash, empty stays empty.
+fn normalize_base_path(raw: &str) -> String {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.starts_with('/') {
+        trimmed.to_string()
+    } else {
+        format!("/{trimmed}")
+    }
+}
+
+fn split_origins(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 pub fn env_value(key: &str, fallback: &str) -> String {

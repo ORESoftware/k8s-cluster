@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-escrow-rs
 spec:
-  replicas: 0
+  replicas: 2
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-06-escrow-rs-bootstrap'
+        dd.dev/telemetry-revision: '2026-06-09-escrow-rs-contract-service-delegation'
       labels:
         app: dd-escrow-rs
     spec:
@@ -78,6 +78,24 @@ spec:
               value: 'true'
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
+            # Delegate on-chain simulate/send to the in-cluster dd-contract-service
+            # gateway instead of calling Solana JSON-RPC directly. Set to 'solana-rpc'
+            # to fall back to the direct-RPC path.
+            - name: ESCROW_SETTLEMENT_BACKEND
+              value: contract-service
+            - name: CONTRACT_SERVICE_URL
+              value: http://dd-contract-service.default.svc.cluster.local:8101
+            - name: CONTRACT_SERVICE_TIMEOUT_SECONDS
+              value: '20'
+            # Matches dd-contract-service CONTRACT_SEND_AUTH_SECRET; only needed once
+            # both services enable live sends (SOLANA_SETTLEMENT_ENABLED /
+            # SOLANA_SEND_ENABLED). Simulate does not require it.
+            - name: CONTRACT_SERVICE_SEND_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: CONTRACT_SEND_AUTH_SECRET
+                  optional: true
             - name: ESCROW_SETTLEMENT_AUTH_SECRET
               valueFrom:
                 secretKeyRef:

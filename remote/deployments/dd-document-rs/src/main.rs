@@ -106,6 +106,7 @@ struct AppState {
     pandoc_version: Option<String>,
     image_enabled: bool,
     magick_version: Option<String>,
+    pdf_enabled: bool,
     cache: Arc<Mutex<ConvCache>>,
     image_semaphore: Arc<Semaphore>,
     metrics: Arc<Metrics>,
@@ -177,6 +178,8 @@ struct Metrics {
     output_too_large_total: AtomicU64,
     cache_hits_total: AtomicU64,
     cache_misses_total: AtomicU64,
+    pdf_total: AtomicU64,
+    pdf_errors_total: AtomicU64,
     bridge_errors_total: AtomicU64,
     image_transforms_total: AtomicU64,
     image_identifies_total: AtomicU64,
@@ -388,6 +391,19 @@ struct ConvertBinaryRequest {
     from: String,
     to: String,
     /// Base64-encoded input bytes (text or binary formats).
+    content_base64: String,
+    #[serde(default)]
+    standalone: Option<bool>,
+    #[serde(default)]
+    metadata: Option<Value>,
+}
+
+#[derive(Deserialize)]
+struct PdfRequest {
+    #[serde(default)]
+    request_id: Option<String>,
+    from: String,
+    /// Base64-encoded input bytes. Output is always PDF.
     content_base64: String,
     #[serde(default)]
     standalone: Option<bool>,
@@ -630,6 +646,7 @@ async fn home() -> impl IntoResponse {
             "example": "/example",
             "convert": "/convert",
             "convertBinary": "/convert-binary",
+            "convertPdf": "/convert-pdf",
             "streamConvert": "/stream/convert",
             "toAst": "/to-ast",
             "fromAst": "/from-ast",
@@ -659,6 +676,7 @@ async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
         "pandocVersion": state.pandoc_version,
         "imageEnabled": state.image_enabled,
         "magickVersion": state.magick_version,
+        "pdfEnabled": state.pdf_enabled,
         "natsEnabled": state.nats.is_some(),
         "maxInputBytes": state.max_input_bytes,
         "maxOutputBytes": state.max_output_bytes,
@@ -690,6 +708,7 @@ async fn capabilities_http(State(state): State<AppState>) -> impl IntoResponse {
         "pandocVersion": state.pandoc_version,
         "imageEnabled": state.image_enabled,
         "magickVersion": state.magick_version,
+        "pdfEnabled": state.pdf_enabled,
         "maxInputBytes": state.max_input_bytes,
         "maxOutputBytes": state.max_output_bytes,
         "maxImageBytes": state.max_image_bytes,
@@ -764,6 +783,135 @@ async fn convert_binary_http(
             "requestId": rid,
             "from": req.from,
             "to": req.to,
+            "outputBytes": output.len(),
+            "content_base64": BASE64.encode(output.as_slice()),
+            "generatedAtMs": now_ms(),
+        }))
+        .into_response(),
+        Err(response) => response,
+    }
+}
+
+/// Render a document to PDF via the Typst engine (opt-in). Returns raw PDF
+/// bytes, or a ready `Response` error. Shares the conversion cache.
+async fn run_pdf(
+    state: &AppState,
+    from: &str,
+    content: &[u8],
+    standalone: bool,
+    metadata: Value,
+) -> Result<Arc<Vec<u8>>, Response> {
+    if !state.bridge_enabled {
+        state.metrics.bridge_errors_total.fetch_add(1, Ordering::Relaxed);
+        return Err(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "pandoc bridge is not available in this build",
+            json!({ "bridgeEnabled": false }),
+        ));
+    }
+    if !state.pdf_enabled {
+        return Err(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "pdf engine (typst) is not installed in this image; build with --build-arg PDF_ENGINE=typst",
+            json!({ "pdfEnabled": false }),
+        ));
+    }
+    if content.len() > state.max_stream_bytes {
+        state.metrics.format_rejections_total.fetch_add(1, Ordering::Relaxed);
+        return Err(json_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "content exceeds the configured size limit",
+            json!({ "maxInputBytes": state.max_stream_bytes, "contentBytes": content.len() }),
+        ));
+    }
+    if let Err((message, details)) = check_format("from", from, true, true) {
+        state.metrics.format_rejections_total.fetch_add(1, Ordering::Relaxed);
+        return Err(json_error(StatusCode::BAD_REQUEST, message, details));
+    }
+
+    let key = conversion_cache_key(from, "pdf", standalone, &metadata, content);
+    if let Some(hit) = state.cache.lock().unwrap_or_else(|e| e.into_inner()).get(key) {
+        state.metrics.cache_hits_total.fetch_add(1, Ordering::Relaxed);
+        return Ok(hit);
+    }
+    state.metrics.cache_misses_total.fetch_add(1, Ordering::Relaxed);
+
+    let (from_s, content_v) = (from.to_string(), content.to_vec());
+    let outcome = tokio::task::spawn_blocking(move || {
+        ffi::make_pdf(&from_s, &content_v, standalone, &metadata)
+    })
+    .await
+    .map_err(|join_err| {
+        json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "pdf worker failed",
+            json!({ "error": join_err.to_string() }),
+        )
+    })?;
+
+    match outcome {
+        Ok(outcome) if outcome.ok => {
+            let output = outcome.output.unwrap_or_default();
+            if output.len() > state.max_output_bytes {
+                state.metrics.output_too_large_total.fetch_add(1, Ordering::Relaxed);
+                return Err(json_error(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "generated pdf exceeds the configured output size limit",
+                    json!({ "maxOutputBytes": state.max_output_bytes, "outputBytes": output.len() }),
+                ));
+            }
+            state.metrics.pdf_total.fetch_add(1, Ordering::Relaxed);
+            let output = Arc::new(output);
+            state
+                .cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .put(key, output.clone());
+            Ok(output)
+        }
+        Ok(outcome) => {
+            state.metrics.pdf_errors_total.fetch_add(1, Ordering::Relaxed);
+            Err(json_error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "pdf generation failed",
+                json!({ "pandocError": outcome.error.unwrap_or_default() }),
+            ))
+        }
+        Err(error) => {
+            state.metrics.bridge_errors_total.fetch_add(1, Ordering::Relaxed);
+            Err(json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "pdf bridge call failed",
+                json!({ "error": error.to_string() }),
+            ))
+        }
+    }
+}
+
+async fn convert_pdf_http(
+    State(state): State<AppState>,
+    Json(req): Json<PdfRequest>,
+) -> Response {
+    let rid = request_id(req.request_id.as_ref(), "document-convert-pdf");
+    // Accept text content (content_base64 may carry UTF-8 text or binary input).
+    let content = match BASE64.decode(req.content_base64.trim()) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                "content_base64 is not valid base64",
+                json!({ "error": error.to_string() }),
+            )
+        }
+    };
+    let standalone = req.standalone.unwrap_or(true);
+    let metadata = req.metadata.clone().unwrap_or_else(|| json!({}));
+    match run_pdf(&state, &req.from, &content, standalone, metadata).await {
+        Ok(output) => Json(json!({
+            "ok": true,
+            "requestId": rid,
+            "from": req.from,
+            "to": "pdf",
             "outputBytes": output.len(),
             "content_base64": BASE64.encode(output.as_slice()),
             "generatedAtMs": now_ms(),
@@ -1271,7 +1419,14 @@ async fn stream_convert_http(
         .and_then(|v| serde_json::from_str::<Value>(v).ok())
         .unwrap_or_else(|| json!({}));
 
-    match run_conversion(&state, &from, &to, &body, standalone, metadata).await {
+    // `to: pdf` routes to the Typst engine path; everything else is runPure.
+    let result = if format_base(&to) == "pdf" {
+        run_pdf(&state, &from, &body, header_bool(&headers, "x-standalone").unwrap_or(true), metadata)
+            .await
+    } else {
+        run_conversion(&state, &from, &to, &body, standalone, metadata).await
+    };
+    match result {
         Ok(output) => (
             [(header::CONTENT_TYPE, output_content_type(&to))],
             (*output).clone(),
@@ -1446,6 +1601,12 @@ fn metrics_body(state: &AppState) -> String {
             "# HELP dd_document_rs_cache_misses_total Conversion cache misses.\n",
             "# TYPE dd_document_rs_cache_misses_total counter\n",
             "dd_document_rs_cache_misses_total {}\n",
+            "# HELP dd_document_rs_pdf_total Successful PDF generations.\n",
+            "# TYPE dd_document_rs_pdf_total counter\n",
+            "dd_document_rs_pdf_total {}\n",
+            "# HELP dd_document_rs_pdf_errors_total PDF generation failures.\n",
+            "# TYPE dd_document_rs_pdf_errors_total counter\n",
+            "dd_document_rs_pdf_errors_total {}\n",
             "# HELP dd_document_rs_bridge_errors_total Pandoc FFI bridge failures.\n",
             "# TYPE dd_document_rs_bridge_errors_total counter\n",
             "dd_document_rs_bridge_errors_total {}\n",
@@ -1495,6 +1656,8 @@ fn metrics_body(state: &AppState) -> String {
         m.output_too_large_total.load(Ordering::Relaxed),
         m.cache_hits_total.load(Ordering::Relaxed),
         m.cache_misses_total.load(Ordering::Relaxed),
+        m.pdf_total.load(Ordering::Relaxed),
+        m.pdf_errors_total.load(Ordering::Relaxed),
         m.bridge_errors_total.load(Ordering::Relaxed),
         m.image_transforms_total.load(Ordering::Relaxed),
         m.image_identifies_total.load(Ordering::Relaxed),
@@ -1761,6 +1924,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
+    // PDF needs the typst binary on PATH (opt-in in the image).
+    let pdf_engine = env_value("DOCUMENT_PDF_ENGINE", "typst");
+    let pdf_enabled = bridge_enabled
+        && std::process::Command::new(&pdf_engine)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
     let nats_url = env::var("NATS_URL")
         .ok()
         .map(|v| v.trim().to_string())
@@ -1794,6 +1966,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         pandoc_version,
         image_enabled,
         magick_version,
+        pdf_enabled,
         cache: Arc::new(Mutex::new(ConvCache::new(cache_capacity))),
         image_semaphore: Arc::new(Semaphore::new(image_concurrency.max(1))),
         metrics: Arc::new(Metrics::default()),
@@ -1807,6 +1980,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "pandocVersion": state.pandoc_version,
             "imageEnabled": state.image_enabled,
             "magickVersion": state.magick_version,
+            "pdfEnabled": state.pdf_enabled,
             "maxInputBytes": state.max_input_bytes,
             "maxOutputBytes": state.max_output_bytes,
             "maxImageBytes": state.max_image_bytes,
@@ -1835,6 +2009,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/example", get(example_http))
         .route("/convert", post(convert_http))
         .route("/convert-binary", post(convert_binary_http))
+        .route("/convert-pdf", post(convert_pdf_http))
         .route("/to-ast", post(to_ast_http))
         .route("/from-ast", post(from_ast_http))
         .route("/inspect", post(inspect_http))

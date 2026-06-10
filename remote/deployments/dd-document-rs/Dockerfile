@@ -65,6 +65,24 @@ RUN apt-get update \
        ca-certificates libgmp10 libffi8 zlib1g libnuma1 \
        libmagick++-6.q16-8 \
   && rm -rf /var/lib/apt/lists/*
+
+# Opt-in PDF engine. `--build-arg PDF_ENGINE=typst` installs the self-contained
+# typst binary (~30MB, no TeX, no network at runtime). Default image has no PDF
+# engine and /convert-pdf returns 503.
+ARG PDF_ENGINE=none
+ARG TYPST_VERSION=0.12.0
+RUN if [ "$PDF_ENGINE" = "typst" ]; then \
+      set -eux; \
+      apt-get update && apt-get install -y --no-install-recommends curl xz-utils; \
+      arch="$(uname -m)"; \
+      url="https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${arch}-unknown-linux-musl.tar.xz"; \
+      curl -fsSL "$url" -o /tmp/typst.tar.xz; \
+      tar -xJf /tmp/typst.tar.xz -C /tmp; \
+      install -m 0755 "/tmp/typst-${arch}-unknown-linux-musl/typst" /usr/local/bin/typst; \
+      apt-get purge -y curl xz-utils && apt-get autoremove -y; \
+      rm -rf /tmp/typst* /var/lib/apt/lists/*; \
+      /usr/local/bin/typst --version; \
+    fi
 # Install the hardening policy so dangerous ImageMagick coders (URL/MVG/MSL/PDF/
 # PS/SVG/...) are disabled and resource limits apply process-wide.
 ENV MAGICK_CONFIGURE_PATH=/etc/dd-imagemagick

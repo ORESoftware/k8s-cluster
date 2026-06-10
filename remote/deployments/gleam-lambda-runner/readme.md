@@ -103,6 +103,40 @@ The manager prewarms one Node.js host worker by default via `LAMBDA_PREWARM_RUNT
 `LAMBDA_PREWARM_CONTAINER_RUNTIMES` can also warm container workers when the runtime images below
 exist in the EC2 node's local containerd image store.
 
+## Container-pool dispatch (warm containers over NATS)
+
+Instead of spawning a child container locally per invoke, the runner can hand an invocation to
+`dd-container-pool`, which keeps warm containers reconciled and leases an idle one per request. This
+trades the local cold-start for a warm-start at the cost of a NATS round trip.
+
+The runner sends a NATS request/reply to the pool's owned subject
+`dd.remote.container_pool.<language>.requests` (built from the generated
+`ContainerPoolLanguageRequests` wildcard in `remote/libs/nats`, so a schema rename surfaces at build
+time). The request body is the standard pool `DispatchRequest`
+(`{requestId, poolSlug?, source, payload}`) where `payload` is the lambda invocation envelope; the
+pool replies with a `DispatchResponse` and the runner returns its `body` as the invocation output.
+
+Routing is opt-in per function and reads the same definition JSON used elsewhere (fields are commonly
+carried in `meta_data_json`):
+
+- `poolBacked` (bool): route this function through the pool. Global default is
+  `LAMBDA_POOL_DISPATCH_DEFAULT` (default `false`).
+- `poolLanguage` (string, optional): pool language token; defaults to the function's canonical
+  runtime (e.g. `nodejs`). Must match `^[A-Za-z0-9_-]{1,64}$`.
+- `poolSlug` (string, optional): pins a specific pool; included in the request so the pool selects by
+  slug rather than inferring from the subject. Must match `^[A-Za-z0-9._:-]{1,119}$`.
+- `poolSubject` (string, optional): overrides the request subject entirely; env override is
+  `LAMBDA_POOL_SUBJECT`.
+
+When a pool dispatch fails (NATS unconfigured, timeout, pool error), the runner falls back to local
+execution by default so a pool outage degrades latency, not availability. Set
+`LAMBDA_POOL_FALLBACK_LOCAL=false` to fail closed instead. Dispatch volume and failures are exposed
+as `dd_lambda_runner_pool_dispatch_total` and `dd_lambda_runner_pool_dispatch_failures_total`.
+
+The warm-container path requires `NATS_URL` to be configured and a pool whose worker image
+understands the lambda invocation envelope (it loads the active function definition from Postgres by
+`functionId`/`slug`, the same contract the local child runtimes use).
+
 On EC2 Kubernetes, launching those nested containerd containers from the runner pod requires the
 host `/run/containerd` directory for the socket/FIFOs, the host `/var/lib/containerd` snapshot tree,
 and a privileged runner pod (or an equivalent trusted host-side helper). The EC2 manifest sets

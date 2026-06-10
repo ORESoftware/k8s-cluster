@@ -71,6 +71,52 @@ check_definition(Command0, DefinitionJson0, TimeoutMs0) ->
     end.
 
 invoke_loaded_definition(FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
+    bump(invocations_total, 1),
+    case pool_dispatch_target(DefinitionJson) of
+        {ok, Subject, PoolSlug} ->
+            dispatch_via_pool(
+                Subject, PoolSlug, FallbackCommand, Identifier,
+                DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0
+            );
+        {error, Reason} ->
+            {error, Reason};
+        false ->
+            invoke_loaded_definition_local(
+                FallbackCommand, Identifier, DefinitionJson,
+                RequestPayload, IdleMs0, TimeoutMs0
+            )
+    end.
+
+%% Procure a warm container from dd-container-pool over NATS instead of spawning
+%% a child locally. The pool leases an idle warm worker, posts the lambda
+%% invocation envelope to it, and returns the worker's response body. On any
+%% transport/pool failure we optionally fall back to local execution so a pool
+%% outage degrades latency rather than availability.
+dispatch_via_pool(Subject, PoolSlug, FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
+    bump(pool_dispatch_total, 1),
+    TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
+    Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
+    case lambda_nats:pool_dispatch(Subject, PoolSlug, Identifier, Payload, TimeoutMs) of
+        {ok, Output} ->
+            {ok, Output};
+        {error, Reason} ->
+            bump(pool_dispatch_failures_total, 1),
+            case pool_fallback_local() of
+                true ->
+                    io:format(
+                        "lambda pool dispatch failed (~s); falling back to local execution~n",
+                        [safe_label(Reason)]
+                    ),
+                    invoke_loaded_definition_local(
+                        FallbackCommand, Identifier, DefinitionJson,
+                        RequestPayload, IdleMs0, TimeoutMs0
+                    );
+                false ->
+                    {error, Reason}
+            end
+    end.
+
+invoke_loaded_definition_local(FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
     case command_for_definition(FallbackCommand, DefinitionJson) of
         {ok, Command} ->
             Runtime = runtime_from_definition(DefinitionJson),
@@ -80,13 +126,97 @@ invoke_loaded_definition(FallbackCommand, Identifier, DefinitionJson, RequestPay
                     IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
                     TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
                     Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
-                    bump(invocations_total, 1),
                     invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
                 {error, Reason} ->
                     {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
+    end.
+
+%% Resolve the container-pool dispatch target for a definition, or `false` when
+%% the function should run locally. Pool routing is opt-in per definition via the
+%% `poolBacked` field (commonly carried in meta_data_json) or globally via the
+%% LAMBDA_POOL_DISPATCH_DEFAULT env. The request subject is sourced from the
+%% generated NATS subject defs so a schema rename surfaces at build time.
+pool_dispatch_target(DefinitionJson) ->
+    case pool_backed(DefinitionJson) of
+        false ->
+            false;
+        true ->
+            Runtime = runtime_from_definition(DefinitionJson),
+            Language = pool_language(DefinitionJson, Runtime),
+            case safe_pool_language(Language) of
+                false ->
+                    {error, iolist_to_binary(["invalid pool language token: ", Language])};
+                true ->
+                    case pool_slug(DefinitionJson) of
+                        {ok, PoolSlug} ->
+                            {ok, pool_subject(DefinitionJson, Language), PoolSlug};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end
+    end.
+
+pool_backed(DefinitionJson) ->
+    json_bool_field(
+        DefinitionJson,
+        <<"poolBacked">>,
+        env_bool("LAMBDA_POOL_DISPATCH_DEFAULT", false)
+    ).
+
+pool_language(DefinitionJson, Runtime) ->
+    case json_string_field(DefinitionJson, <<"poolLanguage">>) of
+        <<>> -> Runtime;
+        Language -> Language
+    end.
+
+pool_slug(DefinitionJson) ->
+    case json_string_field(DefinitionJson, <<"poolSlug">>) of
+        <<>> ->
+            {ok, <<>>};
+        Slug ->
+            case safe_pool_slug(Slug) of
+                true -> {ok, Slug};
+                false -> {error, <<"poolSlug contains unsupported characters">>}
+            end
+    end.
+
+pool_subject(DefinitionJson, Language) ->
+    case json_string_field(DefinitionJson, <<"poolSubject">>) of
+        <<>> ->
+            case env_binary("LAMBDA_POOL_SUBJECT", <<>>) of
+                <<>> -> pool_requests_subject(Language);
+                Subject -> Subject
+            end;
+        Subject ->
+            Subject
+    end.
+
+%% Build dd.remote.container_pool.<language>.requests from the generated wildcard
+%% (dd.remote.container_pool.*.requests) so the prefix can never drift from the
+%% pool service's owned subject.
+pool_requests_subject(Language) ->
+    Wildcard = dd_nats_subject_consts:container_pool_language_requests_wildcard(),
+    binary:replace(Wildcard, <<"*">>, Language).
+
+pool_fallback_local() ->
+    env_bool("LAMBDA_POOL_FALLBACK_LOCAL", true).
+
+safe_pool_language(Language) ->
+    re:run(Language, "^[A-Za-z0-9_-]{1,64}$", [{capture, none}]) =:= match.
+
+safe_pool_slug(Slug) ->
+    re:run(Slug, "^[A-Za-z0-9._:-]{1,119}$", [{capture, none}]) =:= match.
+
+env_bool(Name, Default) ->
+    case env_binary(Name, <<>>) of
+        <<"true">> -> true;
+        <<"1">> -> true;
+        <<"false">> -> false;
+        <<"0">> -> false;
+        _ -> Default
     end.
 
 invoke_worker(Command, ReuseKey, Payload, IdleMs, TimeoutMs) ->
@@ -154,6 +284,12 @@ metrics() ->
         "# HELP dd_lambda_runner_child_stdio_bytes_total Bytes read from child process stdio.\n",
         "# TYPE dd_lambda_runner_child_stdio_bytes_total counter\n",
         metric_line("dd_lambda_runner_child_stdio_bytes_total", get_metric(child_stdio_bytes_total)),
+        "# HELP dd_lambda_runner_pool_dispatch_total Invocations dispatched to dd-container-pool over NATS.\n",
+        "# TYPE dd_lambda_runner_pool_dispatch_total counter\n",
+        metric_line("dd_lambda_runner_pool_dispatch_total", get_metric(pool_dispatch_total)),
+        "# HELP dd_lambda_runner_pool_dispatch_failures_total Container-pool dispatches that failed (before any local fallback).\n",
+        "# TYPE dd_lambda_runner_pool_dispatch_failures_total counter\n",
+        metric_line("dd_lambda_runner_pool_dispatch_failures_total", get_metric(pool_dispatch_failures_total)),
         "# HELP dd_lambda_runner_active_workers Active reusable child processes.\n",
         "# TYPE dd_lambda_runner_active_workers gauge\n",
         metric_line("dd_lambda_runner_active_workers", ActiveWorkers)
@@ -327,9 +463,16 @@ container_command(Runtime, DefinitionJson) ->
                 <<"podman">> ->
                     Podman = env_binary("LAMBDA_CONTAINER_PODMAN", <<"/usr/bin/podman">>),
                     {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image))};
-                _ ->
+                <<"nerdctl">> ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image))}
+                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image))};
+                Other ->
+                    %% Fail closed: an unrecognized runner (typo, stale config) must not
+                    %% silently fall back to a different runtime than the operator set.
+                    {error, iolist_to_binary([
+                        "unsupported LAMBDA_CONTAINER_RUNNER (expected nerdctl|ctr|docker|podman): ",
+                        Other
+                    ])}
             end;
         false ->
             {error, <<"containerImage contains unsupported characters">>}

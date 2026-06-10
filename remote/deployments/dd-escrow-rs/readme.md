@@ -4,9 +4,24 @@ Rust Solana escrow intent validator and settlement gateway.
 
 The service does not store private keys and does not sign transactions. Callers submit escrow
 intents plus client-signed settlement transactions. `dd-escrow-rs` validates escrow-specific policy,
-can simulate settlement transactions through Solana JSON-RPC, and only sends transactions when
+can simulate settlement transactions, and only sends transactions when
 `SOLANA_SETTLEMENT_ENABLED=true` and `ESCROW_SETTLEMENT_AUTH_SECRET` are configured. Live
 settlement requires an attached validated intent by default.
+
+## Settlement Backend
+
+On-chain `simulate`/`send` are routed through a pluggable backend selected by
+`ESCROW_SETTLEMENT_BACKEND`:
+
+- `contract-service` (default) - delegates to the in-cluster `dd-contract-service` Solana gateway at
+  `CONTRACT_SERVICE_URL` (`/simulate` and `/send`). `/send` attaches the `x-contract-send-auth`
+  header from `CONTRACT_SERVICE_SEND_AUTH_SECRET`. The escrow service keeps all of its local policy
+  gates (settlement enabled, auth header, intent + resolution validation) and only delegates the raw
+  RPC step, so contract-service stays the single Solana egress point in the cluster.
+- `solana-rpc` - calls Solana JSON-RPC (`SOLANA_RPC_URL`) directly, the original behavior, kept as a
+  fallback.
+
+`GET /capabilities` and `GET /status` report the active backend and contract-service reachability.
 
 ## Escrow Kinds
 
@@ -32,7 +47,8 @@ that do not belong to the selected kind.
 
 - `GET /healthz` - liveness/readiness probe.
 - `GET /metrics` - Prometheus metrics.
-- `GET /status` - checks `getHealth` and `getVersion` against `SOLANA_RPC_URL`.
+- `GET /status` - reports the active settlement backend, probes `dd-contract-service` health when
+  delegating, and checks `getHealth`/`getVersion` against `SOLANA_RPC_URL`.
 - `GET /types` - escrow kind catalog.
 - `GET /capabilities` - runtime settlement posture, limits, and supported escrow kinds.
 - `GET /schema` - JSON Schema sketch for `solana.escrow.v1`.
@@ -40,12 +56,33 @@ that do not belong to the selected kind.
 - `POST /validate` - validates an escrow intent and returns a deterministic digest.
 - `POST /audit` - returns validation, readiness, checks, warnings, and errors without touching
   Solana RPC.
-- `POST /simulate-settlement` - calls Solana JSON-RPC `simulateTransaction` for a signed settlement
-  transaction.
-- `POST /settle` - calls Solana JSON-RPC `sendTransaction` only when explicitly enabled and the
-  caller sends the matching `x-escrow-settlement-auth` header.
+- `POST /resolve` - validates a proposed resolution (`{ action, intent, resolution }`) against the
+  escrow parties without touching Solana. See Resolutions below.
+- `POST /simulate-settlement` - simulates a signed settlement transaction through the active
+  settlement backend (`simulateTransaction`).
+- `POST /settle` - sends a signed settlement transaction through the active settlement backend
+  (`sendTransaction`) only when explicitly enabled and the caller sends the matching
+  `x-escrow-settlement-auth` header.
 
 Generated docs are served at `/docs/api`, `/api/docs`, and `/api/docs.json`.
+
+## Resolutions
+
+Settlement and `/resolve` requests may attach a `resolution` block describing the intended outcome,
+which is cross-checked against the escrow parties so the chosen settlement action is consistent with
+who is actually in the escrow:
+
+- `outcome` (one of `release`, `refund`, `split`, `dispute-award`, `expire`, `cancel`) must map onto
+  the settlement `action` (`split` accepts `split-release` or `partial-release`).
+- `refund` requires a refundable party (buyer, payer, depositor, client, tenant, or contributor); an
+  explicit `refundRole` must be both refundable and present.
+- `dispute-award` requires a `winnerRole` that is a present, non-arbitrator party, and - under
+  `arbiter-decision`/`multi-sig` release modes - an `arbitrator` party.
+- `split` requires `allocations` whose `payoutBps` sum to exactly 10000, each referencing a present
+  party role (and valid `pubkey` when provided).
+
+A `resolution` on `/settle` or `/simulate-settlement` requires an attached `intent` so the outcome
+can be checked against the escrow parties.
 
 ## Hardening Contract
 
@@ -64,8 +101,14 @@ Generated docs are served at `/docs/api`, `/api/docs`, and `/api/docs.json`.
 - `skipPreflight` is rejected unless `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 - Settlement transactions must already be signed by the caller and fit within the bounded payload
   size.
+- `ESCROW_SETTLEMENT_BACKEND=contract-service` requires `CONTRACT_SERVICE_URL`. The URL must be an
+  absolute `http`/`https` address without embedded credentials (in-cluster `*.svc.cluster.local`
+  hosts are allowed). Live delegated sends additionally require both this service's send gates and
+  the contract-service `SOLANA_SEND_ENABLED=true` + matching `x-contract-send-auth`.
 - The Kubernetes deployment runs as a non-root UID, disables service-account token mounting, uses a
-  read-only root filesystem, and limits ingress/egress with NetworkPolicy.
+  read-only root filesystem, and limits ingress/egress with NetworkPolicy. Egress is restricted to
+  DNS, NATS, runtime-config, `dd-contract-service:8101`, and public HTTPS (retained for the
+  `solana-rpc` fallback backend and `/status` probes).
 
 ## NATS API
 

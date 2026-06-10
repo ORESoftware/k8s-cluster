@@ -65,6 +65,14 @@ spec:
               value: usacc_rest_api_backend_rs=info,tower_http=info
             - name: USACC_API_AUTH_REQUIRED
               value: 'true'
+            # HTMX operator console under /app. The gateway exposes it at
+            # /usacc/app and strips the /usacc prefix, so the console builds
+            # its links with that base path. Access is gated by the gateway
+            # auth (same as the JSON API), so no separate UI bearer is set.
+            - name: USACC_APP_UI_ENABLED
+              value: 'true'
+            - name: USACC_APP_BASE_PATH
+              value: /usacc
             - name: USACC_CONTRACT_SERVICE_URL
               value: http://dd-contract-service.default.svc.cluster.local:8101
             - name: USACC_DATABASE_URL

@@ -4,7 +4,9 @@ Rust/Axum REST backend for the US Anti-Corruption Court project.
 
 ## Purpose
 
-- Exposes JSON-only REST routes for frontend CRUD applications.
+- Exposes JSON REST routes for frontend CRUD applications.
+- Serves a server-rendered HTMX operator console at `/app` from the same
+  Axum binary (see [Operator console](#operator-console)).
 - Reads and writes the USACC Postgres contract tables owned by
   `remote/libs/pg-defs/schema/schema.sql`.
 - Imports `remote/submodules/discrete-event-system.rs` as the `des_engine` Rust crate for
@@ -34,6 +36,30 @@ Core surfaces:
 - Contracts: validate/simulate envelopes through the Rust Solana contract service.
 - Simulations: run a deterministic DES-backed court simulation and optionally persist it.
 
+## Operator console
+
+A server-rendered HTMX UI mounted at `/app`, a parallel surface to the JSON
+API over the same Postgres pool. It uses [maud](https://maud.lambda.xyz) for
+templating and a vendored, SRI-pinned HTMX served from `/app/static/` (no
+CDN, strict `script-src 'self'` CSP). Surfaces:
+
+- Dashboard — record counts and a live (5s) DB status pill.
+- Cases — file cases and drill into stages, elections, and ledger totals.
+- Users — register participants and entities.
+- Elections — open ballots, review votes, and run a tally that certifies
+  the election (same arithmetic as `POST /api/usacc/elections/:id/tally`).
+- Simulations — run the deterministic DES court simulation and optionally
+  persist the run.
+
+Security mirrors the JSON API's posture: a CSRF guard requires `HX-Request`
+(or a same-site `Sec-Fetch-Site`) on every write, an optional
+`USACC_APP_UI_BEARER` gates all console requests, and strict security
+headers (CSP, anti-clickjacking, `noindex`) are set on every response.
+
+Every link, form action, and HTMX target is built with `USACC_APP_BASE_PATH`
+so the same binary works both directly (`/app`, base empty) and behind the
+path-stripping gateway (`/usacc/app`, base `/usacc`).
+
 ## Environment
 
 Database lookup order:
@@ -50,6 +76,13 @@ Other important variables:
 - `USACC_API_AUTH_REQUIRED` (defaults to `true`)
 - `USACC_CONTRACT_SERVICE_URL` (defaults to
   `http://dd-contract-service.default.svc.cluster.local:8101`)
+- `USACC_APP_UI_ENABLED` (defaults to `true`) — mount the `/app` console.
+- `USACC_APP_BASE_PATH` (defaults to empty) — external path prefix the
+  console is reached through (set to `/usacc` behind the gateway).
+- `USACC_APP_UI_BEARER` — optional `Authorization: Bearer` token gating the
+  console. Unset means open (front it with the gateway auth).
+- `USACC_APP_UI_ALLOWED_ORIGINS` — comma-separated extra origins permitted
+  to issue console writes (the request `Host` is always same-origin).
 
 If no database URL is configured the service still boots and reports that state from `/healthz`;
 database-backed API routes return `503`.

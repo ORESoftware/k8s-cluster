@@ -24,6 +24,7 @@
 -- filesystem/network/env/clock access.
 module PandocBridge
   ( dd_pandoc_convert
+  , dd_pandoc_make_pdf
   , dd_pandoc_version
   , dd_pandoc_free
   ) where
@@ -41,6 +42,7 @@ import           Data.Foldable          (toList)
 import           Data.Text              (Text)
 import qualified Data.Text              as T
 import qualified Data.Text.Encoding     as TE
+import           Data.Text.Encoding.Error (lenientDecode)
 import           Data.Version           (showVersion)
 import           Foreign.C.Types        (CChar)
 import           Foreign.Marshal.Alloc  (free)
@@ -50,9 +52,11 @@ import           GHC.IO.Encoding        (utf8)
 import           Text.Pandoc
 import           Text.Pandoc.Builder    (setMeta)
 import           Text.Pandoc.Format     (parseFlavoredFormat)
+import           Text.Pandoc.PDF        (makePDF)
 import           Text.Pandoc.Templates  (compileDefaultTemplate)
 
 foreign export ccall dd_pandoc_convert :: Ptr CChar -> IO (Ptr CChar)
+foreign export ccall dd_pandoc_make_pdf :: Ptr CChar -> IO (Ptr CChar)
 foreign export ccall dd_pandoc_version :: IO (Ptr CChar)
 foreign export ccall dd_pandoc_free :: Ptr CChar -> IO ()
 
@@ -149,6 +153,51 @@ dd_pandoc_convert reqPtr = do
           A.object ["ok" A..= False, "from" A..= reqFrom req, "to" A..= reqTo req, "error" A..= show perr]
         Left (ex :: SomeException) ->
           A.object ["ok" A..= False, "from" A..= reqFrom req, "to" A..= reqTo req, "error" A..= show ex]
+
+-- | Render 'reqFrom' input to a PDF via the Typst engine.
+--
+-- Unlike 'runConvert', PDF generation cannot use 'runPure': 'makePDF' shells out
+-- to the @typst@ binary and uses temp files, so it runs in 'runIO'. This path is
+-- therefore NOT sandboxed and requires @typst@ on PATH (opt-in in the image).
+runPdf :: ConvReq -> IO (Either PandocError (Either BL.ByteString BL.ByteString))
+runPdf req = runIO $ do
+  inBytes <- case B64.decode (TE.encodeUtf8 (reqContentB64 req)) of
+    Right bytes -> pure bytes
+    Left err    -> throwError (PandocSomeError ("invalid base64 input: " <> T.pack err))
+  (reader, readerExts) <- getReader =<< parseFlavoredFormat (reqFrom req)
+  doc0 <- case reader of
+    TextReader f -> case TE.decodeUtf8' inBytes of
+      Right text -> f def { readerExtensions = readerExts, readerStandalone = True } text
+      Left err   -> throwError (PandocSomeError ("input is not valid UTF-8: " <> T.pack (show err)))
+    ByteStringReader f -> f def { readerExtensions = readerExts } (BL.fromStrict inBytes)
+  let doc = applyMeta (reqMetadata req) doc0
+  -- PDF output is inherently standalone; the engine compiles a full document.
+  template <- compileDefaultTemplate "typst"
+  let wopts = def { writerTemplate = Just template }
+  makePDF "typst" [] writeTypst wopts doc
+
+dd_pandoc_make_pdf :: Ptr CChar -> IO (Ptr CChar)
+dd_pandoc_make_pdf reqPtr = do
+  reqText <- peekUtf8 reqPtr
+  case A.eitherDecodeStrict' (TE.encodeUtf8 reqText) :: Either String ConvReq of
+    Left err -> envelope (A.object ["ok" A..= False, "error" A..= ("invalid request: " <> err)])
+    Right req -> do
+      outcome <- try (runPdf req)
+      let lenient = TE.decodeUtf8With lenientDecode . BL.toStrict
+      envelope $ case outcome of
+        Right (Right (Right pdf)) ->
+          A.object
+            [ "ok" A..= True
+            , "from" A..= reqFrom req
+            , "to" A..= ("pdf" :: Text)
+            , "outputB64" A..= TE.decodeUtf8 (B64.encode (BL.toStrict pdf))
+            ]
+        Right (Right (Left engineLog)) ->
+          A.object ["ok" A..= False, "to" A..= ("pdf" :: Text), "error" A..= ("pdf engine failed: " <> lenient engineLog)]
+        Right (Left perr) ->
+          A.object ["ok" A..= False, "to" A..= ("pdf" :: Text), "error" A..= show perr]
+        Left (ex :: SomeException) ->
+          A.object ["ok" A..= False, "to" A..= ("pdf" :: Text), "error" A..= show ex]
 
 dd_pandoc_version :: IO (Ptr CChar)
 dd_pandoc_version = newUtf8 (T.pack (showVersion pandocVersion))

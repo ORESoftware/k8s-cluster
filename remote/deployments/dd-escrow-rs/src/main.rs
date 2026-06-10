@@ -3570,6 +3570,7 @@ mod tests {
             max_retries: None,
             min_context_slot: None,
             intent: None,
+            resolution: None,
         };
         let errors = validate_settlement_request(&request, "devnet", false, &[], false)
             .expect_err("must reject action");
@@ -3592,6 +3593,7 @@ mod tests {
             max_retries: None,
             min_context_slot: None,
             intent: None,
+            resolution: None,
         };
         let errors = validate_settlement_request(&request, "devnet", false, &[], true)
             .expect_err("must require intent for live settlement");
@@ -3656,5 +3658,209 @@ mod tests {
         let body = metrics_body(&state);
         assert!(body.contains("dd_escrow_rs_info{cluster=\"devnet\""));
         assert!(body.contains("dd_escrow_rs_settlements_total 1"));
+    }
+
+    fn party(role: PartyRole) -> EscrowParty {
+        EscrowParty {
+            role,
+            pubkey: "11111111111111111111111111111111".to_string(),
+            label: None,
+            required_signer: None,
+            payout_bps: None,
+        }
+    }
+
+    fn run_resolution(
+        kind: EscrowKind,
+        action: SettlementAction,
+        resolution: &EscrowResolution,
+        parties: &[EscrowParty],
+        release_mode: ReleaseMode,
+    ) -> (Vec<String>, Vec<String>) {
+        let spec = kind_spec(kind);
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+        validate_resolution(
+            action,
+            resolution,
+            parties,
+            &spec,
+            release_mode,
+            &mut errors,
+            &mut warnings,
+        );
+        (errors, warnings)
+    }
+
+    #[test]
+    fn resolution_outcome_must_match_action() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::Refund,
+            winner_role: None,
+            refund_role: None,
+            allocations: None,
+            rationale: None,
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::MarketplaceOrder,
+            SettlementAction::Release,
+            &resolution,
+            &[party(PartyRole::Buyer), party(PartyRole::Seller)],
+            ReleaseMode::BuyerApproval,
+        );
+        assert!(errors.iter().any(|error| error.contains("not consistent")));
+    }
+
+    #[test]
+    fn refund_resolution_requires_refundable_party() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::Refund,
+            winner_role: None,
+            refund_role: None,
+            allocations: None,
+            rationale: None,
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::MarketplaceOrder,
+            SettlementAction::Refund,
+            &resolution,
+            &[party(PartyRole::Seller)],
+            ReleaseMode::BuyerApproval,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("refundable party")));
+    }
+
+    #[test]
+    fn dispute_award_requires_arbiter_under_arbiter_decision() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::DisputeAward,
+            winner_role: Some(PartyRole::Buyer),
+            refund_role: None,
+            allocations: None,
+            rationale: None,
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::MarketplaceOrder,
+            SettlementAction::DisputeAward,
+            &resolution,
+            &[party(PartyRole::Buyer), party(PartyRole::Seller)],
+            ReleaseMode::ArbiterDecision,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("requires an arbitrator party")));
+    }
+
+    #[test]
+    fn split_allocations_must_sum_to_10000() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::Split,
+            winner_role: None,
+            refund_role: None,
+            allocations: Some(vec![ResolutionAllocation {
+                role: PartyRole::Seller,
+                pubkey: None,
+                payout_bps: 5_000,
+            }]),
+            rationale: None,
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::GroupBuy,
+            SettlementAction::SplitRelease,
+            &resolution,
+            &[party(PartyRole::Contributor), party(PartyRole::Seller)],
+            ReleaseMode::TimeLocked,
+        );
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("sum to exactly 10000")));
+    }
+
+    #[test]
+    fn valid_split_resolution_passes() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::Split,
+            winner_role: None,
+            refund_role: None,
+            allocations: Some(vec![
+                ResolutionAllocation {
+                    role: PartyRole::Contributor,
+                    pubkey: None,
+                    payout_bps: 4_000,
+                },
+                ResolutionAllocation {
+                    role: PartyRole::Seller,
+                    pubkey: None,
+                    payout_bps: 6_000,
+                },
+            ]),
+            rationale: Some("agreed split".to_string()),
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::GroupBuy,
+            SettlementAction::SplitRelease,
+            &resolution,
+            &[party(PartyRole::Contributor), party(PartyRole::Seller)],
+            ReleaseMode::TimeLocked,
+        );
+        assert!(errors.is_empty(), "expected no errors, got {errors:?}");
+    }
+
+    #[test]
+    fn contract_service_send_body_maps_fields_and_omits_simulate_keys() {
+        let request = EscrowSettlementRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            request_id: Some("settle-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            kind: EscrowKind::MarketplaceOrder,
+            escrow_id: "order.demo.001".to_string(),
+            action: SettlementAction::Release,
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            skip_preflight: None,
+            max_retries: Some(5),
+            min_context_slot: None,
+            intent: None,
+            resolution: None,
+        };
+        let body = contract_service_body(
+            &request,
+            ContractServiceOp::Send,
+            "devnet",
+            "base64",
+            "confirmed",
+            "settle-demo",
+        );
+        assert_eq!(body["cluster"], json!("devnet"));
+        assert_eq!(body["encoding"], json!("base64"));
+        assert_eq!(body["skipPreflight"], json!(false));
+        assert_eq!(body["maxRetries"], json!(5));
+        assert!(body.get("sigVerify").is_none());
+        assert!(body.get("replaceRecentBlockhash").is_none());
+
+        let simulate = contract_service_body(
+            &request,
+            ContractServiceOp::Simulate,
+            "devnet",
+            "base64",
+            "confirmed",
+            "settle-demo",
+        );
+        assert_eq!(simulate["sigVerify"], json!(false));
+        assert_eq!(simulate["replaceRecentBlockhash"], json!(true));
+        assert!(simulate.get("skipPreflight").is_none());
+    }
+
+    #[test]
+    fn contract_service_url_allows_cluster_local() {
+        let url = validate_contract_service_url(
+            "http://dd-contract-service.default.svc.cluster.local:8101",
+        )
+        .expect("cluster-local contract-service URL should be allowed");
+        assert!(url.contains("dd-contract-service"));
+        assert!(validate_contract_service_url("http://user:pass@host:8101").is_err());
     }
 }

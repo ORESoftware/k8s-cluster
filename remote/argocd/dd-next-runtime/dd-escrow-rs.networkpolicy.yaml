@@ -53,6 +53,16 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
+    # Delegate on-chain simulate/send to the dd-contract-service gateway.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-contract-service
+      ports:
+        - protocol: TCP
+          port: 8101
+    # Public HTTPS Solana RPC egress retained for the solana-rpc fallback backend
+    # and the /status getHealth/getVersion probes.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

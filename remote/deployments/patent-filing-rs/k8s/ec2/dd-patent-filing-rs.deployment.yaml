@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-patent-filing-rs
+  namespace: default
+  labels:
+    app: dd-patent-filing-rs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-patent-filing-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-09-initial'
+      labels:
+        app: dd-patent-filing-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: patent-filing-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              TOOLCHAIN_BIN=/usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin
+              export PATH="/usr/local/cargo/bin:${TOOLCHAIN_BIN}:${PATH}"
+              export RUSTC="${TOOLCHAIN_BIN}/rustc"
+              export CARGO="${TOOLCHAIN_BIN}/cargo"
+              export CARGO_HOME=/var/cache/dd-patent-filing-rs/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-patent-filing-rs/target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/patent-filing-rs
+              exec "$CARGO" run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8116'
+            - name: RUST_LOG
+              value: dd_patent_filing_rs=info,tower_http=info
+            - name: PATENT_FILING_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: PATENT_FILING_CENTER_URL
+              value: https://patentcenter.uspto.gov/
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: PATENT_FILING_SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: PATENT_FILING_SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8116
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-patent-filing-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          hostPath:
+            path: /var/cache/dd-patent-filing-rs
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

@@ -41,6 +41,7 @@ mod publishing;
 mod query_cache;
 mod question_nl;
 mod rbac;
+mod render;
 mod renderer_packages;
 mod renderer_verification;
 mod self_service;
@@ -683,6 +684,7 @@ fn app_router(state: AppState) -> Router {
         .route("/evolution/run", post(run_evolution))
         .route("/evolution/runs", get(list_evolution_runs))
         .route("/presentations/export", post(export_presentation))
+        .route("/render", get(render_descriptor).post(render_visualization))
         .route("/docs/api", get(docs_html))
         .route("/api/docs", get(docs_html))
         .route("/api/docs.json", get(docs_json))
@@ -3279,6 +3281,28 @@ async fn calculations_descriptor(State(state): State<AppState>) -> Json<Value> {
     Json(calculations::descriptor())
 }
 
+async fn render_descriptor(State(state): State<AppState>) -> Json<Value> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(render::descriptor())
+}
+
+async fn render_visualization(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<render::RenderRequest>,
+) -> Result<Json<render::RenderResponse>, ApiError> {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    authorize(&state, &headers, rbac::Permission::PresentationExport)?;
+    let response = render::render(request).map_err(ApiError::bad_request)?;
+    Ok(Json(response))
+}
+
 async fn apply_calculations(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -5079,6 +5103,18 @@ fn route_docs() -> Vec<RouteDoc> {
             path: "/calculations/apply",
             auth: "query-execute",
             description: "Apply LOD expressions and table calculations to a result set.",
+        },
+        RouteDoc {
+            method: "GET",
+            path: "/render",
+            auth: "presentation-export",
+            description: "Describe server-side SVG rendering capabilities.",
+        },
+        RouteDoc {
+            method: "POST",
+            path: "/render",
+            auth: "presentation-export",
+            description: "Render a spec plus inline rows to a self-contained SVG image.",
         },
         RouteDoc {
             method: "GET",

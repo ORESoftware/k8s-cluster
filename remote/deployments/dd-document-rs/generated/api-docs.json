@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-document-rs",
   "language": "rust",
-  "routeCount": 25,
+  "routeCount": 26,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 16,
+    "user-generated": 17,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -111,6 +111,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "convert_binary_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-document-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/convert-pdf",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "convert_pdf_http"
       ],
       "sourceFiles": [
         "remote/deployments/dd-document-rs/src/main.rs"

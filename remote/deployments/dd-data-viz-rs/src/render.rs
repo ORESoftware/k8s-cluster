@@ -156,7 +156,7 @@ fn render_bar(request: &RenderRequest, area: &Area) -> Result<String, String> {
         let bar_height = area.y1 - top;
         let _ = write!(
             body,
-            r#"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#4f72d8" />"#,
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#4f72d8" />"##,
             cx - bar_width / 2.0,
             top,
             bar_width,
@@ -165,7 +165,7 @@ fn render_bar(request: &RenderRequest, area: &Area) -> Result<String, String> {
         if let Some(label) = labels.get(index) {
             let _ = write!(
                 body,
-                r#"<text x="{:.1}" y="{:.1}" font-size="10" text-anchor="middle" fill="#444">{}</text>"#,
+                r##"<text x="{:.1}" y="{:.1}" font-size="10" text-anchor="middle" fill="#444">{}</text>"##,
                 cx,
                 area.y1 + 14.0,
                 escape_xml(label)
@@ -198,7 +198,7 @@ fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String,
             .join(" ");
         let _ = write!(
             body,
-            r#"<polyline points="{points}" fill="none" stroke="#4f72d8" stroke-width="2" />"#
+            r##"<polyline points="{points}" fill="none" stroke="#4f72d8" stroke-width="2" />"##
         );
     }
 
@@ -208,15 +208,14 @@ fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String,
         if mark == "stem" {
             let _ = write!(
                 body,
-                r#"<line x1="{px:.1}" y1="{baseline:.1}" x2="{px:.1}" y2="{py:.1}" stroke="#4f72d8" stroke-width="1.5" />"#
+                r##"<line x1="{px:.1}" y1="{baseline:.1}" x2="{px:.1}" y2="{py:.1}" stroke="#4f72d8" stroke-width="1.5" />"##
             );
         }
-        if mark != "line" || true {
-            let _ = write!(
-                body,
-                r#"<circle cx="{px:.1}" cy="{py:.1}" r="3" fill="#4f72d8" />"#
-            );
-        }
+        // Point markers on every mark (line gets markers on top of the path).
+        let _ = write!(
+            body,
+            r##"<circle cx="{px:.1}" cy="{py:.1}" r="3" fill="#4f72d8" />"##
+        );
     }
     Ok(body)
 }
@@ -227,7 +226,7 @@ fn render_histogram(request: &RenderRequest, area: &Area) -> Result<String, Stri
         .ok_or("histogram render requires a numeric `x` (or `y`) field")?;
     let (min, max) = bounds(&values, false);
     let span = (max - min).max(f64::EPSILON);
-    let mut counts = vec![0_usize; HIST_BINS];
+    let mut counts = [0_usize; HIST_BINS];
     for value in &values {
         let mut bin = ((value - min) / span * HIST_BINS as f64).floor() as isize;
         bin = bin.clamp(0, HIST_BINS as isize - 1);
@@ -242,7 +241,7 @@ fn render_histogram(request: &RenderRequest, area: &Area) -> Result<String, Stri
         let x = area.x0 + slot * index as f64;
         let _ = write!(
             body,
-            r#"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#4f72d8" stroke="#fff" />"#,
+            r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#4f72d8" stroke="#fff" />"##,
             x,
             top,
             slot * 0.96,
@@ -258,12 +257,12 @@ fn axes(area: &Area, y_min: f64, y_max: f64) -> String {
     // Plot border.
     let _ = write!(
         svg,
-        r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#999" stroke-width="1" />"#,
+        r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#999" stroke-width="1" />"##,
         area.x0, area.y1, area.x1, area.y1
     );
     let _ = write!(
         svg,
-        r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#999" stroke-width="1" />"#,
+        r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#999" stroke-width="1" />"##,
         area.x0, area.y0, area.x0, area.y1
     );
     // Five horizontal gridlines + labels.
@@ -273,12 +272,12 @@ fn axes(area: &Area, y_min: f64, y_max: f64) -> String {
         let y = area.sy(value, y_min, y_max);
         let _ = write!(
             svg,
-            r#"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#eee" stroke-width="1" />"#,
+            r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#eee" stroke-width="1" />"##,
             area.x0, y, area.x1, y
         );
         let _ = write!(
             svg,
-            r#"<text x="{:.1}" y="{:.1}" font-size="10" text-anchor="end" fill="#666">{}</text>"#,
+            r##"<text x="{:.1}" y="{:.1}" font-size="10" text-anchor="end" fill="#666">{}</text>"##,
             area.x0 - 6.0,
             y + 3.0,
             format_tick(value)
@@ -289,7 +288,7 @@ fn axes(area: &Area, y_min: f64, y_max: f64) -> String {
 
 fn wrap_svg(width: u32, height: u32, title: &str, area: &Area, body: &str) -> String {
     format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{label}"><rect width="{width}" height="{height}" fill="#ffffff" /><text x="{tx:.1}" y="28" font-size="16" font-family="system-ui, sans-serif" fill="#222">{title_text}</text><g font-family="system-ui, sans-serif">{body}</g></svg>"#,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{label}"><rect width="{width}" height="{height}" fill="#ffffff" /><text x="{tx:.1}" y="28" font-size="16" font-family="system-ui, sans-serif" fill="#222">{title_text}</text><g font-family="system-ui, sans-serif">{body}</g></svg>"##,
         label = escape_xml(title),
         tx = area.x0,
         title_text = escape_xml(title),

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-patent-filing-rs
+  namespace: default
+  labels:
+    app: dd-patent-filing-rs
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-patent-filing-rs
+  ports:
+    - name: http
+      port: 8116
+      targetPort: http
+      protocol: TCP

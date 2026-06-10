@@ -274,9 +274,9 @@ Gateway path map:
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
-- `/api/usacc`, `/api/usacc/*`, `/usacc/healthz`, `/usacc/metrics`, `/usacc/docs/api`,
-  `/usacc/api/docs`, `/usacc/api/docs.json` -> `usacc-rest-api-backend-rs:8121`
-  (gateway auth required)
+- `/api/usacc`, `/api/usacc/*`, `/usacc/app`, `/usacc/app/*`, `/usacc/healthz`,
+  `/usacc/metrics`, `/usacc/docs/api`, `/usacc/api/docs`, `/usacc/api/docs.json` ->
+  `usacc-rest-api-backend-rs:8121` (gateway auth required)
 - `/escrow/`, `/escrow/types`, `/escrow/capabilities`, `/escrow/schema`, `/escrow/example`,
   `POST /escrow/validate`, `POST /escrow/audit`, `POST /escrow/simulate-settlement`,
   `POST /escrow/settle` -> `dd-escrow-rs:8115`
@@ -771,10 +771,12 @@ egress to DNS, NATS, runtime-config, and public HTTPS Solana RPC.
 
 ## USACC REST API backend
 
-`usacc-rest-api-backend-rs` runs `remote/deployments/usacc-rest-api-backend-rs` as a JSON-only
-Rust/Axum backend for the US Anti-Corruption Court project. The public gateway exposes domain routes
+`usacc-rest-api-backend-rs` runs `remote/deployments/usacc-rest-api-backend-rs` as a Rust/Axum
+backend for the US Anti-Corruption Court project. The public gateway exposes domain routes
 under `/api/usacc/*` for users, cases, stages, elections, votes, ledger entries, contract validation,
-contract simulation, and discrete-event simulation runs. Operator docs and health are available at
+contract simulation, and discrete-event simulation runs. A server-rendered HTMX operator console is
+exposed at `/usacc/app` (the backend serves it under `/app`; `USACC_APP_BASE_PATH=/usacc` makes its
+links resolve through the prefix-stripping gateway). Operator docs and health are available at
 `/usacc/docs/api`, `/usacc/api/docs`, `/usacc/api/docs.json`, `/usacc/healthz`, and
 `/usacc/metrics`.
 

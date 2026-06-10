@@ -7,18 +7,24 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     extract::{DefaultBodyLimit, Form, Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower_http::{
+    limit::RequestBodyLimitLayer, set_header::SetResponseHeaderLayer, timeout::TimeoutLayer,
+    trace::TraceLayer,
+};
+use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 const SERVICE_NAME: &str = "dd-patent-filing-rs";
 const SCHEMA_VERSION: &str = "patent_filing.package.v1";
@@ -28,6 +34,14 @@ const MAX_TEXT_LEN: usize = 24_000;
 const MAX_SHORT_TEXT_LEN: usize = 1_000;
 const MAX_LIST_ITEMS: usize = 64;
 const MAX_TOKEN_LEN: usize = 160;
+const MAX_CLAIMS: usize = 200;
+const ABSTRACT_WORD_LIMIT: usize = 150;
+const REQUEST_TIMEOUT_SECS: u64 = 15;
+/// USPTO fee schedule effective date encoded in [`fee_schedule`].
+const FEE_EFFECTIVE_DATE: &str = "2025-01-19";
+/// Pinned htmx asset + Subresource Integrity hash (supply-chain hardening).
+const HTMX_SRC: &str = "https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js";
+const HTMX_SRI: &str = "sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2";
 
 #[derive(Clone)]
 struct AppState {
@@ -51,6 +65,9 @@ struct Metrics {
     readiness_requests_total: AtomicU64,
     search_plan_requests_total: AtomicU64,
     package_reviews_total: AtomicU64,
+    claim_checks_total: AtomicU64,
+    fee_estimates_total: AtomicU64,
+    deadline_requests_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -87,7 +104,10 @@ struct PatentIntakeRequest {
     #[serde(default)]
     advantages: Vec<String>,
     public_disclosure_date: Option<String>,
+    provisional_filing_date: Option<String>,
+    foreign_priority_date: Option<String>,
     target_filing: Option<String>,
+    entity_status: Option<String>,
     desired_claim_count: Option<usize>,
     attorney_review: Option<bool>,
     #[serde(default)]
@@ -129,6 +149,9 @@ struct PatentMatterPackage {
     readiness: ReadinessReview,
     draft: ProvisionalDraft,
     search_plan: SearchPlan,
+    claim_audit: ClaimAudit,
+    fee_estimate: FeeEstimate,
+    deadlines: DeadlineReport,
     filing_checklist: Vec<ChecklistItem>,
     attorney_handoff: AttorneyHandoff,
     warnings: Vec<String>,
@@ -254,7 +277,10 @@ struct UiPackageForm {
     known_prior_art: Option<String>,
     attachments: Option<String>,
     public_disclosure_date: Option<String>,
+    provisional_filing_date: Option<String>,
+    foreign_priority_date: Option<String>,
     target_filing: Option<String>,
+    entity_status: Option<String>,
     attorney_review: Option<String>,
 }
 
@@ -487,7 +513,10 @@ fn intake_from_form(form: UiPackageForm) -> PatentIntakeRequest {
         alternatives: split_lines(&form.alternatives.unwrap_or_default()),
         advantages: split_lines(&form.advantages.unwrap_or_default()),
         public_disclosure_date: clean_optional(form.public_disclosure_date, 64),
+        provisional_filing_date: clean_optional(form.provisional_filing_date, 64),
+        foreign_priority_date: clean_optional(form.foreign_priority_date, 64),
         target_filing: clean_optional(form.target_filing, 64),
+        entity_status: clean_optional(form.entity_status, 32),
         desired_claim_count: Some(8),
         attorney_review: Some(form.attorney_review.is_some()),
         known_prior_art,
@@ -1055,8 +1084,730 @@ fn build_handoff(
             "claim-seeds.md".to_string(),
             "drawing-plan.md".to_string(),
             "prior-art-search-plan.md".to_string(),
+            "claim-audit.json".to_string(),
+            "uspto-fee-estimate.json".to_string(),
+            "filing-deadlines.json".to_string(),
             "filing-checklist.md".to_string(),
         ],
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Civil date utilities (dependency-free, Howard Hinnant's algorithms)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CivilDate {
+    y: i64,
+    m: u32,
+    d: u32,
+}
+
+fn is_leap(y: i64) -> bool {
+    y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+}
+
+fn days_in_month(y: i64, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap(y) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+impl CivilDate {
+    fn parse(value: &str) -> Option<CivilDate> {
+        let value = value.trim();
+        let mut parts = value.split('-');
+        let y = parts.next()?.parse::<i64>().ok()?;
+        let m = parts.next()?.parse::<u32>().ok()?;
+        let d = parts.next()?.parse::<u32>().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        if !(1900..=4000).contains(&y) || !(1..=12).contains(&m) {
+            return None;
+        }
+        if d < 1 || d > days_in_month(y, m) {
+            return None;
+        }
+        Some(CivilDate { y, m, d })
+    }
+
+    /// Days since the Unix epoch (1970-01-01).
+    fn to_days(self) -> i64 {
+        let y = self.y - if self.m <= 2 { 1 } else { 0 };
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let mp = if self.m > 2 { self.m - 3 } else { self.m + 9 } as i64;
+        let doy = (153 * mp + 2) / 5 + self.d as i64 - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146097 + doe - 719468
+    }
+
+    fn from_days(z: i64) -> CivilDate {
+        let z = z + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = z - era * 146097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+        CivilDate {
+            y: y + if m <= 2 { 1 } else { 0 },
+            m,
+            d,
+        }
+    }
+
+    fn add_months(self, n: i64) -> CivilDate {
+        let total = self.y * 12 + (self.m as i64 - 1) + n;
+        let y = total.div_euclid(12);
+        let m = (total.rem_euclid(12) + 1) as u32;
+        let d = self.d.min(days_in_month(y, m));
+        CivilDate { y, m, d }
+    }
+
+    fn format(self) -> String {
+        format!("{:04}-{:02}-{:02}", self.y, self.m, self.d)
+    }
+}
+
+fn today_civil() -> CivilDate {
+    CivilDate::from_days((now_ms() / 86_400_000) as i64)
+}
+
+// ---------------------------------------------------------------------------
+// USPTO fee estimation
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Entity {
+    Large,
+    Small,
+    Micro,
+}
+
+impl Entity {
+    fn parse(value: Option<&str>) -> Entity {
+        match value.map(|item| item.trim().to_ascii_lowercase()).as_deref() {
+            Some("small") => Entity::Small,
+            Some("micro") => Entity::Micro,
+            _ => Entity::Large,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Entity::Large => "large",
+            Entity::Small => "small",
+            Entity::Micro => "micro",
+        }
+    }
+
+    /// Scale an undiscounted (large-entity) fee. Small = 40%, micro = 20%;
+    /// the 2025 schedule values are exact multiples so integer math is exact.
+    fn scale(self, large_cents: u64) -> u64 {
+        match self {
+            Entity::Large => large_cents,
+            Entity::Small => large_cents * 2 / 5,
+            Entity::Micro => large_cents / 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FeeLineItem {
+    code: String,
+    label: String,
+    unit_usd: f64,
+    quantity: u64,
+    amount_usd: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FeeEstimate {
+    entity: String,
+    filing_track: String,
+    currency: &'static str,
+    effective_date: &'static str,
+    line_items: Vec<FeeLineItem>,
+    total_usd: f64,
+    disclaimer: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FeeEstimateRequest {
+    entity_status: Option<String>,
+    filing_track: Option<String>,
+    total_claims: Option<usize>,
+    independent_claims: Option<usize>,
+    has_multiple_dependent_claim: Option<bool>,
+}
+
+/// Large-entity (undiscounted) USPTO fee amounts in whole US dollars, effective
+/// 2025-01-19. Source: USPTO fee schedule.
+fn fee_line(
+    entity: Entity,
+    code: &str,
+    label: &str,
+    large_usd: u64,
+    quantity: u64,
+) -> Option<FeeLineItem> {
+    if quantity == 0 {
+        return None;
+    }
+    let unit = entity.scale(large_usd) as f64;
+    Some(FeeLineItem {
+        code: code.to_string(),
+        label: label.to_string(),
+        unit_usd: unit,
+        quantity,
+        amount_usd: unit * quantity as f64,
+    })
+}
+
+fn estimate_fees(
+    entity: Entity,
+    track: &str,
+    total_claims: usize,
+    independent_claims: usize,
+    has_multiple_dependent_claim: bool,
+) -> FeeEstimate {
+    let total_claims = total_claims.min(MAX_CLAIMS);
+    let independent_claims = independent_claims.min(total_claims.max(1)).max(1);
+    let mut items = Vec::new();
+
+    if track == "provisional" {
+        items.extend(fee_line(
+            entity,
+            "provisional-filing",
+            "Provisional application filing fee",
+            325,
+            1,
+        ));
+    } else {
+        items.extend(fee_line(
+            entity,
+            "basic-filing",
+            "Utility nonprovisional basic filing fee",
+            350,
+            1,
+        ));
+        items.extend(fee_line(entity, "search", "Utility search fee", 770, 1));
+        items.extend(fee_line(
+            entity,
+            "examination",
+            "Utility examination fee",
+            880,
+            1,
+        ));
+        let excess_independent = independent_claims.saturating_sub(3) as u64;
+        items.extend(fee_line(
+            entity,
+            "excess-independent-claims",
+            "Each independent claim in excess of 3",
+            600,
+            excess_independent,
+        ));
+        let excess_total = total_claims.saturating_sub(20) as u64;
+        items.extend(fee_line(
+            entity,
+            "excess-claims",
+            "Each claim in excess of 20",
+            200,
+            excess_total,
+        ));
+        if has_multiple_dependent_claim {
+            items.extend(fee_line(
+                entity,
+                "multiple-dependent-claim",
+                "Multiple dependent claim fee (per application)",
+                925,
+                1,
+            ));
+        }
+    }
+
+    let total_usd = items.iter().map(|item| item.amount_usd).sum();
+    FeeEstimate {
+        entity: entity.label().to_string(),
+        filing_track: track.to_string(),
+        currency: "USD",
+        effective_date: FEE_EFFECTIVE_DATE,
+        line_items: items,
+        total_usd,
+        disclaimer:
+            "Estimate of standard USPTO fees only (effective 2025-01-19). Excludes attorney fees, \
+             extensions, petitions, IDS, issue/maintenance, and any fee changes after the effective date."
+                .to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Filing deadline analysis
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeadlineMilestone {
+    code: String,
+    label: String,
+    basis_date: String,
+    due_date: String,
+    days_remaining: i64,
+    status: String,
+    severity: String,
+    note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeadlineReport {
+    today: String,
+    milestones: Vec<DeadlineMilestone>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeadlineRequest {
+    provisional_filing_date: Option<String>,
+    public_disclosure_date: Option<String>,
+    foreign_priority_date: Option<String>,
+    today: Option<String>,
+}
+
+fn milestone(
+    today: CivilDate,
+    code: &str,
+    label: &str,
+    basis: CivilDate,
+    months: i64,
+    note: &str,
+) -> DeadlineMilestone {
+    let due = basis.add_months(months);
+    let days_remaining = due.to_days() - today.to_days();
+    let (status, severity) = if days_remaining < 0 {
+        ("past", "blocker")
+    } else if days_remaining <= 30 {
+        ("due-soon", "warning")
+    } else if days_remaining <= 90 {
+        ("approaching", "warning")
+    } else {
+        ("ok", "info")
+    };
+    DeadlineMilestone {
+        code: code.to_string(),
+        label: label.to_string(),
+        basis_date: basis.format(),
+        due_date: due.format(),
+        days_remaining,
+        status: status.to_string(),
+        severity: severity.to_string(),
+        note: note.to_string(),
+    }
+}
+
+fn analyze_deadlines(
+    provisional_filing_date: Option<&str>,
+    public_disclosure_date: Option<&str>,
+    foreign_priority_date: Option<&str>,
+    today_override: Option<&str>,
+) -> DeadlineReport {
+    let today = today_override
+        .and_then(CivilDate::parse)
+        .unwrap_or_else(today_civil);
+    let mut milestones = Vec::new();
+    let mut warnings = Vec::new();
+
+    let provisional = provisional_filing_date.and_then(CivilDate::parse);
+    if let Some(basis) = provisional {
+        milestones.push(milestone(
+            today,
+            "nonprovisional-from-provisional",
+            "Nonprovisional or PCT must claim provisional benefit",
+            basis,
+            12,
+            "37 CFR 1.78: a provisional has 12 months of pendency and cannot be extended.",
+        ));
+        milestones.push(milestone(
+            today,
+            "provisional-restoration",
+            "Restoration-of-priority outer limit",
+            basis,
+            14,
+            "Benefit may be restored under 37 CFR 1.78 only within 14 months and only on petition.",
+        ));
+        milestones.push(milestone(
+            today,
+            "paris-convention-foreign",
+            "Paris Convention foreign filing deadline",
+            basis,
+            12,
+            "File foreign / PCT applications within 12 months to claim provisional priority.",
+        ));
+    }
+    if provisional_filing_date.is_some() && provisional.is_none() {
+        warnings.push("provisionalFilingDate is not a valid YYYY-MM-DD date.".to_string());
+    }
+
+    if let Some(basis) = foreign_priority_date.and_then(CivilDate::parse) {
+        if provisional.is_none() {
+            milestones.push(milestone(
+                today,
+                "paris-convention-foreign",
+                "Paris Convention / PCT priority deadline",
+                basis,
+                12,
+                "Downstream filings claiming this priority date are generally due within 12 months.",
+            ));
+        }
+    } else if foreign_priority_date.is_some() {
+        warnings.push("foreignPriorityDate is not a valid YYYY-MM-DD date.".to_string());
+    }
+
+    if let Some(basis) = public_disclosure_date.and_then(CivilDate::parse) {
+        milestones.push(milestone(
+            today,
+            "us-grace-period-bar",
+            "US one-year grace-period statutory bar (35 USC 102(b)(1))",
+            basis,
+            12,
+            "A US application is generally barred 12 months after the inventor's public disclosure.",
+        ));
+        warnings.push(
+            "A public disclosure was recorded: most non-US jurisdictions require absolute novelty, \
+             so foreign rights may already be lost regardless of the US grace period."
+                .to_string(),
+        );
+    } else if public_disclosure_date.is_some() {
+        warnings.push("publicDisclosureDate is not a valid YYYY-MM-DD date.".to_string());
+    }
+
+    if milestones.is_empty() {
+        warnings.push(
+            "No filing/disclosure/priority dates were provided, so no deadlines were computed."
+                .to_string(),
+        );
+    }
+
+    milestones.sort_by_key(|item| item.days_remaining);
+    DeadlineReport {
+        today: today.format(),
+        milestones,
+        warnings,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Claim formality / proofreading checks
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimAudit {
+    total_claims: usize,
+    independent_claims: usize,
+    dependent_claims: usize,
+    multiple_dependent_claims: usize,
+    has_multiple_dependent_claim: bool,
+    abstract_word_count: Option<usize>,
+    findings: Vec<FilingFinding>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimCheckRequest {
+    #[serde(default)]
+    claims: Vec<String>,
+    #[serde(rename = "abstract", alias = "abstractText", default)]
+    abstract_text: Option<String>,
+}
+
+/// Pull the claim numbers a claim depends on, plus whether the reference spans
+/// multiple base claims (i.e. it is a multiple-dependent claim).
+fn parse_claim_dependencies(text: &str) -> (Vec<usize>, bool) {
+    let lower = text.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut refs = BTreeSet::new();
+    let mut multi_phrase = false;
+    // "any of", "any one of", "either of" signal multiple-dependent form.
+    for marker in ["any of", "any one of", "either of", "one of claims"] {
+        if lower.contains(marker) {
+            multi_phrase = true;
+        }
+    }
+    let mut idx = 0;
+    while let Some(pos) = lower[idx..].find("claim") {
+        let mut cursor = idx + pos + "claim".len();
+        if lower[cursor..].starts_with('s') {
+            cursor += 1;
+        }
+        // Parse a run of claim numbers possibly joined by ranges/lists.
+        let mut local: Vec<usize> = Vec::new();
+        let mut last_num: Option<usize> = None;
+        let mut pending_range = false;
+        loop {
+            while cursor < bytes.len() && (bytes[cursor] as char).is_whitespace() {
+                cursor += 1;
+            }
+            let connector = &lower[cursor..];
+            if connector.starts_with('-') || connector.starts_with("to ") || connector.starts_with("through ") {
+                pending_range = true;
+                cursor += if connector.starts_with('-') { 1 } else if connector.starts_with("to ") { 3 } else { 8 };
+                continue;
+            }
+            if connector.starts_with(',') || connector.starts_with("or ") || connector.starts_with("and ") {
+                cursor += if connector.starts_with(',') { 1 } else if connector.starts_with("or ") { 3 } else { 4 };
+                continue;
+            }
+            let num_start = cursor;
+            while cursor < bytes.len() && (bytes[cursor] as char).is_ascii_digit() {
+                cursor += 1;
+            }
+            if cursor == num_start {
+                break;
+            }
+            if let Ok(num) = lower[num_start..cursor].parse::<usize>() {
+                if pending_range {
+                    if let Some(start) = last_num {
+                        for n in (start + 1)..=num {
+                            local.push(n);
+                        }
+                    }
+                    pending_range = false;
+                } else {
+                    local.push(num);
+                }
+                last_num = Some(num);
+            }
+        }
+        if local.len() > 1 {
+            multi_phrase = true;
+        }
+        for n in local {
+            refs.insert(n);
+        }
+        idx = cursor.max(idx + pos + 1);
+    }
+    let mut refs: Vec<usize> = refs.into_iter().collect();
+    refs.sort_unstable();
+    let multiple = multi_phrase && refs.len() > 1;
+    (refs, multiple)
+}
+
+const ANTECEDENT_STOPWORDS: &[&str] = &[
+    "the", "a", "an", "said", "wherein", "comprising", "comprises", "including", "includes",
+    "of", "to", "and", "or", "for", "with", "in", "on", "at", "by", "from", "as", "is", "are",
+    "claim", "claims", "method", "system", "apparatus", "device", "invention", "art", "group",
+    "same", "step", "steps", "first", "second", "third", "one", "more", "least", "plurality",
+    "according", "preceding", "any", "each", "which", "that", "wherein", "being", "having",
+];
+
+fn is_noun_token(w: &str) -> bool {
+    !ANTECEDENT_STOPWORDS.contains(&w) && !w.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Split a claim into (terms introduced with `a`/`an`, definite uses of
+/// `the`/`said X` as `(article, noun)` pairs in order).
+fn introduced_and_definite(text: &str) -> (BTreeSet<String>, Vec<(String, String)>) {
+    let lower = text.to_ascii_lowercase();
+    let words: Vec<String> = lower
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_string())
+        .collect();
+    let mut introduced = BTreeSet::new();
+    let mut definite = Vec::new();
+    for i in 0..words.len() {
+        let w = words[i].as_str();
+        let next = words.get(i + 1).map(|s| s.as_str());
+        if w == "a" || w == "an" {
+            if let Some(n) = next.filter(|n| is_noun_token(n)) {
+                introduced.insert(n.to_string());
+            }
+        } else if (w == "the" || w == "said") && next.is_some_and(is_noun_token) {
+            definite.push((w.to_string(), next.unwrap().to_string()));
+        }
+    }
+    (introduced, definite)
+}
+
+/// Conservative, advisory antecedent-basis scan over a single claim with a set
+/// of terms already introduced by ancestor claims. Flags `the X` / `said X`
+/// where `X` was never introduced with `a X` / `an X`.
+fn antecedent_findings_with_context(
+    claim_number: usize,
+    text: &str,
+    inherited: &BTreeSet<String>,
+) -> Vec<FilingFinding> {
+    let (own, definite) = introduced_and_definite(text);
+    let mut flagged = BTreeSet::new();
+    let mut findings = Vec::new();
+    for (article, noun) in definite {
+        if own.contains(&noun) || inherited.contains(&noun) || flagged.contains(&noun) {
+            continue;
+        }
+        flagged.insert(noun.clone());
+        findings.push(finding(
+            "antecedent-basis",
+            "warning",
+            &format!(
+                "Claim {claim_number}: '{article} {noun}' may lack antecedent basis (no earlier 'a {noun}'/'an {noun}'). Advisory heuristic — confirm manually."
+            ),
+        ));
+    }
+    findings
+}
+
+#[cfg(test)]
+fn antecedent_findings(claim_number: usize, text: &str) -> Vec<FilingFinding> {
+    antecedent_findings_with_context(claim_number, text, &BTreeSet::new())
+}
+
+fn audit_claims(claims: &[String], abstract_text: Option<&str>) -> ClaimAudit {
+    let claims: Vec<String> = claims
+        .iter()
+        .map(|claim| clean_text(claim, MAX_TEXT_LEN))
+        .filter(|claim| !claim.is_empty())
+        .take(MAX_CLAIMS)
+        .collect();
+    let total_claims = claims.len();
+    let mut independent_claims = 0;
+    let mut dependent_claims = 0;
+    let mut multiple_dependent_claims = 0;
+    let mut findings = Vec::new();
+    let mut multi_dependent_positions: Vec<usize> = Vec::new();
+    let mut claim_refs: Vec<Vec<usize>> = Vec::with_capacity(total_claims);
+    // Terms introduced by each claim plus everything inherited from its valid
+    // ancestor chain, so dependent claims do not falsely flag parent terms.
+    let mut effective_intro: Vec<BTreeSet<String>> = Vec::with_capacity(total_claims);
+
+    for (index, claim) in claims.iter().enumerate() {
+        let claim_number = index + 1;
+        let (refs, is_multiple) = parse_claim_dependencies(claim);
+        if refs.is_empty() {
+            independent_claims += 1;
+        } else {
+            dependent_claims += 1;
+            if is_multiple {
+                multiple_dependent_claims += 1;
+                multi_dependent_positions.push(claim_number);
+            }
+            for &referenced in &refs {
+                if referenced == 0 || referenced > total_claims {
+                    findings.push(finding(
+                        "invalid-claim-reference",
+                        "blocker",
+                        &format!(
+                            "Claim {claim_number} references claim {referenced}, which does not exist."
+                        ),
+                    ));
+                } else if referenced >= claim_number {
+                    findings.push(finding(
+                        "improper-claim-dependency",
+                        "blocker",
+                        &format!(
+                            "Claim {claim_number} depends on claim {referenced}; a claim may only depend on a lower-numbered preceding claim (35 USC 112(d))."
+                        ),
+                    ));
+                }
+            }
+        }
+        let (own_intro, _) = introduced_and_definite(claim);
+        let mut inherited = own_intro;
+        for &referenced in &refs {
+            if referenced >= 1 && referenced < claim_number {
+                if let Some(parent) = effective_intro.get(referenced - 1) {
+                    inherited.extend(parent.iter().cloned());
+                }
+            }
+        }
+        findings.extend(antecedent_findings_with_context(claim_number, claim, &inherited));
+        effective_intro.push(inherited);
+        claim_refs.push(refs);
+    }
+
+    // A multiple dependent claim may not serve as a basis for another
+    // multiple dependent claim (35 USC 112(e)).
+    for &pos in &multi_dependent_positions {
+        let refs = &claim_refs[pos - 1];
+        if refs.iter().any(|&r| multi_dependent_positions.contains(&r)) {
+            findings.push(finding(
+                "multiple-dependent-on-multiple-dependent",
+                "blocker",
+                &format!(
+                    "Claim {pos} is a multiple dependent claim that references another multiple dependent claim, which 35 USC 112(e) prohibits."
+                ),
+            ));
+        }
+    }
+
+    if total_claims == 0 {
+        findings.push(finding(
+            "no-claims",
+            "warning",
+            "No claims were provided to check.",
+        ));
+    } else if independent_claims == 0 {
+        findings.push(finding(
+            "no-independent-claim",
+            "blocker",
+            "A claim set must contain at least one independent claim.",
+        ));
+    }
+    if independent_claims > 3 {
+        findings.push(finding(
+            "excess-independent-claims",
+            "info",
+            &format!(
+                "{independent_claims} independent claims: each over 3 carries an excess-claim fee."
+            ),
+        ));
+    }
+    if total_claims > 20 {
+        findings.push(finding(
+            "excess-claims",
+            "info",
+            &format!("{total_claims} total claims: each over 20 carries an excess-claim fee."),
+        ));
+    }
+
+    let abstract_word_count = abstract_text.map(|text| {
+        let count = text.split_whitespace().count();
+        if count > ABSTRACT_WORD_LIMIT {
+            findings.push(finding(
+                "abstract-too-long",
+                "warning",
+                &format!(
+                    "Abstract is {count} words; 37 CFR 1.72(b) limits it to {ABSTRACT_WORD_LIMIT} words."
+                ),
+            ));
+        }
+        count
+    });
+
+    ClaimAudit {
+        total_claims,
+        independent_claims,
+        dependent_claims,
+        multiple_dependent_claims,
+        has_multiple_dependent_claim: multiple_dependent_claims > 0,
+        abstract_word_count,
+        findings,
     }
 }
 
@@ -1072,11 +1823,33 @@ fn build_package(
     let search_plan = build_search_plan(&request);
     let filing_checklist = build_checklist(config, &request, &readiness);
     let attorney_handoff = build_handoff(&request, &draft, &search_plan);
+    let filing_track = normalize_track(request.target_filing.as_ref());
+    let claim_audit = audit_claims(&draft.claim_seeds, Some(&draft.abstract_draft));
+    let entity = Entity::parse(request.entity_status.as_deref());
+    let fee_estimate = estimate_fees(
+        entity,
+        &filing_track,
+        claim_audit.total_claims,
+        claim_audit.independent_claims,
+        claim_audit.has_multiple_dependent_claim,
+    );
+    let deadlines = analyze_deadlines(
+        request.provisional_filing_date.as_deref(),
+        request.public_disclosure_date.as_deref(),
+        request.foreign_priority_date.as_deref(),
+        None,
+    );
     let mut warnings = readiness
         .warnings
         .iter()
         .map(|finding| finding.message.clone())
         .collect::<Vec<_>>();
+    for milestone in deadlines.milestones.iter().filter(|m| m.status == "past") {
+        warnings.push(format!(
+            "Deadline likely missed: {} (due {}).",
+            milestone.label, milestone.due_date
+        ));
+    }
     warnings.push("This package is preparation support only; it does not file with the USPTO or replace legal advice.".to_string());
     let matter_id = format!("pf-{}-{generated_at_ms}", slugify(&request.title));
     Ok(PatentMatterPackage {
@@ -1085,13 +1858,16 @@ fn build_package(
         request_id,
         schema_version: SCHEMA_VERSION,
         generated_at_ms,
-        filing_track: normalize_track(request.target_filing.as_ref()),
+        filing_track,
         title: request.title,
         applicant: request.applicant,
         inventor_names: request.inventor_names,
         readiness,
         draft,
         search_plan,
+        claim_audit,
+        fee_estimate,
+        deadlines,
         filing_checklist,
         attorney_handoff,
         warnings,
@@ -1142,8 +1918,12 @@ async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
             "readiness": "/readiness",
             "searchPlan": "/search/plan",
             "review": "/review/package",
+            "claimsCheck": "/claims/check",
+            "feesEstimate": "/fees/estimate",
+            "deadlines": "/deadlines",
             "docs": "/docs/api"
         },
+        "feeScheduleEffectiveDate": FEE_EFFECTIVE_DATE,
         "stance": "preparation-only"
     }))
 }
@@ -1165,7 +1945,10 @@ async fn schema() -> impl IntoResponse {
             "alternatives": ["string"],
             "advantages": ["string"],
             "publicDisclosureDate": "YYYY-MM-DD?",
+            "provisionalFilingDate": "YYYY-MM-DD?",
+            "foreignPriorityDate": "YYYY-MM-DD?",
             "targetFiling": "provisional|non-provisional|design|pct",
+            "entityStatus": "large|small|micro",
             "knownPriorArt": [{ "title": "string", "url": "string?", "notes": "string?" }],
             "attachments": [{ "name": "string", "kind": "string?", "url": "string?", "notes": "string?" }]
         },
@@ -1173,7 +1956,26 @@ async fn schema() -> impl IntoResponse {
             "readiness": "score, blockers, warnings, strengths, nextActions",
             "draft": "abstract, sections, claimSeeds, drawingPlan",
             "searchPlan": "queries, sources, classificationHints",
+            "claimAudit": "claim counts, dependency validity, antecedent-basis advisories, abstract length",
+            "feeEstimate": "USPTO fee line items by entity status (effective 2025-01-19)",
+            "deadlines": "provisional/Paris/grace-period milestones with days remaining",
             "filingChecklist": "operator handoff checklist"
+        },
+        "auxiliaryEndpoints": {
+            "claimsCheck": { "claims": ["string"], "abstract": "string?" },
+            "feesEstimate": {
+                "entityStatus": "large|small|micro",
+                "filingTrack": "provisional|non-provisional|design|pct",
+                "totalClaims": "number",
+                "independentClaims": "number",
+                "hasMultipleDependentClaim": "bool"
+            },
+            "deadlines": {
+                "provisionalFilingDate": "YYYY-MM-DD?",
+                "publicDisclosureDate": "YYYY-MM-DD?",
+                "foreignPriorityDate": "YYYY-MM-DD?",
+                "today": "YYYY-MM-DD?"
+            }
         }
     }))
 }
@@ -1319,6 +2121,81 @@ async fn search_plan_json(
         .search_plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
     Json(json!({ "ok": true, "searchPlan": build_search_plan(&request) })).into_response()
+}
+
+async fn claims_check_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ClaimCheckRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .claim_checks_total
+        .fetch_add(1, Ordering::Relaxed);
+    let audit = audit_claims(&request.claims, request.abstract_text.as_deref());
+    Json(json!({ "ok": true, "claimAudit": audit })).into_response()
+}
+
+async fn fees_estimate_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<FeeEstimateRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .fee_estimates_total
+        .fetch_add(1, Ordering::Relaxed);
+    let entity = Entity::parse(request.entity_status.as_deref());
+    let track = normalize_track(request.filing_track.as_ref());
+    let total_claims = request.total_claims.unwrap_or(0);
+    let independent_claims = request.independent_claims.unwrap_or(1);
+    let estimate = estimate_fees(
+        entity,
+        &track,
+        total_claims,
+        independent_claims,
+        request.has_multiple_dependent_claim.unwrap_or(false),
+    );
+    Json(json!({ "ok": true, "feeEstimate": estimate })).into_response()
+}
+
+async fn deadlines_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DeadlineRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    state
+        .metrics
+        .deadline_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let report = analyze_deadlines(
+        request.provisional_filing_date.as_deref(),
+        request.public_disclosure_date.as_deref(),
+        request.foreign_priority_date.as_deref(),
+        request.today.as_deref(),
+    );
+    Json(json!({ "ok": true, "deadlines": report })).into_response()
 }
 
 async fn review_package_json(
@@ -1470,6 +2347,15 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_patent_filing_package_reviews_total Package review requests accepted.\n\
          # TYPE dd_patent_filing_package_reviews_total counter\n\
          dd_patent_filing_package_reviews_total {}\n\
+         # HELP dd_patent_filing_claim_checks_total Claim formality check requests accepted.\n\
+         # TYPE dd_patent_filing_claim_checks_total counter\n\
+         dd_patent_filing_claim_checks_total {}\n\
+         # HELP dd_patent_filing_fee_estimates_total Fee estimate requests accepted.\n\
+         # TYPE dd_patent_filing_fee_estimates_total counter\n\
+         dd_patent_filing_fee_estimates_total {}\n\
+         # HELP dd_patent_filing_deadline_requests_total Filing deadline requests accepted.\n\
+         # TYPE dd_patent_filing_deadline_requests_total counter\n\
+         dd_patent_filing_deadline_requests_total {}\n\
          # HELP dd_patent_filing_auth_failures_total Rejected requests with missing or invalid auth.\n\
          # TYPE dd_patent_filing_auth_failures_total counter\n\
          dd_patent_filing_auth_failures_total {}\n\
@@ -1484,6 +2370,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.readiness_requests_total.load(Ordering::Relaxed),
         state.metrics.search_plan_requests_total.load(Ordering::Relaxed),
         state.metrics.package_reviews_total.load(Ordering::Relaxed),
+        state.metrics.claim_checks_total.load(Ordering::Relaxed),
+        state.metrics.fee_estimates_total.load(Ordering::Relaxed),
+        state.metrics.deadline_requests_total.load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
         matter_count,
@@ -1517,7 +2406,7 @@ fn render_home() -> String {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Patent Filing Workbench</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="{htmx_src}" integrity="{htmx_sri}" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root {{
       color-scheme: light;
@@ -1669,9 +2558,26 @@ Prototype calibration notes</textarea>
           </label>
         </div>
         <div class="grid-two">
+          <label>Entity status
+            <select name="entity_status">
+              <option value="large">large</option>
+              <option value="small">small</option>
+              <option value="micro" selected>micro</option>
+            </select>
+          </label>
           <label>Public disclosure date
             <input name="public_disclosure_date" placeholder="YYYY-MM-DD">
           </label>
+        </div>
+        <div class="grid-two">
+          <label>Provisional filing date
+            <input name="provisional_filing_date" placeholder="YYYY-MM-DD">
+          </label>
+          <label>Foreign priority date
+            <input name="foreign_priority_date" placeholder="YYYY-MM-DD">
+          </label>
+        </div>
+        <div class="grid-two">
           <label class="checkline">
             <input type="checkbox" name="attorney_review" checked>
             Attorney review requested
@@ -1697,7 +2603,9 @@ Prototype calibration notes</textarea>
     </section>
   </main>
 </body>
-</html>"##
+</html>"##,
+        htmx_src = HTMX_SRC,
+        htmx_sri = HTMX_SRI,
     )
 }
 
@@ -1771,6 +2679,60 @@ fn render_package_fragment(package: &PatentMatterPackage) -> String {
             )
         })
         .collect::<String>();
+    let fee = &package.fee_estimate;
+    let fee_rows = fee
+        .line_items
+        .iter()
+        .map(|item| {
+            format!(
+                "<li>{} · {} × ${:.0} = <strong>${:.0}</strong></li>",
+                escape_html(&item.label),
+                item.quantity,
+                item.unit_usd,
+                item.amount_usd
+            )
+        })
+        .collect::<String>();
+    let deadline_rows = if package.deadlines.milestones.is_empty() {
+        "<li>No filing/disclosure/priority dates provided.</li>".to_string()
+    } else {
+        package
+            .deadlines
+            .milestones
+            .iter()
+            .map(|item| {
+                format!(
+                    "<li><code>{}</code> {} — due {} ({} days)</li>",
+                    escape_html(&item.status),
+                    escape_html(&item.label),
+                    escape_html(&item.due_date),
+                    item.days_remaining
+                )
+            })
+            .collect::<String>()
+    };
+    let claim_findings = if package.claim_audit.findings.is_empty() {
+        "<li>No claim formality findings.</li>".to_string()
+    } else {
+        package
+            .claim_audit
+            .findings
+            .iter()
+            .take(8)
+            .map(|item| {
+                format!(
+                    "<li><code>{}</code> {}</li>",
+                    escape_html(&item.severity),
+                    escape_html(&item.message)
+                )
+            })
+            .collect::<String>()
+    };
+    let abstract_words = package
+        .claim_audit
+        .abstract_word_count
+        .map(|count| format!("{count} words"))
+        .unwrap_or_else(|| "n/a".to_string());
 
     format!(
         r#"<div class="result">
@@ -1804,6 +2766,20 @@ fn render_package_fragment(package: &PatentMatterPackage) -> String {
       <ul>{drawing_plan}</ul>
     </div>
   </div>
+  <div class="columns">
+    <div class="mini">
+      <h3>USPTO Fee Estimate ({entity}, eff. {fee_date})</h3>
+      <ul>{fee_rows}</ul>
+      <p><strong>Estimated total: ${fee_total:.0} USD</strong></p>
+    </div>
+    <div class="mini">
+      <h3>Claim Audit · abstract {abstract_words}</h3>
+      <p>{ind} independent / {dep} dependent / {total} total{multi}</p>
+      <ul>{claim_findings}</ul>
+    </div>
+  </div>
+  <h3>Filing Deadlines (today {today})</h3>
+  <ul>{deadline_rows}</ul>
   <h3>Search Queries</h3>
   <ul>{search_queries}</ul>
   <h3>Filing Checklist</h3>
@@ -1815,6 +2791,18 @@ fn render_package_fragment(package: &PatentMatterPackage) -> String {
         matter_id = escape_html(&package.matter_id),
         track = escape_html(&package.filing_track),
         handoff = escape_html(&package.attorney_handoff.summary),
+        entity = escape_html(&fee.entity),
+        fee_date = fee.effective_date,
+        fee_total = fee.total_usd,
+        today = escape_html(&package.deadlines.today),
+        ind = package.claim_audit.independent_claims,
+        dep = package.claim_audit.dependent_claims,
+        total = package.claim_audit.total_claims,
+        multi = if package.claim_audit.has_multiple_dependent_claim {
+            " · multiple-dependent present"
+        } else {
+            ""
+        },
     )
 }
 
@@ -1857,7 +2845,10 @@ fn example_request() -> PatentIntakeRequest {
             "faster high-risk thermal alerts".to_string(),
         ],
         public_disclosure_date: None,
+        provisional_filing_date: None,
+        foreign_priority_date: None,
         target_filing: Some("provisional".to_string()),
+        entity_status: Some("micro".to_string()),
         desired_claim_count: Some(8),
         attorney_review: Some(true),
         known_prior_art: vec![KnownPriorArt {
@@ -1883,8 +2874,72 @@ fn example_request() -> PatentIntakeRequest {
     }
 }
 
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("dd_patent_filing_rs=info,tower_http=info"));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().compact())
+        .init();
+}
+
+fn security_header_layers() -> [SetResponseHeaderLayer<HeaderValue>; 5] {
+    let csp = "default-src 'self'; \
+               script-src 'self' https://unpkg.com; \
+               style-src 'self' 'unsafe-inline'; \
+               img-src 'self' data:; \
+               connect-src 'self'; \
+               base-uri 'none'; \
+               form-action 'self'; \
+               frame-ancestors 'none'";
+    [
+        SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ),
+        SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ),
+        SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ),
+        SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ),
+        SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(csp),
+        ),
+    ]
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut stream) => {
+                stream.recv().await;
+            }
+            Err(error) => error!(%error, "failed to install SIGTERM handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! {
+        _ = ctrl_c => info!("received SIGINT, beginning graceful shutdown"),
+        _ = terminate => info!("received SIGTERM, beginning graceful shutdown"),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    init_tracing();
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8116").parse::<u16>()?;
     let state = AppState {
@@ -1893,6 +2948,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         store: Arc::new(RwLock::new(PatentStore::default())),
     };
 
+    let [sec0, sec1, sec2, sec3, sec4] = security_header_layers();
     let app = Router::new()
         .route("/", get(root))
         .route("/descriptor", get(descriptor))
@@ -1905,6 +2961,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/readiness", post(readiness_json))
         .route("/search/plan", post(search_plan_json))
         .route("/review/package", post(review_package_json))
+        .route("/claims/check", post(claims_check_json))
+        .route("/fees/estimate", post(fees_estimate_json))
+        .route("/deadlines", post(deadlines_json))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
@@ -1912,19 +2971,34 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state)
+        .layer(RequestBodyLimitLayer::new(MAX_HTTP_BODY_BYTES))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        ))
+        .layer(sec0)
+        .layer(sec1)
+        .layer(sec2)
+        .layer(sec3)
+        .layer(sec4)
+        .layer(TraceLayer::new_for_http())
+        .with_state(state.clone())
         .merge(dd_runtime_config_client::router());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    info!(
+        addr = %addr,
+        auth_configured = state.config.server_auth_secret.is_some(),
+        allow_unauthenticated = state.config.allow_unauthenticated,
+        "{SERVICE_NAME} listening"
+    );
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
+    info!("{SERVICE_NAME} shut down cleanly");
     Ok(())
 }
 
@@ -2015,5 +3089,163 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.severity == "blocker"));
+    }
+
+    #[test]
+    fn civil_date_add_months_clamps_and_roundtrips() {
+        let jan31 = CivilDate::parse("2025-01-31").unwrap();
+        assert_eq!(jan31.add_months(1).format(), "2025-02-28");
+        let leap = CivilDate::parse("2024-01-31").unwrap();
+        assert_eq!(leap.add_months(1).format(), "2024-02-29");
+        let d = CivilDate::parse("2025-06-09").unwrap();
+        assert_eq!(CivilDate::from_days(d.to_days()), d);
+        assert_eq!(d.add_months(12).format(), "2026-06-09");
+        assert!(CivilDate::parse("2025-13-01").is_none());
+        assert!(CivilDate::parse("2025-02-30").is_none());
+    }
+
+    #[test]
+    fn fee_scaling_matches_published_2025_schedule() {
+        // Large-entity nonprovisional with 5 independent + 25 total claims.
+        let large = estimate_fees(Entity::Large, "non-provisional", 25, 5, false);
+        // basic 350 + search 770 + exam 880 + 2*600 + 5*200 = 4200
+        assert_eq!(large.total_usd as u64, 4200);
+        let micro = estimate_fees(Entity::Micro, "non-provisional", 25, 5, false);
+        // micro = 20% of each line: 70 + 154 + 176 + 2*120 + 5*40 = 840
+        assert_eq!(micro.total_usd as u64, 840);
+        let prov = estimate_fees(Entity::Small, "provisional", 30, 9, true);
+        assert_eq!(prov.total_usd as u64, 130); // small provisional filing fee only
+        assert_eq!(prov.line_items.len(), 1);
+    }
+
+    #[test]
+    fn deadlines_flag_missed_and_upcoming() {
+        let report = analyze_deadlines(Some("2024-01-01"), None, None, Some("2025-06-01"));
+        let np = report
+            .milestones
+            .iter()
+            .find(|m| m.code == "nonprovisional-from-provisional")
+            .unwrap();
+        assert_eq!(np.due_date, "2025-01-01");
+        assert!(np.days_remaining < 0);
+        assert_eq!(np.status, "past");
+
+        let fresh = analyze_deadlines(Some("2025-05-15"), None, None, Some("2025-06-01"));
+        let np = fresh
+            .milestones
+            .iter()
+            .find(|m| m.code == "nonprovisional-from-provisional")
+            .unwrap();
+        assert_eq!(np.due_date, "2026-05-15");
+        assert_eq!(np.status, "ok");
+    }
+
+    #[test]
+    fn disclosure_warns_about_foreign_rights() {
+        let report = analyze_deadlines(None, Some("2025-01-01"), None, Some("2025-06-01"));
+        assert!(report
+            .milestones
+            .iter()
+            .any(|m| m.code == "us-grace-period-bar"));
+        assert!(report.warnings.iter().any(|w| w.contains("absolute novelty")));
+    }
+
+    #[test]
+    fn claim_audit_detects_independence_and_bad_dependency() {
+        let claims = vec![
+            "A widget comprising a frame and a sensor coupled to the frame.".to_string(),
+            "The widget of claim 1, wherein the sensor is thermal.".to_string(),
+            "The widget of claim 5, wherein the frame is metal.".to_string(),
+        ];
+        let audit = audit_claims(&claims, None);
+        assert_eq!(audit.total_claims, 3);
+        assert_eq!(audit.independent_claims, 1);
+        assert_eq!(audit.dependent_claims, 2);
+        assert!(audit
+            .findings
+            .iter()
+            .any(|f| f.code == "invalid-claim-reference"));
+    }
+
+    #[test]
+    fn claim_audit_detects_multiple_dependent_and_forward_reference() {
+        let claims = vec![
+            "A method comprising sensing a value.".to_string(),
+            "The method of claim 1, further comprising logging.".to_string(),
+            "The method of any of claims 1 or 2, wherein the value is temperature.".to_string(),
+        ];
+        let audit = audit_claims(&claims, None);
+        assert!(audit.has_multiple_dependent_claim);
+        assert_eq!(audit.multiple_dependent_claims, 1);
+        // Self/forward reference is rejected.
+        let bad = vec!["The system of claim 2.".to_string(), "A system.".to_string()];
+        let audit = audit_claims(&bad, None);
+        assert!(audit
+            .findings
+            .iter()
+            .any(|f| f.code == "improper-claim-dependency"));
+    }
+
+    #[test]
+    fn dependent_claims_inherit_parent_antecedents() {
+        let claims = vec![
+            "A gadget comprising a housing and a motor in the housing.".to_string(),
+            "The gadget of claim 1, wherein the motor is electric.".to_string(),
+            "The gadget of any of claims 1 or 2, wherein the housing is sealed.".to_string(),
+        ];
+        let audit = audit_claims(&claims, None);
+        assert!(
+            !audit.findings.iter().any(|f| f.code == "antecedent-basis"),
+            "parent-introduced terms must not be flagged in dependent claims: {:?}",
+            audit.findings
+        );
+        // A term that no ancestor introduced is still flagged.
+        let novel = vec![
+            "A gadget comprising a housing.".to_string(),
+            "The gadget of claim 1, wherein the flywheel is balanced.".to_string(),
+        ];
+        let audit = audit_claims(&novel, None);
+        assert!(audit
+            .findings
+            .iter()
+            .any(|f| f.code == "antecedent-basis" && f.message.contains("flywheel")));
+    }
+
+    #[test]
+    fn abstract_over_limit_is_flagged() {
+        let long_abstract = "word ".repeat(180);
+        let audit = audit_claims(&["A device.".to_string()], Some(&long_abstract));
+        assert_eq!(audit.abstract_word_count, Some(180));
+        assert!(audit.findings.iter().any(|f| f.code == "abstract-too-long"));
+    }
+
+    #[test]
+    fn antecedent_basis_flags_unintroduced_term() {
+        let findings = antecedent_findings(1, "A device wherein the rotor spins.");
+        assert!(findings.iter().any(|f| f.code == "antecedent-basis"));
+        // Properly introduced term is not flagged.
+        let ok = antecedent_findings(1, "A device comprising a rotor, wherein the rotor spins.");
+        assert!(ok.is_empty());
+    }
+
+    #[test]
+    fn generated_package_includes_fee_deadline_and_claim_audit() {
+        let config = Config {
+            server_auth_secret: Some("secret".to_string()),
+            allow_unauthenticated: false,
+            patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
+            max_matters: 10,
+        };
+        let mut request = example_request();
+        request.provisional_filing_date = Some("2025-01-01".to_string());
+        let package = build_package(&config, request).expect("package");
+        assert_eq!(package.fee_estimate.entity, "micro");
+        assert!(package.fee_estimate.total_usd > 0.0);
+        assert!(!package.claim_audit.findings.is_empty() || package.claim_audit.total_claims > 0);
+        assert!(package
+            .deadlines
+            .milestones
+            .iter()
+            .any(|m| m.code == "nonprovisional-from-provisional"));
     }
 }

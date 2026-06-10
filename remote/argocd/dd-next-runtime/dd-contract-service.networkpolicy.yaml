@@ -23,6 +23,9 @@ spec:
         - podSelector:
             matchLabels:
               app: usacc-rest-api-backend-rs
+        - podSelector:
+            matchLabels:
+              app: dd-escrow-rs
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

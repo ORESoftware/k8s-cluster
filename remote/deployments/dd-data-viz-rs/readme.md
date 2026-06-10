@@ -217,6 +217,12 @@ Current first-class parity surfaces:
 - `POST /alerts/rules/:rule_id/notification-preview` - authenticated dry-run notification delivery
   preview.
 - `POST /query` - authenticated query translation and execution with an in-memory cache snapshot.
+- `GET /calculations` - LOD and table-calculation capability descriptor.
+- `POST /calculations/apply` - apply FIXED/INCLUDE/EXCLUDE LOD expressions and table calculations
+  (running total, percent of total, moving average, rank, difference) to a result set.
+- `GET /render` - server-side SVG render capability descriptor.
+- `POST /render` - render a spec plus inline rows to a self-contained SVG image (bar, line,
+  scatter, stem, histogram) with no browser or headless dependency.
 - `GET /query-cache` - authenticated query result cache summaries without raw query text.
 - `GET /query-cache/:cache_id` - authenticated cached query result snapshot.
 - `POST /sql-lab/history` - authenticated bounded SQL Lab history create with local execution or

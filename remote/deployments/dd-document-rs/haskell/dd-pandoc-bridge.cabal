@@ -26,6 +26,7 @@ foreign-library dd-pandoc-bridge
   build-depends:
       base        >=4.14 && <5
     , pandoc      >=3.1
+    , pandoc-types
     , mtl
     , text
     , bytestring
