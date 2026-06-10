@@ -229,6 +229,19 @@ async fn open_modified_break(
     }))
     .execute(ctx.pool)
     .await;
+
+    ctx.events
+        .publish_reconciliation_break(
+            ctx.tenant_id,
+            conn.provider.tag(),
+            Some(conn.id),
+            "modified_transaction",
+            tx.iso_currency_code.as_deref().unwrap_or("USD"),
+            &tx.transaction_id,
+            None,
+            None,
+        )
+        .await;
     Ok(())
 }
 
@@ -260,6 +273,19 @@ async fn open_removed_break(
     }))
     .execute(ctx.pool)
     .await;
+
+    ctx.events
+        .publish_reconciliation_break(
+            ctx.tenant_id,
+            conn.provider.tag(),
+            Some(conn.id),
+            "removed_transaction",
+            "USD",
+            &tx.transaction_id,
+            None,
+            None,
+        )
+        .await;
     Ok(())
 }
 

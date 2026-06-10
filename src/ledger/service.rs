@@ -1,10 +1,12 @@
 use chrono::Utc;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::customer_locks::{CustomerLockBroker, customer_lock_targets_from_account_code};
 use crate::error::{AppError, AppResult};
+use crate::events::EventBus;
 use crate::money::Currency;
 use crate::shard::{Region, ShardKey};
 
@@ -14,13 +16,15 @@ use super::types::*;
 pub struct LedgerService {
     pool: PgPool,
     customer_locks: CustomerLockBroker,
+    events: Arc<EventBus>,
 }
 
 impl LedgerService {
-    pub fn new(pool: PgPool, customer_locks: CustomerLockBroker) -> Self {
+    pub fn new(pool: PgPool, customer_locks: CustomerLockBroker, events: Arc<EventBus>) -> Self {
         Self {
             pool,
             customer_locks,
+            events,
         }
     }
 
@@ -261,6 +265,37 @@ impl LedgerService {
         }
 
         tx.commit().await?;
+
+        // Best-effort domain event for the committed transaction. Only this
+        // genuinely-new path reaches here — the two idempotent short-circuits
+        // above returned early — so consumers see exactly one event per real
+        // ledger movement. `totals` is the per-currency debit volume (equal to
+        // the credit volume; the transaction is balanced) as minor-unit
+        // strings, preserving i128 precision through JSON.
+        let mut debit_totals: HashMap<String, i128> = HashMap::new();
+        for p in &draft.postings {
+            if matches!(p.direction, Direction::Debit) {
+                *debit_totals.entry(p.currency.clone()).or_insert(0) += p.amount_minor;
+            }
+        }
+        let totals = serde_json::Value::Object(
+            debit_totals
+                .into_iter()
+                .map(|(cur, amt)| (cur, serde_json::Value::String(amt.to_string())))
+                .collect(),
+        );
+        self.events
+            .publish_ledger_posting(
+                draft.tenant_id,
+                tx_id,
+                &draft.kind,
+                &draft.idempotency_key,
+                draft.postings.len(),
+                totals,
+                region.tag(),
+            )
+            .await;
+
         Ok(tx_id)
     }
 

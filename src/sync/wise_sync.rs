@@ -160,6 +160,19 @@ async fn open_activity_break(
     .execute(ctx.pool)
     .await?;
 
+    ctx.events
+        .publish_reconciliation_break(
+            ctx.tenant_id,
+            conn.provider.tag(),
+            Some(conn.id),
+            "unposted_wise_activity",
+            "",
+            &activity.id,
+            None,
+            None,
+        )
+        .await;
+
     Ok(true)
 }
 

@@ -240,6 +240,19 @@ async fn open_recon_break(
     .bind(&detail)
     .execute(ctx.pool)
     .await;
+
+    ctx.events
+        .publish_reconciliation_break(
+            ctx.tenant_id,
+            conn.provider.tag(),
+            Some(conn.id),
+            "unrecognized_provider_event",
+            evt.currency.as_deref().unwrap_or("USD"),
+            &evt.id,
+            evt.amount_cents.map(|c| c as i128),
+            Some(0),
+        )
+        .await;
     Ok(())
 }
 

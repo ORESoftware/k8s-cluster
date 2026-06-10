@@ -27,7 +27,6 @@
 //! logic rather than re-implementing it.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -285,12 +284,14 @@ impl EventBus {
     }
 }
 
-/// Inbound `{tenantId, connectionId, cursor?, trigger?}` command.
+/// Inbound `{tenantId, connectionId, cursor?, trigger?}` command. Accepts both
+/// camelCase (the monorepo envelope convention) and snake_case (the HTTP
+/// "Sync now" payload shape) for the two id fields.
 #[derive(Debug, serde::Deserialize)]
 struct SyncCommand {
-    #[serde(alias = "tenant_id")]
+    #[serde(rename = "tenantId", alias = "tenant_id")]
     tenant_id: Uuid,
-    #[serde(alias = "connection_id")]
+    #[serde(rename = "connectionId", alias = "connection_id")]
     connection_id: Uuid,
     #[serde(default)]
     cursor: Option<String>,
