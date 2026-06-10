@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-chaos
+  namespace: ai-ml
+  labels:
+    app: dd-chaos
+    app.kubernetes.io/component: chaos
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-chaos
+  template:
+    metadata:
+      labels:
+        app: dd-chaos
+        app.kubernetes.io/component: chaos
+        # The chaos service must never pick itself as a victim.
+        dd.dev/chaos-protected: 'true'
+    spec:
+      serviceAccountName: dd-chaos
+      # Needs the SA token to reach the Kubernetes API.
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: chaos
+          image: REPLACE_ME_ECR_URI/dd-chaos:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8133'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # --- Safety guards: ship OFF and dry-run. Flip CHAOS_ENABLED=true AND
+            #     CHAOS_DRY_RUN=false to arm destructive actions. ---
+            - name: CHAOS_ENABLED
+              value: 'false'
+            - name: CHAOS_DRY_RUN
+              value: 'true'
+            - name: CHAOS_NAMESPACES
+              value: ai-ml,dd-dev
+            - name: CHAOS_PROTECTED_NAMESPACES
+              value: kube-system,kube-public,kube-node-lease,messaging,default
+            - name: CHAOS_PROTECTED_LABEL
+              value: dd.dev/chaos-protected
+            - name: CHAOS_BLAST_RADIUS
+              value: '1'
+            - name: CHAOS_POD_KILL_ENABLED
+              value: 'true'
+            - name: CHAOS_POD_KILL_INTERVAL_SECONDS
+              value: '300'
+            # Deployment jitter is opt-in: list `namespace/name` targets to enable.
+            - name: CHAOS_JITTER_ENABLED
+              value: 'false'
+            - name: CHAOS_JITTER_DEPLOYMENTS
+              value: ''
+            - name: CHAOS_JITTER_INTERVAL_SECONDS
+              value: '600'
+            - name: CHAOS_JITTER_HOLD_SECONDS
+              value: '60'
+            - name: CHAOS_PROBE_ENABLED
+              value: 'true'
+            - name: CHAOS_PROBE_INTERVAL_SECONDS
+              value: '60'
+          ports:
+            - name: http
+              containerPort: 8133
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
