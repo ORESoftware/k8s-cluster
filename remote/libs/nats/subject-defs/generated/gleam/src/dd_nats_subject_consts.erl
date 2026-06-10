@@ -25,6 +25,11 @@
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
     chaos_probe_queue_group/0,
+    contact_email_send_subject/0,
+    contact_email_send_queue_group/0,
+    contact_send_results_subject/0,
+    contact_sms_send_subject/0,
+    contact_sms_send_queue_group/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
     contracts_solana_resolve_subject/0,
@@ -195,6 +200,7 @@
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
     constraint_scheduler_queue_group/0,
+    contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
@@ -235,6 +241,11 @@ chaos_events_subject() -> <<"dd.remote.chaos.events"/utf8>>.
 chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
 chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
 chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
+contact_email_send_subject() -> <<"dd.remote.contact.email.send"/utf8>>.
+contact_email_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
+contact_send_results_subject() -> <<"dd.remote.contact.results"/utf8>>.
+contact_sms_send_subject() -> <<"dd.remote.contact.sms.send"/utf8>>.
+contact_sms_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 container_pool_requests_subject() -> <<"dd.remote.container_pool.requests"/utf8>>.
 container_pool_results_subject() -> <<"dd.remote.container_pool.results"/utf8>>.
 contracts_solana_resolve_subject() -> <<"dd.remote.contracts.solana.resolve"/utf8>>.
@@ -405,6 +416,7 @@ thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
 agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
+contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.

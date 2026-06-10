@@ -57,6 +57,11 @@ resources:
   - dd-data-viz-rs.deployment.yaml
   - dd-data-viz-rs.networkpolicy.yaml
   - dd-data-viz-rs.service.yaml
+  - dd-email-sms-contact-rs.deployment.yaml
+  - dd-email-sms-contact-rs.externalsecret.yaml
+  - dd-email-sms-contact-rs.service.yaml
+  - dd-next-1-js.deployment.yaml
+  - dd-next-1-js.service.yaml
   - dd-sound-recorder-rs.deployment.yaml
   - dd-sound-recorder-rs.networkpolicy.yaml
   - dd-sound-recorder-rs.service.yaml

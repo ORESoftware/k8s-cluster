@@ -18,6 +18,11 @@
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
     chaos_probe_queue_group/0,
+    contact_email_send_subject/0,
+    contact_email_send_queue_group/0,
+    contact_send_results_subject/0,
+    contact_sms_send_subject/0,
+    contact_sms_send_queue_group/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
     contracts_solana_resolve_subject/0,
@@ -212,6 +217,7 @@
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
     constraint_scheduler_queue_group/0,
+    contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
@@ -323,6 +329,20 @@ chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
 %% Service: dd-chaos
 chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
 chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
+
+%% Send-an-email requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group (each request handled once across replicas). Payload: { to, subject, html, [text], [from] }.
+%% Service: dd-email-sms-contact-rs
+contact_email_send_subject() -> <<"dd.remote.contact.email.send"/utf8>>.
+contact_email_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
+
+%% Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+%% Service: dd-email-sms-contact-rs
+contact_send_results_subject() -> <<"dd.remote.contact.results"/utf8>>.
+
+%% Send-an-SMS requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { to, body }.
+%% Service: dd-email-sms-contact-rs
+contact_sms_send_subject() -> <<"dd.remote.contact.sms.send"/utf8>>.
+contact_sms_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 
 %% Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 %% Service: dd-container-pool
@@ -1081,6 +1101,10 @@ billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 %% Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 %% Service: dd-constraint-scheduler
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
+
+%% Shared queue group for dd-email-sms-contact-rs workers consuming the email/sms send lanes (once-only delivery across replicas).
+%% Service: dd-email-sms-contact-rs
+contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 
 %% Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 %% Service: shared

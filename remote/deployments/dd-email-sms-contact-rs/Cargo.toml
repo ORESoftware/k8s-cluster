@@ -1,0 +1,18 @@
+[package]
+name = "dd-email-sms-contact-rs"
+version = "0.1.0"
+edition = "2021"
+
+# Long-running contact server: sends transactional/outreach email (SendGrid, SES-ready) and SMS
+# (Twilio), with per-process rate limiting and a shared-secret auth gate. Mirrors the Axum +
+# /healthz + /readyz + graceful-shutdown conventions of the other remote Rust servers.
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+async-nats = "=0.38.0"
+futures = "0.3"
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
