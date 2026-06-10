@@ -99,6 +99,27 @@ pub struct Config {
 
     /// Timeout for connect/acquire/release broker operations.
     pub live_mutex_request_timeout_ms: u64,
+
+    /// NATS server URL for the domain-event feed + inbound sync commands.
+    /// `BILLING_NATS_URL`, falling back to the shared `NATS_URL`. When unset
+    /// the [`crate::events::EventBus`] runs as a silent no-op (publishes are
+    /// dropped, no subscriber loop is started), mirroring the CDC consumer.
+    pub nats_url: Option<String>,
+
+    /// Master switch for the NATS event layer. Defaults `false` so the
+    /// server carries no messaging dependency unless an operator opts in.
+    /// Connecting (and the inbound sync-command subscriber) only happens
+    /// when this is true AND `nats_url` resolves.
+    pub nats_publish_enabled: bool,
+
+    /// Queue group for the inbound `dd.remote.billing.commands.sync`
+    /// subscription so replicas load-balance commands. Defaults to the
+    /// generated `BILLING_SYNC_COMMANDS_QUEUE_GROUP` (`dd-billing-server`).
+    pub nats_queue_group: Option<String>,
+
+    /// Hard ceiling on published payload bytes and accepted inbound command
+    /// bytes (defense against a malformed / hostile message). Default 1 MiB.
+    pub nats_max_payload_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,6 +249,14 @@ impl Config {
                 .clamp(1_000, 60_000),
             live_mutex_request_timeout_ms: env_u64("BILLING_LIVE_MUTEX_REQUEST_TIMEOUT_MS", 30_000)
                 .clamp(100, 30_000),
+            nats_url: optional_trimmed_env("BILLING_NATS_URL")
+                .or_else(|| optional_trimmed_env("NATS_URL")),
+            nats_publish_enabled: env_bool("BILLING_NATS_PUBLISH_ENABLED", false),
+            nats_queue_group: optional_trimmed_env("BILLING_NATS_QUEUE_GROUP"),
+            // 1 MiB default; clamp to a sane band so a typo can't set 0
+            // (which would reject every message) or an absurd ceiling.
+            nats_max_payload_bytes: env_u64("BILLING_NATS_MAX_PAYLOAD_BYTES", 1_048_576)
+                .clamp(4_096, 8_388_608) as usize,
         })
     }
 
@@ -330,6 +359,10 @@ impl Config {
             live_mutex_addr: "127.0.0.1:6970".into(),
             live_mutex_lock_ttl_ms: 60_000,
             live_mutex_request_timeout_ms: 30_000,
+            nats_url: None,
+            nats_publish_enabled: false,
+            nats_queue_group: None,
+            nats_max_payload_bytes: 1_048_576,
         }
     }
 }
