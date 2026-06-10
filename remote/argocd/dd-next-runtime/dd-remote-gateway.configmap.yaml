@@ -2332,11 +2332,10 @@ data:
         proxy_read_timeout 120;
         # add the /dd-next-1 prefix (or nothing) to the URI, then proxy to the host-only variable —
         # same pattern as the working /dd-next-1 location (variable host + implicit URI).
-        # From a /dd-next-1 page -> internal redirect to /dd-next-1/<path>, which the proven
-        # /dd-next-1 location then proxies to the app. (rewrite-in-if is the safe use of if.)
-        if ($api_referer_ddn1) {
-          rewrite ^ /dd-next-1$uri last;
-        }
+        # From a /dd-next-1 page -> hand off to @ddn1_proxy (return-in-if is the safe use of if;
+        # keeps proxy_pass out of if and avoids the flaky rewrite...last re-dispatch).
+        if ($api_referer_ddn1) { return 418; }
+        error_page 418 = @ddn1_proxy;
         set $dd_up_apipd dd-remote-web-home.default.svc.cluster.local:8080;
         proxy_pass http://$dd_up_apipd;
       }
@@ -2355,11 +2354,10 @@ data:
         proxy_read_timeout 120;
         # add the /dd-next-1 prefix (or nothing) to the URI, then proxy to the host-only variable —
         # same pattern as the working /dd-next-1 location (variable host + implicit URI).
-        # From a /dd-next-1 page -> internal redirect to /dd-next-1/<path>, which the proven
-        # /dd-next-1 location then proxies to the app. (rewrite-in-if is the safe use of if.)
-        if ($api_referer_ddn1) {
-          rewrite ^ /dd-next-1$uri last;
-        }
+        # From a /dd-next-1 page -> hand off to @ddn1_proxy (return-in-if is the safe use of if;
+        # keeps proxy_pass out of if and avoids the flaky rewrite...last re-dispatch).
+        if ($api_referer_ddn1) { return 418; }
+        error_page 418 = @ddn1_proxy;
         set $dd_up_apipd dd-remote-web-home.default.svc.cluster.local:8080;
         proxy_pass http://$dd_up_apipd;
       }
@@ -2370,6 +2368,22 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         set $dd_up_54 dd-remote-web-home.default.svc.cluster.local:8080;
         proxy_pass http://$dd_up_54;
+      }
+
+      # dd-next-1 referer-routed /api,/pub,/data land here: add the /dd-next-1 basePath prefix and
+      # proxy to the app using the proven set+host-variable pattern (no rewrite...last, no if-proxy).
+      location @ddn1_proxy {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffer_size 32k;
+        proxy_buffers 8 32k;
+        proxy_busy_buffers_size 64k;
+        proxy_read_timeout 120;
+        rewrite ^ /dd-next-1$uri break;
+        set $dd_up_ddn1 dd-next-1-js.default.svc.cluster.local:3000;
+        proxy_pass http://$dd_up_ddn1;
       }
 
       location @auth_required {
