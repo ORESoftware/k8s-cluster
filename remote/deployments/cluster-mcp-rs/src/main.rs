@@ -84,6 +84,8 @@ struct Config {
     observability_body_limit_bytes: usize,
     otlp_endpoint: Option<String>,
     otlp_timeout: Duration,
+    require_auth: bool,
+    auth_secret: Option<String>,
 }
 
 #[derive(Default)]
@@ -322,25 +324,79 @@ fn config_from_env() -> Config {
             100,
             MAX_TIMEOUT_MS,
         )),
+        require_auth: env_bool("MCP_REQUIRE_AUTH", false),
+        auth_secret: env::var("MCP_AUTH_SECRET")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
     }
 }
 
+// Optional bearer gate on POST /mcp, mirroring the Gleam server. Off by default
+// so the gateway-enforced auth model is unchanged; when MCP_REQUIRE_AUTH is set
+// the pod also requires `Authorization: Bearer <MCP_AUTH_SECRET>` or
+// `X-Server-Auth: <secret>`, which lets an operator close the unauthenticated
+// in-VPC ingress path without rewriting the NetworkPolicy. Fails closed if
+// required but no secret is configured.
+fn request_authorized(config: &Config, headers: &HeaderMap) -> bool {
+    let Some(secret) = config.auth_secret.as_deref().filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let bearer = format!("Bearer {secret}");
+    let bearer_ok = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == bearer);
+    let header_ok = headers
+        .get("x-server-auth")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == secret);
+    bearer_ok || header_ok
+}
+
 fn build_k8s_client(config: &Config) -> reqwest::Client {
+    // The SA bearer token is sent on these requests, so trust is pinned to the
+    // in-cluster CA only (tls_built_in_root_certs(false) drops the public webpki
+    // roots — no public CA should be able to vouch for kubernetes.default.svc),
+    // and redirects are disabled so a 3xx cannot retarget a token-bearing call
+    // to another host. A missing/invalid CA fails closed (TLS rejects), but we
+    // log it because the failure is otherwise opaque.
     let mut builder = reqwest::Client::builder()
         .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
-        .timeout(config.kubernetes_timeout);
-    if let Ok(bytes) = std::fs::read(&config.kubernetes_ca_path) {
-        if let Ok(cert) = Certificate::from_pem(&bytes) {
-            builder = builder.add_root_certificate(cert);
-        }
+        .timeout(config.kubernetes_timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_built_in_root_certs(false);
+    match std::fs::read(&config.kubernetes_ca_path) {
+        Ok(bytes) => match Certificate::from_pem(&bytes) {
+            Ok(cert) => builder = builder.add_root_certificate(cert),
+            Err(error) => log_dd_event(
+                "WARN",
+                13,
+                "failed to parse Kubernetes service-account CA; k8s tools will fail TLS",
+                "cluster_mcp.k8s.ca_parse_failed",
+                json!({ "error": error.to_string(), "path": config.kubernetes_ca_path }),
+                None,
+            ),
+        },
+        Err(error) => log_dd_event(
+            "WARN",
+            13,
+            "failed to read Kubernetes service-account CA; k8s tools will fail TLS",
+            "cluster_mcp.k8s.ca_read_failed",
+            json!({ "error": error.to_string(), "path": config.kubernetes_ca_path }),
+            None,
+        ),
     }
     builder.build().expect("failed to build k8s http client")
 }
 
 fn build_http_client(config: &Config) -> reqwest::Client {
+    // Observability/OTLP fan-out. Redirects disabled so a compromised in-cluster
+    // backend cannot bounce a read to an arbitrary host (SSRF amplifier).
     reqwest::Client::builder()
         .user_agent(format!("{SERVICE_NAME}/{SERVICE_VERSION}"))
         .timeout(config.observability_timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("failed to build http client")
 }
@@ -373,15 +429,44 @@ fn new_trace_context() -> TraceContext {
     }
 }
 
+const KNOWN_METHODS: &[&str] = &[
+    "initialize",
+    "notifications/initialized",
+    "ping",
+    "tools/list",
+    "tools/call",
+];
+
+// The per-method / per-tool metric maps are labelled by request-supplied
+// strings. Recording them verbatim would let any caller (including the
+// unauthenticated in-VPC ingress path) grow the maps without bound — a memory
+// exhaustion + /metrics blow-up DoS, and unbounded Prometheus label
+// cardinality. Bucket anything outside the fixed known set under "other".
+fn bounded_method_label(method: &str) -> &str {
+    if KNOWN_METHODS.contains(&method) {
+        method
+    } else {
+        "other"
+    }
+}
+
+fn bounded_tool_label(tool: &str) -> &str {
+    if TOOL_NAMES.contains(&tool) {
+        tool
+    } else {
+        "other"
+    }
+}
+
 impl Metrics {
     fn record_rpc(&self, method: &str) {
         self.rpc_requests_total.fetch_add(1, Ordering::Relaxed);
-        increment_map(&self.rpc_by_method, method);
+        increment_map(&self.rpc_by_method, bounded_method_label(method));
     }
 
     fn record_tool(&self, tool: &str) {
         self.tool_calls_total.fetch_add(1, Ordering::Relaxed);
-        increment_map(&self.tool_by_name, tool);
+        increment_map(&self.tool_by_name, bounded_tool_label(tool));
     }
 }
 
@@ -769,11 +854,26 @@ async fn observability(State(state): State<AppState>) -> Response {
     json_response(StatusCode::OK, telemetry_summary_json(&state).await)
 }
 
-async fn rpc(State(state): State<AppState>, body: Bytes) -> Response {
+async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     state
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
+    if state.config.require_auth && !request_authorized(&state.config, &headers) {
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        let mut response = json_response(
+            StatusCode::UNAUTHORIZED,
+            rpc_error(Value::Null, -32001, "unauthorized"),
+        );
+        response.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            HeaderValue::from_static("Bearer realm=\"dd-cluster-mcp-rs\""),
+        );
+        return response;
+    }
     if body.len() > MAX_RPC_BODY_BYTES {
         state
             .metrics

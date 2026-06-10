@@ -1319,50 +1319,85 @@ async fn run_generation_request_consumer(state: AppState) {
     let Some(nats) = state.nats.clone() else {
         return;
     };
-    let mut subscription = match nats
-        .queue_subscribe(
-            MUSIC_GENERATION_REQUESTS_SUBJECT,
-            MUSIC_GENERATION_REQUESTS_QUEUE_GROUP.to_string(),
-        )
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("dd-music-rs failed to subscribe to generation requests: {error}");
-            return;
-        }
-    };
-    println!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
-    while let Some(message) = subscription.next().await {
-        // Song generation is expensive (WAV synthesis + S3 upload + Postgres
-        // writes). Bound the trigger: reject oversize payloads and skip anything
-        // that is not a well-formed request rather than defaulting to a generation.
-        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            eprintln!(
-                "dd-music-rs dropping oversize generation request ({} bytes)",
-                message.payload.len()
-            );
-            continue;
-        }
-        let request: GenerateRequest = match serde_json::from_slice(&message.payload) {
-            Ok(request) => request,
+    // Outer reconnect loop: if the subscription stream ever ends (broker close,
+    // unsubscribe), re-subscribe with backoff instead of letting the task die
+    // silently. async-nats keeps subscriptions alive across transient
+    // reconnects, so this only fires on a hard termination.
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(
+                MUSIC_GENERATION_REQUESTS_SUBJECT,
+                MUSIC_GENERATION_REQUESTS_QUEUE_GROUP.to_string(),
+            )
+            .await
+        {
+            Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("dd-music-rs ignoring malformed generation request: {error}");
+                eprintln!("dd-music-rs failed to subscribe to generation requests: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
         };
-        let requested = request.count.unwrap_or(1).clamp(1, MAX_NATS_GENERATION_COUNT);
-        // Floor at the configured minimum: a request must not lower the
-        // listenability bar below it (min_score=0 would force the most
-        // expensive path — every candidate published — on every message).
-        let min_score = request
-            .min_score
-            .unwrap_or(state.config.min_listenability_score)
-            .clamp(0.0, 1.0)
-            .max(state.config.min_listenability_score);
-        if let Err(error) = generate_and_publish_songs(&state, requested, min_score).await {
-            eprintln!("dd-music-rs NATS generation request failed: {error:?}");
+        println!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
+        while let Some(message) = subscription.next().await {
+            handle_generation_request(&state, &message.payload).await;
         }
+        eprintln!("dd-music-rs generation subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+async fn handle_generation_request(state: &AppState, payload: &[u8]) {
+    // Song generation is expensive (WAV synthesis + S3 upload + Postgres
+    // writes). Bound the trigger: reject oversize payloads and skip anything
+    // that is not a well-formed request rather than defaulting to a generation.
+    if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+        eprintln!(
+            "dd-music-rs dropping oversize generation request ({} bytes)",
+            payload.len()
+        );
+        return;
+    }
+    let request: GenerateRequest = match serde_json::from_slice(payload) {
+        Ok(request) => request,
+        Err(error) => {
+            eprintln!("dd-music-rs ignoring malformed generation request: {error}");
+            return;
+        }
+    };
+    let requested = request.count.unwrap_or(1).clamp(1, MAX_NATS_GENERATION_COUNT);
+    // Floor at the configured minimum: a request must not lower the
+    // listenability bar below it (min_score=0 would force the most
+    // expensive path — every candidate published — on every message).
+    let min_score = request
+        .min_score
+        .unwrap_or(state.config.min_listenability_score)
+        .clamp(0.0, 1.0)
+        .max(state.config.min_listenability_score);
+    // Respect the daily song budget so the on-demand lane can't exceed the
+    // configured daily target (the scheduled sweep shares the same cap). This
+    // bounds total cost regardless of how many requests arrive.
+    let client = match connect_postgres(&state.config).await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("dd-music-rs NATS generation request skipped (postgres): {error:?}");
+            return;
+        }
+    };
+    let remaining = match (daily_target(state).await, published_today_count(&client).await) {
+        (Ok(target), Ok(published)) => (target - published).max(0),
+        (Err(error), _) | (_, Err(error)) => {
+            eprintln!("dd-music-rs NATS generation request skipped (daily budget): {error:?}");
+            return;
+        }
+    };
+    let to_generate = requested.min(remaining);
+    if to_generate <= 0 {
+        eprintln!("dd-music-rs daily song target reached; skipping NATS generation request");
+        return;
+    }
+    if let Err(error) = generate_and_publish_songs(state, to_generate, min_score).await {
+        eprintln!("dd-music-rs NATS generation request failed: {error:?}");
     }
 }
 
