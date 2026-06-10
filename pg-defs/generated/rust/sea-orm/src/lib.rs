@@ -4056,7 +4056,7 @@ pub mod benefactor_leads {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_leads")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -4135,7 +4135,7 @@ pub mod benefactor_leads_domains {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_leads_domains")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_domains")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -4209,7 +4209,7 @@ pub mod benefactor_search_locations {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_search_locations")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_search_locations")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -4278,7 +4278,7 @@ pub mod benefactor_scrape_queries {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_scrape_queries")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_scrape_queries")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -4377,7 +4377,7 @@ pub mod benefactor_domain_search_tracking {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_domain_search_tracking")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_domain_search_tracking")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
@@ -4450,7 +4450,7 @@ pub mod benefactor_icps {
     use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_icps")]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_icps")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,

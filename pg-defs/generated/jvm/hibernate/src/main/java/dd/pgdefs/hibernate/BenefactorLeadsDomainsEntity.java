@@ -13,7 +13,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "benefactor_leads_domains")
+@Table(name = "benefactor_leads_domains", schema = "benefactor")
 public class BenefactorLeadsDomainsEntity {
     @Id
     @Column(name = "id")

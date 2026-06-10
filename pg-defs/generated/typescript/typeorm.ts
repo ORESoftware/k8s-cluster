@@ -4526,7 +4526,7 @@ export class UsaccAuditEventsEntity {
 @Index("benefactor_leads_verified_idx", ["isVerified"])
 @Index("benefactor_leads_category_city_idx", ["serviceCategory", "city"])
 @Index("benefactor_leads_category_state_idx", ["serviceCategory", "state"])
-@Entity({ name: "benefactor_leads" })
+@Entity({ schema: "benefactor", name: "benefactor_leads" })
 export class BenefactorLeadsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
@@ -4640,7 +4640,7 @@ export class BenefactorLeadsEntity {
 @Index("benefactor_leads_domains_skip_until_idx", ["skipUntil"])
 @Index("benefactor_leads_domains_last_scraped_idx", ["lastScrapedAt"])
 @Index("benefactor_leads_domains_active_idx", ["isActive"])
-@Entity({ name: "benefactor_leads_domains" })
+@Entity({ schema: "benefactor", name: "benefactor_leads_domains" })
 export class BenefactorLeadsDomainsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
@@ -4743,7 +4743,7 @@ export class BenefactorLeadsDomainsEntity {
 @Index("benefactor_search_locations_cooldown_idx", ["cooldownUntil"])
 @Index("benefactor_search_locations_active_idx", ["isActive"])
 @Index("benefactor_search_locations_soft_deleted_idx", ["isSoftDeleted"])
-@Entity({ name: "benefactor_search_locations" })
+@Entity({ schema: "benefactor", name: "benefactor_search_locations" })
 export class BenefactorSearchLocationsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
@@ -4846,7 +4846,7 @@ export class BenefactorSearchLocationsEntity {
 @Index("benefactor_scrape_queries_active_idx", ["isActive"])
 @Index("benefactor_scrape_queries_cooldown_idx", ["cooldownUntil"])
 @Index("benefactor_scrape_queries_zero_new_idx", ["consecutiveZeroNewRuns"])
-@Entity({ name: "benefactor_scrape_queries" })
+@Entity({ schema: "benefactor", name: "benefactor_scrape_queries" })
 export class BenefactorScrapeQueriesEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
@@ -4981,7 +4981,7 @@ export class BenefactorScrapeQueriesEntity {
 @Index("benefactor_domain_search_tracking_email_found_idx", ["emailFoundCount"])
 @Index("benefactor_domain_search_tracking_blocked_until_idx", ["blockedUntil"])
 @Index("benefactor_domain_search_tracking_active_idx", ["isActive"])
-@Entity({ name: "benefactor_domain_search_tracking" })
+@Entity({ schema: "benefactor", name: "benefactor_domain_search_tracking" })
 export class BenefactorDomainSearchTrackingEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
@@ -5076,7 +5076,7 @@ export class BenefactorDomainSearchTrackingEntity {
 @Index("benefactor_icps_outcall_fit_idx", ["outcallFitScore"])
 @Index("benefactor_icps_active_idx", ["isActive"])
 @Index("benefactor_icps_soft_deleted_idx", ["isSoftDeleted"])
-@Entity({ name: "benefactor_icps" })
+@Entity({ schema: "benefactor", name: "benefactor_icps" })
 export class BenefactorIcpsEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
   id!: string;
