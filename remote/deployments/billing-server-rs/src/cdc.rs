@@ -58,7 +58,12 @@ async fn start_inner() -> anyhow::Result<()> {
     let durable = first_env(&["BILLING_CDC_DURABLE_NAME"])
         .unwrap_or_else(|| "billing-server-audit".to_string());
 
-    let nats = async_nats::connect(&nats_url).await?;
+    // CDC audit needs NATS to do anything, so wait for the broker on a transient
+    // boot outage (retry with backoff) instead of crash-looping the pod.
+    let nats = async_nats::ConnectOptions::new()
+        .retry_on_initial_connect()
+        .connect(&nats_url)
+        .await?;
     let jetstream = async_nats::jetstream::new(nats);
 
     let join = dd_wal_consumer::Subscription::builder()

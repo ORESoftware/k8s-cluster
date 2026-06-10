@@ -2132,8 +2132,11 @@ async fn main() {
         .route("/api/docs.json", get(api_docs_json))
         .route("/mcp", get(mcp_get).post(rpc))
         .with_state(state.clone())
-        .layer(DefaultBodyLimit::max(MAX_RPC_BODY_BYTES))
-        .merge(dd_runtime_config_client::router());
+        // Merge the runtime-config /internal/* routes BEFORE applying the body
+        // limit so the cap covers them too (layer() only wraps routes added so
+        // far; a merge after it would leave /internal/* on axum's 2 MiB default).
+        .merge(dd_runtime_config_client::router())
+        .layer(DefaultBodyLimit::max(MAX_RPC_BODY_BYTES));
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 

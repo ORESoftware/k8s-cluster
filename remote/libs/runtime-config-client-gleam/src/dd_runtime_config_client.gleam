@@ -25,6 +25,7 @@ import gleam/bytes_tree
 import gleam/http
 import gleam/http/request
 import gleam/http/response
+import gleam/string
 import mist
 
 pub const snapshot_route: List(String) = ["internal", "runtime-config"]
@@ -125,5 +126,13 @@ fn json_response(status: Int, body: String) -> response.Response(mist.ResponseDa
 
 fn escape_json(value: String) -> String {
   // Minimal escape so error strings are safe to embed in our error envelope.
+  // Reasons are FFI-generated today, but a function named escape_json must
+  // actually escape — otherwise a reason containing a quote or backslash would
+  // break the JSON envelope.
   value
+  |> string.replace("\\", "\\\\")
+  |> string.replace("\"", "\\\"")
+  |> string.replace("\n", "\\n")
+  |> string.replace("\r", "\\r")
+  |> string.replace("\t", "\\t")
 }

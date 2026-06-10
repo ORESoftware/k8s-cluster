@@ -3078,7 +3078,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8115").parse::<u16>()?;
     let nats = match optional_env("NATS_URL") {
-        Some(url) => Some(async_nats::connect(url).await?),
+        // Degrade gracefully if the broker is down at boot: the HTTP/ingest API
+        // must come up even when messaging is unavailable. async-nats serves a
+        // reconnecting client, so a later recovery is picked up.
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("dd-public-data-server NATS connect failed ({url}): {error}");
+                None
+            }
+        },
         None => None,
     };
     let state = AppState {

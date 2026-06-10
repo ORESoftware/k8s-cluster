@@ -347,7 +347,12 @@ async fn run_gateway_once(
     let Some(nats_url) = config.nats_url.as_deref() else {
         return Err("NATS_URL not configured; the gateway needs JetStream".into());
     };
-    let nats = async_nats::connect(nats_url).await?;
+    // NATS is the gateway's whole purpose, so wait for the broker on a transient
+    // boot outage (retry with backoff) instead of crash-looping the pod.
+    let nats = async_nats::ConnectOptions::new()
+        .retry_on_initial_connect()
+        .connect(nats_url)
+        .await?;
     let jetstream = async_nats::jetstream::new(nats.clone());
     ensure_stream(&jetstream, &config.stream_name, &config.subject_prefix).await?;
 

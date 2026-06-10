@@ -297,8 +297,13 @@ pub async fn register_with_control_plane() {
     let env_label = read_env(ENV_ENV).unwrap_or_else(|| "stage".to_string());
     let scope = read_env(ENV_SCOPE).unwrap_or_else(|| service_name.clone());
 
+    // Never follow redirects: this POST carries the X-Server-Auth secret, and
+    // reqwest only strips the standard Authorization/Cookie headers on a
+    // cross-origin redirect — a custom header like X-Server-Auth would be
+    // forwarded to the redirect target, leaking the control-plane secret.
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
     {
         Ok(client) => client,
