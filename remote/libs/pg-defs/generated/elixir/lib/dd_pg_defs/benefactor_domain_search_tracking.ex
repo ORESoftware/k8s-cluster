@@ -8,6 +8,7 @@ defmodule DdPgDefs.BenefactorDomainSearchTracking do
   import Ecto.Changeset
 
   @table "benefactor_domain_search_tracking"
+  @schema_prefix "benefactor"
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

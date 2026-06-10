@@ -8,6 +8,7 @@ defmodule DdPgDefs.BenefactorLeadsDomains do
   import Ecto.Changeset
 
   @table "benefactor_leads_domains"
+  @schema_prefix "benefactor"
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id

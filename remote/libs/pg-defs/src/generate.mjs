@@ -540,6 +540,11 @@ function renderPythonSqlAlchemy(contract) {
     for (const tableIndex of table.indexes ?? []) {
       lines.push(`        ${pythonSqlAlchemyIndex(tableIndex)},`);
     }
+    // A trailing dict in __table_args__ carries table kwargs; use it to place the table in its
+    // Postgres schema (e.g. benefactor) instead of the default search_path.
+    if (table.schema && table.schema !== 'public') {
+      lines.push(`        {"schema": ${pyString(table.schema)}},`);
+    }
     lines.push('    )');
     lines.push('');
     for (const column of table.columns) {
@@ -2186,7 +2191,11 @@ function renderSeaOrmRust(contract) {
     lines.push('    use super::*;');
     lines.push('');
     lines.push('#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]');
-    lines.push(`#[sea_orm(table_name = ${JSON.stringify(table.name)})]`);
+    const seaOrmTableAttr =
+      table.schema && table.schema !== 'public'
+        ? `#[sea_orm(schema_name = ${JSON.stringify(table.schema)}, table_name = ${JSON.stringify(table.name)})]`
+        : `#[sea_orm(table_name = ${JSON.stringify(table.name)})]`;
+    lines.push(seaOrmTableAttr);
     lines.push('pub struct Model {');
     for (const column of table.columns) {
       const attrs = [];
@@ -2670,6 +2679,9 @@ function renderEctoSchemaFile(table) {
     '  import Ecto.Changeset',
     '',
     `  @table ${JSON.stringify(table.name)}`,
+    ...(table.schema && table.schema !== 'public'
+      ? [`  @schema_prefix ${JSON.stringify(table.schema)}`]
+      : []),
     '',
   ];
 
@@ -3267,14 +3279,19 @@ function renderJooqTablesJava(contract) {
 
   for (const table of contract.tables) {
     const tableConst = screaming(table.name);
-    lines.push(`    public static final Name ${tableConst}_NAME = DSL.name(${JSON.stringify(table.name)});`);
+    // DSL.name() takes the qualified name parts as varargs, so a non-public schema prepends the
+    // schema segment (e.g. DSL.name("benefactor", "benefactor_leads")).
+    const nameParts = (parts) => parts.map((part) => JSON.stringify(part)).join(', ');
+    const tableNameParts =
+      table.schema && table.schema !== 'public' ? [table.schema, table.name] : [table.name];
+    lines.push(`    public static final Name ${tableConst}_NAME = DSL.name(${nameParts(tableNameParts)});`);
     lines.push(`    public static final Table<org.jooq.Record> ${tableConst} = DSL.table(${tableConst}_NAME);`);
     for (const column of table.columns) {
       const colConst = `${tableConst}_${screaming(column.name)}`;
       const javaType = jooqJavaType(column);
       const dataType = jooqDataType(column);
       lines.push(
-        `    public static final Field<${javaType}> ${colConst} = DSL.field(DSL.name(${JSON.stringify(table.name)}, ${JSON.stringify(column.name)}), ${dataType});`,
+        `    public static final Field<${javaType}> ${colConst} = DSL.field(DSL.name(${nameParts([...tableNameParts, column.name])}), ${dataType});`,
       );
     }
     lines.push('');
@@ -3400,7 +3417,9 @@ function renderHibernateEntityFile(table) {
     'import java.util.UUID;',
     '',
     '@Entity',
-    `@Table(name = ${JSON.stringify(table.name)})`,
+    table.schema && table.schema !== 'public'
+      ? `@Table(name = ${JSON.stringify(table.name)}, schema = ${JSON.stringify(table.schema)})`
+      : `@Table(name = ${JSON.stringify(table.name)})`,
     `public class ${className} {`,
   ];
 

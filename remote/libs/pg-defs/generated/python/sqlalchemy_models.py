@@ -8861,6 +8861,7 @@ class BenefactorLeads(Base):
         Index("benefactor_leads_verified_idx", "is_verified"),
         Index("benefactor_leads_category_city_idx", "service_category", "city"),
         Index("benefactor_leads_category_state_idx", "service_category", "state"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -8991,6 +8992,7 @@ class BenefactorLeadsDomains(Base):
         Index("benefactor_leads_domains_skip_until_idx", "skip_until"),
         Index("benefactor_leads_domains_last_scraped_idx", "last_scraped_at"),
         Index("benefactor_leads_domains_active_idx", "is_active"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -9106,6 +9108,7 @@ class BenefactorSearchLocations(Base):
         Index("benefactor_search_locations_cooldown_idx", "cooldown_until"),
         Index("benefactor_search_locations_active_idx", "is_active"),
         Index("benefactor_search_locations_soft_deleted_idx", "is_soft_deleted"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -9223,6 +9226,7 @@ class BenefactorScrapeQueries(Base):
         Index("benefactor_scrape_queries_active_idx", "is_active"),
         Index("benefactor_scrape_queries_cooldown_idx", "cooldown_until"),
         Index("benefactor_scrape_queries_zero_new_idx", "consecutive_zero_new_runs"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -9369,6 +9373,7 @@ class BenefactorDomainSearchTracking(Base):
         Index("benefactor_domain_search_tracking_email_found_idx", "email_found_count"),
         Index("benefactor_domain_search_tracking_blocked_until_idx", "blocked_until"),
         Index("benefactor_domain_search_tracking_active_idx", "is_active"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -9477,6 +9482,7 @@ class BenefactorIcps(Base):
         Index("benefactor_icps_outcall_fit_idx", "outcall_fit_score"),
         Index("benefactor_icps_active_idx", "is_active"),
         Index("benefactor_icps_soft_deleted_idx", "is_soft_deleted"),
+        {"schema": "benefactor"},
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))

@@ -205,6 +205,40 @@ test("parser flows a schema-qualified foreign key with bare reference table", ()
   assert.equal(column.foreignKey?.constraint, "benefactor_scrape_queries_location_fk");
 });
 
+test("every adapter schema-qualifies non-public (benefactor) tables", async () => {
+  // The benefactor.* tables live in a real Postgres schema. Each adapter must address them via its
+  // own schema mechanism (qualified SQL string, or the framework's native schema option) rather
+  // than a bare name that would resolve against the default search_path. This locks that wiring in
+  // so a future generator change cannot silently drop it for any adapter. Adapters intentionally
+  // left bare (Prisma multiSchema, Diesel, ent, Drift, Mnesia) are excluded by design.
+  const expectations = [
+    // Raw-SQL / literal-name renderers → fully schema-qualified string.
+    ["generated/typescript/drizzle.ts", 'pgSchema("benefactor")'],
+    ["generated/typescript/drizzle.ts", "benefactorSchema.table("],
+    ["generated/rust/src/lib.rs", '"benefactor.benefactor_leads"'],
+    ["generated/gleam/src/pg_defs.gleam", '"benefactor.benefactor_leads"'],
+    ["generated/go/sqlc/query.sql", "from benefactor.benefactor_leads"],
+    ["generated/go/gorm/pg_defs.go", '"benefactor.benefactor_leads"'],
+    // Framework-ORM renderers → native schema option.
+    ["generated/typescript/typeorm.ts", 'schema: "benefactor"'],
+    ["generated/python/sqlalchemy_models.py", '{"schema": "benefactor"}'],
+    ["generated/rust/sea-orm/src/lib.rs", 'schema_name = "benefactor"'],
+    ["generated/elixir/lib/dd_pg_defs/benefactor_leads.ex", '@schema_prefix "benefactor"'],
+    ["generated/jvm/jooq/src/main/java/dd/pgdefs/jooq/Tables.java", 'DSL.name("benefactor", "benefactor_leads")'],
+    [
+      "generated/jvm/hibernate/src/main/java/dd/pgdefs/hibernate/BenefactorLeadsEntity.java",
+      'schema = "benefactor"',
+    ],
+  ];
+  for (const [relativePath, needle] of expectations) {
+    const contents = await readFile(path.join(packageRoot, relativePath), "utf8");
+    assert.ok(
+      contents.includes(needle),
+      `${relativePath} should schema-qualify benefactor tables (missing: ${needle})`,
+    );
+  }
+});
+
 test("parser throws on a bare-name collision across schemas", () => {
   // Index/FK association is keyed by bare table name, so a duplicate bare name across schemas must
   // fail loudly rather than silently mis-associate.
