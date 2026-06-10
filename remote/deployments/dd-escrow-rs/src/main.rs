@@ -3196,6 +3196,7 @@ async fn run_nats_loop(state: AppState) {
             "criticalEventSubject": state.critical_event_subject,
         }),
     );
+    loop {
     let mut subscription = match nats
         .queue_subscribe(
             state.validate_subject.clone(),
@@ -3213,7 +3214,8 @@ async fn run_nats_loop(state: AppState) {
                 json!({ "error": error.to_string() }),
             )
             .await;
-            return;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
         }
     };
     while let Some(message) = subscription.next().await {
@@ -3299,6 +3301,16 @@ async fn run_nats_loop(state: AppState) {
                 .await;
             }
         }
+    }
+    log_warn(
+        "escrow-nats-subscription-ended",
+        "Escrow validation NATS subscription ended; re-subscribing in 5s.",
+        json!({
+            "subject": state.validate_subject,
+            "queueGroup": ESCROW_SOLANA_VALIDATE_QUEUE_GROUP,
+        }),
+    );
+    tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

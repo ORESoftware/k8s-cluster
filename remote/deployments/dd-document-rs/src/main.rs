@@ -1752,6 +1752,7 @@ async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok:
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else { return };
+    loop {
     let subscription = nats
         .queue_subscribe(state.convert_subject.clone(), CONVERT_QUEUE_GROUP.to_string())
         .await;
@@ -1760,10 +1761,11 @@ async fn run_nats_loop(state: AppState) {
         Err(error) => {
             log_error(
                 "document-nats-subscribe-failed",
-                "Document service could not subscribe to convert requests.",
+                "Document service could not subscribe to convert requests; retrying in 5s.",
                 json!({ "subject": state.convert_subject, "error": error.to_string() }),
             );
-            return;
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            continue;
         }
     };
     log_info(
@@ -1842,6 +1844,13 @@ async fn run_nats_loop(state: AppState) {
         };
         publish_value(&state, &state.result_subject.clone(), &payload, "result").await;
         publish_event(&state, "document.convert", &rid, ok).await;
+    }
+    log_warn(
+        "document-nats-subscription-ended",
+        "Document convert subscription ended; re-subscribing in 5s.",
+        json!({ "subject": state.convert_subject }),
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
 

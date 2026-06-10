@@ -433,7 +433,7 @@ async fn publish_task_to_nats(
         .map_err(|error| error.to_string())?;
     client.flush().await.map_err(|error| error.to_string())?;
 
-    return Ok(NatsPublishResult {
+    Ok(NatsPublishResult {
         published: true,
         subject,
         wakeup_subject: config.nats_wakeup_subject.clone(),
@@ -441,7 +441,7 @@ async fn publish_task_to_nats(
 }
 
 fn skipped_nats_result(config: &Config, thread_id: &str) -> NatsPublishResult {
-    return NatsPublishResult {
+    NatsPublishResult {
         published: false,
         subject: thread_tasks_subject(thread_id),
         wakeup_subject: config.nats_wakeup_subject.clone(),
