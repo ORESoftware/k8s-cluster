@@ -110,14 +110,55 @@ impl LedgerService {
         if let Err(e) = customer_lock_guard.release().await {
             tracing::warn!(error = %e, "failed to release customer ledger-write lock");
         }
-        result
+
+        // Publish the domain event AFTER releasing the distributed customer
+        // lock. async-nats `publish().await` writes to a bounded in-process
+        // channel that can suspend under broker backpressure; doing it under
+        // the lock would hold a cross-pod live-mutex resource across a network
+        // op (and risk TTL expiry mid-hold). The event is best-effort and not
+        // part of correctness, so it belongs outside the critical section.
+        let (tx_id, is_new) = result?;
+        if is_new {
+            self.publish_posting_event(draft, tx_id, region).await;
+        }
+        Ok(tx_id)
     }
 
+    /// Build the redacted per-currency debit totals and publish the committed
+    /// transaction event. Best-effort; never called for idempotent replays.
+    async fn publish_posting_event(&self, draft: &DraftTransaction, tx_id: Uuid, region: Region) {
+        let mut debit_totals: HashMap<String, i128> = HashMap::new();
+        for p in &draft.postings {
+            if matches!(p.direction, Direction::Debit) {
+                *debit_totals.entry(p.currency.clone()).or_insert(0) += p.amount_minor;
+            }
+        }
+        let totals = serde_json::Value::Object(
+            debit_totals
+                .into_iter()
+                .map(|(cur, amt)| (cur, serde_json::Value::String(amt.to_string())))
+                .collect(),
+        );
+        self.events
+            .publish_ledger_posting(
+                draft.tenant_id,
+                tx_id,
+                &draft.kind,
+                &draft.idempotency_key,
+                draft.postings.len(),
+                totals,
+                region.tag(),
+            )
+            .await;
+    }
+
+    /// Returns `(transaction_id, is_new)`. `is_new` is false for idempotent
+    /// replays (so the caller does not re-publish an event).
     async fn post_transaction_locked(
         &self,
         draft: &DraftTransaction,
         region: Region,
-    ) -> AppResult<Uuid> {
+    ) -> AppResult<(Uuid, bool)> {
         if draft.postings.len() < 2 {
             return Err(AppError::LedgerInvariant(
                 "transaction must contain at least 2 postings".into(),
@@ -182,7 +223,7 @@ impl LedgerService {
         .await?
         {
             tx.commit().await?;
-            return Ok(existing);
+            return Ok((existing, false));
         }
 
         let proposed_tx_id = Uuid::new_v4();
@@ -215,7 +256,7 @@ impl LedgerService {
             .fetch_one(&mut *tx)
             .await?;
             tx.commit().await?;
-            return Ok(existing);
+            return Ok((existing, false));
         };
 
         for p in &draft.postings {
@@ -266,37 +307,10 @@ impl LedgerService {
 
         tx.commit().await?;
 
-        // Best-effort domain event for the committed transaction. Only this
-        // genuinely-new path reaches here — the two idempotent short-circuits
-        // above returned early — so consumers see exactly one event per real
-        // ledger movement. `totals` is the per-currency debit volume (equal to
-        // the credit volume; the transaction is balanced) as minor-unit
-        // strings, preserving i128 precision through JSON.
-        let mut debit_totals: HashMap<String, i128> = HashMap::new();
-        for p in &draft.postings {
-            if matches!(p.direction, Direction::Debit) {
-                *debit_totals.entry(p.currency.clone()).or_insert(0) += p.amount_minor;
-            }
-        }
-        let totals = serde_json::Value::Object(
-            debit_totals
-                .into_iter()
-                .map(|(cur, amt)| (cur, serde_json::Value::String(amt.to_string())))
-                .collect(),
-        );
-        self.events
-            .publish_ledger_posting(
-                draft.tenant_id,
-                tx_id,
-                &draft.kind,
-                &draft.idempotency_key,
-                draft.postings.len(),
-                totals,
-                region.tag(),
-            )
-            .await;
-
-        Ok(tx_id)
+        // Genuinely-new commit (the two idempotent short-circuits above
+        // returned early). The caller publishes the event AFTER releasing the
+        // customer lock — see `post_transaction`.
+        Ok((tx_id, true))
     }
 
     pub async fn account_balance(
