@@ -13,6 +13,7 @@ runs deterministic pre-filing checks:
 - **claim formality / proofreading checks at `/claims/check`**
 - **USPTO fee estimation at `/fees/estimate`**
 - **filing deadline analysis at `/deadlines`**
+- **AI-assisted drafting at `/draft/ai`** (Claude, with a deterministic self-audit + repair loop)
 - generated API docs at `/docs/api`, `/api/docs`, and `/api/docs.json`
 
 A generated package now also embeds a claim audit, a USPTO fee estimate, and a
@@ -39,6 +40,7 @@ attorney fees, extensions, petitions, IDS, and issue/maintenance fees.
 - `POST /claims/check` - authenticated claim-set formality audit (`{ claims: [..], abstract? }`).
 - `POST /fees/estimate` - authenticated USPTO fee estimate by entity status.
 - `POST /deadlines` - authenticated filing-deadline analysis from key dates.
+- `POST /draft/ai` - authenticated AI-assisted draft generation (requires `ANTHROPIC_API_KEY`).
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
 
@@ -77,6 +79,26 @@ Milestones with computed due dates and days remaining from any of
 - 12-month US grace-period statutory bar (35 USC 102(b)(1)), with a warning that
   most non-US jurisdictions require absolute novelty.
 
+### AI-assisted drafting (`/draft/ai`)
+
+Takes the same intake contract as `/packages/provisional` and uses Claude
+(`claude-opus-4-8` by default, adaptive thinking + `effort: high`, structured
+JSON output) to generate an abstract, a claim set, and specification sections.
+
+The output is then run **back through the deterministic `/claims/check` auditor**.
+If the generated claims contain blocking formality defects (invalid/forward
+dependencies, multiple-dependent-on-multiple-dependent, etc.), the service feeds
+those findings back to the model for **one automatic repair pass** and re-audits —
+so the deterministic checker acts as the grader for the generative draft. The
+response includes the draft, the final `claimAudit`, a `feeEstimate`, and a
+`repairApplied` flag.
+
+This endpoint is disabled (returns `503`) unless `ANTHROPIC_API_KEY` (or
+`PATENT_FILING_ANTHROPIC_API_KEY`) is set. It is preparation support only — not
+legal advice and not a filing. It has its own longer request timeout
+(`AI_REQUEST_TIMEOUT_SECS`, 150s) since model generation far exceeds the 15s used
+by the deterministic endpoints.
+
 ## Hardening
 
 - Graceful shutdown on **both** SIGINT and SIGTERM (k8s sends SIGTERM).
@@ -101,6 +123,10 @@ Milestones with computed due dates and days remaining from any of
 | `PATENT_FILING_ALLOW_UNAUTHENTICATED` | `false` | Local-dev escape hatch. |
 | `PATENT_FILING_CENTER_URL` | `https://patentcenter.uspto.gov/` | Operator handoff URL surfaced in generated checklists. |
 | `PATENT_FILING_MAX_MATTERS` | `200` | In-memory matter retention cap. |
+| `ANTHROPIC_API_KEY` / `PATENT_FILING_ANTHROPIC_API_KEY` | unset | Enables `/draft/ai`. When unset the endpoint returns `503`. |
+| `PATENT_FILING_AI_MODEL` | `claude-opus-4-8` | Model used for AI drafting. |
+| `PATENT_FILING_AI_MAX_CONCURRENCY` | `4` | Max concurrent `/draft/ai` model calls; excess returns `429`. |
+| `PATENT_FILING_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic API base URL override. |
 | `RUST_LOG` | `dd_patent_filing_rs=info,tower_http=info` | Tracing filter. |
 
 ## Local Smoke

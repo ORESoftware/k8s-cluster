@@ -5,6 +5,19 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 
+/// Per-tick simulation frames fanned out for live demos (grid/agent snapshots and aggregate stats). Broadcast with no queue group so every interested consumer (and the websocket bridge) receives each frame. Default for AGENT_SIM_FRAME_SUBJECT.
+/// Service: dd-agent-sim-server
+pub const agent_sim_frames_subject = "dd.remote.agent_sim.frames"
+
+/// Inbound agent-based / cellular-automata simulation requests consumed by the agent-sim server. Subscribed with the dd-agent-sim-server queue group so requests load-balance across replicas. Default for AGENT_SIM_SIMULATE_SUBJECT.
+/// Service: dd-agent-sim-server
+pub const agent_sim_simulate_requests_subject = "dd.remote.agent_sim.simulate.requests"
+pub const agent_sim_simulate_requests_queue_group = "dd-agent-sim-server"
+
+/// Final simulation outcomes (final state summary, time series, convergence/extinction flags) emitted after a run completes. Carries an agent_sim.simulate.v1 envelope. Default for AGENT_SIM_RESULT_SUBJECT.
+/// Service: dd-agent-sim-server
+pub const agent_sim_simulate_results_subject = "dd.remote.agent_sim.simulate.results"
+
 /// Emitted when a Merkle root over a posting range is anchored to Solana (tamper-evidence notary). Carries tenant, anchor id, posting range/count, merkle root hex, tx signature, and slot.
 /// Service: dd-billing-server
 pub const billing_anchors_subject = "dd.remote.billing.anchors"
@@ -301,6 +314,15 @@ pub const ml_dead_letter_subject = "dd.remote.ml.deadletter"
 /// Service: dd-ai-ml-pipeline
 pub const ml_features_subject = "dd.remote.ml.features"
 
+/// Inbound Monte Carlo simulation requests consumed by the monte-carlo server. Subscribed with the dd-monte-carlo-server queue group so requests load-balance across replicas. Default for MONTE_CARLO_SIMULATE_SUBJECT.
+/// Service: dd-monte-carlo-server
+pub const monte_carlo_simulate_requests_subject = "dd.remote.montecarlo.simulate.requests"
+pub const monte_carlo_simulate_requests_queue_group = "dd-monte-carlo-server"
+
+/// Monte Carlo estimates (point estimate, standard error, confidence interval, per-experiment summary) emitted by the monte-carlo server. Carries a montecarlo.simulate.v1 envelope. Default for MONTE_CARLO_RESULT_SUBJECT.
+/// Service: dd-monte-carlo-server
+pub const monte_carlo_simulate_results_subject = "dd.remote.montecarlo.simulate.results"
+
 /// Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. The consumer is opt-in (MUSIC_NATS_GENERATION_ENABLED) because each request drives expensive synthesis; publish rights to this subject are a privileged capability.
 /// Service: dd-music-rs
 pub const music_generation_requests_subject = "dd.remote.music.generation.requests"
@@ -344,6 +366,28 @@ pub const public_data_pipeline_jobs_subject = "dd.remote.public_data.pipeline.jo
 /// Service: dd-public-data-server
 pub const public_data_webhook_events_subject = "dd.remote.public_data.webhooks.events"
 
+/// Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.
+/// Service: dd-raft-consensus
+pub const raft_consensus_events_subject = "dd.remote.raft.consensus.events"
+
+/// Consensus outcomes (committed log, term/leader history, election counts, divergence detection) emitted after a simulated run. Carries a raft.consensus.v1 envelope. Default for RAFT_RESULT_SUBJECT.
+/// Service: dd-raft-consensus
+pub const raft_consensus_results_subject = "dd.remote.raft.consensus.results"
+
+/// Inbound Raft scenario/propose requests (cluster size, command stream, chaos parameters) consumed by the raft-consensus simulator. Subscribed with the dd-raft-consensus queue group so requests load-balance across replicas. Default for RAFT_PROPOSE_SUBJECT.
+/// Service: dd-raft-consensus
+pub const raft_propose_requests_subject = "dd.remote.raft.propose.requests"
+pub const raft_propose_requests_queue_group = "dd-raft-consensus"
+
+/// Inbound TSP/VRP route-optimization requests consumed by the route optimizer. Subscribed with the dd-route-optimizer queue group so requests load-balance across replicas. Default for ROUTE_OPTIMIZE_SUBJECT.
+/// Service: dd-route-optimizer
+pub const route_optimize_requests_subject = "dd.remote.route.optimize.requests"
+pub const route_optimize_requests_queue_group = "dd-route-optimizer"
+
+/// Optimized routes (ordered stops per vehicle, total distance, arrival times, time-window violations) emitted by the route optimizer. Carries a route.optimize.v1 envelope. Default for ROUTE_RESULT_SUBJECT.
+/// Service: dd-route-optimizer
+pub const route_optimize_results_subject = "dd.remote.route.optimize.results"
+
 /// Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.
 /// Service: dd-routing-server
 pub const routing_events_subject = "dd.remote.routing.events"
@@ -369,6 +413,24 @@ pub const runtime_critical_events_stream = "DD_REMOTE_CRITICAL_EVENTS"
 /// Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
 /// Service: shared
 pub const runtime_events_subject = "dd.remote.events"
+
+/// Inbound CNF SAT / SMT solve requests consumed by the sat-smt server. Subscribed with the dd-sat-smt-server queue group so requests load-balance across replicas. Default for SAT_SOLVE_SUBJECT.
+/// Service: dd-sat-smt-server
+pub const sat_solve_requests_subject = "dd.remote.sat.solve.requests"
+pub const sat_solve_requests_queue_group = "dd-sat-smt-server"
+
+/// Solve outcomes (sat/unsat/unknown with a model when satisfiable) emitted by the sat-smt server. Carries a sat.solve.v1 envelope. Default for SAT_RESULT_SUBJECT.
+/// Service: dd-sat-smt-server
+pub const sat_solve_results_subject = "dd.remote.sat.solve.results"
+
+/// Inbound constraint-scheduling requests (job-shop, rostering, timetabling) consumed by the scheduler. Subscribed with the dd-constraint-scheduler queue group so requests load-balance across replicas. Default for SCHEDULER_SCHEDULE_SUBJECT.
+/// Service: dd-constraint-scheduler
+pub const scheduler_schedule_requests_subject = "dd.remote.scheduler.schedule.requests"
+pub const scheduler_schedule_requests_queue_group = "dd-constraint-scheduler"
+
+/// Computed schedules (task start times, makespan, machine assignments, violations) emitted by the scheduler. Carries a scheduler.schedule.v1 envelope. Default for SCHEDULER_RESULT_SUBJECT.
+/// Service: dd-constraint-scheduler
+pub const scheduler_schedule_results_subject = "dd.remote.scheduler.schedule.results"
 
 /// MDP telemetry requests emitted by ai-ml-pipeline and consumed by the MDP optimizer. Default for ML_MDP_TELEMETRY_SUBJECT / MDP_TELEMETRY_SUBJECT.
 /// Service: dd-ai-ml-pipeline
@@ -887,9 +949,17 @@ pub fn parse_thread_tasks_subject(subject: String) -> Option(ThreadTasksSubjectP
   }
 }
 
+/// Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
+/// Service: dd-agent-sim-server
+pub const agent_sim_server_queue_group = "dd-agent-sim-server"
+
 /// Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 /// Service: dd-billing-server
 pub const billing_server_queue_group = "dd-billing-server"
+
+/// Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
+/// Service: dd-constraint-scheduler
+pub const constraint_scheduler_queue_group = "dd-constraint-scheduler"
 
 /// Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 /// Service: shared
@@ -915,6 +985,10 @@ pub const lambda_runner_queue_group = "dd-gleam-lambda-runner"
 /// Service: dd-ai-ml-pipeline
 pub const mip_solver_workers_queue_group = "dd-in-house-mip-solver-node-workers"
 
+/// Shared queue group used by dd-monte-carlo-server replicas consuming simulate requests.
+/// Service: dd-monte-carlo-server
+pub const monte_carlo_server_queue_group = "dd-monte-carlo-server"
+
 /// Shared queue group used by dd-music-rs replicas consuming generation requests.
 /// Service: dd-music-rs
 pub const music_generation_queue_group = "dd-music-rs"
@@ -923,9 +997,21 @@ pub const music_generation_queue_group = "dd-music-rs"
 /// Service: dd-public-data-server
 pub const public_data_workers_queue_group = "dd-public-data-server"
 
+/// Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests.
+/// Service: dd-raft-consensus
+pub const raft_consensus_queue_group = "dd-raft-consensus"
+
+/// Shared queue group used by dd-route-optimizer replicas consuming optimize requests.
+/// Service: dd-route-optimizer
+pub const route_optimizer_queue_group = "dd-route-optimizer"
+
 /// Shared queue group used by routing worker pods so each multi-start restart is solved exactly once.
 /// Service: dd-routing-server
 pub const routing_workers_queue_group = "dd-routing-server-workers"
+
+/// Shared queue group used by dd-sat-smt-server replicas consuming solve requests.
+/// Service: dd-sat-smt-server
+pub const sat_smt_server_queue_group = "dd-sat-smt-server"
 
 /// Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 /// Service: dd-remote-rest-api

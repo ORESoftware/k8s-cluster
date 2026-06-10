@@ -12,7 +12,6 @@ use std::{
     collections::{HashMap, VecDeque},
     env,
     error::Error,
-    hash::{Hash, Hasher},
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -54,6 +53,7 @@ const DEFAULT_MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 // heavy/big-document work that the warm container-pool worker handles.
 const DEFAULT_MAX_STREAM_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_CACHE_CAPACITY: usize = 256;
+const DEFAULT_CACHE_MAX_ENTRY_BYTES: usize = 1024 * 1024;
 const DEFAULT_IMAGE_CONCURRENCY: usize = 4;
 const MAX_FORMAT_LEN: usize = 64;
 const MAX_REQUEST_ID_LEN: usize = 128;
@@ -109,33 +109,45 @@ struct AppState {
     pdf_enabled: bool,
     cache: Arc<Mutex<ConvCache>>,
     image_semaphore: Arc<Semaphore>,
+    convert_semaphore: Arc<Semaphore>,
     metrics: Arc<Metrics>,
 }
 
-/// Tiny capacity-bounded FIFO cache of conversion outputs, keyed by a hash of
+type CacheKey = [u8; 32];
+
+/// Tiny capacity-bounded FIFO cache of conversion outputs, keyed by a SHA-256 of
 /// the full request (from/to/standalone/metadata/content). Conversions are
-/// deterministic + expensive, so this dedupes repeated work cheaply.
+/// deterministic + expensive, so this dedupes repeated work cheaply. A
+/// cryptographic key prevents an attacker from crafting a colliding request that
+/// would serve the wrong cached document.
 struct ConvCache {
     capacity: usize,
-    map: HashMap<u64, Arc<Vec<u8>>>,
-    order: VecDeque<u64>,
+    /// Per-entry byte cap so a few large outputs can't blow up memory
+    /// (capacity * max_entry_bytes bounds total footprint).
+    max_entry_bytes: usize,
+    map: HashMap<CacheKey, Arc<Vec<u8>>>,
+    order: VecDeque<CacheKey>,
 }
 
 impl ConvCache {
-    fn new(capacity: usize) -> Self {
+    fn new(capacity: usize, max_entry_bytes: usize) -> Self {
         ConvCache {
             capacity,
+            max_entry_bytes,
             map: HashMap::new(),
             order: VecDeque::new(),
         }
     }
 
-    fn get(&self, key: u64) -> Option<Arc<Vec<u8>>> {
-        self.map.get(&key).cloned()
+    fn get(&self, key: &CacheKey) -> Option<Arc<Vec<u8>>> {
+        self.map.get(key).cloned()
     }
 
-    fn put(&mut self, key: u64, value: Arc<Vec<u8>>) {
-        if self.capacity == 0 || self.map.contains_key(&key) {
+    fn put(&mut self, key: CacheKey, value: Arc<Vec<u8>>) {
+        if self.capacity == 0
+            || value.len() > self.max_entry_bytes
+            || self.map.contains_key(&key)
+        {
             return;
         }
         while self.map.len() >= self.capacity {
@@ -156,14 +168,21 @@ fn conversion_cache_key(
     standalone: bool,
     metadata: &Value,
     content: &[u8],
-) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    from.hash(&mut hasher);
-    to.hash(&mut hasher);
-    standalone.hash(&mut hasher);
-    metadata.to_string().hash(&mut hasher);
-    content.hash(&mut hasher);
-    hasher.finish()
+) -> CacheKey {
+    use sha2::{Digest, Sha256};
+    // Length-prefix every field so distinct requests can't alias (e.g.
+    // from="a",to="b" vs from="ab",to="").
+    let mut hasher = Sha256::new();
+    let field = |h: &mut Sha256, bytes: &[u8]| {
+        h.update((bytes.len() as u64).to_le_bytes());
+        h.update(bytes);
+    };
+    field(&mut hasher, from.as_bytes());
+    field(&mut hasher, to.as_bytes());
+    hasher.update([u8::from(standalone)]);
+    field(&mut hasher, metadata.to_string().as_bytes());
+    field(&mut hasher, content);
+    hasher.finalize().into()
 }
 
 #[derive(Default)]
@@ -532,7 +551,7 @@ async fn run_conversion_inner(
         .cache
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .get(key)
+        .get(&key)
     {
         state.metrics.cache_hits_total.fetch_add(1, Ordering::Relaxed);
         return Ok(hit);
@@ -540,6 +559,9 @@ async fn run_conversion_inner(
     state.metrics.cache_misses_total.fetch_add(1, Ordering::Relaxed);
 
     let (from_s, to_s, content_v) = (from.to_string(), to.to_string(), content.to_vec());
+    // Bound concurrent CPU-heavy conversions (tokio's blocking pool alone would
+    // allow hundreds, exhausting CPU/memory).
+    let _permit = state.convert_semaphore.clone().acquire_owned().await;
     let outcome = tokio::task::spawn_blocking(move || {
         ffi::convert(&from_s, &to_s, &content_v, standalone, &metadata)
     })
@@ -830,13 +852,14 @@ async fn run_pdf(
     }
 
     let key = conversion_cache_key(from, "pdf", standalone, &metadata, content);
-    if let Some(hit) = state.cache.lock().unwrap_or_else(|e| e.into_inner()).get(key) {
+    if let Some(hit) = state.cache.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         state.metrics.cache_hits_total.fetch_add(1, Ordering::Relaxed);
         return Ok(hit);
     }
     state.metrics.cache_misses_total.fetch_add(1, Ordering::Relaxed);
 
     let (from_s, content_v) = (from.to_string(), content.to_vec());
+    let _permit = state.convert_semaphore.clone().acquire_owned().await;
     let outcome = tokio::task::spawn_blocking(move || {
         ffi::make_pdf(&from_s, &content_v, standalone, &metadata)
     })
@@ -1902,7 +1925,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok())
         .unwrap_or(DEFAULT_CACHE_CAPACITY);
+    let cache_max_entry_bytes =
+        env_usize("DOCUMENT_CACHE_MAX_ENTRY_BYTES", DEFAULT_CACHE_MAX_ENTRY_BYTES);
     let image_concurrency = env_usize("DOCUMENT_IMAGE_CONCURRENCY", DEFAULT_IMAGE_CONCURRENCY);
+    let default_convert_concurrency = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(2, 16);
+    let convert_concurrency =
+        env_usize("DOCUMENT_CONVERT_CONCURRENCY", default_convert_concurrency);
     let convert_subject = env_value("DOCUMENT_CONVERT_SUBJECT", DEFAULT_CONVERT_SUBJECT);
     let result_subject = env_value("DOCUMENT_RESULT_SUBJECT", DEFAULT_RESULT_SUBJECT);
     let event_subject = env_value("DOCUMENT_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT);
@@ -1976,8 +2007,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         image_enabled,
         magick_version,
         pdf_enabled,
-        cache: Arc::new(Mutex::new(ConvCache::new(cache_capacity))),
+        cache: Arc::new(Mutex::new(ConvCache::new(cache_capacity, cache_max_entry_bytes))),
         image_semaphore: Arc::new(Semaphore::new(image_concurrency.max(1))),
+        convert_semaphore: Arc::new(Semaphore::new(convert_concurrency.max(1))),
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -2108,6 +2140,42 @@ mod tests {
         assert!(IMAGE_OUTPUT_FORMATS.contains(&"webp"));
         assert!(!IMAGE_OUTPUT_FORMATS.contains(&"pdf"));
         assert!(!IMAGE_OUTPUT_FORMATS.contains(&"svg"));
+    }
+
+    #[test]
+    fn cache_key_is_unambiguous_and_deterministic() {
+        let m = json!({});
+        let k1 = conversion_cache_key("a", "b", false, &m, b"x");
+        let k2 = conversion_cache_key("a", "b", false, &m, b"x");
+        assert_eq!(k1, k2, "same request must hash equal");
+        // Field boundaries must not alias.
+        assert_ne!(
+            conversion_cache_key("a", "b", false, &m, b"x"),
+            conversion_cache_key("ab", "", false, &m, b"x")
+        );
+        assert_ne!(
+            conversion_cache_key("a", "b", false, &m, b"x"),
+            conversion_cache_key("a", "b", true, &m, b"x")
+        );
+        assert_ne!(
+            conversion_cache_key("a", "b", false, &m, b"x"),
+            conversion_cache_key("a", "b", false, &json!({"t": 1}), b"x")
+        );
+    }
+
+    #[test]
+    fn cache_respects_capacity_and_entry_size() {
+        let mut cache = ConvCache::new(2, 8);
+        let k = |n: u8| [n; 32];
+        cache.put(k(1), Arc::new(vec![0u8; 4]));
+        cache.put(k(2), Arc::new(vec![0u8; 4]));
+        assert!(cache.get(&k(1)).is_some());
+        cache.put(k(3), Arc::new(vec![0u8; 4])); // evicts k(1) (FIFO)
+        assert!(cache.get(&k(1)).is_none());
+        assert!(cache.get(&k(3)).is_some());
+        // Oversized entry is not cached.
+        cache.put(k(4), Arc::new(vec![0u8; 9]));
+        assert!(cache.get(&k(4)).is_none());
     }
 
     #[test]

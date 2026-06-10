@@ -345,6 +345,11 @@ const TRACE_BY_MARK: Record<string, string> = {
   ecdf: "scatter",
   map: "scattergeo",
   choropleth: "choropleth",
+  funnel: "funnel",
+  waterfall: "waterfall",
+  treemap: "treemap",
+  sunburst: "sunburst",
+  sankey: "sankey",
   surface: "surface",
   "volume-cloud": "volume",
   "parallel-coordinates": "parcoords",
@@ -404,6 +409,24 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
       layout.geo = { fitbounds: "locations" };
       break;
     }
+    case "treemap":
+    case "sunburst": {
+      // Hierarchy: each row is a node bound to its parent, optionally weighted.
+      const labels = fieldValues(rows, fieldFor(spec, "label"));
+      const parents = fieldValues(rows, fieldFor(spec, "parent"));
+      const values = fieldValues(rows, fieldFor(spec, "value") ?? fieldFor(spec, "y"));
+      const trace: Record<string, unknown> = { type: spec.mark, labels, parents };
+      if (values.length > 0) {
+        trace.values = values;
+        trace.branchvalues = "total";
+      }
+      data = [trace];
+      break;
+    }
+    case "sankey":
+      layout.showlegend = false;
+      data = [sankeyTrace(rows, spec)];
+      break;
     default: {
       const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
       const trace: Record<string, unknown> = { type: traceType, x, y };
@@ -417,6 +440,34 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
     }
   }
   return { data, layout, config: { responsive: true, displaylogo: false } };
+}
+
+// A Sankey flow is built from (source, target, value) rows: node labels are
+// interned to indices the first time they are seen, and each row becomes one
+// weighted link between those node indices.
+function sankeyTrace(rows: Array<Record<string, unknown>>, spec: VisualizationSpec): Record<string, unknown> {
+  const sources = fieldValues(rows, fieldFor(spec, "source")).map((value) => String(value));
+  const targets = fieldValues(rows, fieldFor(spec, "target")).map((value) => String(value));
+  const values = fieldValues(rows, fieldFor(spec, "value"));
+  const labels: string[] = [];
+  const indexOf = new Map<string, number>();
+  const intern = (name: string): number => {
+    const existing = indexOf.get(name);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const next = labels.length;
+    indexOf.set(name, next);
+    labels.push(name);
+    return next;
+  };
+  const linkSource = sources.map(intern);
+  const linkTarget = targets.map(intern);
+  return {
+    type: "sankey",
+    node: { label: labels, pad: 12, thickness: 14 },
+    link: { source: linkSource, target: linkTarget, value: values }
+  };
 }
 
 // Choropleth region codes can be ISO-3 (default), country names, or USA states;
@@ -635,6 +686,23 @@ mod tests {
         assert!(PLOTLY_TS.contains("function geoLocationMode"));
         assert!(PLOTLY_TS.contains("case \"map\""));
         assert!(PLOTLY_TS.contains("case \"choropleth\""));
+    }
+
+    #[test]
+    fn plotly_renderer_supports_flow_and_hierarchy_marks() {
+        for entry in [
+            "funnel: \"funnel\"",
+            "waterfall: \"waterfall\"",
+            "treemap: \"treemap\"",
+            "sunburst: \"sunburst\"",
+            "sankey: \"sankey\"",
+        ] {
+            assert!(PLOTLY_TS.contains(entry), "missing trace mapping: {entry}");
+        }
+        assert!(PLOTLY_TS.contains("function sankeyTrace"));
+        assert!(PLOTLY_TS.contains("case \"treemap\""));
+        assert!(PLOTLY_TS.contains("case \"sunburst\""));
+        assert!(PLOTLY_TS.contains("case \"sankey\""));
     }
 
     #[test]

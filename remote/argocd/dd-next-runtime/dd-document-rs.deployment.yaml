@@ -56,6 +56,13 @@ spec:
               value: /tmp
             - name: DOCUMENT_MAX_INPUT_BYTES
               value: '4194304'
+            # Pin concurrency to the pod's CPU budget; available_parallelism()
+            # can otherwise see the node's core count, not the cgroup limit, and
+            # oversubscribe memory.
+            - name: DOCUMENT_CONVERT_CONCURRENCY
+              value: '2'
+            - name: DOCUMENT_IMAGE_CONCURRENCY
+              value: '2'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: DOCUMENT_CONVERT_SUBJECT
@@ -88,10 +95,12 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: '1'
-              memory: 1Gi
+              # Headroom for the ~234MB resident pandoc .so plus concurrent
+              # conversions/image ops.
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
@@ -117,4 +126,7 @@ spec:
               mountPath: /tmp
       volumes:
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            # Bound scratch (Magick disk cache + typst temp) so a hostile
+            # conversion can't fill node ephemeral storage.
+            sizeLimit: 2Gi

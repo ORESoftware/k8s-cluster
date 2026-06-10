@@ -72,6 +72,14 @@ spec:
                   name: dd-agent-secrets
                   key: PATENT_FILING_SERVER_AUTH_SECRET
                   optional: true
+            - name: PATENT_FILING_AI_MODEL
+              value: claude-opus-4-8
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ANTHROPIC_API_KEY
+                  optional: true
           ports:
             - name: http
               containerPort: 8116

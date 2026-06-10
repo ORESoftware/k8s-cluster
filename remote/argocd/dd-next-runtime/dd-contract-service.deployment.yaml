@@ -80,6 +80,10 @@ spec:
               value: 'false'
             - name: SOLANA_RESOLUTION_ENABLED
               value: 'false'
+            # Second gate: refuses to start if any broadcast capability is enabled
+            # against mainnet-beta without this set true. Mirrors dd-escrow-rs.
+            - name: SOLANA_MAINNET_SETTLEMENT_ENABLED
+              value: 'false'
             # NATS-initiated settle/resolve messages carry no auth header, so
             # broadcast over NATS stays off unless explicitly enabled (and it
             # also requires SOLANA_SEND_ENABLED=true). Otherwise the settle/

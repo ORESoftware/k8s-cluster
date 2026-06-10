@@ -34,10 +34,15 @@ request(Subject0, Payload0, TimeoutMs) ->
     Subject = to_binary(Subject0),
     Payload = to_binary(Payload0),
     Timeout = max_int(TimeoutMs, 1),
-    case whereis(?SERVER) of
-        undefined ->
+    case {whereis(?SERVER), is_connected()} of
+        {undefined, _} ->
             {error, <<"lambda nats is not configured (NATS_URL unset)">>};
-        Pid ->
+        {_Pid, false} ->
+            %% Fast-fail while disconnected so a pool outage falls back to local
+            %% execution immediately instead of blocking the full request budget,
+            %% and so request messages do not pile up in the singleton mailbox.
+            {error, <<"lambda nats is not connected">>};
+        {Pid, true} ->
             Ref = make_ref(),
             Pid ! {request, self(), Ref, Subject, Payload, Timeout},
             receive
@@ -94,8 +99,11 @@ parse_pool_response(ResponseJson) ->
             end
     end.
 
+%% Anchor on the leading object key so a nested "ok":true inside the worker's
+%% response body cannot flip our reading of the top-level dispatch outcome.
+%% dd-container-pool serializes DispatchResponse with `ok` as the first field.
 pool_response_ok(ResponseJson) ->
-    case re:run(ResponseJson, "\"ok\"[[:space:]]*:[[:space:]]*true", [{capture, none}]) of
+    case re:run(ResponseJson, "^[[:space:]]*\\{[[:space:]]*\"ok\"[[:space:]]*:[[:space:]]*true", [{capture, none}]) of
         match -> true;
         nomatch -> false
     end.
@@ -124,6 +132,7 @@ ensure_started() ->
     end.
 
 init() ->
+    set_connected(false),
     %% NATS subject defaults below come from dd_nats_subject_consts which
     %% is auto-generated from remote/libs/nats/subject-defs/schema/
     %% lambdas.schema.json. A subject rename in the schema surfaces here
@@ -153,18 +162,30 @@ connect(State) ->
         {ok, Host, Port, UrlAuth} ->
             case gen_tcp:connect(Host, Port, [binary, {packet, raw}, {active, true}], 5000) of
                 {ok, Socket} ->
-                    ok = gen_tcp:send(Socket, connect_payload(nats_auth(State, UrlAuth))),
-                    subscribe(Socket, maps:get(invoke_subject, State), maps:get(queue_group, State), 1),
-                    subscribe(Socket, maps:get(functions_subject, State), <<>>, 2),
-                    io:format(
-                        "lambda nats connected invoke=~s functions=~s result=~s~n",
-                        [
-                            maps:get(invoke_subject, State),
-                            maps:get(functions_subject, State),
-                            maps:get(result_subject, State)
-                        ]
-                    ),
-                    loop(State#{socket => Socket, buffer => <<>>});
+                    %% A send failure here (socket already reset by the peer) must
+                    %% reconnect, never crash this unsupervised singleton with an
+                    %% `ok =` badmatch -- that would silently stop all NATS traffic
+                    %% until the pod restarts.
+                    case gen_tcp:send(Socket, connect_payload(nats_auth(State, UrlAuth))) of
+                        ok ->
+                            subscribe(Socket, maps:get(invoke_subject, State), maps:get(queue_group, State), 1),
+                            subscribe(Socket, maps:get(functions_subject, State), <<>>, 2),
+                            io:format(
+                                "lambda nats connected invoke=~s functions=~s result=~s~n",
+                                [
+                                    maps:get(invoke_subject, State),
+                                    maps:get(functions_subject, State),
+                                    maps:get(result_subject, State)
+                                ]
+                            ),
+                            set_connected(true),
+                            loop(State#{socket => Socket, buffer => <<>>});
+                        {error, SendReason} ->
+                            io:format("lambda nats handshake send failed: ~p~n", [SendReason]),
+                            catch gen_tcp:close(Socket),
+                            timer:sleep(maps:get(reconnect_ms, State)),
+                            connect(State)
+                    end;
                 {error, Reason} ->
                     io:format("lambda nats connect failed: ~p~n", [Reason]),
                     timer:sleep(maps:get(reconnect_ms, State)),
@@ -195,11 +216,11 @@ loop(State = #{socket := Socket, buffer := Buffer}) ->
             drain(State#{buffer => <<Buffer/binary, Data/binary>>});
         {tcp_closed, Socket} ->
             io:format("lambda nats socket closed; reconnecting~n"),
-            connect(maps:remove(socket, State#{buffer => <<>>}));
+            reconnect(State, <<"lambda nats connection closed">>);
         {tcp_error, Socket, Reason} ->
             io:format("lambda nats socket error: ~p~n", [Reason]),
             catch gen_tcp:close(Socket),
-            connect(maps:remove(socket, State#{buffer => <<>>}));
+            reconnect(State, <<"lambda nats connection error">>);
         {publish, Subject, Payload} ->
             send_pub(Socket, Subject, Payload),
             loop(State);
@@ -208,6 +229,7 @@ loop(State = #{socket := Socket, buffer := Buffer}) ->
         {request_timeout, Inbox} ->
             loop(expire_request(State, Inbox));
         stop ->
+            set_connected(false),
             catch gen_tcp:close(Socket),
             ok;
         _Other ->
@@ -226,7 +248,7 @@ drain(State = #{socket := Socket, buffer := Buffer}) ->
                 {continue, NextState} -> drain(NextState);
                 close ->
                     catch gen_tcp:close(Socket),
-                    connect(maps:remove(socket, State#{buffer => <<>>}));
+                    reconnect(State, <<"lambda nats reset after oversized message">>);
                 wait -> loop(State)
             end;
         _ ->
@@ -306,16 +328,26 @@ route_message(State = #{socket := Socket}, Subject, ReplyTo, Payload) ->
     end.
 
 start_request(State = #{socket := Socket}, From, Ref, Subject, Payload, TimeoutMs) ->
-    Inbox = new_inbox(),
-    Sid = maps:get(next_sid, State, 3),
-    subscribe(Socket, Inbox, <<>>, Sid),
-    send_request(Socket, Subject, Inbox, Payload),
-    TimerRef = erlang:send_after(TimeoutMs, self(), {request_timeout, Inbox}),
-    Inboxes = maps:get(inboxes, State, #{}),
-    State#{
-        inboxes => Inboxes#{Inbox => {From, Ref, Sid, TimerRef}},
-        next_sid => Sid + 1
-    }.
+    Max = maps:get(max_payload_bytes, State, 5242880),
+    case byte_size(Payload) > Max of
+        true ->
+            %% Refuse locally rather than let the NATS server reject an oversized
+            %% PUB with -ERR and drop the shared connection, which would fail every
+            %% other in-flight request/reply caller too.
+            From ! {Ref, {error, <<"container pool request payload too large">>}},
+            State;
+        false ->
+            Inbox = new_inbox(),
+            Sid = maps:get(next_sid, State, 3),
+            subscribe(Socket, Inbox, <<>>, Sid),
+            send_request(Socket, Subject, Inbox, Payload),
+            TimerRef = erlang:send_after(TimeoutMs, self(), {request_timeout, Inbox}),
+            Inboxes = maps:get(inboxes, State, #{}),
+            State#{
+                inboxes => Inboxes#{Inbox => {From, Ref, Sid, TimerRef}},
+                next_sid => Sid + 1
+            }
+    end.
 
 expire_request(State, Inbox) ->
     Inboxes = maps:get(inboxes, State, #{}),
@@ -330,6 +362,32 @@ expire_request(State, Inbox) ->
         error ->
             State
     end.
+
+%% Mark the client disconnected, fail every outstanding request/reply caller so
+%% none blocks for its full budget on a connection we already know is gone, then
+%% reconnect with a clean inbox registry (stale sids must not be UNSUBbed on the
+%% new socket).
+reconnect(State, Reason) ->
+    set_connected(false),
+    CleanState = fail_all_inboxes(State, Reason),
+    connect(maps:remove(socket, CleanState#{buffer => <<>>})).
+
+fail_all_inboxes(State, Reason) ->
+    Inboxes = maps:get(inboxes, State, #{}),
+    maps:foreach(
+        fun(_Inbox, {From, Ref, _Sid, TimerRef}) ->
+            cancel_timer(TimerRef),
+            From ! {Ref, {error, Reason}}
+        end,
+        Inboxes
+    ),
+    State#{inboxes => #{}}.
+
+set_connected(Bool) ->
+    persistent_term:put({?MODULE, connected}, Bool).
+
+is_connected() ->
+    persistent_term:get({?MODULE, connected}, false).
 
 handle_message(State, Subject, ReplyTo, Payload) ->
     InvokeSubject = maps:get(invoke_subject, State),

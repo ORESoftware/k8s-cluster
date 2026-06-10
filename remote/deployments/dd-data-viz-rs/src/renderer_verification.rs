@@ -366,6 +366,11 @@ fn verify_plotly(
         "violin",
         "scattergeo",
         "choropleth",
+        "funnel",
+        "waterfall",
+        "treemap",
+        "sunburst",
+        "sankey",
     ];
     let mut traces_with_points = 0usize;
     let mut unknown_trace_types = Vec::new();

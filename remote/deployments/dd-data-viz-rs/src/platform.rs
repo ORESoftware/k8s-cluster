@@ -529,6 +529,13 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             refresh: "cached query snapshot",
         },
         DashboardPanel {
+            id: "flow-and-hierarchy",
+            product_analog: "Tableau / Power BI flow and part-to-whole",
+            data_shape: "source/target/value flows or label/parent/value hierarchies",
+            visualization_families: vec!["sankey", "treemap", "sunburst", "funnel", "waterfall"],
+            refresh: "cached query snapshot",
+        },
+        DashboardPanel {
             id: "hyper-dimensional-scene",
             product_analog: "D3 / Plotly",
             data_shape: "n-dimensional encoded records",

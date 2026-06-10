@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-constraint-scheduler
+  namespace: default
+  labels:
+    app: dd-constraint-scheduler
+spec:
+  selector:
+    app: dd-constraint-scheduler
+  ports:
+    - name: http
+      port: 8131
+      targetPort: http

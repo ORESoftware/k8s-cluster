@@ -79,8 +79,9 @@ spec:
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
             # Delegate on-chain simulate/send to the in-cluster dd-contract-service
-            # gateway instead of calling Solana JSON-RPC directly. Set to 'solana-rpc'
-            # to fall back to the direct-RPC path.
+            # gateway instead of calling Solana JSON-RPC directly. The NetworkPolicy
+            # grants no public egress, so 'solana-rpc' (direct-RPC) would also need a
+            # 443 egress rule re-added before it could reach Solana.
             - name: ESCROW_SETTLEMENT_BACKEND
               value: contract-service
             - name: CONTRACT_SERVICE_URL
