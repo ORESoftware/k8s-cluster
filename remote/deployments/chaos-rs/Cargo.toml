@@ -1,0 +1,20 @@
+[package]
+name = "dd-chaos"
+version = "0.1.0"
+edition = "2021"
+description = "Cluster chaos-engineering loops: randomized pod kills, deployment replica jitter, and NATS request/reply latency probing — every fault recorded as an auditable experiment, gated by a kill switch, dry-run default, blast-radius cap, and protected-namespace guard."
+
+[[bin]]
+name = "dd-chaos"
+path = "src/main.rs"
+
+[dependencies]
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+# Source-of-truth NATS subject constants for chaos experiments/events/probe.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
