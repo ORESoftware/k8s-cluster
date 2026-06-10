@@ -25,6 +25,10 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    economics_forecast_requests_subject/0,
+    economics_forecast_requests_queue_group/0,
+    economics_forecast_results_subject/0,
+    economics_market_events_subject/0,
     escrow_solana_results_subject/0,
     escrow_solana_validate_subject/0,
     escrow_solana_validate_queue_group/0,
@@ -158,6 +162,7 @@
     thread_tasks_stream/0,
     billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
+    economics_server_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     public_data_workers_queue_group/0,
@@ -268,6 +273,19 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
+%% Service: dd-economics-server
+economics_forecast_requests_subject() -> <<"dd.remote.economics.forecast.requests"/utf8>>.
+economics_forecast_requests_queue_group() -> <<"dd-economics-server"/utf8>>.
+
+%% Forecast and recommendation results emitted by the economics server. Carries an economics.forecast.v1 envelope. Default for ECONOMICS_FORECAST_RESULT_SUBJECT.
+%% Service: dd-economics-server
+economics_forecast_results_subject() -> <<"dd.remote.economics.forecast.results"/utf8>>.
+
+%% Market-event fan-out (narrative, event, and entity-level signals) published by the economics server for downstream consumers. Default for ECONOMICS_MARKET_EVENT_SUBJECT.
+%% Service: dd-economics-server
+economics_market_events_subject() -> <<"dd.remote.economics.market.events"/utf8>>.
 
 %% Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
 %% Service: dd-escrow-rs
@@ -848,6 +866,10 @@ billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 %% Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 %% Service: shared
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+
+%% Shared queue group used by dd-economics-server replicas consuming forecast requests.
+%% Service: dd-economics-server
+economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 
 %% Shared queue group used by lambda-runner replicas.
 %% Service: dd-gleam-lambda-runner

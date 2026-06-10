@@ -375,15 +375,19 @@ export function splitSqlStatements(sourceSql) {
 }
 
 function parseCreateTable(statement) {
+  // Optional `schema.` prefix is captured so tables can live in a non-public Postgres schema
+  // (e.g. `benefactor.benefactor_leads`). `name` stays the bare table name; the schema is tracked
+  // separately and defaults to `public` so existing unqualified tables are unaffected.
   const match = statement.match(
-    /^create\s+table\s+(?:if\s+not\s+exists\s+)?("?[\w]+"?)\s*\(([\s\S]*)\)\s*;?$/i,
+    /^create\s+table\s+(?:if\s+not\s+exists\s+)?(?:("?[\w]+"?)\.)?("?[\w]+"?)\s*\(([\s\S]*)\)\s*;?$/i,
   );
   if (!match) {
     return null;
   }
 
-  const tableName = unquoteIdent(match[1]);
-  const body = match[2].trim();
+  const schema = match[1] ? unquoteIdent(match[1]) : "public";
+  const tableName = unquoteIdent(match[2]);
+  const body = match[3].trim();
   const columns = [];
   const checks = [];
 
@@ -407,6 +411,7 @@ function parseCreateTable(statement) {
 
   return {
     name: tableName,
+    schema,
     description: "",
     names: {},
     columns,
@@ -422,19 +427,21 @@ function parseForeignKey(statement) {
   // Captures the constraint name, source column, target table, and target column so adapters can
   // expose relationship metadata. Compound (multi-column) FKs are intentionally skipped because
   // the current schema does not use them and a compound FK on a column-level adapter would lie.
+  // Both the altered table and the referenced table may carry an optional `schema.` prefix; it is
+  // stripped here so association and the exposed `references.table` stay bare table names.
   const match = statement.match(
-    /^alter\s+table\s+(?:if\s+exists\s+)?("?[\w]+"?)\s+add\s+constraint\s+("?[\w]+"?)\s+foreign\s+key\s*\(\s*("?[\w]+"?)\s*\)\s+references\s+("?[\w]+"?)\s*\(\s*("?[\w]+"?)\s*\)\s*;?$/i,
+    /^alter\s+table\s+(?:if\s+exists\s+)?(?:("?[\w]+"?)\.)?("?[\w]+"?)\s+add\s+constraint\s+("?[\w]+"?)\s+foreign\s+key\s*\(\s*("?[\w]+"?)\s*\)\s+references\s+(?:("?[\w]+"?)\.)?("?[\w]+"?)\s*\(\s*("?[\w]+"?)\s*\)\s*;?$/i,
   );
   if (!match) {
     return null;
   }
   return {
-    tableName: unquoteIdent(match[1]),
-    name: unquoteIdent(match[2]),
-    column: unquoteIdent(match[3]),
+    tableName: unquoteIdent(match[2]),
+    name: unquoteIdent(match[3]),
+    column: unquoteIdent(match[4]),
     references: {
-      table: unquoteIdent(match[4]),
-      column: unquoteIdent(match[5]),
+      table: unquoteIdent(match[6]),
+      column: unquoteIdent(match[7]),
     },
     statement: statement.trim(),
   };
@@ -490,14 +497,16 @@ function parseCreateTrigger(statement) {
 }
 
 function parseCreateIndex(statement) {
+  // The indexed table may carry an optional `schema.` prefix; it is stripped so the index
+  // associates to the bare table name parsed from CREATE TABLE.
   const match = statement.match(
-    /^create\s+(unique\s+)?index\s+(?:if\s+not\s+exists\s+)?("?[\w]+"?)\s+on\s+("?[\w]+"?)(?:\s+using\s+(\w+))?\s*\(([\s\S]*?)\)(?:\s+where\s+([\s\S]*?))?\s*;?$/i,
+    /^create\s+(unique\s+)?index\s+(?:if\s+not\s+exists\s+)?("?[\w]+"?)\s+on\s+(?:("?[\w]+"?)\.)?("?[\w]+"?)(?:\s+using\s+(\w+))?\s*\(([\s\S]*?)\)(?:\s+where\s+([\s\S]*?))?\s*;?$/i,
   );
   if (!match) {
     return null;
   }
 
-  const columns = splitTopLevelComma(match[5]).map((item) => {
+  const columns = splitTopLevelComma(match[6]).map((item) => {
     const trimmed = item.trim();
     const columnMatch = trimmed.match(/^"?([\w]+)"?(?:\s+(asc|desc))?$/i);
     if (!columnMatch) {
@@ -514,11 +523,11 @@ function parseCreateIndex(statement) {
 
   return {
     name: unquoteIdent(match[2]),
-    tableName: unquoteIdent(match[3]),
+    tableName: unquoteIdent(match[4]),
     unique: Boolean(match[1]),
-    method: match[4]?.toLowerCase(),
+    method: match[5]?.toLowerCase(),
     columns,
-    where: match[6]?.trim(),
+    where: match[7]?.trim(),
     createStatement: statement.trim(),
   };
 }
