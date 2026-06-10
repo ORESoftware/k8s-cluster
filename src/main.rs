@@ -2601,7 +2601,7 @@ async fn review_publish_request(
         &state,
         DATA_VIZ_PUBLISH_EVENTS_SUBJECT,
         "publish.reviewed",
-        serde_json::to_value(&record).unwrap_or(Value::Null),
+        serde_json::to_value(record.summary()).unwrap_or(Value::Null),
     )
     .await;
     Ok(Json(publishing::review_response(record)))
