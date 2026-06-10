@@ -3002,19 +3002,22 @@ async fn evaluate_alert_rule(
         .alert_evaluations_total
         .fetch_add(1, Ordering::Relaxed);
     let evaluation = alerts::evaluate_rule(&rule, &response.rows);
-    // Redact `evidence` before fan-out: it can contain sampled row values, and
-    // the alerts subject must not carry underlying rows (only the metric summary).
-    let mut alert_body = serde_json::to_value(&evaluation).unwrap_or(Value::Null);
-    if let Some(object) = alert_body.as_object_mut() {
-        object.remove("evidence");
+    // Only fan out evaluations of enabled rules — a disabled rule isn't an alert
+    // event. Redact `evidence` first: it can contain sampled row values, and the
+    // alerts subject must carry only the metric summary, not underlying rows.
+    if rule.enabled {
+        let mut alert_body = serde_json::to_value(&evaluation).unwrap_or(Value::Null);
+        if let Some(object) = alert_body.as_object_mut() {
+            object.remove("evidence");
+        }
+        publish_dataviz_event(
+            &state,
+            DATA_VIZ_ALERTS_EVENTS_SUBJECT,
+            "alert.evaluated",
+            alert_body,
+        )
+        .await;
     }
-    publish_dataviz_event(
-        &state,
-        DATA_VIZ_ALERTS_EVENTS_SUBJECT,
-        "alert.evaluated",
-        alert_body,
-    )
-    .await;
     Ok(Json(evaluation))
 }
 
