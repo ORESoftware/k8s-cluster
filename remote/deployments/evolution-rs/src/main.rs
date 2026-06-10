@@ -23,6 +23,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{DefaultBodyLimit, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Json},
     routing::{get, post},
     Router,
@@ -30,6 +31,7 @@ use axum::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use dd_nats_subject_defs::{
@@ -44,6 +46,13 @@ const MAX_HTTP_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ISLANDS: usize = 64;
 const MAX_EPOCHS: usize = 500;
+/// Cap on `populationPerIsland * dimension`. One island job carries a full
+/// subpopulation as JSON floats, so this keeps a single job comfortably under the
+/// JetStream `MAX_NATS_PAYLOAD_BYTES` ceiling and bounds a worker's memory/CPU.
+const MAX_GENOME_CELLS: usize = 200_000;
+/// Most optimizations the master will run at once. Each holds a NATS subscription
+/// and orchestration state; bounding it prevents unbounded fan-out from clients.
+const MAX_CONCURRENT_OPTIMIZATIONS: usize = 8;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NodeRole {

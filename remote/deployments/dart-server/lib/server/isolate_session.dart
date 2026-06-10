@@ -81,6 +81,29 @@ final bool _clockSharedRender =
             'true') !=
         'false';
 
+/// Perf A/B: when true, one timer per host isolate drives every session's 1 Hz
+/// tick (see `_runHost`) instead of one `Timer.periodic` per session. Off by
+/// default (the proven per-session-timer arm). Read once per host isolate.
+final bool _hostLevelTicker =
+    Platform.environment['WS_HOST_LEVEL_TICKER']?.toLowerCase().trim() ==
+        'true';
+
+/// Round-robin counter used to assign each session a clock-emit phase in the
+/// host-level-ticker arm, so the per-second clock fan-out is spread evenly
+/// across the `clockIntervalSeconds` window rather than bursting from one
+/// shared timer firing. Host-isolate-local (each host has its own counter).
+int _hostClockPhaseCounter = 0;
+
+/// Phase in `[0, clockInterval)` at which a session emits its clock fragment.
+/// 0 in the per-session-timer arm (each timer is already phase-spread by its
+/// independent start time, preserving the original cadence exactly); spread
+/// round-robin in the host-level-ticker arm so a single host timer doesn't
+/// fire 1000 clock emits in one event-loop turn.
+int _assignClockPhase(int clockInterval) {
+  if (!_hostLevelTicker || clockInterval <= 0) return 0;
+  return _hostClockPhaseCounter++ % clockInterval;
+}
+
 /// iso-second → in-flight/settled render. Bounded to a few entries: across
 /// phase-spread tickers at most ~2 distinct seconds are live at any boundary.
 final _clockRenderCache = <String, Future<String>>{};
@@ -422,27 +445,49 @@ class Session {
       onError: _onRenderError,
     ));
 
-    // Server-driven 1Hz tick. The idle-disconnect check fires on
-    // every tick (it's cheap — just two int subtractions + a metric
-    // emit on the rare timeout path). The Clock OOB fragment fires
-    // every `clockIntervalSeconds` ticks so a benchmark profile can
-    // dial the per-session jaspr render rate way down without losing
-    // the lifecycle gates.
-    var tickCount = 0;
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      // A throw here would otherwise be an uncaught error on the host's
-      // event loop (no surrounding await) — contain it to this session.
-      try {
-        tickCount++;
-        final clockInterval = _boot.clockIntervalSeconds;
-        if (clockInterval > 0 && tickCount % clockInterval == 0) {
-          unawaited(_emitClock());
-        }
-        _checkIdle();
-      } catch (_) {
-        _send(const MetricEvent('dart_session_tick_errors_total'));
+    // Server-driven 1 Hz tick. The idle-disconnect check fires on every tick
+    // (cheap — two int subtractions + a rare metric emit). The Clock OOB
+    // fragment fires every `clockIntervalSeconds` ticks so a benchmark profile
+    // can dial the per-session jaspr render rate down without losing the
+    // lifecycle gates.
+    //
+    // Two arms (WS_HOST_LEVEL_TICKER, perf A/B): by default each session owns
+    // its own `Timer.periodic` — proven, but 30K sessions means 30K timers
+    // firing every second. When the host-level ticker is on, the host isolate
+    // drives `onHostTick` for all its sessions from ONE timer and this
+    // per-session timer is not created; clock emits are phase-spread so the
+    // coalesced work doesn't arrive as a single burst.
+    if (!_hostLevelTicker) {
+      _ticker = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _runTick(++_localTick),
+      );
+    }
+  }
+
+  /// One 1 Hz lifecycle step for this session: emit the clock fragment on the
+  /// session's phase and run the idle/age gate. Called either by this
+  /// session's own [Timer] (per-session arm) or by the host isolate's shared
+  /// ticker (host-level arm). A throw here would otherwise be an uncaught
+  /// error on the host event loop, so it's contained + counted.
+  void _runTick(int tickCount) {
+    try {
+      final clockInterval = _boot.clockIntervalSeconds;
+      if (clockInterval > 0 && tickCount % clockInterval == _clockPhase) {
+        unawaited(_emitClock());
       }
-    });
+      _checkIdle();
+    } catch (_) {
+      _send(const MetricEvent('dart_session_tick_errors_total'));
+    }
+  }
+
+  /// Entry point the host-level ticker calls once per second per session.
+  /// No-op once disposed (the host drops the session from its map on dispose,
+  /// so this is belt-and-braces).
+  void onHostTick(int hostTick) {
+    if (_disposed) return;
+    _runTick(hostTick);
   }
 
   /// `onError` for every per-session render pipeline. A render/pipeline

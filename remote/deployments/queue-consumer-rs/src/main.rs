@@ -1013,6 +1013,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut messages = consumer.messages().await?;
     let mut receipts = HashSet::new();
     let mut shutdown = std::pin::pin!(shutdown_signal());
+    let mut consecutive_fetch_errors: u32 = 0;
 
     loop {
         // Race the next JetStream message against a shutdown signal. A signal
@@ -1036,6 +1037,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let message = match message {
             Ok(message) => message,
             Err(error) => {
+                consecutive_fetch_errors = consecutive_fetch_errors.saturating_add(1);
                 emit_runtime_critical_event(
                     &nats_client,
                     &critical_subject,
@@ -1045,13 +1047,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         "stream": &stream_name,
                         "subject": &subject,
                         "consumer": &consumer_name,
+                        "consecutiveErrors": consecutive_fetch_errors,
                         "error": error.to_string(),
                     }),
                 )
                 .await;
+                // Back off so a persistent failure can't spin the loop, and let
+                // a shutdown signal still win during the wait.
+                tokio::select! {
+                    biased;
+                    _ = &mut shutdown => break,
+                    _ = tokio::time::sleep(fetch_error_backoff(consecutive_fetch_errors)) => {}
+                }
                 continue;
             }
         };
+        consecutive_fetch_errors = 0;
         let task = match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
             Ok(task) => task,
             Err(error) => {

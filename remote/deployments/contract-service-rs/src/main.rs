@@ -88,27 +88,27 @@ struct AppState {
     critical_event_subject: String,
     metrics: Arc<Metrics>,
     idempotency: Arc<Mutex<HashMap<String, u128>>>,
-    verifier_in_flight: Arc<AtomicU64>,
+    confirm_in_flight: Arc<AtomicU64>,
 }
 
-/// RAII slot for a background verifier confirmation. Decrements the in-flight
+/// RAII slot for one in-flight confirmation poller. Decrements the service-wide
 /// counter on drop so a panicking or early-returning task can't leak a slot.
-struct VerifierSlot(Arc<AtomicU64>);
+struct ConfirmSlot(Arc<AtomicU64>);
 
-impl VerifierSlot {
+impl ConfirmSlot {
     /// Reserves a slot if the in-flight count is under the cap, else `None`.
     fn try_acquire(counter: &Arc<AtomicU64>) -> Option<Self> {
         let prior = counter.fetch_add(1, Ordering::AcqRel);
-        if prior >= MAX_VERIFIER_CONFIRMS_IN_FLIGHT {
+        if prior >= MAX_CONFIRM_POLLERS_IN_FLIGHT {
             counter.fetch_sub(1, Ordering::AcqRel);
             None
         } else {
-            Some(VerifierSlot(counter.clone()))
+            Some(ConfirmSlot(counter.clone()))
         }
     }
 }
 
-impl Drop for VerifierSlot {
+impl Drop for ConfirmSlot {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::AcqRel);
     }
@@ -3347,7 +3347,7 @@ mod tests {
             critical_event_subject: "events.critical".to_string(),
             metrics: Arc::new(Metrics::default()),
             idempotency: Arc::new(Mutex::new(HashMap::new())),
-            verifier_in_flight: Arc::new(AtomicU64::new(0)),
+            confirm_in_flight: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -3627,15 +3627,15 @@ mod tests {
     fn verifier_slot_bounds_in_flight_and_releases_on_drop() {
         let counter = Arc::new(AtomicU64::new(0));
         let mut slots = Vec::new();
-        for _ in 0..MAX_VERIFIER_CONFIRMS_IN_FLIGHT {
-            slots.push(VerifierSlot::try_acquire(&counter).expect("under cap"));
+        for _ in 0..MAX_CONFIRM_POLLERS_IN_FLIGHT {
+            slots.push(ConfirmSlot::try_acquire(&counter).expect("under cap"));
         }
         // At the cap, further acquisitions are shed (and do not leak a slot).
-        assert!(VerifierSlot::try_acquire(&counter).is_none());
-        assert_eq!(counter.load(Ordering::Acquire), MAX_VERIFIER_CONFIRMS_IN_FLIGHT);
+        assert!(ConfirmSlot::try_acquire(&counter).is_none());
+        assert_eq!(counter.load(Ordering::Acquire), MAX_CONFIRM_POLLERS_IN_FLIGHT);
         // Dropping a slot frees capacity again.
         slots.pop();
-        assert!(VerifierSlot::try_acquire(&counter).is_some());
+        assert!(ConfirmSlot::try_acquire(&counter).is_some());
     }
 
     #[test]
@@ -4349,11 +4349,11 @@ async fn process_nats_escrow_result(state: &AppState, payload: &[u8]) {
 
     // Confirm to finality off the subscription loop so a slow poll can't
     // head-of-line block draining; bound the concurrent fan-out.
-    let Some(slot) = VerifierSlot::try_acquire(&state.verifier_in_flight) else {
+    let Some(slot) = ConfirmSlot::try_acquire(&state.confirm_in_flight) else {
         log_warn(
             "contract-escrow-confirm-shed",
             "Escrow confirmation shed because the in-flight verifier cap was reached.",
-            json!({ "requestId": req_id, "maxInFlight": MAX_VERIFIER_CONFIRMS_IN_FLIGHT }),
+            json!({ "requestId": req_id, "maxInFlight": MAX_CONFIRM_POLLERS_IN_FLIGHT }),
         );
         return;
     };
@@ -4524,7 +4524,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         critical_event_subject,
         metrics: Arc::new(Metrics::default()),
         idempotency: Arc::new(Mutex::new(HashMap::new())),
-        verifier_in_flight: Arc::new(AtomicU64::new(0)),
+        confirm_in_flight: Arc::new(AtomicU64::new(0)),
     };
 
     log_info(
