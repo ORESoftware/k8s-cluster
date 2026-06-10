@@ -123328,7 +123328,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        Some(url) => Some(async_nats::connect(url).await?),
+        // Degrade gracefully if the broker is down at boot: the HTTP API must
+        // come up even when messaging is unavailable. async-nats serves a
+        // reconnecting client, so a later recovery is picked up.
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("dd-fabrication-server NATS connect failed ({url}): {error}");
+                None
+            }
+        },
         None => None,
     };
     let state = AppState {
