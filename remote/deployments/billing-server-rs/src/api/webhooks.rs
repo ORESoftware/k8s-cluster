@@ -946,11 +946,21 @@ fn external_account_id(provider: WebhookProvider, payload: &Value) -> Option<Str
             .get("merchant_id")
             .and_then(|v| v.as_str())
             .map(str::to_string),
-        // Modern Treasury and Dwolla event bodies don't carry a stable
-        // account-routing key; binding relies on the per-connection webhook
-        // secret + (in strict mode) a resolvable connection.
+        WebhookProvider::Dwolla => payload
+            // Dwolla carries the account/customer id as the trailing path
+            // segment of the `_links.account.href` (falling back to customer),
+            // which matches the `account_id` we store as external_account_id.
+            .pointer("/_links/account/href")
+            .or_else(|| payload.pointer("/_links/customer/href"))
+            .and_then(|v| v.as_str())
+            .and_then(|href| href.trim_end_matches('/').rsplit('/').next())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        // Modern Treasury event bodies carry no stable account-routing key, so
+        // in strict mode MT webhooks cannot bind to a connection and are
+        // recorded-not-verified (see readme "Webhook posture"). A dedicated
+        // per-connection webhook path/secret-id is the follow-up.
         WebhookProvider::ModernTreasury => None,
-        WebhookProvider::Dwolla => None,
     }
 }
 
