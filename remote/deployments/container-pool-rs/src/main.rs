@@ -90,6 +90,8 @@ struct ServiceConfig {
     nofile_limit: u64,
     cap_drop_all: bool,
     no_new_privileges: bool,
+    mount_source_allowlist: Vec<String>,
+    allow_writable_mounts: bool,
 }
 
 #[derive(Default)]
@@ -119,6 +121,17 @@ struct PoolRegistry {
     last_config_refresh_ms: Option<u128>,
 }
 
+/// A volume/bind mount for warm containers. Used to share code or compiled
+/// binaries into a generic runtime image (zero-copy) instead of baking a
+/// per-language image: the image supplies the runtime/libc, the mount supplies
+/// the code, and `command`/`env` are the per-pool flags. Defaults to read-only.
+#[derive(Debug, Clone)]
+struct Mount {
+    source: String,
+    target: String,
+    read_only: bool,
+}
+
 #[derive(Debug, Clone)]
 struct PoolConfig {
     id: String,
@@ -139,6 +152,7 @@ struct PoolConfig {
     read_only: bool,
     user: String,
     labels: Value,
+    mounts: Vec<Mount>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -240,6 +254,7 @@ struct PoolSummary {
     idle_ttl_seconds: u64,
     nats_subject: Option<String>,
     env_keys: Vec<String>,
+    mounts: Vec<String>,
     labels: Value,
     active_containers: usize,
     idle_containers: usize,
@@ -624,7 +639,21 @@ fn service_config_from_env() -> ServiceConfig {
         nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 65536).clamp(32, 262144),
         cap_drop_all: env_bool("CONTAINER_POOL_CAP_DROP_ALL", false),
         no_new_privileges: env_bool("CONTAINER_POOL_NO_NEW_PRIVILEGES", false),
+        mount_source_allowlist: mount_source_allowlist(),
+        allow_writable_mounts: env_bool("CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS", false),
     }
+}
+
+// Absolute host-path prefixes under which pools may bind-mount code/binaries.
+// Empty by default: only named volumes are permitted unless an operator opts in.
+fn mount_source_allowlist() -> Vec<String> {
+    first_env(&["CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST"])
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|prefix| prefix.starts_with('/') && safe_local_path(prefix))
+        .map(str::to_string)
+        .collect()
 }
 
 fn forwarded_worker_env_keys() -> Vec<String> {
@@ -906,6 +935,7 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
             })
             .unwrap_or_else(|| "10001:10001".to_string()),
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
+        mounts: mounts_from_json(value, &slug)?,
     })
 }
 
@@ -936,6 +966,114 @@ fn env_map_from_json(value: Value) -> BTreeMap<String, String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+// Parse the optional `mounts` (alias `volumes`) array from a pool config. Each
+// entry is `{source|volume, target|mountPath, readOnly?}`. Shape is validated
+// here; host-path/writable *policy* is enforced at container start where the
+// service config is available (`enforce_mount_policy`).
+fn mounts_from_json(value: &Value, slug: &str) -> Result<Vec<Mount>, String> {
+    let Some(items) = value.get("mounts").or_else(|| value.get("volumes")) else {
+        return Ok(Vec::new());
+    };
+    if items.is_null() {
+        return Ok(Vec::new());
+    }
+    let array = items
+        .as_array()
+        .ok_or_else(|| format!("container pool {slug} mounts must be an array"))?;
+    if array.len() > 16 {
+        return Err(format!("container pool {slug} has too many mounts (max 16)"));
+    }
+    let mut mounts = Vec::with_capacity(array.len());
+    for item in array {
+        let source = json_string_field(item, "source", "source")
+            .or_else(|| json_string_field(item, "volume", "volume"))
+            .ok_or_else(|| format!("container pool {slug} mount is missing source"))?;
+        let target = json_string_field(item, "target", "target")
+            .or_else(|| json_string_field(item, "mountPath", "mount_path"))
+            .ok_or_else(|| format!("container pool {slug} mount is missing target"))?;
+        if !safe_mount_source(&source) {
+            return Err(format!(
+                "container pool {slug} has invalid mount source: {source}"
+            ));
+        }
+        if !safe_mount_target(&target) {
+            return Err(format!(
+                "container pool {slug} has invalid mount target: {target}"
+            ));
+        }
+        // Shared code/binaries default to read-only; writable needs an explicit
+        // opt-in here and a service-level enable at start.
+        let read_only = json_bool_field(item, "readOnly", "read_only").unwrap_or(true);
+        mounts.push(Mount {
+            source,
+            target,
+            read_only,
+        });
+    }
+    Ok(mounts)
+}
+
+// A mount source is either a nerdctl/docker named volume or an absolute host
+// path. ':' and ',' are excluded so the `-v src:dst:mode` argv element stays
+// unambiguous; control chars / whitespace / backslash are rejected too.
+fn safe_mount_source(input: &str) -> bool {
+    if input.is_empty() || input.len() > 256 {
+        return false;
+    }
+    if input
+        .bytes()
+        .any(|byte| byte <= 0x20 || byte == 0x7f || matches!(byte, b':' | b',' | b'\\'))
+    {
+        return false;
+    }
+    if input.starts_with('/') {
+        safe_local_path(input)
+    } else {
+        let bytes = input.as_bytes();
+        bytes[0].is_ascii_alphanumeric()
+            && bytes
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    }
+}
+
+fn safe_mount_target(input: &str) -> bool {
+    safe_local_path(input) && !input.contains(':') && !input.contains(',')
+}
+
+// Enforced at container start (has the service config). Named volumes are always
+// allowed; absolute host paths must sit under an allowlisted prefix; writable
+// mounts require the global opt-in. Fails closed with a clear operator message.
+fn enforce_mount_policy(config: &ServiceConfig, slug: &str, mount: &Mount) -> Result<(), String> {
+    if !mount.read_only && !config.allow_writable_mounts {
+        return Err(format!(
+            "container pool {slug} requests writable mount {}; set \
+             CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS=true to permit",
+            mount.target
+        ));
+    }
+    if mount.source.starts_with('/') {
+        let allowed = config
+            .mount_source_allowlist
+            .iter()
+            .any(|prefix| path_has_prefix(&mount.source, prefix));
+        if !allowed {
+            return Err(format!(
+                "container pool {slug} host-path mount {} is not under any \
+                 CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST prefix",
+                mount.source
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Prefix match on a path boundary so `/data` does not authorize `/database`.
+fn path_has_prefix(path: &str, prefix: &str) -> bool {
+    let prefix = prefix.trim_end_matches('/');
+    path == prefix || path.starts_with(&format!("{prefix}/"))
 }
 
 fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
@@ -1025,6 +1163,10 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         }
     }
 
+    // `mounts` column is optional; row_value falls back to `[]` if absent (no
+    // migration required for the fallback table).
+    let mounts = mounts_from_json(&row_value(row, "mounts", json!([])), &slug)?;
+
     Ok(PoolConfig {
         id,
         slug,
@@ -1044,6 +1186,7 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         read_only: true,
         user: "10001:10001".to_string(),
         labels: row_value(row, "labels", json!([])),
+        mounts,
     })
 }
 
@@ -1360,6 +1503,15 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     if let Some(pull_policy) = state.config.pull_policy.as_deref() {
         args.push("--pull".to_string());
         args.push(pull_policy.to_string());
+    }
+
+    // Share code/binaries into the warm container (zero-copy) from a named volume
+    // or allowlisted host path. Read-only by default; policy is enforced here.
+    for mount in &pool.mounts {
+        enforce_mount_policy(&state.config, &pool.slug, mount)?;
+        let mode = if mount.read_only { "ro" } else { "rw" };
+        args.push("--volume".to_string());
+        args.push(format!("{}:{}:{}", mount.source, mount.target, mode));
     }
 
     if state.config.network == "host" {
@@ -2521,6 +2673,18 @@ fn pool_summary(config: &PoolConfig, containers: Vec<WarmContainer>) -> PoolSumm
         idle_ttl_seconds: config.idle_ttl.as_secs(),
         nats_subject: config.nats_subject.clone(),
         env_keys: config.env.keys().cloned().collect(),
+        mounts: config
+            .mounts
+            .iter()
+            .map(|mount| {
+                format!(
+                    "{}:{}:{}",
+                    mount.source,
+                    mount.target,
+                    if mount.read_only { "ro" } else { "rw" }
+                )
+            })
+            .collect(),
         labels: config.labels.clone(),
         active_containers: containers.len(),
         idle_containers,

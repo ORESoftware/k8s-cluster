@@ -96,9 +96,40 @@ The dedicated fallback table shape is the `container_pool_configs` block in
 - `min_warm` and `max_warm`: reconciliation floor and ceiling.
 - `request_timeout_ms`: per-dispatch timeout.
 - `nats_subject`: optional per-pool subject for NATS request routing.
+- `mounts` (alias `volumes`): optional array of `{source|volume, target|mountPath, readOnly?}`
+  entries mounted into every warm container of the pool. See "Shared-volume code/binaries" below.
 
 The service also accepts `CONTAINER_POOL_CONFIG_JSON` as a development fallback. Production should
 use Postgres so pool definitions can be changed without a pod rollout.
+
+## Shared-volume code/binaries (generic runtimes)
+
+Rather than baking a separate image per language/function, a pool can run a **generic runtime
+image** and pull the *code or compiled binary* from a shared volume at start (zero-copy). The image
+supplies the runtime/libc; the mount supplies the code; `command` and `env` are the per-pool flags.
+This scales to many (20-30+) runtimes/functions without rebuilding images for code changes — only the
+volume contents change. The warm container still runs a long-lived server (listening on `$PORT`,
+serving `health_path`/`request_path`); `command` should start that server from the mounted path, e.g.
+
+```json
+{
+  "slug": "rust-svc-foo",
+  "image": "docker.io/library/dd-container-pool-rust-runtime:dev",
+  "mounts": [{ "source": "dd-code", "target": "/opt/code", "readOnly": true }],
+  "command": ["/opt/code/bin/foo-server"],
+  "env": { "FOO_FLAG": "1" }
+}
+```
+
+`source` is either a nerdctl/docker **named volume** (always permitted) or an **absolute host path**.
+Host paths are rejected unless they sit under a prefix in `CONTAINER_POOL_MOUNT_SOURCE_ALLOWLIST`
+(comma-separated, matched on a path boundary). Mounts are **read-only by default**; a `readOnly:false`
+mount additionally requires `CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS=true`. `target` must be an absolute
+in-container path (no `..`); `:` and `,` are disallowed in both so the `-v src:dst:mode` arg is
+unambiguous. Up to 16 mounts per pool. Policy violations fail the container start with a clear error
+(visible in reconcile logs) rather than silently dropping the mount. Mounts are surfaced per pool in
+`GET /pools`. The `command`/`mounts` shape still comes only from trusted Postgres config — never from
+dispatch requests — so this stays a control-plane capability, not a shell-exec API.
 
 ## Runtime images
 
