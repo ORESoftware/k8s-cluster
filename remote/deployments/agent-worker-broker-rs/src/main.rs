@@ -2,7 +2,7 @@ use std::{
     env,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -35,6 +35,11 @@ struct AppState {
     // every dispatch; the previous code opened a fresh TCP connection per
     // request, which is both slow and unauthenticated.
     nats: async_nats::Client,
+    // Tracks whether the WorkQueue stream has been ensured, so the dispatch hot
+    // path skips a JetStream round-trip per request. Cleared on a publish
+    // failure so the next request re-ensures (covers a stream deleted at
+    // runtime).
+    stream_ensured: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
 }
 
@@ -56,6 +61,7 @@ struct Config {
     direct_dispatch_enabled: bool,
     worker_health_timeout: Duration,
     worker_task_timeout: Duration,
+    nats_publish_timeout: Duration,
     server_auth_secret: Option<String>,
 }
 
@@ -213,6 +219,7 @@ fn config_from_env() -> Config {
         direct_dispatch_enabled: env_bool("DIRECT_DISPATCH_ENABLED", true),
         worker_health_timeout: Duration::from_millis(env_u64("WORKER_HEALTH_TIMEOUT_MS", 800)),
         worker_task_timeout: Duration::from_millis(env_u64("WORKER_TASK_TIMEOUT_MS", 30_000)),
+        nats_publish_timeout: Duration::from_millis(env_u64("NATS_PUBLISH_TIMEOUT_MS", 10_000)),
         server_auth_secret: first_env(&["REMOTE_DEV_SERVER_SECRET", "SERVER_AUTH_SECRET"]),
     }
 }
@@ -391,11 +398,15 @@ async fn publish_task_to_nats(
     base_branch: &str,
 ) -> Result<NatsPublishResult, String> {
     let config = &state.config;
-    // Reuse the shared, already-authenticated client. ensure_task_stream stays
-    // here (idempotent get_or_create) so the WorkQueue stream exists even if it
-    // was deleted out from under us; it no longer pays a reconnect each call.
+    // Reuse the shared, already-authenticated client (no reconnect per call).
     let client = state.nats.clone();
-    ensure_task_stream(config, client.clone()).await?;
+    // Ensure the stream exists at most once on the hot path. The flag is
+    // cleared on a publish failure below, so a stream deleted at runtime is
+    // re-created on the next attempt.
+    if !state.stream_ensured.load(Ordering::Acquire) {
+        ensure_task_stream(config, client.clone()).await?;
+        state.stream_ensured.store(true, Ordering::Release);
+    }
 
     let subject = thread_tasks_subject(thread_id);
     let payload = serde_json::to_vec(&AgentTaskQueueMessage {
@@ -421,17 +432,26 @@ async fn publish_task_to_nats(
     .map_err(|error| error.to_string())?;
 
     let jetstream = async_nats::jetstream::new(client.clone());
-    jetstream
-        .publish(subject.clone(), payload.clone().into())
-        .await
-        .map_err(|error| error.to_string())?
-        .await
-        .map_err(|error| error.to_string())?;
-    client
-        .publish(config.nats_wakeup_subject.clone(), payload.into())
-        .await
-        .map_err(|error| error.to_string())?;
-    client.flush().await.map_err(|error| error.to_string())?;
+    let publish = async {
+        jetstream
+            .publish(subject.clone(), payload.clone().into())
+            .await
+            .map_err(|error| error.to_string())?
+            .await
+            .map_err(|error| error.to_string())?;
+        client
+            .publish(config.nats_wakeup_subject.clone(), payload.into())
+            .await
+            .map_err(|error| error.to_string())?;
+        client.flush().await.map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    };
+    if let Err(error) = publish.await {
+        // Force a stream re-ensure next time in case the failure was a deleted
+        // stream, and surface the error to the caller.
+        state.stream_ensured.store(false, Ordering::Release);
+        return Err(error);
+    }
 
     Ok(NatsPublishResult {
         published: true,
@@ -690,10 +710,11 @@ async fn dispatch_task(
             .into_response();
     }
 
-    let nats = match publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch).await
-    {
-        Ok(value) => value,
-        Err(error) => {
+    // Bound the whole NATS path so a half-dead broker can't hang the request.
+    let publish = publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch);
+    let nats = match tokio::time::timeout(state.config.nats_publish_timeout, publish).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
             state
                 .metrics
                 .dispatch_failures_total
@@ -705,6 +726,24 @@ async fn dispatch_task(
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": "failed to publish agent task", "detail": error })),
+            )
+                .into_response();
+        }
+        Err(_elapsed) => {
+            // Timed out: re-ensure the stream next time and report a gateway
+            // timeout rather than blocking the caller indefinitely.
+            state.stream_ensured.store(false, Ordering::Release);
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .nats_publish_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({ "error": "timed out publishing agent task" })),
             )
                 .into_response();
         }
@@ -767,14 +806,19 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(error) = ensure_task_stream(&config, nats.clone()).await {
-        eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}");
+    let stream_ensured = Arc::new(AtomicBool::new(false));
+    match ensure_task_stream(&config, nats.clone()).await {
+        Ok(()) => stream_ensured.store(true, Ordering::Release),
+        Err(error) => {
+            eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}")
+        }
     }
 
     let state = AppState {
         config,
         http: reqwest::Client::new(),
         nats,
+        stream_ensured,
         metrics: Arc::new(Metrics::default()),
     };
 

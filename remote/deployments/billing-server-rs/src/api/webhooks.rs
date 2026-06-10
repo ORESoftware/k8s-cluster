@@ -540,26 +540,36 @@ async fn verify_delivery(
             Ok(true)
         }
         WebhookProvider::Adyen => {
-            // Adyen carries the signature inside the payload
-            // (notificationItems[0].NotificationRequestItem.additionalData
-            // .hmacSignature) and signs a `:`-joined field string with the
-            // merchant HMAC key.
+            // Adyen carries the signature inside each notification item
+            // (notificationItems[].NotificationRequestItem.additionalData
+            // .hmacSignature), signing a `:`-joined field string with the
+            // merchant HMAC key. Adyen batches multiple items per delivery, so
+            // we must verify EVERY item — one validly-signed item must not
+            // vouch for unsigned/forged siblings stored in the same row.
             let Some(key_hex) = load_adyen_hmac_key(state, connection).await? else {
                 return Ok(false);
             };
-            let Some(item_val) = payload.pointer("/notificationItems/0/NotificationRequestItem")
-            else {
+            let Some(items) = payload.get("notificationItems").and_then(|v| v.as_array()) else {
                 return Ok(false);
             };
-            let Some(sig) = item_val
-                .pointer("/additionalData/hmacSignature")
-                .and_then(|v| v.as_str())
-            else {
+            if items.is_empty() {
                 return Ok(false);
-            };
-            let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
-                .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
-            adyen::verify_item_signature(&item, sig, &key_hex)?;
+            }
+            for entry in items {
+                let Some(item_val) = entry.pointer("/NotificationRequestItem") else {
+                    return Ok(false);
+                };
+                let Some(sig) = item_val
+                    .pointer("/additionalData/hmacSignature")
+                    .and_then(|v| v.as_str())
+                else {
+                    return Ok(false);
+                };
+                let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
+                    .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
+                // Err (wrong signature) propagates and rejects the whole batch.
+                adyen::verify_item_signature(&item, sig, &key_hex)?;
+            }
             Ok(true)
         }
         WebhookProvider::Square => {
@@ -936,11 +946,21 @@ fn external_account_id(provider: WebhookProvider, payload: &Value) -> Option<Str
             .get("merchant_id")
             .and_then(|v| v.as_str())
             .map(str::to_string),
-        // Modern Treasury and Dwolla event bodies don't carry a stable
-        // account-routing key; binding relies on the per-connection webhook
-        // secret + (in strict mode) a resolvable connection.
+        WebhookProvider::Dwolla => payload
+            // Dwolla carries the account/customer id as the trailing path
+            // segment of the `_links.account.href` (falling back to customer),
+            // which matches the `account_id` we store as external_account_id.
+            .pointer("/_links/account/href")
+            .or_else(|| payload.pointer("/_links/customer/href"))
+            .and_then(|v| v.as_str())
+            .and_then(|href| href.trim_end_matches('/').rsplit('/').next())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        // Modern Treasury event bodies carry no stable account-routing key, so
+        // in strict mode MT webhooks cannot bind to a connection and are
+        // recorded-not-verified (see readme "Webhook posture"). A dedicated
+        // per-connection webhook path/secret-id is the follow-up.
         WebhookProvider::ModernTreasury => None,
-        WebhookProvider::Dwolla => None,
     }
 }
 
@@ -1215,6 +1235,45 @@ mod tests {
         assert!(external_account_id(WebhookProvider::Stripe, &empty).is_none());
         assert!(external_account_id(WebhookProvider::Paypal, &empty).is_none());
         assert!(external_account_id(WebhookProvider::Circle, &empty).is_none());
+    }
+
+    #[test]
+    fn external_account_id_dwolla_extracts_id_from_links() {
+        let payload = json!({
+            "topic": "customer_transfer_created",
+            "_links": {
+                "account": { "href": "https://api.dwolla.com/accounts/acct-uuid-123" },
+                "customer": { "href": "https://api.dwolla.com/customers/cust-uuid-999" }
+            }
+        });
+        // Account link wins; only the trailing path segment (the id) is used.
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &payload),
+            Some("acct-uuid-123".into())
+        );
+        // Falls back to the customer link when no account link is present.
+        let cust_only = json!({
+            "_links": { "customer": { "href": "https://api.dwolla.com/customers/cust-1/" } }
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &cust_only),
+            Some("cust-1".into())
+        );
+        // No links → None (records but, in strict mode, cannot bind).
+        assert!(external_account_id(WebhookProvider::Dwolla, &json!({})).is_none());
+    }
+
+    #[test]
+    fn external_account_id_adyen_reads_merchant_account_code() {
+        let payload = json!({
+            "notificationItems": [
+                { "NotificationRequestItem": { "merchantAccountCode": "AcmeCorpECOM" } }
+            ]
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Adyen, &payload),
+            Some("AcmeCorpECOM".into())
+        );
     }
 
     #[test]

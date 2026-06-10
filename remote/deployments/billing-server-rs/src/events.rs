@@ -26,6 +26,7 @@
 //! "Sync now" path enqueues, reusing all of its lease / rate-limit / dispatch
 //! logic rather than re-implementing it.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
@@ -43,6 +44,11 @@ use crate::state::AppState;
 /// Logical source stamped on every envelope (matches the deployment / service
 /// name used elsewhere in the registry).
 pub const EVENT_SOURCE: &str = "dd-billing-server";
+
+/// Max concurrent in-flight inbound sync commands per replica. Bounds DB-pool
+/// pressure if the command subject is flooded; excess commands wait (the
+/// subscription applies backpressure) rather than spawning unboundedly.
+const MAX_INFLIGHT_SYNC_COMMANDS: usize = 32;
 
 /// Best-effort publisher + inbound command handle.
 ///
@@ -145,6 +151,10 @@ impl EventBus {
     /// A committed double-entry transaction. `totals` is a map of
     /// `currency -> signed minor-unit string` (strings so large `i128`
     /// values never lose precision through JSON numbers).
+    ///
+    /// Redaction contract: `kind` and `idempotency_key` are forwarded
+    /// verbatim onto the bus — callers MUST keep idempotency keys opaque
+    /// (no email / PAN / raw PII). The ledger's own keys are synthetic.
     pub async fn publish_ledger_posting(
         &self,
         tenant_id: Uuid,
@@ -172,6 +182,10 @@ impl EventBus {
     }
 
     /// A reconciliation break opened during provider sync.
+    ///
+    /// Redaction contract: `external_ref` is an opaque provider transaction /
+    /// event id (Stripe balance-txn id, Plaid transaction_id, …), forwarded
+    /// verbatim as a correlation handle. Callers MUST NOT pass PII here.
     #[allow(clippy::too_many_arguments)]
     pub async fn publish_reconciliation_break(
         &self,
@@ -313,6 +327,8 @@ pub async fn run_sync_command_loop(state: AppState) {
         .clone()
         .unwrap_or_else(|| BILLING_SYNC_COMMANDS_QUEUE_GROUP.to_string());
     let max_bytes = state.cfg.nats_max_payload_bytes;
+    // Created once so the in-flight bound persists across reconnects.
+    let inflight = Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_SYNC_COMMANDS));
 
     loop {
         let mut subscription = match client
@@ -348,10 +364,17 @@ pub async fn run_sync_command_loop(state: AppState) {
                 continue;
             }
         };
+        // Bound concurrency: when all permits are in use, awaiting here applies
+        // backpressure to the subscription instead of spawning unboundedly.
+        let permit = match inflight.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => break, // semaphore closed (never, in practice)
+        };
         let state = state.clone();
         // Each command runs independently; a slow/erroring one must not block
         // the subscription's forward progress.
         tokio::spawn(async move {
+            let _permit = permit; // released when the task finishes
             if let Err(error) = handle_sync_command(&state, command).await {
                 tracing::warn!(error = %error, "billing sync-command failed to enqueue");
             }
@@ -416,10 +439,12 @@ fn build_envelope(schema_version: &str, fields: Value) -> Value {
 }
 
 /// Serialize `value`, rejecting (without publishing) anything above `max`
-/// bytes. `Err(len)` carries the offending size for logging.
+/// bytes. `Err(len)` carries the offending size for logging. An empty result
+/// (only possible if serialization fails — unreachable for a `json!`-built
+/// `Value`) is also rejected so a malformed 0-byte event is never published.
 fn encode_capped(value: &Value, max: usize) -> Result<Vec<u8>, usize> {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
-    if bytes.len() > max {
+    if bytes.is_empty() || bytes.len() > max {
         Err(bytes.len())
     } else {
         Ok(bytes)

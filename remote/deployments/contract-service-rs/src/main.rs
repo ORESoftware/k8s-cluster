@@ -61,11 +61,12 @@ const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
 const MAX_CONFIRM_POLLS: u32 = 240;
 const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
 const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
-// Cap on concurrent background confirmation pollers spawned by the escrow-results
-// verifier. Bounds sustained outbound Solana RPC fan-out so a flood of escrow
-// result messages on the (currently unauthenticated) NATS bus cannot amplify load
-// on the upstream RPC endpoint; excess confirmations are shed.
-const MAX_VERIFIER_CONFIRMS_IN_FLIGHT: u64 = 64;
+// Service-wide cap on concurrent confirmation pollers across /confirm, /settle,
+// /resolve, and the escrow-results verifier. Bounds sustained outbound Solana
+// RPC fan-out so no set of requests (nor a flood of escrow result messages on
+// the currently unauthenticated NATS bus) can amplify load on the upstream RPC
+// endpoint; excess confirmations are shed and reported as "deferred".
+const MAX_CONFIRM_POLLERS_IN_FLIGHT: u64 = 64;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
@@ -183,6 +184,7 @@ struct Metrics {
     confirmations_finalized_total: AtomicU64,
     confirmations_failed_total: AtomicU64,
     confirmations_pending_total: AtomicU64,
+    confirmations_deferred_total: AtomicU64,
     rpc_get_health_requests_total: AtomicU64,
     rpc_get_health_errors_total: AtomicU64,
     rpc_get_version_requests_total: AtomicU64,
@@ -1317,6 +1319,47 @@ async fn confirm_signature(
         slot: last_slot,
         confirmation_status: last_confirmation_status,
         error: None,
+    }
+}
+
+/// Synthetic outcome returned when the service-wide confirmation-poller cap is
+/// reached. No RPC is performed; the caller can re-check via `/confirm`.
+fn deferred_confirm_outcome(signature: &str, target_commitment: &str) -> ConfirmOutcome {
+    ConfirmOutcome {
+        signature: signature.to_string(),
+        status: "deferred",
+        target_commitment: target_commitment.to_string(),
+        reached: false,
+        polls: 0,
+        elapsed_ms: 0,
+        slot: None,
+        confirmation_status: None,
+        error: Some(json!(
+            "confirmation deferred: service confirmation capacity reached; re-check via POST /confirm"
+        )),
+    }
+}
+
+/// Runs `confirm_signature` under a service-wide poller slot. When the cap is
+/// reached it sheds gracefully (no RPC) rather than amplifying upstream load.
+async fn bounded_confirm(
+    state: &AppState,
+    signature: &str,
+    target_commitment: &str,
+    timeout_ms: u64,
+    poll_interval_ms: u64,
+) -> ConfirmOutcome {
+    match ConfirmSlot::try_acquire(&state.confirm_in_flight) {
+        Some(_slot) => {
+            confirm_signature(state, signature, target_commitment, timeout_ms, poll_interval_ms).await
+        }
+        None => {
+            state
+                .metrics
+                .confirmations_deferred_total
+                .fetch_add(1, Ordering::Relaxed);
+            deferred_confirm_outcome(signature, target_commitment)
+        }
     }
 }
 
@@ -2494,7 +2537,7 @@ async fn confirm_http(
     let outcomes = futures_util::future::join_all(
         signatures
             .iter()
-            .map(|signature| confirm_signature(&state, signature, &target, timeout_ms, poll_interval_ms)),
+            .map(|signature| bounded_confirm(&state, signature, &target, timeout_ms, poll_interval_ms)),
     )
     .await;
     let all_reached = outcomes.iter().all(|outcome| outcome.reached);
@@ -2729,7 +2772,7 @@ async fn settle_http(
             json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
         );
     }
-    let confirmation = confirm_signature(
+    let confirmation = bounded_confirm(
         &state,
         &signature,
         &confirm_target,
@@ -2938,7 +2981,7 @@ async fn resolve_http(
             json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
         );
     }
-    let confirmation = confirm_signature(
+    let confirmation = bounded_confirm(
         &state,
         &signature,
         &confirm_target,
@@ -3101,6 +3144,7 @@ fn metrics_body(state: &AppState) -> String {
         ("finalized", load(&m.confirmations_finalized_total)),
         ("failed", load(&m.confirmations_failed_total)),
         ("pending", load(&m.confirmations_pending_total)),
+        ("deferred", load(&m.confirmations_deferred_total)),
     ] {
         out.push_str(&format!(
             "dd_contract_service_confirmations_total{{outcome=\"{outcome}\"}} {value}\n"
@@ -3699,7 +3743,7 @@ mod tests {
     }
 
     #[test]
-    fn verifier_slot_bounds_in_flight_and_releases_on_drop() {
+    fn confirm_slot_bounds_in_flight_and_releases_on_drop() {
         let counter = Arc::new(AtomicU64::new(0));
         let mut slots = Vec::new();
         for _ in 0..MAX_CONFIRM_POLLERS_IN_FLIGHT {
@@ -3711,6 +3755,39 @@ mod tests {
         // Dropping a slot frees capacity again.
         slots.pop();
         assert!(ConfirmSlot::try_acquire(&counter).is_some());
+    }
+
+    #[test]
+    fn deferred_confirm_outcome_is_not_reached() {
+        let outcome = deferred_confirm_outcome("sig", "finalized");
+        assert_eq!(outcome.status, "deferred");
+        assert!(!outcome.reached);
+        assert_eq!(outcome.polls, 0);
+        assert!(outcome.error.is_some());
+    }
+
+    #[test]
+    fn mainnet_gate_blocks_unflagged_broadcast() {
+        // Devnet is unaffected regardless of broadcast flags.
+        assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
+        // Mainnet with any broadcast capability needs the explicit second flag.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
+        // With the second flag, mainnet broadcast is permitted.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
+        // Mainnet with no broadcast capability is always fine.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn nats_broadcast_requires_unauthenticated_bus_ack() {
+        // NATS broadcast off: ack irrelevant.
+        assert!(enforce_nats_broadcast_ack(false, false).is_ok());
+        // NATS broadcast on without ack is refused.
+        assert!(enforce_nats_broadcast_ack(true, false).is_err());
+        // NATS broadcast on with explicit ack is permitted.
+        assert!(enforce_nats_broadcast_ack(true, true).is_ok());
     }
 
     #[test]
@@ -4254,7 +4331,7 @@ async fn nats_settlement_flow(
                     )
                 });
             let confirmation =
-                confirm_signature(state, &signature, &target, timeout_ms, poll_ms).await;
+                bounded_confirm(state, &signature, &target, timeout_ms, poll_ms).await;
             let reached = confirmation.reached;
             outcome.insert("ok".to_string(), json!(reached));
             outcome.insert("status".to_string(), json!("broadcast"));

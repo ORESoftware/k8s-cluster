@@ -75,6 +75,9 @@ action may enact them.
   bounded TTL window, so retries do not double-broadcast (HTTP returns `409` on replay).
 - Confirmation polling is bounded by a max timeout, min poll interval, and max poll count; `/confirm`
   accepts at most a small batch of signatures.
+- A service-wide cap bounds concurrent confirmation pollers across `/confirm`, `/settle`, `/resolve`,
+  and the escrow verifier, so no set of requests can amplify sustained outbound Solana RPC load. At the
+  cap, confirmations are shed gracefully (reported as `deferred`, no RPC) rather than queued.
 - `skipPreflight` is rejected unless `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 - `simulateTransaction` rejects `sigVerify=true` with `replaceRecentBlockhash=true`.
 - The deployment mounts the source checkout read-only and sends Cargo build/cache output to
@@ -87,7 +90,7 @@ action may enact them.
 
 - `/metrics` exposes Prometheus counters for HTTP traffic, contract validations, settlements,
   resolutions, idempotency suppressions, confirmation outcomes (`confirmed`/`finalized`/`failed`/
-  `pending`), safety-policy rejections, Solana RPC requests/errors by fixed RPC method (now covering
+  `pending`/`deferred`), safety-policy rejections, Solana RPC requests/errors by fixed RPC method (now covering
   the full read surface), NATS receive/publish outcomes, send/settlement-auth failures, and aggregate
   service errors.
 - `dd-otel-collector` and `dd-prometheus` both scrape
