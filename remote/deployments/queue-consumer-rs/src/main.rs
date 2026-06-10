@@ -741,11 +741,13 @@ async fn run_critical_event_logger(
             "consumer": &consumer_name,
         }),
     );
+    let mut consecutive_fetch_errors: u32 = 0;
 
     while let Some(message) = messages.next().await {
         let message = match message {
             Ok(message) => message,
             Err(error) => {
+                consecutive_fetch_errors = consecutive_fetch_errors.saturating_add(1);
                 log_error(
                     "critical-event-fetch-failed",
                     "Critical runtime event fetch failed.",
@@ -753,12 +755,16 @@ async fn run_critical_event_logger(
                         "stream": &stream_name,
                         "subject": &subject,
                         "consumer": &consumer_name,
+                        "consecutiveErrors": consecutive_fetch_errors,
                         "error": error.to_string(),
                     }),
                 );
+                // Back off so a persistent failure can't spin this loop.
+                tokio::time::sleep(fetch_error_backoff(consecutive_fetch_errors)).await;
                 continue;
             }
         };
+        consecutive_fetch_errors = 0;
 
         let message_subject = message.subject.to_string();
         match serde_json::from_slice::<Value>(&message.payload) {
@@ -964,28 +970,47 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let critical_stream_for_task = critical_stream_name.clone();
         let critical_subject_for_task = critical_subject.clone();
         let critical_consumer_for_task = critical_consumer_name.clone();
+        // Supervise the logger: if it ever returns (clean stream end or error)
+        // the process must not keep running deaf to critical events. Restart it
+        // with a capped backoff so a flapping broker can't hot-loop respawns.
         tokio::spawn(async move {
-            if let Err(error) = run_critical_event_logger(
-                critical_client,
-                critical_stream_for_task.clone(),
-                critical_subject_for_task.clone(),
-                critical_consumer_for_task.clone(),
-                Duration::from_secs(critical_ack_wait_seconds),
-                critical_max_ack_pending,
-                critical_max_deliver,
-            )
-            .await
-            {
-                log_error(
-                    "critical-event-logger-stopped",
-                    "Critical runtime event logger stopped.",
-                    json!({
-                        "stream": critical_stream_for_task,
-                        "subject": critical_subject_for_task,
-                        "consumer": critical_consumer_for_task,
-                        "error": error.to_string(),
-                    }),
-                );
+            let mut restart_delay = Duration::from_secs(1);
+            loop {
+                match run_critical_event_logger(
+                    critical_client.clone(),
+                    critical_stream_for_task.clone(),
+                    critical_subject_for_task.clone(),
+                    critical_consumer_for_task.clone(),
+                    Duration::from_secs(critical_ack_wait_seconds),
+                    critical_max_ack_pending,
+                    critical_max_deliver,
+                )
+                .await
+                {
+                    Ok(()) => log_warn(
+                        "critical-event-logger-ended",
+                        "Critical runtime event logger ended; restarting.",
+                        json!({
+                            "stream": &critical_stream_for_task,
+                            "subject": &critical_subject_for_task,
+                            "consumer": &critical_consumer_for_task,
+                            "restartDelaySeconds": restart_delay.as_secs(),
+                        }),
+                    ),
+                    Err(error) => log_error(
+                        "critical-event-logger-stopped",
+                        "Critical runtime event logger stopped; restarting.",
+                        json!({
+                            "stream": &critical_stream_for_task,
+                            "subject": &critical_subject_for_task,
+                            "consumer": &critical_consumer_for_task,
+                            "restartDelaySeconds": restart_delay.as_secs(),
+                            "error": error.to_string(),
+                        }),
+                    ),
+                }
+                tokio::time::sleep(restart_delay).await;
+                restart_delay = (restart_delay * 2).min(Duration::from_secs(30));
             }
         });
     } else {
@@ -1614,6 +1639,18 @@ mod tests {
         let name = receipt_path("/tmp/x", "weird/../id").file_name().unwrap().to_string_lossy().into_owned();
         assert!(name.ends_with(".json"));
         assert!(!name.contains('/'));
+    }
+
+    #[test]
+    fn fetch_error_backoff_grows_then_caps() {
+        assert_eq!(fetch_error_backoff(0), Duration::from_millis(250));
+        assert_eq!(fetch_error_backoff(1), Duration::from_millis(250));
+        assert_eq!(fetch_error_backoff(2), Duration::from_millis(500));
+        assert_eq!(fetch_error_backoff(3), Duration::from_millis(1_000));
+        assert_eq!(fetch_error_backoff(5), Duration::from_millis(4_000));
+        // Caps at 5s no matter how high the streak goes.
+        assert_eq!(fetch_error_backoff(6), Duration::from_millis(5_000));
+        assert_eq!(fetch_error_backoff(1_000), Duration::from_millis(5_000));
     }
 
     #[test]
