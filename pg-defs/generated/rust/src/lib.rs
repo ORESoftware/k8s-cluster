@@ -912,7 +912,7 @@ pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert
 }
 
 pub const SOUND_RECORDER_UPLOAD_SESSIONS_TABLE: &str = "sound_recorder_upload_sessions";
-pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "status", "storage_provider", "storage_bucket", "storage_prefix", "content_type", "codec", "sample_rate", "channel_count", "segment_duration_seconds", "max_segment_bytes", "started_at", "last_heartbeat_at", "closed_at", "expires_at", "client_timezone", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "status", "storage_provider", "storage_bucket", "storage_prefix", "content_type", "codec", "sample_rate", "channel_count", "segment_duration_seconds", "max_segment_bytes", "started_at", "last_heartbeat_at", "closed_at", "expires_at", "client_timezone", "legal_region", "use_case", "meta_data", "created_at", "updated_at"];
 pub const SOUND_RECORDER_UPLOAD_SESSIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -933,6 +933,7 @@ pub const SOUND_RECORDER_UPLOAD_SESSIONS_SELECT_SQL: &str = r###"select
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
       client_timezone,
       legal_region,
+      use_case,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -1001,6 +1002,45 @@ impl TryFrom<&str> for SoundRecorderUploadSessionsStorageProvider {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderUploadSessionsUseCase {
+    Security,
+    Music,
+    Meeting,
+    VoiceNote,
+    Ambient,
+}
+
+impl SoundRecorderUploadSessionsUseCase {
+    pub const VALUES: &'static [&'static str] = &["security", "music", "meeting", "voice_note", "ambient"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Security => "security",
+            Self::Music => "music",
+            Self::Meeting => "meeting",
+            Self::VoiceNote => "voice_note",
+            Self::Ambient => "ambient",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderUploadSessionsUseCase {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "security" => Ok(Self::Security),
+            "music" => Ok(Self::Music),
+            "meeting" => Ok(Self::Meeting),
+            "voice_note" => Ok(Self::VoiceNote),
+            "ambient" => Ok(Self::Ambient),
+            _ => Err(format!("unsupported use_case: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
@@ -1024,6 +1064,7 @@ pub struct SoundRecorderUploadSessionsRow {
     pub expires_at: Option<String>,
     pub client_timezone: Option<String>,
     pub legal_region: Option<String>,
+    pub use_case: String,
     pub meta_data: Value,
     pub created_at: String,
     pub updated_at: String,
@@ -1051,6 +1092,7 @@ pub struct SoundRecorderUploadSessionsInsert {
     pub expires_at: Option<String>,
     pub client_timezone: Option<String>,
     pub legal_region: Option<String>,
+    pub use_case: Option<String>,
     pub meta_data: Option<Value>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -1085,6 +1127,7 @@ pub fn validate_sound_recorder_upload_sessions_row(value: &SoundRecorderUploadSe
     if let Some(value) = &value.legal_region {
         validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
     }
+    if !["security", "music", "meeting", "voice_note", "ambient"].contains(&(&value.use_case).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.use_case: {}", &value.use_case)); }
     if !(&value.meta_data).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
     Ok(())
 }
@@ -1134,6 +1177,9 @@ pub fn validate_sound_recorder_upload_sessions_insert(value: &SoundRecorderUploa
     if let Some(value) = &value.legal_region {
         validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
     }
+    if let Some(value) = &value.use_case {
+        if !["security", "music", "meeting", "voice_note", "ambient"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.use_case: {}", value)); }
+    }
     if let Some(value) = &value.meta_data {
         if !(value).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
     }
@@ -1141,7 +1187,7 @@ pub fn validate_sound_recorder_upload_sessions_insert(value: &SoundRecorderUploa
 }
 
 pub const SOUND_RECORDER_SEGMENTS_TABLE: &str = "sound_recorder_segments";
-pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "session_id", "sequence_number", "status", "storage_provider", "storage_bucket", "storage_key", "content_type", "codec", "captured_started_at", "captured_ended_at", "duration_millis", "byte_count", "sha256_hex", "upload_url_expires_at", "etag", "uploaded_at", "expires_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "session_id", "sequence_number", "status", "storage_provider", "storage_bucket", "storage_key", "content_type", "codec", "captured_started_at", "captured_ended_at", "duration_millis", "byte_count", "sha256_hex", "upload_url_expires_at", "etag", "uploaded_at", "expires_at", "pinned_at", "meta_data", "created_at", "updated_at"];
 pub const SOUND_RECORDER_SEGMENTS_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -1163,6 +1209,7 @@ pub const SOUND_RECORDER_SEGMENTS_SELECT_SQL: &str = r###"select
       etag,
       to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(pinned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as pinned_at,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -1258,6 +1305,7 @@ pub struct SoundRecorderSegmentsRow {
     pub etag: Option<String>,
     pub uploaded_at: Option<String>,
     pub expires_at: String,
+    pub pinned_at: Option<String>,
     pub meta_data: Value,
     pub created_at: String,
     pub updated_at: String,
@@ -1286,6 +1334,7 @@ pub struct SoundRecorderSegmentsInsert {
     pub etag: Option<String>,
     pub uploaded_at: Option<String>,
     pub expires_at: Option<String>,
+    pub pinned_at: Option<String>,
     pub meta_data: Option<Value>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -15676,6 +15725,1173 @@ pub fn validate_usacc_audit_events_insert(value: &UsaccAuditEventsInsert) -> Res
     }
     if let Some(value) = &value.payload {
         if !(value).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_LEADS_TABLE: &str = "benefactor.benefactor_leads";
+pub const BENEFACTOR_LEADS_COLUMNS: &[&str] = &["id", "business_name", "owner_first_name", "owner_last_name", "primary_email", "secondary_email", "primary_phone", "website_url", "service_category", "service_subcategories", "city", "state", "zip_code", "country", "service_area", "lead_status", "outreach_status", "total_outreach_attempts", "last_outreach_at", "contact_attempts", "source_url", "source_query", "source_tool", "source_engine", "is_verified", "tags", "meta_data", "notes", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      business_name,
+      owner_first_name,
+      owner_last_name,
+      primary_email,
+      secondary_email,
+      primary_phone,
+      website_url,
+      service_category,
+      service_subcategories,
+      city,
+      state,
+      zip_code,
+      country,
+      service_area,
+      lead_status,
+      outreach_status,
+      total_outreach_attempts,
+      to_char(last_outreach_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_outreach_at,
+      contact_attempts,
+      source_url,
+      source_query,
+      source_tool,
+      source_engine,
+      is_verified,
+      tags,
+      meta_data,
+      notes,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorLeadsLeadStatus {
+    New,
+    Contacted,
+    Replied,
+    Booked,
+    Rejected,
+    Unsubscribed,
+    Unqualified,
+    DoNotContact,
+}
+
+impl BenefactorLeadsLeadStatus {
+    pub const VALUES: &'static [&'static str] = &["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::New => "new",
+            Self::Contacted => "contacted",
+            Self::Replied => "replied",
+            Self::Booked => "booked",
+            Self::Rejected => "rejected",
+            Self::Unsubscribed => "unsubscribed",
+            Self::Unqualified => "unqualified",
+            Self::DoNotContact => "do_not_contact",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorLeadsLeadStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "new" => Ok(Self::New),
+            "contacted" => Ok(Self::Contacted),
+            "replied" => Ok(Self::Replied),
+            "booked" => Ok(Self::Booked),
+            "rejected" => Ok(Self::Rejected),
+            "unsubscribed" => Ok(Self::Unsubscribed),
+            "unqualified" => Ok(Self::Unqualified),
+            "do_not_contact" => Ok(Self::DoNotContact),
+            _ => Err(format!("unsupported lead_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorLeadsOutreachStatus {
+    Pending,
+    New,
+    Contacted,
+    Failed,
+}
+
+impl BenefactorLeadsOutreachStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "new", "contacted", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::New => "new",
+            Self::Contacted => "contacted",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorLeadsOutreachStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "new" => Ok(Self::New),
+            "contacted" => Ok(Self::Contacted),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported outreach_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsRow {
+    pub id: String,
+    pub business_name: String,
+    pub owner_first_name: String,
+    pub owner_last_name: String,
+    pub primary_email: String,
+    pub secondary_email: Option<String>,
+    pub primary_phone: Option<String>,
+    pub website_url: Option<String>,
+    pub service_category: String,
+    pub service_subcategories: Value,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip_code: Option<String>,
+    pub country: String,
+    pub service_area: Option<String>,
+    pub lead_status: String,
+    pub outreach_status: String,
+    pub total_outreach_attempts: i32,
+    pub last_outreach_at: Option<String>,
+    pub contact_attempts: Value,
+    pub source_url: Option<String>,
+    pub source_query: Option<String>,
+    pub source_tool: Option<String>,
+    pub source_engine: Option<String>,
+    pub is_verified: bool,
+    pub tags: Value,
+    pub meta_data: Value,
+    pub notes: Option<String>,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsInsert {
+    pub id: Option<String>,
+    pub business_name: Option<String>,
+    pub owner_first_name: Option<String>,
+    pub owner_last_name: Option<String>,
+    pub primary_email: Option<String>,
+    pub secondary_email: Option<String>,
+    pub primary_phone: Option<String>,
+    pub website_url: Option<String>,
+    pub service_category: Option<String>,
+    pub service_subcategories: Option<Value>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip_code: Option<String>,
+    pub country: Option<String>,
+    pub service_area: Option<String>,
+    pub lead_status: Option<String>,
+    pub outreach_status: Option<String>,
+    pub total_outreach_attempts: Option<i32>,
+    pub last_outreach_at: Option<String>,
+    pub contact_attempts: Option<Value>,
+    pub source_url: Option<String>,
+    pub source_query: Option<String>,
+    pub source_tool: Option<String>,
+    pub source_engine: Option<String>,
+    pub is_verified: Option<bool>,
+    pub tags: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub notes: Option<String>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_leads_row(value: &BenefactorLeadsRow) -> Result<(), String> {
+    validate_string_length("benefactor_leads.business_name", &value.business_name, None, Some(300))?;
+    validate_string_length("benefactor_leads.owner_first_name", &value.owner_first_name, None, Some(120))?;
+    validate_string_length("benefactor_leads.owner_last_name", &value.owner_last_name, None, Some(130))?;
+    validate_string_length("benefactor_leads.primary_email", &value.primary_email, None, Some(255))?;
+    if let Some(value) = &value.secondary_email {
+        validate_string_length("benefactor_leads.secondary_email", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.primary_phone {
+        validate_string_length("benefactor_leads.primary_phone", value, None, Some(100))?;
+    }
+    if let Some(value) = &value.website_url {
+        validate_string_length("benefactor_leads.website_url", value, None, Some(500))?;
+    }
+    validate_string_length("benefactor_leads.service_category", &value.service_category, None, Some(60))?;
+    if !(&value.service_subcategories).is_array() { return Err("benefactor_leads.service_subcategories must be a JSON array".to_string()); }
+    if let Some(value) = &value.city {
+        validate_string_length("benefactor_leads.city", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.state {
+        validate_string_length("benefactor_leads.state", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.zip_code {
+        validate_string_length("benefactor_leads.zip_code", value, None, Some(20))?;
+    }
+    validate_string_length("benefactor_leads.country", &value.country, None, Some(80))?;
+    if let Some(value) = &value.service_area {
+        validate_string_length("benefactor_leads.service_area", value, None, Some(500))?;
+    }
+    if !["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"].contains(&(&value.lead_status).as_str()) { return Err(format!("unsupported benefactor_leads.lead_status: {}", &value.lead_status)); }
+    if !["pending", "new", "contacted", "failed"].contains(&(&value.outreach_status).as_str()) { return Err(format!("unsupported benefactor_leads.outreach_status: {}", &value.outreach_status)); }
+    if !(&value.contact_attempts).is_array() { return Err("benefactor_leads.contact_attempts must be a JSON array".to_string()); }
+    if let Some(value) = &value.source_url {
+        validate_string_length("benefactor_leads.source_url", value, None, Some(1000))?;
+    }
+    if let Some(value) = &value.source_query {
+        validate_string_length("benefactor_leads.source_query", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.source_tool {
+        validate_string_length("benefactor_leads.source_tool", value, None, Some(60))?;
+    }
+    if let Some(value) = &value.source_engine {
+        validate_string_length("benefactor_leads.source_engine", value, None, Some(30))?;
+    }
+    if !(&value.tags).is_array() { return Err("benefactor_leads.tags must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_leads.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_leads_insert(value: &BenefactorLeadsInsert) -> Result<(), String> {
+    if let Some(value) = &value.business_name {
+        validate_string_length("benefactor_leads.business_name", value, None, Some(300))?;
+    }
+    if let Some(value) = &value.owner_first_name {
+        validate_string_length("benefactor_leads.owner_first_name", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.owner_last_name {
+        validate_string_length("benefactor_leads.owner_last_name", value, None, Some(130))?;
+    }
+    if let Some(value) = &value.primary_email {
+        validate_string_length("benefactor_leads.primary_email", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.secondary_email {
+        validate_string_length("benefactor_leads.secondary_email", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.primary_phone {
+        validate_string_length("benefactor_leads.primary_phone", value, None, Some(100))?;
+    }
+    if let Some(value) = &value.website_url {
+        validate_string_length("benefactor_leads.website_url", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.service_category {
+        validate_string_length("benefactor_leads.service_category", value, None, Some(60))?;
+    }
+    if let Some(value) = &value.service_subcategories {
+        if !(value).is_array() { return Err("benefactor_leads.service_subcategories must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.city {
+        validate_string_length("benefactor_leads.city", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.state {
+        validate_string_length("benefactor_leads.state", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.zip_code {
+        validate_string_length("benefactor_leads.zip_code", value, None, Some(20))?;
+    }
+    if let Some(value) = &value.country {
+        validate_string_length("benefactor_leads.country", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.service_area {
+        validate_string_length("benefactor_leads.service_area", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.lead_status {
+        if !["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads.lead_status: {}", value)); }
+    }
+    if let Some(value) = &value.outreach_status {
+        if !["pending", "new", "contacted", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads.outreach_status: {}", value)); }
+    }
+    if let Some(value) = &value.contact_attempts {
+        if !(value).is_array() { return Err("benefactor_leads.contact_attempts must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.source_url {
+        validate_string_length("benefactor_leads.source_url", value, None, Some(1000))?;
+    }
+    if let Some(value) = &value.source_query {
+        validate_string_length("benefactor_leads.source_query", value, None, Some(500))?;
+    }
+    if let Some(value) = &value.source_tool {
+        validate_string_length("benefactor_leads.source_tool", value, None, Some(60))?;
+    }
+    if let Some(value) = &value.source_engine {
+        validate_string_length("benefactor_leads.source_engine", value, None, Some(30))?;
+    }
+    if let Some(value) = &value.tags {
+        if !(value).is_array() { return Err("benefactor_leads.tags must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_leads.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_LEADS_DOMAINS_TABLE: &str = "benefactor.benefactor_leads_domains";
+pub const BENEFACTOR_LEADS_DOMAINS_COLUMNS: &[&str] = &["id", "domain", "domain_kind", "status", "reason", "source", "is_blacklisted", "is_blocked", "is_permanently_blocked", "blocked_reason", "blocked_until", "skip_until", "scrape_count", "skip_count", "skipped_count", "email_found_count", "lead_inserted_count", "last_seen_at", "last_scraped_at", "last_skipped_at", "last_email_found_at", "last_lead_inserted_at", "last_seen_url", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_DOMAINS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      domain,
+      domain_kind,
+      status,
+      reason,
+      source,
+      is_blacklisted,
+      is_blocked,
+      is_permanently_blocked,
+      blocked_reason,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      to_char(skip_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as skip_until,
+      scrape_count,
+      skip_count,
+      skipped_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(last_scraped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_scraped_at,
+      to_char(last_skipped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_skipped_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_seen_url,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_domains"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorLeadsDomainsDomainKind {
+    Email,
+    Website,
+}
+
+impl BenefactorLeadsDomainsDomainKind {
+    pub const VALUES: &'static [&'static str] = &["email", "website"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Website => "website",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorLeadsDomainsDomainKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email" => Ok(Self::Email),
+            "website" => Ok(Self::Website),
+            _ => Err(format!("unsupported domain_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorLeadsDomainsStatus {
+    Allowed,
+    Blocked,
+    Skipped,
+    ScrapedRecently,
+    RecentlyScraped,
+}
+
+impl BenefactorLeadsDomainsStatus {
+    pub const VALUES: &'static [&'static str] = &["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Allowed => "allowed",
+            Self::Blocked => "blocked",
+            Self::Skipped => "skipped",
+            Self::ScrapedRecently => "scraped_recently",
+            Self::RecentlyScraped => "recently_scraped",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorLeadsDomainsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "allowed" => Ok(Self::Allowed),
+            "blocked" => Ok(Self::Blocked),
+            "skipped" => Ok(Self::Skipped),
+            "scraped_recently" => Ok(Self::ScrapedRecently),
+            "recently_scraped" => Ok(Self::RecentlyScraped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsDomainsRow {
+    pub id: String,
+    pub domain: String,
+    pub domain_kind: String,
+    pub status: String,
+    pub reason: Option<String>,
+    pub source: String,
+    pub is_blacklisted: bool,
+    pub is_blocked: bool,
+    pub is_permanently_blocked: bool,
+    pub blocked_reason: Option<String>,
+    pub blocked_until: Option<String>,
+    pub skip_until: Option<String>,
+    pub scrape_count: i32,
+    pub skip_count: i32,
+    pub skipped_count: i32,
+    pub email_found_count: i32,
+    pub lead_inserted_count: i32,
+    pub last_seen_at: Option<String>,
+    pub last_scraped_at: Option<String>,
+    pub last_skipped_at: Option<String>,
+    pub last_email_found_at: Option<String>,
+    pub last_lead_inserted_at: Option<String>,
+    pub last_seen_url: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsDomainsInsert {
+    pub id: Option<String>,
+    pub domain: Option<String>,
+    pub domain_kind: Option<String>,
+    pub status: Option<String>,
+    pub reason: Option<String>,
+    pub source: Option<String>,
+    pub is_blacklisted: Option<bool>,
+    pub is_blocked: Option<bool>,
+    pub is_permanently_blocked: Option<bool>,
+    pub blocked_reason: Option<String>,
+    pub blocked_until: Option<String>,
+    pub skip_until: Option<String>,
+    pub scrape_count: Option<i32>,
+    pub skip_count: Option<i32>,
+    pub skipped_count: Option<i32>,
+    pub email_found_count: Option<i32>,
+    pub lead_inserted_count: Option<i32>,
+    pub last_seen_at: Option<String>,
+    pub last_scraped_at: Option<String>,
+    pub last_skipped_at: Option<String>,
+    pub last_email_found_at: Option<String>,
+    pub last_lead_inserted_at: Option<String>,
+    pub last_seen_url: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_leads_domains_row(value: &BenefactorLeadsDomainsRow) -> Result<(), String> {
+    validate_string_length("benefactor_leads_domains.domain", &value.domain, None, Some(255))?;
+    if !["email", "website"].contains(&(&value.domain_kind).as_str()) { return Err(format!("unsupported benefactor_leads_domains.domain_kind: {}", &value.domain_kind)); }
+    if !["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_leads_domains.status: {}", &value.status)); }
+    validate_string_length("benefactor_leads_domains.source", &value.source, None, Some(80))?;
+    if !(&value.meta_data).is_object() { return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_leads_domains_insert(value: &BenefactorLeadsDomainsInsert) -> Result<(), String> {
+    if let Some(value) = &value.domain {
+        validate_string_length("benefactor_leads_domains.domain", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.domain_kind {
+        if !["email", "website"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads_domains.domain_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_leads_domains.status: {}", value)); }
+    }
+    if let Some(value) = &value.source {
+        validate_string_length("benefactor_leads_domains.source", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_leads_domains.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_SEARCH_LOCATIONS_TABLE: &str = "benefactor.benefactor_search_locations";
+pub const BENEFACTOR_SEARCH_LOCATIONS_COLUMNS: &[&str] = &["id", "slug", "city", "state", "state_code", "country", "metro_area", "military_area", "primary_installation", "installation_aliases", "location_type", "priority", "search_weight", "total_query_runs", "total_emails_inserted", "success_count", "failure_count", "last_run_at", "last_success_at", "last_failure_at", "cooldown_until", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_SEARCH_LOCATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      city,
+      state,
+      state_code,
+      country,
+      metro_area,
+      military_area,
+      primary_installation,
+      installation_aliases,
+      location_type,
+      priority,
+      search_weight,
+      total_query_runs,
+      total_emails_inserted,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_search_locations"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorSearchLocationsRow {
+    pub id: String,
+    pub slug: String,
+    pub city: String,
+    pub state: String,
+    pub state_code: Option<String>,
+    pub country: String,
+    pub metro_area: Option<String>,
+    pub military_area: Option<String>,
+    pub primary_installation: Option<String>,
+    pub installation_aliases: Value,
+    pub location_type: String,
+    pub priority: i32,
+    pub search_weight: i32,
+    pub total_query_runs: i32,
+    pub total_emails_inserted: i32,
+    pub success_count: i32,
+    pub failure_count: i32,
+    pub last_run_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub cooldown_until: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorSearchLocationsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub state_code: Option<String>,
+    pub country: Option<String>,
+    pub metro_area: Option<String>,
+    pub military_area: Option<String>,
+    pub primary_installation: Option<String>,
+    pub installation_aliases: Option<Value>,
+    pub location_type: Option<String>,
+    pub priority: Option<i32>,
+    pub search_weight: Option<i32>,
+    pub total_query_runs: Option<i32>,
+    pub total_emails_inserted: Option<i32>,
+    pub success_count: Option<i32>,
+    pub failure_count: Option<i32>,
+    pub last_run_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub cooldown_until: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_search_locations_row(value: &BenefactorSearchLocationsRow) -> Result<(), String> {
+    validate_string_length("benefactor_search_locations.slug", &value.slug, None, Some(160))?;
+    validate_string_length("benefactor_search_locations.city", &value.city, None, Some(120))?;
+    validate_string_length("benefactor_search_locations.state", &value.state, None, Some(80))?;
+    if let Some(value) = &value.state_code {
+        validate_string_length("benefactor_search_locations.state_code", value, None, Some(10))?;
+    }
+    validate_string_length("benefactor_search_locations.country", &value.country, None, Some(80))?;
+    if let Some(value) = &value.metro_area {
+        validate_string_length("benefactor_search_locations.metro_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.military_area {
+        validate_string_length("benefactor_search_locations.military_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.primary_installation {
+        validate_string_length("benefactor_search_locations.primary_installation", value, None, Some(220))?;
+    }
+    if !(&value.installation_aliases).is_array() { return Err("benefactor_search_locations.installation_aliases must be a JSON array".to_string()); }
+    validate_string_length("benefactor_search_locations.location_type", &value.location_type, None, Some(80))?;
+    if !(&value.meta_data).is_object() { return Err("benefactor_search_locations.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_search_locations_insert(value: &BenefactorSearchLocationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_string_length("benefactor_search_locations.slug", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.city {
+        validate_string_length("benefactor_search_locations.city", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.state {
+        validate_string_length("benefactor_search_locations.state", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.state_code {
+        validate_string_length("benefactor_search_locations.state_code", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.country {
+        validate_string_length("benefactor_search_locations.country", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.metro_area {
+        validate_string_length("benefactor_search_locations.metro_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.military_area {
+        validate_string_length("benefactor_search_locations.military_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.primary_installation {
+        validate_string_length("benefactor_search_locations.primary_installation", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.installation_aliases {
+        if !(value).is_array() { return Err("benefactor_search_locations.installation_aliases must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.location_type {
+        validate_string_length("benefactor_search_locations.location_type", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_search_locations.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_SCRAPE_QUERIES_TABLE: &str = "benefactor.benefactor_scrape_queries";
+pub const BENEFACTOR_SCRAPE_QUERIES_COLUMNS: &[&str] = &["id", "query_text", "query_hash", "benefactor_icp_slug", "benefactor_icp_name", "benefactor_search_location_id", "service_category", "target_city", "target_state", "target_country", "target_military_area", "target_installation", "query_variant", "search_page_depth", "priority", "total_runs", "total_urls_visited", "total_emails_found", "total_emails_inserted", "total_emails_duplicate", "total_errors", "success_count", "failure_count", "last_run_at", "last_success_at", "last_failure_at", "last_run_emails_found", "last_run_emails_inserted", "last_run_success", "last_run_duration_ms", "last_run_error", "cooldown_until", "consecutive_zero_new_runs", "last_zero_new_run_at", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_SCRAPE_QUERIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      query_text,
+      query_hash,
+      benefactor_icp_slug,
+      benefactor_icp_name,
+      benefactor_search_location_id::text as benefactor_search_location_id,
+      service_category,
+      target_city,
+      target_state,
+      target_country,
+      target_military_area,
+      target_installation,
+      query_variant,
+      search_page_depth,
+      priority,
+      total_runs,
+      total_urls_visited,
+      total_emails_found,
+      total_emails_inserted,
+      total_emails_duplicate,
+      total_errors,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      last_run_emails_found,
+      last_run_emails_inserted,
+      last_run_success,
+      last_run_duration_ms,
+      last_run_error,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      consecutive_zero_new_runs,
+      to_char(last_zero_new_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_zero_new_run_at,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_scrape_queries"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorScrapeQueriesQueryVariant {
+    EmailContact,
+    ContactUs,
+    WebsiteDomain,
+    FuzzyEmail,
+    FuzzyCity,
+}
+
+impl BenefactorScrapeQueriesQueryVariant {
+    pub const VALUES: &'static [&'static str] = &["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EmailContact => "email_contact",
+            Self::ContactUs => "contact_us",
+            Self::WebsiteDomain => "website_domain",
+            Self::FuzzyEmail => "fuzzy_email",
+            Self::FuzzyCity => "fuzzy_city",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorScrapeQueriesQueryVariant {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email_contact" => Ok(Self::EmailContact),
+            "contact_us" => Ok(Self::ContactUs),
+            "website_domain" => Ok(Self::WebsiteDomain),
+            "fuzzy_email" => Ok(Self::FuzzyEmail),
+            "fuzzy_city" => Ok(Self::FuzzyCity),
+            _ => Err(format!("unsupported query_variant: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorScrapeQueriesRow {
+    pub id: String,
+    pub query_text: String,
+    pub query_hash: String,
+    pub benefactor_icp_slug: Option<String>,
+    pub benefactor_icp_name: Option<String>,
+    pub benefactor_search_location_id: Option<String>,
+    pub service_category: String,
+    pub target_city: Option<String>,
+    pub target_state: Option<String>,
+    pub target_country: String,
+    pub target_military_area: Option<String>,
+    pub target_installation: Option<String>,
+    pub query_variant: String,
+    pub search_page_depth: i32,
+    pub priority: i32,
+    pub total_runs: i32,
+    pub total_urls_visited: i32,
+    pub total_emails_found: i32,
+    pub total_emails_inserted: i32,
+    pub total_emails_duplicate: i32,
+    pub total_errors: i32,
+    pub success_count: i32,
+    pub failure_count: i32,
+    pub last_run_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub last_run_emails_found: i32,
+    pub last_run_emails_inserted: i32,
+    pub last_run_success: bool,
+    pub last_run_duration_ms: i32,
+    pub last_run_error: Option<String>,
+    pub cooldown_until: Option<String>,
+    pub consecutive_zero_new_runs: i32,
+    pub last_zero_new_run_at: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorScrapeQueriesInsert {
+    pub id: Option<String>,
+    pub query_text: Option<String>,
+    pub query_hash: Option<String>,
+    pub benefactor_icp_slug: Option<String>,
+    pub benefactor_icp_name: Option<String>,
+    pub benefactor_search_location_id: Option<String>,
+    pub service_category: Option<String>,
+    pub target_city: Option<String>,
+    pub target_state: Option<String>,
+    pub target_country: Option<String>,
+    pub target_military_area: Option<String>,
+    pub target_installation: Option<String>,
+    pub query_variant: Option<String>,
+    pub search_page_depth: Option<i32>,
+    pub priority: Option<i32>,
+    pub total_runs: Option<i32>,
+    pub total_urls_visited: Option<i32>,
+    pub total_emails_found: Option<i32>,
+    pub total_emails_inserted: Option<i32>,
+    pub total_emails_duplicate: Option<i32>,
+    pub total_errors: Option<i32>,
+    pub success_count: Option<i32>,
+    pub failure_count: Option<i32>,
+    pub last_run_at: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub last_run_emails_found: Option<i32>,
+    pub last_run_emails_inserted: Option<i32>,
+    pub last_run_success: Option<bool>,
+    pub last_run_duration_ms: Option<i32>,
+    pub last_run_error: Option<String>,
+    pub cooldown_until: Option<String>,
+    pub consecutive_zero_new_runs: Option<i32>,
+    pub last_zero_new_run_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_scrape_queries_row(value: &BenefactorScrapeQueriesRow) -> Result<(), String> {
+    validate_string_length("benefactor_scrape_queries.query_hash", &value.query_hash, None, Some(64))?;
+    if let Some(value) = &value.benefactor_icp_slug {
+        validate_string_length("benefactor_scrape_queries.benefactor_icp_slug", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.benefactor_icp_name {
+        validate_string_length("benefactor_scrape_queries.benefactor_icp_name", value, None, Some(220))?;
+    }
+    validate_string_length("benefactor_scrape_queries.service_category", &value.service_category, None, Some(60))?;
+    if let Some(value) = &value.target_city {
+        validate_string_length("benefactor_scrape_queries.target_city", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.target_state {
+        validate_string_length("benefactor_scrape_queries.target_state", value, None, Some(80))?;
+    }
+    validate_string_length("benefactor_scrape_queries.target_country", &value.target_country, None, Some(80))?;
+    if let Some(value) = &value.target_military_area {
+        validate_string_length("benefactor_scrape_queries.target_military_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.target_installation {
+        validate_string_length("benefactor_scrape_queries.target_installation", value, None, Some(220))?;
+    }
+    if !["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"].contains(&(&value.query_variant).as_str()) { return Err(format!("unsupported benefactor_scrape_queries.query_variant: {}", &value.query_variant)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_scrape_queries_insert(value: &BenefactorScrapeQueriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.query_hash {
+        validate_string_length("benefactor_scrape_queries.query_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.benefactor_icp_slug {
+        validate_string_length("benefactor_scrape_queries.benefactor_icp_slug", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.benefactor_icp_name {
+        validate_string_length("benefactor_scrape_queries.benefactor_icp_name", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.service_category {
+        validate_string_length("benefactor_scrape_queries.service_category", value, None, Some(60))?;
+    }
+    if let Some(value) = &value.target_city {
+        validate_string_length("benefactor_scrape_queries.target_city", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.target_state {
+        validate_string_length("benefactor_scrape_queries.target_state", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.target_country {
+        validate_string_length("benefactor_scrape_queries.target_country", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.target_military_area {
+        validate_string_length("benefactor_scrape_queries.target_military_area", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.target_installation {
+        validate_string_length("benefactor_scrape_queries.target_installation", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.query_variant {
+        if !["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_scrape_queries.query_variant: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_scrape_queries.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_TABLE: &str = "benefactor.benefactor_domain_search_tracking";
+pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_COLUMNS: &[&str] = &["id", "domain", "for_what", "search_result_appearances", "queued_visit_count", "visit_count", "good_result_count", "bad_result_count", "email_found_count", "lead_inserted_count", "last_queued_at", "last_visited_at", "last_good_result_at", "last_bad_result_at", "last_email_found_at", "last_lead_inserted_at", "last_good_url", "last_bad_url", "blocked_until", "is_permanently_blocked", "blocked_reason", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_DOMAIN_SEARCH_TRACKING_SELECT_SQL: &str = r###"select
+      id::text as id,
+      domain,
+      for_what,
+      search_result_appearances,
+      queued_visit_count,
+      visit_count,
+      good_result_count,
+      bad_result_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_queued_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_queued_at,
+      to_char(last_visited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_visited_at,
+      to_char(last_good_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_good_result_at,
+      to_char(last_bad_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_bad_result_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_good_url,
+      last_bad_url,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      is_permanently_blocked,
+      blocked_reason,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_domain_search_tracking"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorDomainSearchTrackingRow {
+    pub id: String,
+    pub domain: String,
+    pub for_what: String,
+    pub search_result_appearances: i32,
+    pub queued_visit_count: i32,
+    pub visit_count: i32,
+    pub good_result_count: i32,
+    pub bad_result_count: i32,
+    pub email_found_count: i32,
+    pub lead_inserted_count: i32,
+    pub last_queued_at: Option<String>,
+    pub last_visited_at: Option<String>,
+    pub last_good_result_at: Option<String>,
+    pub last_bad_result_at: Option<String>,
+    pub last_email_found_at: Option<String>,
+    pub last_lead_inserted_at: Option<String>,
+    pub last_good_url: Option<String>,
+    pub last_bad_url: Option<String>,
+    pub blocked_until: Option<String>,
+    pub is_permanently_blocked: bool,
+    pub blocked_reason: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorDomainSearchTrackingInsert {
+    pub id: Option<String>,
+    pub domain: Option<String>,
+    pub for_what: Option<String>,
+    pub search_result_appearances: Option<i32>,
+    pub queued_visit_count: Option<i32>,
+    pub visit_count: Option<i32>,
+    pub good_result_count: Option<i32>,
+    pub bad_result_count: Option<i32>,
+    pub email_found_count: Option<i32>,
+    pub lead_inserted_count: Option<i32>,
+    pub last_queued_at: Option<String>,
+    pub last_visited_at: Option<String>,
+    pub last_good_result_at: Option<String>,
+    pub last_bad_result_at: Option<String>,
+    pub last_email_found_at: Option<String>,
+    pub last_lead_inserted_at: Option<String>,
+    pub last_good_url: Option<String>,
+    pub last_bad_url: Option<String>,
+    pub blocked_until: Option<String>,
+    pub is_permanently_blocked: Option<bool>,
+    pub blocked_reason: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_domain_search_tracking_row(value: &BenefactorDomainSearchTrackingRow) -> Result<(), String> {
+    validate_string_length("benefactor_domain_search_tracking.domain", &value.domain, None, Some(255))?;
+    validate_string_length("benefactor_domain_search_tracking.for_what", &value.for_what, None, Some(80))?;
+    if !(&value.meta_data).is_object() { return Err("benefactor_domain_search_tracking.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_domain_search_tracking_insert(value: &BenefactorDomainSearchTrackingInsert) -> Result<(), String> {
+    if let Some(value) = &value.domain {
+        validate_string_length("benefactor_domain_search_tracking.domain", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.for_what {
+        validate_string_length("benefactor_domain_search_tracking.for_what", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_domain_search_tracking.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_ICPS_TABLE: &str = "benefactor.benefactor_icps";
+pub const BENEFACTOR_ICPS_COLUMNS: &[&str] = &["id", "slug", "name", "category", "service_category", "description", "outcall_fit_score", "priority", "search_terms", "search_signals", "target_home_services", "target_medical", "target_legal", "target_events", "target_corporate", "target_industrial", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_ICPS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      name,
+      category,
+      service_category,
+      description,
+      outcall_fit_score,
+      priority,
+      search_terms,
+      search_signals,
+      target_home_services,
+      target_medical,
+      target_legal,
+      target_events,
+      target_corporate,
+      target_industrial,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_icps"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorIcpsRow {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub category: String,
+    pub service_category: String,
+    pub description: String,
+    pub outcall_fit_score: i32,
+    pub priority: i32,
+    pub search_terms: Value,
+    pub search_signals: Value,
+    pub target_home_services: bool,
+    pub target_medical: bool,
+    pub target_legal: bool,
+    pub target_events: bool,
+    pub target_corporate: bool,
+    pub target_industrial: bool,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorIcpsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub name: Option<String>,
+    pub category: Option<String>,
+    pub service_category: Option<String>,
+    pub description: Option<String>,
+    pub outcall_fit_score: Option<i32>,
+    pub priority: Option<i32>,
+    pub search_terms: Option<Value>,
+    pub search_signals: Option<Value>,
+    pub target_home_services: Option<bool>,
+    pub target_medical: Option<bool>,
+    pub target_legal: Option<bool>,
+    pub target_events: Option<bool>,
+    pub target_corporate: Option<bool>,
+    pub target_industrial: Option<bool>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_icps_row(value: &BenefactorIcpsRow) -> Result<(), String> {
+    validate_string_length("benefactor_icps.slug", &value.slug, None, Some(160))?;
+    validate_string_length("benefactor_icps.name", &value.name, None, Some(220))?;
+    validate_string_length("benefactor_icps.category", &value.category, None, Some(120))?;
+    validate_string_length("benefactor_icps.service_category", &value.service_category, None, Some(120))?;
+    if !(&value.search_terms).is_array() { return Err("benefactor_icps.search_terms must be a JSON array".to_string()); }
+    if !(&value.search_signals).is_array() { return Err("benefactor_icps.search_signals must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_icps.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_icps_insert(value: &BenefactorIcpsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_string_length("benefactor_icps.slug", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_icps.name", value, None, Some(220))?;
+    }
+    if let Some(value) = &value.category {
+        validate_string_length("benefactor_icps.category", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.service_category {
+        validate_string_length("benefactor_icps.service_category", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.search_terms {
+        if !(value).is_array() { return Err("benefactor_icps.search_terms must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.search_signals {
+        if !(value).is_array() { return Err("benefactor_icps.search_signals must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_icps.meta_data must be a JSON object".to_string()); }
     }
     Ok(())
 }

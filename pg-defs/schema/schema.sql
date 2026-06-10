@@ -4665,3 +4665,444 @@ alter table if exists usacc_audit_events
 alter table if exists usacc_audit_events
   add constraint usacc_audit_events_actor_fk
   foreign key (actor_user_id) references usacc_users(id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- benefactor.cc local-service lead scraping
+-- Ported from the dd-next-1 benefactor pipeline. These tables live in a dedicated
+-- `benefactor` Postgres schema so the lead-generation data model is isolated from the
+-- shared public tables. Consuming services address them via `search_path = benefactor, public`
+-- (or the schema-qualified constants emitted by pg-defs).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create schema if not exists benefactor;
+
+create table if not exists benefactor.benefactor_leads (
+  id uuid primary key default gen_random_uuid(),
+  business_name varchar(300) default '' not null,
+  owner_first_name varchar(120) default '' not null,
+  owner_last_name varchar(130) default '' not null,
+  primary_email varchar(255) default '' not null,
+  secondary_email varchar(255),
+  primary_phone varchar(100),
+  website_url varchar(500),
+  service_category varchar(60) default 'other' not null,
+  service_subcategories jsonb default '[]'::jsonb not null,
+  city varchar(120),
+  state varchar(80),
+  zip_code varchar(20),
+  country varchar(80) default 'US' not null,
+  service_area varchar(500),
+  lead_status varchar(30) default 'new' not null,
+  outreach_status varchar(30) default 'pending' not null,
+  total_outreach_attempts integer default 0 not null,
+  last_outreach_at timestamptz,
+  contact_attempts jsonb default '[]'::jsonb not null,
+  source_url varchar(1000),
+  source_query varchar(500),
+  source_tool varchar(60),
+  source_engine varchar(30),
+  is_verified boolean default false not null,
+  tags jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  notes text,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_leads_status_chk
+    check (lead_status in ('new', 'contacted', 'replied', 'booked', 'rejected', 'unsubscribed', 'unqualified', 'do_not_contact')),
+  constraint benefactor_leads_outreach_status_chk
+    check (outreach_status in ('pending', 'new', 'contacted', 'failed')),
+  constraint benefactor_leads_subcategories_array_chk
+    check (jsonb_typeof(service_subcategories) = 'array'),
+  constraint benefactor_leads_contact_attempts_array_chk
+    check (jsonb_typeof(contact_attempts) = 'array'),
+  constraint benefactor_leads_tags_array_chk
+    check (jsonb_typeof(tags) = 'array'),
+  constraint benefactor_leads_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_leads_email_uq
+  on benefactor.benefactor_leads (primary_email);
+
+create index if not exists benefactor_leads_business_name_idx
+  on benefactor.benefactor_leads (business_name);
+
+create index if not exists benefactor_leads_category_idx
+  on benefactor.benefactor_leads (service_category);
+
+create index if not exists benefactor_leads_city_idx
+  on benefactor.benefactor_leads (city);
+
+create index if not exists benefactor_leads_state_idx
+  on benefactor.benefactor_leads (state);
+
+create index if not exists benefactor_leads_zip_idx
+  on benefactor.benefactor_leads (zip_code);
+
+create index if not exists benefactor_leads_status_idx
+  on benefactor.benefactor_leads (lead_status);
+
+create index if not exists benefactor_leads_outreach_idx
+  on benefactor.benefactor_leads (outreach_status);
+
+create index if not exists benefactor_leads_last_outreach_idx
+  on benefactor.benefactor_leads (last_outreach_at);
+
+create index if not exists benefactor_leads_created_at_idx
+  on benefactor.benefactor_leads (created_at);
+
+create index if not exists benefactor_leads_soft_deleted_idx
+  on benefactor.benefactor_leads (is_soft_deleted);
+
+create index if not exists benefactor_leads_verified_idx
+  on benefactor.benefactor_leads (is_verified);
+
+create index if not exists benefactor_leads_category_city_idx
+  on benefactor.benefactor_leads (service_category, city);
+
+create index if not exists benefactor_leads_category_state_idx
+  on benefactor.benefactor_leads (service_category, state);
+
+create table if not exists benefactor.benefactor_leads_domains (
+  id uuid primary key default gen_random_uuid(),
+  domain varchar(255) not null,
+  domain_kind varchar(32) default 'email' not null,
+  status varchar(40) default 'allowed' not null,
+  reason text,
+  source varchar(80) default 'manual' not null,
+  is_blacklisted boolean default false not null,
+  is_blocked boolean default false not null,
+  is_permanently_blocked boolean default false not null,
+  blocked_reason text,
+  blocked_until timestamptz,
+  skip_until timestamptz,
+  scrape_count integer default 0 not null,
+  skip_count integer default 0 not null,
+  skipped_count integer default 0 not null,
+  email_found_count integer default 0 not null,
+  lead_inserted_count integer default 0 not null,
+  last_seen_at timestamptz,
+  last_scraped_at timestamptz,
+  last_skipped_at timestamptz,
+  last_email_found_at timestamptz,
+  last_lead_inserted_at timestamptz,
+  last_seen_url text,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_leads_domains_kind_chk
+    check (domain_kind in ('email', 'website')),
+  constraint benefactor_leads_domains_status_chk
+    check (status in ('allowed', 'blocked', 'skipped', 'scraped_recently', 'recently_scraped')),
+  constraint benefactor_leads_domains_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_leads_domains_domain_kind_uq
+  on benefactor.benefactor_leads_domains (domain, domain_kind);
+
+create index if not exists benefactor_leads_domains_domain_idx
+  on benefactor.benefactor_leads_domains (domain);
+
+create index if not exists benefactor_leads_domains_kind_idx
+  on benefactor.benefactor_leads_domains (domain_kind);
+
+create index if not exists benefactor_leads_domains_status_idx
+  on benefactor.benefactor_leads_domains (status);
+
+create index if not exists benefactor_leads_domains_blacklisted_idx
+  on benefactor.benefactor_leads_domains (is_blacklisted);
+
+create index if not exists benefactor_leads_domains_kind_status_idx
+  on benefactor.benefactor_leads_domains (domain_kind, status);
+
+create index if not exists benefactor_leads_domains_blocked_idx
+  on benefactor.benefactor_leads_domains (is_blocked);
+
+create index if not exists benefactor_leads_domains_blocked_until_idx
+  on benefactor.benefactor_leads_domains (blocked_until);
+
+create index if not exists benefactor_leads_domains_skip_until_idx
+  on benefactor.benefactor_leads_domains (skip_until);
+
+create index if not exists benefactor_leads_domains_last_scraped_idx
+  on benefactor.benefactor_leads_domains (last_scraped_at);
+
+create index if not exists benefactor_leads_domains_active_idx
+  on benefactor.benefactor_leads_domains (is_active);
+
+create table if not exists benefactor.benefactor_search_locations (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(160) not null,
+  city varchar(120) not null,
+  state varchar(80) not null,
+  state_code varchar(10),
+  country varchar(80) default 'US' not null,
+  metro_area varchar(220),
+  military_area varchar(220),
+  primary_installation varchar(220),
+  installation_aliases jsonb default '[]'::jsonb not null,
+  location_type varchar(80) default 'military_town' not null,
+  priority integer default 5 not null,
+  search_weight integer default 5 not null,
+  total_query_runs integer default 0 not null,
+  total_emails_inserted integer default 0 not null,
+  success_count integer default 0 not null,
+  failure_count integer default 0 not null,
+  last_run_at timestamptz,
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+  cooldown_until timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_search_locations_aliases_array_chk
+    check (jsonb_typeof(installation_aliases) = 'array'),
+  constraint benefactor_search_locations_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_search_locations_slug_uq
+  on benefactor.benefactor_search_locations (slug);
+
+create unique index if not exists benefactor_search_locations_city_state_country_uq
+  on benefactor.benefactor_search_locations (city, state, country);
+
+create index if not exists benefactor_search_locations_state_idx
+  on benefactor.benefactor_search_locations (state);
+
+create index if not exists benefactor_search_locations_military_area_idx
+  on benefactor.benefactor_search_locations (military_area);
+
+create index if not exists benefactor_search_locations_type_idx
+  on benefactor.benefactor_search_locations (location_type);
+
+create index if not exists benefactor_search_locations_priority_idx
+  on benefactor.benefactor_search_locations (priority);
+
+create index if not exists benefactor_search_locations_cooldown_idx
+  on benefactor.benefactor_search_locations (cooldown_until);
+
+create index if not exists benefactor_search_locations_active_idx
+  on benefactor.benefactor_search_locations (is_active);
+
+create index if not exists benefactor_search_locations_soft_deleted_idx
+  on benefactor.benefactor_search_locations (is_soft_deleted);
+
+create table if not exists benefactor.benefactor_scrape_queries (
+  id uuid primary key default gen_random_uuid(),
+  query_text text not null,
+  query_hash varchar(64) not null,
+  benefactor_icp_slug varchar(160),
+  benefactor_icp_name varchar(220),
+  benefactor_search_location_id uuid,
+  service_category varchar(60) default 'other' not null,
+  target_city varchar(120),
+  target_state varchar(80),
+  target_country varchar(80) default 'US' not null,
+  target_military_area varchar(220),
+  target_installation varchar(220),
+  query_variant varchar(80) default 'email_contact' not null,
+  search_page_depth integer default 4 not null,
+  priority integer default 5 not null,
+  total_runs integer default 0 not null,
+  total_urls_visited integer default 0 not null,
+  total_emails_found integer default 0 not null,
+  total_emails_inserted integer default 0 not null,
+  total_emails_duplicate integer default 0 not null,
+  total_errors integer default 0 not null,
+  success_count integer default 0 not null,
+  failure_count integer default 0 not null,
+  last_run_at timestamptz,
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+  last_run_emails_found integer default 0 not null,
+  last_run_emails_inserted integer default 0 not null,
+  last_run_success boolean default false not null,
+  last_run_duration_ms integer default 0 not null,
+  last_run_error text,
+  cooldown_until timestamptz,
+  consecutive_zero_new_runs integer default 0 not null,
+  last_zero_new_run_at timestamptz,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_scrape_queries_variant_chk
+    check (query_variant in ('email_contact', 'contact_us', 'website_domain', 'fuzzy_email', 'fuzzy_city')),
+  constraint benefactor_scrape_queries_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_scrape_queries_hash_uq
+  on benefactor.benefactor_scrape_queries (query_hash);
+
+create index if not exists benefactor_scrape_queries_icp_slug_idx
+  on benefactor.benefactor_scrape_queries (benefactor_icp_slug);
+
+create index if not exists benefactor_scrape_queries_location_id_idx
+  on benefactor.benefactor_scrape_queries (benefactor_search_location_id);
+
+create index if not exists benefactor_scrape_queries_category_idx
+  on benefactor.benefactor_scrape_queries (service_category);
+
+create index if not exists benefactor_scrape_queries_city_idx
+  on benefactor.benefactor_scrape_queries (target_city);
+
+create index if not exists benefactor_scrape_queries_state_idx
+  on benefactor.benefactor_scrape_queries (target_state);
+
+create index if not exists benefactor_scrape_queries_military_area_idx
+  on benefactor.benefactor_scrape_queries (target_military_area);
+
+create index if not exists benefactor_scrape_queries_variant_idx
+  on benefactor.benefactor_scrape_queries (query_variant);
+
+create index if not exists benefactor_scrape_queries_priority_idx
+  on benefactor.benefactor_scrape_queries (priority);
+
+create index if not exists benefactor_scrape_queries_last_run_idx
+  on benefactor.benefactor_scrape_queries (last_run_at);
+
+create index if not exists benefactor_scrape_queries_success_count_idx
+  on benefactor.benefactor_scrape_queries (success_count);
+
+create index if not exists benefactor_scrape_queries_failure_count_idx
+  on benefactor.benefactor_scrape_queries (failure_count);
+
+create index if not exists benefactor_scrape_queries_active_idx
+  on benefactor.benefactor_scrape_queries (is_active);
+
+create index if not exists benefactor_scrape_queries_cooldown_idx
+  on benefactor.benefactor_scrape_queries (cooldown_until);
+
+create index if not exists benefactor_scrape_queries_zero_new_idx
+  on benefactor.benefactor_scrape_queries (consecutive_zero_new_runs);
+
+create table if not exists benefactor.benefactor_domain_search_tracking (
+  id uuid primary key default gen_random_uuid(),
+  domain varchar(255) not null,
+  for_what varchar(80) default 'benefactor_lead_scrape' not null,
+  search_result_appearances integer default 0 not null,
+  queued_visit_count integer default 0 not null,
+  visit_count integer default 0 not null,
+  good_result_count integer default 0 not null,
+  bad_result_count integer default 0 not null,
+  email_found_count integer default 0 not null,
+  lead_inserted_count integer default 0 not null,
+  last_queued_at timestamptz,
+  last_visited_at timestamptz,
+  last_good_result_at timestamptz,
+  last_bad_result_at timestamptz,
+  last_email_found_at timestamptz,
+  last_lead_inserted_at timestamptz,
+  last_good_url text,
+  last_bad_url text,
+  blocked_until timestamptz,
+  is_permanently_blocked boolean default false not null,
+  blocked_reason text,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_domain_search_tracking_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_domain_search_tracking_domain_for_what_uq
+  on benefactor.benefactor_domain_search_tracking (domain, for_what);
+
+create index if not exists benefactor_domain_search_tracking_for_what_idx
+  on benefactor.benefactor_domain_search_tracking (for_what);
+
+create index if not exists benefactor_domain_search_tracking_visit_count_idx
+  on benefactor.benefactor_domain_search_tracking (visit_count);
+
+create index if not exists benefactor_domain_search_tracking_good_result_idx
+  on benefactor.benefactor_domain_search_tracking (good_result_count);
+
+create index if not exists benefactor_domain_search_tracking_bad_result_idx
+  on benefactor.benefactor_domain_search_tracking (bad_result_count);
+
+create index if not exists benefactor_domain_search_tracking_email_found_idx
+  on benefactor.benefactor_domain_search_tracking (email_found_count);
+
+create index if not exists benefactor_domain_search_tracking_blocked_until_idx
+  on benefactor.benefactor_domain_search_tracking (blocked_until);
+
+create index if not exists benefactor_domain_search_tracking_active_idx
+  on benefactor.benefactor_domain_search_tracking (is_active);
+
+create table if not exists benefactor.benefactor_icps (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(160) not null,
+  name varchar(220) not null,
+  category varchar(120) default 'local_services' not null,
+  service_category varchar(120) default 'other' not null,
+  description text default '' not null,
+  outcall_fit_score integer default 5 not null,
+  priority integer default 5 not null,
+  search_terms jsonb default '[]'::jsonb not null,
+  search_signals jsonb default '[]'::jsonb not null,
+  target_home_services boolean default false not null,
+  target_medical boolean default false not null,
+  target_legal boolean default false not null,
+  target_events boolean default false not null,
+  target_corporate boolean default false not null,
+  target_industrial boolean default false not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_icps_search_terms_array_chk
+    check (jsonb_typeof(search_terms) = 'array'),
+  constraint benefactor_icps_search_signals_array_chk
+    check (jsonb_typeof(search_signals) = 'array'),
+  constraint benefactor_icps_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists benefactor_icps_slug_uq
+  on benefactor.benefactor_icps (slug);
+
+create index if not exists benefactor_icps_category_idx
+  on benefactor.benefactor_icps (category);
+
+create index if not exists benefactor_icps_service_category_idx
+  on benefactor.benefactor_icps (service_category);
+
+create index if not exists benefactor_icps_priority_idx
+  on benefactor.benefactor_icps (priority);
+
+create index if not exists benefactor_icps_outcall_fit_idx
+  on benefactor.benefactor_icps (outcall_fit_score);
+
+create index if not exists benefactor_icps_active_idx
+  on benefactor.benefactor_icps (is_active);
+
+create index if not exists benefactor_icps_soft_deleted_idx
+  on benefactor.benefactor_icps (is_soft_deleted);
+
+alter table if exists benefactor.benefactor_scrape_queries
+  add constraint benefactor_scrape_queries_location_fk
+  foreign key (benefactor_search_location_id) references benefactor.benefactor_search_locations(id);

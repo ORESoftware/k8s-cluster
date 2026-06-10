@@ -469,6 +469,7 @@ const SoundRecorderUploadSessionsSelectSQL = `select
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
       client_timezone,
       legal_region,
+      use_case,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -476,6 +477,7 @@ const SoundRecorderUploadSessionsSelectSQL = `select
 
 var SoundRecorderUploadSessionsStatusValues = []string{"active", "closed", "revoked", "expired"}
 var SoundRecorderUploadSessionsStorageProviderValues = []string{"s3"}
+var SoundRecorderUploadSessionsUseCaseValues = []string{"security", "music", "meeting", "voice_note", "ambient"}
 
 type SoundRecorderUploadSessionsBun struct {
 	bun.BaseModel `bun:"table:sound_recorder_upload_sessions"`
@@ -498,6 +500,7 @@ type SoundRecorderUploadSessionsBun struct {
 	ExpiresAt *time.Time `bun:"expires_at,type:timestamptz,nullzero" json:"expiresAt,omitempty"`
 	ClientTimezone *string `bun:"client_timezone,type:varchar(80),nullzero" json:"clientTimezone,omitempty"`
 	LegalRegion *string `bun:"legal_region,type:varchar(64),nullzero" json:"legalRegion,omitempty"`
+	UseCase string `bun:"use_case,type:varchar(32),default:'security'" json:"useCase"`
 	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
@@ -533,6 +536,7 @@ func (value SoundRecorderUploadSessionsBun) Validate() error {
 	if value.LegalRegion != nil {
 		if !soundRecorderUploadSessionsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_upload_sessions.legal_region does not match the required pattern") }
 	}
+	if !containsString(SoundRecorderUploadSessionsUseCaseValues, value.UseCase) { return errors.New("unsupported sound_recorder_upload_sessions.use_case") }
 	if !validateRawJSON(value.MetaData) { return errors.New("sound_recorder_upload_sessions.meta_data must be valid JSON") }
 	return nil
 }
@@ -559,6 +563,7 @@ const SoundRecorderSegmentsSelectSQL = `select
       etag,
       to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(pinned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as pinned_at,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -589,6 +594,7 @@ type SoundRecorderSegmentsBun struct {
 	Etag *string `bun:"etag,type:varchar(160),nullzero" json:"etag,omitempty"`
 	UploadedAt *time.Time `bun:"uploaded_at,type:timestamptz,nullzero" json:"uploadedAt,omitempty"`
 	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	PinnedAt *time.Time `bun:"pinned_at,type:timestamptz,nullzero" json:"pinnedAt,omitempty"`
 	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
@@ -5179,6 +5185,469 @@ func (value UsaccAuditEventsBun) Validate() error {
 	if !usaccAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("usacc_audit_events.event_hash does not match the required pattern") }
 	if !usaccAuditEventsSourcePattern.MatchString(value.Source) { return errors.New("usacc_audit_events.source does not match the required pattern") }
 	if !validateRawJSON(value.Payload) { return errors.New("usacc_audit_events.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsTable = "benefactor.benefactor_leads"
+const BenefactorLeadsSelectSQL = `select
+      id::text as id,
+      business_name,
+      owner_first_name,
+      owner_last_name,
+      primary_email,
+      secondary_email,
+      primary_phone,
+      website_url,
+      service_category,
+      service_subcategories,
+      city,
+      state,
+      zip_code,
+      country,
+      service_area,
+      lead_status,
+      outreach_status,
+      total_outreach_attempts,
+      to_char(last_outreach_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_outreach_at,
+      contact_attempts,
+      source_url,
+      source_query,
+      source_tool,
+      source_engine,
+      is_verified,
+      tags,
+      meta_data,
+      notes,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads`
+
+var BenefactorLeadsLeadStatusValues = []string{"new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"}
+var BenefactorLeadsOutreachStatusValues = []string{"pending", "new", "contacted", "failed"}
+
+type BenefactorLeadsBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_leads"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	BusinessName string `bun:"business_name,type:varchar(300),default:''" json:"businessName"`
+	OwnerFirstName string `bun:"owner_first_name,type:varchar(120),default:''" json:"ownerFirstName"`
+	OwnerLastName string `bun:"owner_last_name,type:varchar(130),default:''" json:"ownerLastName"`
+	PrimaryEmail string `bun:"primary_email,type:varchar(255),default:''" json:"primaryEmail"`
+	SecondaryEmail *string `bun:"secondary_email,type:varchar(255),nullzero" json:"secondaryEmail,omitempty"`
+	PrimaryPhone *string `bun:"primary_phone,type:varchar(100),nullzero" json:"primaryPhone,omitempty"`
+	WebsiteUrl *string `bun:"website_url,type:varchar(500),nullzero" json:"websiteUrl,omitempty"`
+	ServiceCategory string `bun:"service_category,type:varchar(60),default:'other'" json:"serviceCategory"`
+	ServiceSubcategories json.RawMessage `bun:"service_subcategories,type:jsonb,default:'[]'::jsonb" json:"serviceSubcategories"`
+	City *string `bun:"city,type:varchar(120),nullzero" json:"city,omitempty"`
+	State *string `bun:"state,type:varchar(80),nullzero" json:"state,omitempty"`
+	ZipCode *string `bun:"zip_code,type:varchar(20),nullzero" json:"zipCode,omitempty"`
+	Country string `bun:"country,type:varchar(80),default:'US'" json:"country"`
+	ServiceArea *string `bun:"service_area,type:varchar(500),nullzero" json:"serviceArea,omitempty"`
+	LeadStatus string `bun:"lead_status,type:varchar(30),default:'new'" json:"leadStatus"`
+	OutreachStatus string `bun:"outreach_status,type:varchar(30),default:'pending'" json:"outreachStatus"`
+	TotalOutreachAttempts int32 `bun:"total_outreach_attempts,type:integer,default:0" json:"totalOutreachAttempts"`
+	LastOutreachAt *time.Time `bun:"last_outreach_at,type:timestamptz,nullzero" json:"lastOutreachAt,omitempty"`
+	ContactAttempts json.RawMessage `bun:"contact_attempts,type:jsonb,default:'[]'::jsonb" json:"contactAttempts"`
+	SourceUrl *string `bun:"source_url,type:varchar(1000),nullzero" json:"sourceUrl,omitempty"`
+	SourceQuery *string `bun:"source_query,type:varchar(500),nullzero" json:"sourceQuery,omitempty"`
+	SourceTool *string `bun:"source_tool,type:varchar(60),nullzero" json:"sourceTool,omitempty"`
+	SourceEngine *string `bun:"source_engine,type:varchar(30),nullzero" json:"sourceEngine,omitempty"`
+	IsVerified bool `bun:"is_verified,type:boolean,default:false" json:"isVerified"`
+	Tags json.RawMessage `bun:"tags,type:jsonb,default:'[]'::jsonb" json:"tags"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	Notes *string `bun:"notes,type:text,nullzero" json:"notes,omitempty"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorLeadsBun) Validate() error {
+	if !validateRawJSON(value.ServiceSubcategories) { return errors.New("benefactor_leads.service_subcategories must be valid JSON") }
+	if !containsString(BenefactorLeadsLeadStatusValues, value.LeadStatus) { return errors.New("unsupported benefactor_leads.lead_status") }
+	if !containsString(BenefactorLeadsOutreachStatusValues, value.OutreachStatus) { return errors.New("unsupported benefactor_leads.outreach_status") }
+	if !validateRawJSON(value.ContactAttempts) { return errors.New("benefactor_leads.contact_attempts must be valid JSON") }
+	if !validateRawJSON(value.Tags) { return errors.New("benefactor_leads.tags must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_leads.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsDomainsTable = "benefactor.benefactor_leads_domains"
+const BenefactorLeadsDomainsSelectSQL = `select
+      id::text as id,
+      domain,
+      domain_kind,
+      status,
+      reason,
+      source,
+      is_blacklisted,
+      is_blocked,
+      is_permanently_blocked,
+      blocked_reason,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      to_char(skip_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as skip_until,
+      scrape_count,
+      skip_count,
+      skipped_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(last_scraped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_scraped_at,
+      to_char(last_skipped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_skipped_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_seen_url,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_domains`
+
+var BenefactorLeadsDomainsDomainKindValues = []string{"email", "website"}
+var BenefactorLeadsDomainsStatusValues = []string{"allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"}
+
+type BenefactorLeadsDomainsBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_leads_domains"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Domain string `bun:"domain,type:varchar(255)" json:"domain"`
+	DomainKind string `bun:"domain_kind,type:varchar(32),default:'email'" json:"domainKind"`
+	Status string `bun:"status,type:varchar(40),default:'allowed'" json:"status"`
+	Reason *string `bun:"reason,type:text,nullzero" json:"reason,omitempty"`
+	Source string `bun:"source,type:varchar(80),default:'manual'" json:"source"`
+	IsBlacklisted bool `bun:"is_blacklisted,type:boolean,default:false" json:"isBlacklisted"`
+	IsBlocked bool `bun:"is_blocked,type:boolean,default:false" json:"isBlocked"`
+	IsPermanentlyBlocked bool `bun:"is_permanently_blocked,type:boolean,default:false" json:"isPermanentlyBlocked"`
+	BlockedReason *string `bun:"blocked_reason,type:text,nullzero" json:"blockedReason,omitempty"`
+	BlockedUntil *time.Time `bun:"blocked_until,type:timestamptz,nullzero" json:"blockedUntil,omitempty"`
+	SkipUntil *time.Time `bun:"skip_until,type:timestamptz,nullzero" json:"skipUntil,omitempty"`
+	ScrapeCount int32 `bun:"scrape_count,type:integer,default:0" json:"scrapeCount"`
+	SkipCount int32 `bun:"skip_count,type:integer,default:0" json:"skipCount"`
+	SkippedCount int32 `bun:"skipped_count,type:integer,default:0" json:"skippedCount"`
+	EmailFoundCount int32 `bun:"email_found_count,type:integer,default:0" json:"emailFoundCount"`
+	LeadInsertedCount int32 `bun:"lead_inserted_count,type:integer,default:0" json:"leadInsertedCount"`
+	LastSeenAt *time.Time `bun:"last_seen_at,type:timestamptz,nullzero" json:"lastSeenAt,omitempty"`
+	LastScrapedAt *time.Time `bun:"last_scraped_at,type:timestamptz,nullzero" json:"lastScrapedAt,omitempty"`
+	LastSkippedAt *time.Time `bun:"last_skipped_at,type:timestamptz,nullzero" json:"lastSkippedAt,omitempty"`
+	LastEmailFoundAt *time.Time `bun:"last_email_found_at,type:timestamptz,nullzero" json:"lastEmailFoundAt,omitempty"`
+	LastLeadInsertedAt *time.Time `bun:"last_lead_inserted_at,type:timestamptz,nullzero" json:"lastLeadInsertedAt,omitempty"`
+	LastSeenUrl *string `bun:"last_seen_url,type:text,nullzero" json:"lastSeenUrl,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorLeadsDomainsBun) Validate() error {
+	if !containsString(BenefactorLeadsDomainsDomainKindValues, value.DomainKind) { return errors.New("unsupported benefactor_leads_domains.domain_kind") }
+	if !containsString(BenefactorLeadsDomainsStatusValues, value.Status) { return errors.New("unsupported benefactor_leads_domains.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_leads_domains.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorSearchLocationsTable = "benefactor.benefactor_search_locations"
+const BenefactorSearchLocationsSelectSQL = `select
+      id::text as id,
+      slug,
+      city,
+      state,
+      state_code,
+      country,
+      metro_area,
+      military_area,
+      primary_installation,
+      installation_aliases,
+      location_type,
+      priority,
+      search_weight,
+      total_query_runs,
+      total_emails_inserted,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_search_locations`
+
+type BenefactorSearchLocationsBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_search_locations"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(160)" json:"slug"`
+	City string `bun:"city,type:varchar(120)" json:"city"`
+	State string `bun:"state,type:varchar(80)" json:"state"`
+	StateCode *string `bun:"state_code,type:varchar(10),nullzero" json:"stateCode,omitempty"`
+	Country string `bun:"country,type:varchar(80),default:'US'" json:"country"`
+	MetroArea *string `bun:"metro_area,type:varchar(220),nullzero" json:"metroArea,omitempty"`
+	MilitaryArea *string `bun:"military_area,type:varchar(220),nullzero" json:"militaryArea,omitempty"`
+	PrimaryInstallation *string `bun:"primary_installation,type:varchar(220),nullzero" json:"primaryInstallation,omitempty"`
+	InstallationAliases json.RawMessage `bun:"installation_aliases,type:jsonb,default:'[]'::jsonb" json:"installationAliases"`
+	LocationType string `bun:"location_type,type:varchar(80),default:'military_town'" json:"locationType"`
+	Priority int32 `bun:"priority,type:integer,default:5" json:"priority"`
+	SearchWeight int32 `bun:"search_weight,type:integer,default:5" json:"searchWeight"`
+	TotalQueryRuns int32 `bun:"total_query_runs,type:integer,default:0" json:"totalQueryRuns"`
+	TotalEmailsInserted int32 `bun:"total_emails_inserted,type:integer,default:0" json:"totalEmailsInserted"`
+	SuccessCount int32 `bun:"success_count,type:integer,default:0" json:"successCount"`
+	FailureCount int32 `bun:"failure_count,type:integer,default:0" json:"failureCount"`
+	LastRunAt *time.Time `bun:"last_run_at,type:timestamptz,nullzero" json:"lastRunAt,omitempty"`
+	LastSuccessAt *time.Time `bun:"last_success_at,type:timestamptz,nullzero" json:"lastSuccessAt,omitempty"`
+	LastFailureAt *time.Time `bun:"last_failure_at,type:timestamptz,nullzero" json:"lastFailureAt,omitempty"`
+	CooldownUntil *time.Time `bun:"cooldown_until,type:timestamptz,nullzero" json:"cooldownUntil,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorSearchLocationsBun) Validate() error {
+	if !validateRawJSON(value.InstallationAliases) { return errors.New("benefactor_search_locations.installation_aliases must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_search_locations.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorScrapeQueriesTable = "benefactor.benefactor_scrape_queries"
+const BenefactorScrapeQueriesSelectSQL = `select
+      id::text as id,
+      query_text,
+      query_hash,
+      benefactor_icp_slug,
+      benefactor_icp_name,
+      benefactor_search_location_id::text as benefactor_search_location_id,
+      service_category,
+      target_city,
+      target_state,
+      target_country,
+      target_military_area,
+      target_installation,
+      query_variant,
+      search_page_depth,
+      priority,
+      total_runs,
+      total_urls_visited,
+      total_emails_found,
+      total_emails_inserted,
+      total_emails_duplicate,
+      total_errors,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      last_run_emails_found,
+      last_run_emails_inserted,
+      last_run_success,
+      last_run_duration_ms,
+      last_run_error,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      consecutive_zero_new_runs,
+      to_char(last_zero_new_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_zero_new_run_at,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_scrape_queries`
+
+var BenefactorScrapeQueriesQueryVariantValues = []string{"email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"}
+
+type BenefactorScrapeQueriesBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_scrape_queries"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	QueryText string `bun:"query_text,type:text" json:"queryText"`
+	QueryHash string `bun:"query_hash,type:varchar(64)" json:"queryHash"`
+	BenefactorIcpSlug *string `bun:"benefactor_icp_slug,type:varchar(160),nullzero" json:"benefactorIcpSlug,omitempty"`
+	BenefactorIcpName *string `bun:"benefactor_icp_name,type:varchar(220),nullzero" json:"benefactorIcpName,omitempty"`
+	BenefactorSearchLocationId *uuid.UUID `bun:"benefactor_search_location_id,type:uuid,nullzero" json:"benefactorSearchLocationId,omitempty"`
+	ServiceCategory string `bun:"service_category,type:varchar(60),default:'other'" json:"serviceCategory"`
+	TargetCity *string `bun:"target_city,type:varchar(120),nullzero" json:"targetCity,omitempty"`
+	TargetState *string `bun:"target_state,type:varchar(80),nullzero" json:"targetState,omitempty"`
+	TargetCountry string `bun:"target_country,type:varchar(80),default:'US'" json:"targetCountry"`
+	TargetMilitaryArea *string `bun:"target_military_area,type:varchar(220),nullzero" json:"targetMilitaryArea,omitempty"`
+	TargetInstallation *string `bun:"target_installation,type:varchar(220),nullzero" json:"targetInstallation,omitempty"`
+	QueryVariant string `bun:"query_variant,type:varchar(80),default:'email_contact'" json:"queryVariant"`
+	SearchPageDepth int32 `bun:"search_page_depth,type:integer,default:4" json:"searchPageDepth"`
+	Priority int32 `bun:"priority,type:integer,default:5" json:"priority"`
+	TotalRuns int32 `bun:"total_runs,type:integer,default:0" json:"totalRuns"`
+	TotalUrlsVisited int32 `bun:"total_urls_visited,type:integer,default:0" json:"totalUrlsVisited"`
+	TotalEmailsFound int32 `bun:"total_emails_found,type:integer,default:0" json:"totalEmailsFound"`
+	TotalEmailsInserted int32 `bun:"total_emails_inserted,type:integer,default:0" json:"totalEmailsInserted"`
+	TotalEmailsDuplicate int32 `bun:"total_emails_duplicate,type:integer,default:0" json:"totalEmailsDuplicate"`
+	TotalErrors int32 `bun:"total_errors,type:integer,default:0" json:"totalErrors"`
+	SuccessCount int32 `bun:"success_count,type:integer,default:0" json:"successCount"`
+	FailureCount int32 `bun:"failure_count,type:integer,default:0" json:"failureCount"`
+	LastRunAt *time.Time `bun:"last_run_at,type:timestamptz,nullzero" json:"lastRunAt,omitempty"`
+	LastSuccessAt *time.Time `bun:"last_success_at,type:timestamptz,nullzero" json:"lastSuccessAt,omitempty"`
+	LastFailureAt *time.Time `bun:"last_failure_at,type:timestamptz,nullzero" json:"lastFailureAt,omitempty"`
+	LastRunEmailsFound int32 `bun:"last_run_emails_found,type:integer,default:0" json:"lastRunEmailsFound"`
+	LastRunEmailsInserted int32 `bun:"last_run_emails_inserted,type:integer,default:0" json:"lastRunEmailsInserted"`
+	LastRunSuccess bool `bun:"last_run_success,type:boolean,default:false" json:"lastRunSuccess"`
+	LastRunDurationMs int32 `bun:"last_run_duration_ms,type:integer,default:0" json:"lastRunDurationMs"`
+	LastRunError *string `bun:"last_run_error,type:text,nullzero" json:"lastRunError,omitempty"`
+	CooldownUntil *time.Time `bun:"cooldown_until,type:timestamptz,nullzero" json:"cooldownUntil,omitempty"`
+	ConsecutiveZeroNewRuns int32 `bun:"consecutive_zero_new_runs,type:integer,default:0" json:"consecutiveZeroNewRuns"`
+	LastZeroNewRunAt *time.Time `bun:"last_zero_new_run_at,type:timestamptz,nullzero" json:"lastZeroNewRunAt,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorScrapeQueriesBun) Validate() error {
+	if !containsString(BenefactorScrapeQueriesQueryVariantValues, value.QueryVariant) { return errors.New("unsupported benefactor_scrape_queries.query_variant") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_scrape_queries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorDomainSearchTrackingTable = "benefactor.benefactor_domain_search_tracking"
+const BenefactorDomainSearchTrackingSelectSQL = `select
+      id::text as id,
+      domain,
+      for_what,
+      search_result_appearances,
+      queued_visit_count,
+      visit_count,
+      good_result_count,
+      bad_result_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_queued_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_queued_at,
+      to_char(last_visited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_visited_at,
+      to_char(last_good_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_good_result_at,
+      to_char(last_bad_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_bad_result_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_good_url,
+      last_bad_url,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      is_permanently_blocked,
+      blocked_reason,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_domain_search_tracking`
+
+type BenefactorDomainSearchTrackingBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_domain_search_tracking"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Domain string `bun:"domain,type:varchar(255)" json:"domain"`
+	ForWhat string `bun:"for_what,type:varchar(80),default:'benefactor_lead_scrape'" json:"forWhat"`
+	SearchResultAppearances int32 `bun:"search_result_appearances,type:integer,default:0" json:"searchResultAppearances"`
+	QueuedVisitCount int32 `bun:"queued_visit_count,type:integer,default:0" json:"queuedVisitCount"`
+	VisitCount int32 `bun:"visit_count,type:integer,default:0" json:"visitCount"`
+	GoodResultCount int32 `bun:"good_result_count,type:integer,default:0" json:"goodResultCount"`
+	BadResultCount int32 `bun:"bad_result_count,type:integer,default:0" json:"badResultCount"`
+	EmailFoundCount int32 `bun:"email_found_count,type:integer,default:0" json:"emailFoundCount"`
+	LeadInsertedCount int32 `bun:"lead_inserted_count,type:integer,default:0" json:"leadInsertedCount"`
+	LastQueuedAt *time.Time `bun:"last_queued_at,type:timestamptz,nullzero" json:"lastQueuedAt,omitempty"`
+	LastVisitedAt *time.Time `bun:"last_visited_at,type:timestamptz,nullzero" json:"lastVisitedAt,omitempty"`
+	LastGoodResultAt *time.Time `bun:"last_good_result_at,type:timestamptz,nullzero" json:"lastGoodResultAt,omitempty"`
+	LastBadResultAt *time.Time `bun:"last_bad_result_at,type:timestamptz,nullzero" json:"lastBadResultAt,omitempty"`
+	LastEmailFoundAt *time.Time `bun:"last_email_found_at,type:timestamptz,nullzero" json:"lastEmailFoundAt,omitempty"`
+	LastLeadInsertedAt *time.Time `bun:"last_lead_inserted_at,type:timestamptz,nullzero" json:"lastLeadInsertedAt,omitempty"`
+	LastGoodUrl *string `bun:"last_good_url,type:text,nullzero" json:"lastGoodUrl,omitempty"`
+	LastBadUrl *string `bun:"last_bad_url,type:text,nullzero" json:"lastBadUrl,omitempty"`
+	BlockedUntil *time.Time `bun:"blocked_until,type:timestamptz,nullzero" json:"blockedUntil,omitempty"`
+	IsPermanentlyBlocked bool `bun:"is_permanently_blocked,type:boolean,default:false" json:"isPermanentlyBlocked"`
+	BlockedReason *string `bun:"blocked_reason,type:text,nullzero" json:"blockedReason,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorDomainSearchTrackingBun) Validate() error {
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_domain_search_tracking.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorIcpsTable = "benefactor.benefactor_icps"
+const BenefactorIcpsSelectSQL = `select
+      id::text as id,
+      slug,
+      name,
+      category,
+      service_category,
+      description,
+      outcall_fit_score,
+      priority,
+      search_terms,
+      search_signals,
+      target_home_services,
+      target_medical,
+      target_legal,
+      target_events,
+      target_corporate,
+      target_industrial,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_icps`
+
+type BenefactorIcpsBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_icps"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(160)" json:"slug"`
+	Name string `bun:"name,type:varchar(220)" json:"name"`
+	Category string `bun:"category,type:varchar(120),default:'local_services'" json:"category"`
+	ServiceCategory string `bun:"service_category,type:varchar(120),default:'other'" json:"serviceCategory"`
+	Description string `bun:"description,type:text,default:''" json:"description"`
+	OutcallFitScore int32 `bun:"outcall_fit_score,type:integer,default:5" json:"outcallFitScore"`
+	Priority int32 `bun:"priority,type:integer,default:5" json:"priority"`
+	SearchTerms json.RawMessage `bun:"search_terms,type:jsonb,default:'[]'::jsonb" json:"searchTerms"`
+	SearchSignals json.RawMessage `bun:"search_signals,type:jsonb,default:'[]'::jsonb" json:"searchSignals"`
+	TargetHomeServices bool `bun:"target_home_services,type:boolean,default:false" json:"targetHomeServices"`
+	TargetMedical bool `bun:"target_medical,type:boolean,default:false" json:"targetMedical"`
+	TargetLegal bool `bun:"target_legal,type:boolean,default:false" json:"targetLegal"`
+	TargetEvents bool `bun:"target_events,type:boolean,default:false" json:"targetEvents"`
+	TargetCorporate bool `bun:"target_corporate,type:boolean,default:false" json:"targetCorporate"`
+	TargetIndustrial bool `bun:"target_industrial,type:boolean,default:false" json:"targetIndustrial"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorIcpsBun) Validate() error {
+	if !validateRawJSON(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
+	if !validateRawJSON(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
 	return nil
 }
 

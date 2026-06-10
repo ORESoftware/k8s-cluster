@@ -590,6 +590,8 @@ class SoundRecorderUploadSessionsObjectBox {
 
   String? legalRegion;
 
+  String useCase;
+
   // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
   String metaData;
 
@@ -618,6 +620,7 @@ class SoundRecorderUploadSessionsObjectBox {
     this.expiresAt,
     this.clientTimezone,
     this.legalRegion,
+    required this.useCase,
     required this.metaData,
     required this.createdAt,
     required this.updatedAt,
@@ -643,6 +646,7 @@ class SoundRecorderUploadSessionsObjectBox {
     "expiresAt": expiresAt,
     "clientTimezone": clientTimezone,
     "legalRegion": legalRegion,
+    "useCase": useCase,
     "metaData": jsonDecode(metaData),
     "createdAt": createdAt,
     "updatedAt": updatedAt,
@@ -669,6 +673,7 @@ class SoundRecorderUploadSessionsObjectBox {
       expiresAt: json["expiresAt"] as String?,
       clientTimezone: json["clientTimezone"] as String?,
       legalRegion: json["legalRegion"] as String?,
+      useCase: json["useCase"] as String,
       metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
@@ -722,6 +727,8 @@ class SoundRecorderSegmentsObjectBox {
 
   String expiresAt;
 
+  String? pinnedAt;
+
   // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
   String metaData;
 
@@ -751,6 +758,7 @@ class SoundRecorderSegmentsObjectBox {
     this.etag,
     this.uploadedAt,
     required this.expiresAt,
+    this.pinnedAt,
     required this.metaData,
     required this.createdAt,
     required this.updatedAt,
@@ -777,6 +785,7 @@ class SoundRecorderSegmentsObjectBox {
     "etag": etag,
     "uploadedAt": uploadedAt,
     "expiresAt": expiresAt,
+    "pinnedAt": pinnedAt,
     "metaData": jsonDecode(metaData),
     "createdAt": createdAt,
     "updatedAt": updatedAt,
@@ -804,6 +813,7 @@ class SoundRecorderSegmentsObjectBox {
       etag: json["etag"] as String?,
       uploadedAt: json["uploadedAt"] as String?,
       expiresAt: json["expiresAt"] as String,
+      pinnedAt: json["pinnedAt"] as String?,
       metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
@@ -8475,6 +8485,1047 @@ class UsaccAuditEventsObjectBox {
       source: json["source"] as String,
       payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
       createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class BenefactorLeadsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String businessName;
+
+  String ownerFirstName;
+
+  String ownerLastName;
+
+  String primaryEmail;
+
+  String? secondaryEmail;
+
+  String? primaryPhone;
+
+  String? websiteUrl;
+
+  String serviceCategory;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String serviceSubcategories;
+
+  String? city;
+
+  String? state;
+
+  String? zipCode;
+
+  String country;
+
+  String? serviceArea;
+
+  String leadStatus;
+
+  String outreachStatus;
+
+  int totalOutreachAttempts;
+
+  String? lastOutreachAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String contactAttempts;
+
+  String? sourceUrl;
+
+  String? sourceQuery;
+
+  String? sourceTool;
+
+  String? sourceEngine;
+
+  bool isVerified;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String tags;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String? notes;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorLeadsObjectBox({
+    required this.id,
+    required this.businessName,
+    required this.ownerFirstName,
+    required this.ownerLastName,
+    required this.primaryEmail,
+    this.secondaryEmail,
+    this.primaryPhone,
+    this.websiteUrl,
+    required this.serviceCategory,
+    required this.serviceSubcategories,
+    this.city,
+    this.state,
+    this.zipCode,
+    required this.country,
+    this.serviceArea,
+    required this.leadStatus,
+    required this.outreachStatus,
+    required this.totalOutreachAttempts,
+    this.lastOutreachAt,
+    required this.contactAttempts,
+    this.sourceUrl,
+    this.sourceQuery,
+    this.sourceTool,
+    this.sourceEngine,
+    required this.isVerified,
+    required this.tags,
+    required this.metaData,
+    this.notes,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "businessName": businessName,
+    "ownerFirstName": ownerFirstName,
+    "ownerLastName": ownerLastName,
+    "primaryEmail": primaryEmail,
+    "secondaryEmail": secondaryEmail,
+    "primaryPhone": primaryPhone,
+    "websiteUrl": websiteUrl,
+    "serviceCategory": serviceCategory,
+    "serviceSubcategories": jsonDecode(serviceSubcategories),
+    "city": city,
+    "state": state,
+    "zipCode": zipCode,
+    "country": country,
+    "serviceArea": serviceArea,
+    "leadStatus": leadStatus,
+    "outreachStatus": outreachStatus,
+    "totalOutreachAttempts": totalOutreachAttempts,
+    "lastOutreachAt": lastOutreachAt,
+    "contactAttempts": jsonDecode(contactAttempts),
+    "sourceUrl": sourceUrl,
+    "sourceQuery": sourceQuery,
+    "sourceTool": sourceTool,
+    "sourceEngine": sourceEngine,
+    "isVerified": isVerified,
+    "tags": jsonDecode(tags),
+    "metaData": jsonDecode(metaData),
+    "notes": notes,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorLeadsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsObjectBox(
+      id: json["id"] as String,
+      businessName: json["businessName"] as String,
+      ownerFirstName: json["ownerFirstName"] as String,
+      ownerLastName: json["ownerLastName"] as String,
+      primaryEmail: json["primaryEmail"] as String,
+      secondaryEmail: json["secondaryEmail"] as String?,
+      primaryPhone: json["primaryPhone"] as String?,
+      websiteUrl: json["websiteUrl"] as String?,
+      serviceCategory: json["serviceCategory"] as String,
+      serviceSubcategories: json["serviceSubcategories"] is String ? json["serviceSubcategories"] as String : jsonEncode(json["serviceSubcategories"]),
+      city: json["city"] as String?,
+      state: json["state"] as String?,
+      zipCode: json["zipCode"] as String?,
+      country: json["country"] as String,
+      serviceArea: json["serviceArea"] as String?,
+      leadStatus: json["leadStatus"] as String,
+      outreachStatus: json["outreachStatus"] as String,
+      totalOutreachAttempts: (json["totalOutreachAttempts"] as num).toInt(),
+      lastOutreachAt: json["lastOutreachAt"] as String?,
+      contactAttempts: json["contactAttempts"] is String ? json["contactAttempts"] as String : jsonEncode(json["contactAttempts"]),
+      sourceUrl: json["sourceUrl"] as String?,
+      sourceQuery: json["sourceQuery"] as String?,
+      sourceTool: json["sourceTool"] as String?,
+      sourceEngine: json["sourceEngine"] as String?,
+      isVerified: json["isVerified"] as bool,
+      tags: json["tags"] is String ? json["tags"] as String : jsonEncode(json["tags"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      notes: json["notes"] as String?,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorLeadsDomainsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String domain;
+
+  String domainKind;
+
+  String status;
+
+  String? reason;
+
+  String source;
+
+  bool isBlacklisted;
+
+  bool isBlocked;
+
+  bool isPermanentlyBlocked;
+
+  String? blockedReason;
+
+  String? blockedUntil;
+
+  String? skipUntil;
+
+  int scrapeCount;
+
+  int skipCount;
+
+  int skippedCount;
+
+  int emailFoundCount;
+
+  int leadInsertedCount;
+
+  String? lastSeenAt;
+
+  String? lastScrapedAt;
+
+  String? lastSkippedAt;
+
+  String? lastEmailFoundAt;
+
+  String? lastLeadInsertedAt;
+
+  String? lastSeenUrl;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorLeadsDomainsObjectBox({
+    required this.id,
+    required this.domain,
+    required this.domainKind,
+    required this.status,
+    this.reason,
+    required this.source,
+    required this.isBlacklisted,
+    required this.isBlocked,
+    required this.isPermanentlyBlocked,
+    this.blockedReason,
+    this.blockedUntil,
+    this.skipUntil,
+    required this.scrapeCount,
+    required this.skipCount,
+    required this.skippedCount,
+    required this.emailFoundCount,
+    required this.leadInsertedCount,
+    this.lastSeenAt,
+    this.lastScrapedAt,
+    this.lastSkippedAt,
+    this.lastEmailFoundAt,
+    this.lastLeadInsertedAt,
+    this.lastSeenUrl,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "domain": domain,
+    "domainKind": domainKind,
+    "status": status,
+    "reason": reason,
+    "source": source,
+    "isBlacklisted": isBlacklisted,
+    "isBlocked": isBlocked,
+    "isPermanentlyBlocked": isPermanentlyBlocked,
+    "blockedReason": blockedReason,
+    "blockedUntil": blockedUntil,
+    "skipUntil": skipUntil,
+    "scrapeCount": scrapeCount,
+    "skipCount": skipCount,
+    "skippedCount": skippedCount,
+    "emailFoundCount": emailFoundCount,
+    "leadInsertedCount": leadInsertedCount,
+    "lastSeenAt": lastSeenAt,
+    "lastScrapedAt": lastScrapedAt,
+    "lastSkippedAt": lastSkippedAt,
+    "lastEmailFoundAt": lastEmailFoundAt,
+    "lastLeadInsertedAt": lastLeadInsertedAt,
+    "lastSeenUrl": lastSeenUrl,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorLeadsDomainsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsDomainsObjectBox(
+      id: json["id"] as String,
+      domain: json["domain"] as String,
+      domainKind: json["domainKind"] as String,
+      status: json["status"] as String,
+      reason: json["reason"] as String?,
+      source: json["source"] as String,
+      isBlacklisted: json["isBlacklisted"] as bool,
+      isBlocked: json["isBlocked"] as bool,
+      isPermanentlyBlocked: json["isPermanentlyBlocked"] as bool,
+      blockedReason: json["blockedReason"] as String?,
+      blockedUntil: json["blockedUntil"] as String?,
+      skipUntil: json["skipUntil"] as String?,
+      scrapeCount: (json["scrapeCount"] as num).toInt(),
+      skipCount: (json["skipCount"] as num).toInt(),
+      skippedCount: (json["skippedCount"] as num).toInt(),
+      emailFoundCount: (json["emailFoundCount"] as num).toInt(),
+      leadInsertedCount: (json["leadInsertedCount"] as num).toInt(),
+      lastSeenAt: json["lastSeenAt"] as String?,
+      lastScrapedAt: json["lastScrapedAt"] as String?,
+      lastSkippedAt: json["lastSkippedAt"] as String?,
+      lastEmailFoundAt: json["lastEmailFoundAt"] as String?,
+      lastLeadInsertedAt: json["lastLeadInsertedAt"] as String?,
+      lastSeenUrl: json["lastSeenUrl"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorSearchLocationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String city;
+
+  String state;
+
+  String? stateCode;
+
+  String country;
+
+  String? metroArea;
+
+  String? militaryArea;
+
+  String? primaryInstallation;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String installationAliases;
+
+  String locationType;
+
+  int priority;
+
+  int searchWeight;
+
+  int totalQueryRuns;
+
+  int totalEmailsInserted;
+
+  int successCount;
+
+  int failureCount;
+
+  String? lastRunAt;
+
+  String? lastSuccessAt;
+
+  String? lastFailureAt;
+
+  String? cooldownUntil;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorSearchLocationsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.city,
+    required this.state,
+    this.stateCode,
+    required this.country,
+    this.metroArea,
+    this.militaryArea,
+    this.primaryInstallation,
+    required this.installationAliases,
+    required this.locationType,
+    required this.priority,
+    required this.searchWeight,
+    required this.totalQueryRuns,
+    required this.totalEmailsInserted,
+    required this.successCount,
+    required this.failureCount,
+    this.lastRunAt,
+    this.lastSuccessAt,
+    this.lastFailureAt,
+    this.cooldownUntil,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "city": city,
+    "state": state,
+    "stateCode": stateCode,
+    "country": country,
+    "metroArea": metroArea,
+    "militaryArea": militaryArea,
+    "primaryInstallation": primaryInstallation,
+    "installationAliases": jsonDecode(installationAliases),
+    "locationType": locationType,
+    "priority": priority,
+    "searchWeight": searchWeight,
+    "totalQueryRuns": totalQueryRuns,
+    "totalEmailsInserted": totalEmailsInserted,
+    "successCount": successCount,
+    "failureCount": failureCount,
+    "lastRunAt": lastRunAt,
+    "lastSuccessAt": lastSuccessAt,
+    "lastFailureAt": lastFailureAt,
+    "cooldownUntil": cooldownUntil,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorSearchLocationsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorSearchLocationsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      city: json["city"] as String,
+      state: json["state"] as String,
+      stateCode: json["stateCode"] as String?,
+      country: json["country"] as String,
+      metroArea: json["metroArea"] as String?,
+      militaryArea: json["militaryArea"] as String?,
+      primaryInstallation: json["primaryInstallation"] as String?,
+      installationAliases: json["installationAliases"] is String ? json["installationAliases"] as String : jsonEncode(json["installationAliases"]),
+      locationType: json["locationType"] as String,
+      priority: (json["priority"] as num).toInt(),
+      searchWeight: (json["searchWeight"] as num).toInt(),
+      totalQueryRuns: (json["totalQueryRuns"] as num).toInt(),
+      totalEmailsInserted: (json["totalEmailsInserted"] as num).toInt(),
+      successCount: (json["successCount"] as num).toInt(),
+      failureCount: (json["failureCount"] as num).toInt(),
+      lastRunAt: json["lastRunAt"] as String?,
+      lastSuccessAt: json["lastSuccessAt"] as String?,
+      lastFailureAt: json["lastFailureAt"] as String?,
+      cooldownUntil: json["cooldownUntil"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorScrapeQueriesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String queryText;
+
+  String queryHash;
+
+  String? benefactorIcpSlug;
+
+  String? benefactorIcpName;
+
+  String? benefactorSearchLocationId;
+
+  String serviceCategory;
+
+  String? targetCity;
+
+  String? targetState;
+
+  String targetCountry;
+
+  String? targetMilitaryArea;
+
+  String? targetInstallation;
+
+  String queryVariant;
+
+  int searchPageDepth;
+
+  int priority;
+
+  int totalRuns;
+
+  int totalUrlsVisited;
+
+  int totalEmailsFound;
+
+  int totalEmailsInserted;
+
+  int totalEmailsDuplicate;
+
+  int totalErrors;
+
+  int successCount;
+
+  int failureCount;
+
+  String? lastRunAt;
+
+  String? lastSuccessAt;
+
+  String? lastFailureAt;
+
+  int lastRunEmailsFound;
+
+  int lastRunEmailsInserted;
+
+  bool lastRunSuccess;
+
+  int lastRunDurationMs;
+
+  String? lastRunError;
+
+  String? cooldownUntil;
+
+  int consecutiveZeroNewRuns;
+
+  String? lastZeroNewRunAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorScrapeQueriesObjectBox({
+    required this.id,
+    required this.queryText,
+    required this.queryHash,
+    this.benefactorIcpSlug,
+    this.benefactorIcpName,
+    this.benefactorSearchLocationId,
+    required this.serviceCategory,
+    this.targetCity,
+    this.targetState,
+    required this.targetCountry,
+    this.targetMilitaryArea,
+    this.targetInstallation,
+    required this.queryVariant,
+    required this.searchPageDepth,
+    required this.priority,
+    required this.totalRuns,
+    required this.totalUrlsVisited,
+    required this.totalEmailsFound,
+    required this.totalEmailsInserted,
+    required this.totalEmailsDuplicate,
+    required this.totalErrors,
+    required this.successCount,
+    required this.failureCount,
+    this.lastRunAt,
+    this.lastSuccessAt,
+    this.lastFailureAt,
+    required this.lastRunEmailsFound,
+    required this.lastRunEmailsInserted,
+    required this.lastRunSuccess,
+    required this.lastRunDurationMs,
+    this.lastRunError,
+    this.cooldownUntil,
+    required this.consecutiveZeroNewRuns,
+    this.lastZeroNewRunAt,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "queryText": queryText,
+    "queryHash": queryHash,
+    "benefactorIcpSlug": benefactorIcpSlug,
+    "benefactorIcpName": benefactorIcpName,
+    "benefactorSearchLocationId": benefactorSearchLocationId,
+    "serviceCategory": serviceCategory,
+    "targetCity": targetCity,
+    "targetState": targetState,
+    "targetCountry": targetCountry,
+    "targetMilitaryArea": targetMilitaryArea,
+    "targetInstallation": targetInstallation,
+    "queryVariant": queryVariant,
+    "searchPageDepth": searchPageDepth,
+    "priority": priority,
+    "totalRuns": totalRuns,
+    "totalUrlsVisited": totalUrlsVisited,
+    "totalEmailsFound": totalEmailsFound,
+    "totalEmailsInserted": totalEmailsInserted,
+    "totalEmailsDuplicate": totalEmailsDuplicate,
+    "totalErrors": totalErrors,
+    "successCount": successCount,
+    "failureCount": failureCount,
+    "lastRunAt": lastRunAt,
+    "lastSuccessAt": lastSuccessAt,
+    "lastFailureAt": lastFailureAt,
+    "lastRunEmailsFound": lastRunEmailsFound,
+    "lastRunEmailsInserted": lastRunEmailsInserted,
+    "lastRunSuccess": lastRunSuccess,
+    "lastRunDurationMs": lastRunDurationMs,
+    "lastRunError": lastRunError,
+    "cooldownUntil": cooldownUntil,
+    "consecutiveZeroNewRuns": consecutiveZeroNewRuns,
+    "lastZeroNewRunAt": lastZeroNewRunAt,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorScrapeQueriesObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorScrapeQueriesObjectBox(
+      id: json["id"] as String,
+      queryText: json["queryText"] as String,
+      queryHash: json["queryHash"] as String,
+      benefactorIcpSlug: json["benefactorIcpSlug"] as String?,
+      benefactorIcpName: json["benefactorIcpName"] as String?,
+      benefactorSearchLocationId: json["benefactorSearchLocationId"] as String?,
+      serviceCategory: json["serviceCategory"] as String,
+      targetCity: json["targetCity"] as String?,
+      targetState: json["targetState"] as String?,
+      targetCountry: json["targetCountry"] as String,
+      targetMilitaryArea: json["targetMilitaryArea"] as String?,
+      targetInstallation: json["targetInstallation"] as String?,
+      queryVariant: json["queryVariant"] as String,
+      searchPageDepth: (json["searchPageDepth"] as num).toInt(),
+      priority: (json["priority"] as num).toInt(),
+      totalRuns: (json["totalRuns"] as num).toInt(),
+      totalUrlsVisited: (json["totalUrlsVisited"] as num).toInt(),
+      totalEmailsFound: (json["totalEmailsFound"] as num).toInt(),
+      totalEmailsInserted: (json["totalEmailsInserted"] as num).toInt(),
+      totalEmailsDuplicate: (json["totalEmailsDuplicate"] as num).toInt(),
+      totalErrors: (json["totalErrors"] as num).toInt(),
+      successCount: (json["successCount"] as num).toInt(),
+      failureCount: (json["failureCount"] as num).toInt(),
+      lastRunAt: json["lastRunAt"] as String?,
+      lastSuccessAt: json["lastSuccessAt"] as String?,
+      lastFailureAt: json["lastFailureAt"] as String?,
+      lastRunEmailsFound: (json["lastRunEmailsFound"] as num).toInt(),
+      lastRunEmailsInserted: (json["lastRunEmailsInserted"] as num).toInt(),
+      lastRunSuccess: json["lastRunSuccess"] as bool,
+      lastRunDurationMs: (json["lastRunDurationMs"] as num).toInt(),
+      lastRunError: json["lastRunError"] as String?,
+      cooldownUntil: json["cooldownUntil"] as String?,
+      consecutiveZeroNewRuns: (json["consecutiveZeroNewRuns"] as num).toInt(),
+      lastZeroNewRunAt: json["lastZeroNewRunAt"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorDomainSearchTrackingObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String domain;
+
+  String forWhat;
+
+  int searchResultAppearances;
+
+  int queuedVisitCount;
+
+  int visitCount;
+
+  int goodResultCount;
+
+  int badResultCount;
+
+  int emailFoundCount;
+
+  int leadInsertedCount;
+
+  String? lastQueuedAt;
+
+  String? lastVisitedAt;
+
+  String? lastGoodResultAt;
+
+  String? lastBadResultAt;
+
+  String? lastEmailFoundAt;
+
+  String? lastLeadInsertedAt;
+
+  String? lastGoodUrl;
+
+  String? lastBadUrl;
+
+  String? blockedUntil;
+
+  bool isPermanentlyBlocked;
+
+  String? blockedReason;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorDomainSearchTrackingObjectBox({
+    required this.id,
+    required this.domain,
+    required this.forWhat,
+    required this.searchResultAppearances,
+    required this.queuedVisitCount,
+    required this.visitCount,
+    required this.goodResultCount,
+    required this.badResultCount,
+    required this.emailFoundCount,
+    required this.leadInsertedCount,
+    this.lastQueuedAt,
+    this.lastVisitedAt,
+    this.lastGoodResultAt,
+    this.lastBadResultAt,
+    this.lastEmailFoundAt,
+    this.lastLeadInsertedAt,
+    this.lastGoodUrl,
+    this.lastBadUrl,
+    this.blockedUntil,
+    required this.isPermanentlyBlocked,
+    this.blockedReason,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "domain": domain,
+    "forWhat": forWhat,
+    "searchResultAppearances": searchResultAppearances,
+    "queuedVisitCount": queuedVisitCount,
+    "visitCount": visitCount,
+    "goodResultCount": goodResultCount,
+    "badResultCount": badResultCount,
+    "emailFoundCount": emailFoundCount,
+    "leadInsertedCount": leadInsertedCount,
+    "lastQueuedAt": lastQueuedAt,
+    "lastVisitedAt": lastVisitedAt,
+    "lastGoodResultAt": lastGoodResultAt,
+    "lastBadResultAt": lastBadResultAt,
+    "lastEmailFoundAt": lastEmailFoundAt,
+    "lastLeadInsertedAt": lastLeadInsertedAt,
+    "lastGoodUrl": lastGoodUrl,
+    "lastBadUrl": lastBadUrl,
+    "blockedUntil": blockedUntil,
+    "isPermanentlyBlocked": isPermanentlyBlocked,
+    "blockedReason": blockedReason,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorDomainSearchTrackingObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorDomainSearchTrackingObjectBox(
+      id: json["id"] as String,
+      domain: json["domain"] as String,
+      forWhat: json["forWhat"] as String,
+      searchResultAppearances: (json["searchResultAppearances"] as num).toInt(),
+      queuedVisitCount: (json["queuedVisitCount"] as num).toInt(),
+      visitCount: (json["visitCount"] as num).toInt(),
+      goodResultCount: (json["goodResultCount"] as num).toInt(),
+      badResultCount: (json["badResultCount"] as num).toInt(),
+      emailFoundCount: (json["emailFoundCount"] as num).toInt(),
+      leadInsertedCount: (json["leadInsertedCount"] as num).toInt(),
+      lastQueuedAt: json["lastQueuedAt"] as String?,
+      lastVisitedAt: json["lastVisitedAt"] as String?,
+      lastGoodResultAt: json["lastGoodResultAt"] as String?,
+      lastBadResultAt: json["lastBadResultAt"] as String?,
+      lastEmailFoundAt: json["lastEmailFoundAt"] as String?,
+      lastLeadInsertedAt: json["lastLeadInsertedAt"] as String?,
+      lastGoodUrl: json["lastGoodUrl"] as String?,
+      lastBadUrl: json["lastBadUrl"] as String?,
+      blockedUntil: json["blockedUntil"] as String?,
+      isPermanentlyBlocked: json["isPermanentlyBlocked"] as bool,
+      blockedReason: json["blockedReason"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorIcpsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String name;
+
+  String category;
+
+  String serviceCategory;
+
+  String description;
+
+  int outcallFitScore;
+
+  int priority;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String searchTerms;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String searchSignals;
+
+  bool targetHomeServices;
+
+  bool targetMedical;
+
+  bool targetLegal;
+
+  bool targetEvents;
+
+  bool targetCorporate;
+
+  bool targetIndustrial;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorIcpsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.category,
+    required this.serviceCategory,
+    required this.description,
+    required this.outcallFitScore,
+    required this.priority,
+    required this.searchTerms,
+    required this.searchSignals,
+    required this.targetHomeServices,
+    required this.targetMedical,
+    required this.targetLegal,
+    required this.targetEvents,
+    required this.targetCorporate,
+    required this.targetIndustrial,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "name": name,
+    "category": category,
+    "serviceCategory": serviceCategory,
+    "description": description,
+    "outcallFitScore": outcallFitScore,
+    "priority": priority,
+    "searchTerms": jsonDecode(searchTerms),
+    "searchSignals": jsonDecode(searchSignals),
+    "targetHomeServices": targetHomeServices,
+    "targetMedical": targetMedical,
+    "targetLegal": targetLegal,
+    "targetEvents": targetEvents,
+    "targetCorporate": targetCorporate,
+    "targetIndustrial": targetIndustrial,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorIcpsObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorIcpsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      name: json["name"] as String,
+      category: json["category"] as String,
+      serviceCategory: json["serviceCategory"] as String,
+      description: json["description"] as String,
+      outcallFitScore: (json["outcallFitScore"] as num).toInt(),
+      priority: (json["priority"] as num).toInt(),
+      searchTerms: json["searchTerms"] is String ? json["searchTerms"] as String : jsonEncode(json["searchTerms"]),
+      searchSignals: json["searchSignals"] is String ? json["searchSignals"] as String : jsonEncode(json["searchSignals"]),
+      targetHomeServices: json["targetHomeServices"] as bool,
+      targetMedical: json["targetMedical"] as bool,
+      targetLegal: json["targetLegal"] as bool,
+      targetEvents: json["targetEvents"] as bool,
+      targetCorporate: json["targetCorporate"] as bool,
+      targetIndustrial: json["targetIndustrial"] as bool,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
     );
   }
 }

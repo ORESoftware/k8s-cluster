@@ -361,6 +361,9 @@ export class SoundRecorderUploadSessionsEntity {
   @Column({ name: "legal_region", type: "varchar", length: 64, nullable: true })
   legalRegion!: string | null;
 
+  @Column({ name: "use_case", type: "varchar", length: 32, default: () => "'security'" })
+  useCase!: string;
+
   @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
   metaData!: Record<string, unknown>;
 
@@ -437,6 +440,9 @@ export class SoundRecorderSegmentsEntity {
 
   @Column({ name: "expires_at", type: "timestamptz" })
   expiresAt!: Date;
+
+  @Column({ name: "pinned_at", type: "timestamptz", nullable: true })
+  pinnedAt!: Date | null;
 
   @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
   metaData!: Record<string, unknown>;
@@ -4503,5 +4509,642 @@ export class UsaccAuditEventsEntity {
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
+
+}
+
+@Index("benefactor_leads_email_uq", ["primaryEmail"], { unique: true })
+@Index("benefactor_leads_business_name_idx", ["businessName"])
+@Index("benefactor_leads_category_idx", ["serviceCategory"])
+@Index("benefactor_leads_city_idx", ["city"])
+@Index("benefactor_leads_state_idx", ["state"])
+@Index("benefactor_leads_zip_idx", ["zipCode"])
+@Index("benefactor_leads_status_idx", ["leadStatus"])
+@Index("benefactor_leads_outreach_idx", ["outreachStatus"])
+@Index("benefactor_leads_last_outreach_idx", ["lastOutreachAt"])
+@Index("benefactor_leads_created_at_idx", ["createdAt"])
+@Index("benefactor_leads_soft_deleted_idx", ["isSoftDeleted"])
+@Index("benefactor_leads_verified_idx", ["isVerified"])
+@Index("benefactor_leads_category_city_idx", ["serviceCategory", "city"])
+@Index("benefactor_leads_category_state_idx", ["serviceCategory", "state"])
+@Entity({ name: "benefactor_leads" })
+export class BenefactorLeadsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "business_name", type: "varchar", length: 300, default: () => "''" })
+  businessName!: string;
+
+  @Column({ name: "owner_first_name", type: "varchar", length: 120, default: () => "''" })
+  ownerFirstName!: string;
+
+  @Column({ name: "owner_last_name", type: "varchar", length: 130, default: () => "''" })
+  ownerLastName!: string;
+
+  @Column({ name: "primary_email", type: "varchar", length: 255, default: () => "''" })
+  primaryEmail!: string;
+
+  @Column({ name: "secondary_email", type: "varchar", length: 255, nullable: true })
+  secondaryEmail!: string | null;
+
+  @Column({ name: "primary_phone", type: "varchar", length: 100, nullable: true })
+  primaryPhone!: string | null;
+
+  @Column({ name: "website_url", type: "varchar", length: 500, nullable: true })
+  websiteUrl!: string | null;
+
+  @Column({ name: "service_category", type: "varchar", length: 60, default: () => "'other'" })
+  serviceCategory!: string;
+
+  @Column({ name: "service_subcategories", type: "jsonb", default: () => "'[]'::jsonb" })
+  serviceSubcategories!: unknown[];
+
+  @Column({ name: "city", type: "varchar", length: 120, nullable: true })
+  city!: string | null;
+
+  @Column({ name: "state", type: "varchar", length: 80, nullable: true })
+  state!: string | null;
+
+  @Column({ name: "zip_code", type: "varchar", length: 20, nullable: true })
+  zipCode!: string | null;
+
+  @Column({ name: "country", type: "varchar", length: 80, default: () => "'US'" })
+  country!: string;
+
+  @Column({ name: "service_area", type: "varchar", length: 500, nullable: true })
+  serviceArea!: string | null;
+
+  @Column({ name: "lead_status", type: "varchar", length: 30, default: () => "'new'" })
+  leadStatus!: string;
+
+  @Column({ name: "outreach_status", type: "varchar", length: 30, default: () => "'pending'" })
+  outreachStatus!: string;
+
+  @Column({ name: "total_outreach_attempts", type: "integer", default: () => "0" })
+  totalOutreachAttempts!: number;
+
+  @Column({ name: "last_outreach_at", type: "timestamptz", nullable: true })
+  lastOutreachAt!: Date | null;
+
+  @Column({ name: "contact_attempts", type: "jsonb", default: () => "'[]'::jsonb" })
+  contactAttempts!: unknown[];
+
+  @Column({ name: "source_url", type: "varchar", length: 1000, nullable: true })
+  sourceUrl!: string | null;
+
+  @Column({ name: "source_query", type: "varchar", length: 500, nullable: true })
+  sourceQuery!: string | null;
+
+  @Column({ name: "source_tool", type: "varchar", length: 60, nullable: true })
+  sourceTool!: string | null;
+
+  @Column({ name: "source_engine", type: "varchar", length: 30, nullable: true })
+  sourceEngine!: string | null;
+
+  @Column({ name: "is_verified", type: "boolean", default: () => "false" })
+  isVerified!: boolean;
+
+  @Column({ name: "tags", type: "jsonb", default: () => "'[]'::jsonb" })
+  tags!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "notes", type: "text", nullable: true })
+  notes!: string | null;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_leads_domains_domain_kind_uq", ["domain", "domainKind"], { unique: true })
+@Index("benefactor_leads_domains_domain_idx", ["domain"])
+@Index("benefactor_leads_domains_kind_idx", ["domainKind"])
+@Index("benefactor_leads_domains_status_idx", ["status"])
+@Index("benefactor_leads_domains_blacklisted_idx", ["isBlacklisted"])
+@Index("benefactor_leads_domains_kind_status_idx", ["domainKind", "status"])
+@Index("benefactor_leads_domains_blocked_idx", ["isBlocked"])
+@Index("benefactor_leads_domains_blocked_until_idx", ["blockedUntil"])
+@Index("benefactor_leads_domains_skip_until_idx", ["skipUntil"])
+@Index("benefactor_leads_domains_last_scraped_idx", ["lastScrapedAt"])
+@Index("benefactor_leads_domains_active_idx", ["isActive"])
+@Entity({ name: "benefactor_leads_domains" })
+export class BenefactorLeadsDomainsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "domain", type: "varchar", length: 255 })
+  domain!: string;
+
+  @Column({ name: "domain_kind", type: "varchar", length: 32, default: () => "'email'" })
+  domainKind!: string;
+
+  @Column({ name: "status", type: "varchar", length: 40, default: () => "'allowed'" })
+  status!: string;
+
+  @Column({ name: "reason", type: "text", nullable: true })
+  reason!: string | null;
+
+  @Column({ name: "source", type: "varchar", length: 80, default: () => "'manual'" })
+  source!: string;
+
+  @Column({ name: "is_blacklisted", type: "boolean", default: () => "false" })
+  isBlacklisted!: boolean;
+
+  @Column({ name: "is_blocked", type: "boolean", default: () => "false" })
+  isBlocked!: boolean;
+
+  @Column({ name: "is_permanently_blocked", type: "boolean", default: () => "false" })
+  isPermanentlyBlocked!: boolean;
+
+  @Column({ name: "blocked_reason", type: "text", nullable: true })
+  blockedReason!: string | null;
+
+  @Column({ name: "blocked_until", type: "timestamptz", nullable: true })
+  blockedUntil!: Date | null;
+
+  @Column({ name: "skip_until", type: "timestamptz", nullable: true })
+  skipUntil!: Date | null;
+
+  @Column({ name: "scrape_count", type: "integer", default: () => "0" })
+  scrapeCount!: number;
+
+  @Column({ name: "skip_count", type: "integer", default: () => "0" })
+  skipCount!: number;
+
+  @Column({ name: "skipped_count", type: "integer", default: () => "0" })
+  skippedCount!: number;
+
+  @Column({ name: "email_found_count", type: "integer", default: () => "0" })
+  emailFoundCount!: number;
+
+  @Column({ name: "lead_inserted_count", type: "integer", default: () => "0" })
+  leadInsertedCount!: number;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", nullable: true })
+  lastSeenAt!: Date | null;
+
+  @Column({ name: "last_scraped_at", type: "timestamptz", nullable: true })
+  lastScrapedAt!: Date | null;
+
+  @Column({ name: "last_skipped_at", type: "timestamptz", nullable: true })
+  lastSkippedAt!: Date | null;
+
+  @Column({ name: "last_email_found_at", type: "timestamptz", nullable: true })
+  lastEmailFoundAt!: Date | null;
+
+  @Column({ name: "last_lead_inserted_at", type: "timestamptz", nullable: true })
+  lastLeadInsertedAt!: Date | null;
+
+  @Column({ name: "last_seen_url", type: "text", nullable: true })
+  lastSeenUrl!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_search_locations_slug_uq", ["slug"], { unique: true })
+@Index("benefactor_search_locations_city_state_country_uq", ["city", "state", "country"], { unique: true })
+@Index("benefactor_search_locations_state_idx", ["state"])
+@Index("benefactor_search_locations_military_area_idx", ["militaryArea"])
+@Index("benefactor_search_locations_type_idx", ["locationType"])
+@Index("benefactor_search_locations_priority_idx", ["priority"])
+@Index("benefactor_search_locations_cooldown_idx", ["cooldownUntil"])
+@Index("benefactor_search_locations_active_idx", ["isActive"])
+@Index("benefactor_search_locations_soft_deleted_idx", ["isSoftDeleted"])
+@Entity({ name: "benefactor_search_locations" })
+export class BenefactorSearchLocationsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 160 })
+  slug!: string;
+
+  @Column({ name: "city", type: "varchar", length: 120 })
+  city!: string;
+
+  @Column({ name: "state", type: "varchar", length: 80 })
+  state!: string;
+
+  @Column({ name: "state_code", type: "varchar", length: 10, nullable: true })
+  stateCode!: string | null;
+
+  @Column({ name: "country", type: "varchar", length: 80, default: () => "'US'" })
+  country!: string;
+
+  @Column({ name: "metro_area", type: "varchar", length: 220, nullable: true })
+  metroArea!: string | null;
+
+  @Column({ name: "military_area", type: "varchar", length: 220, nullable: true })
+  militaryArea!: string | null;
+
+  @Column({ name: "primary_installation", type: "varchar", length: 220, nullable: true })
+  primaryInstallation!: string | null;
+
+  @Column({ name: "installation_aliases", type: "jsonb", default: () => "'[]'::jsonb" })
+  installationAliases!: unknown[];
+
+  @Column({ name: "location_type", type: "varchar", length: 80, default: () => "'military_town'" })
+  locationType!: string;
+
+  @Column({ name: "priority", type: "integer", default: () => "5" })
+  priority!: number;
+
+  @Column({ name: "search_weight", type: "integer", default: () => "5" })
+  searchWeight!: number;
+
+  @Column({ name: "total_query_runs", type: "integer", default: () => "0" })
+  totalQueryRuns!: number;
+
+  @Column({ name: "total_emails_inserted", type: "integer", default: () => "0" })
+  totalEmailsInserted!: number;
+
+  @Column({ name: "success_count", type: "integer", default: () => "0" })
+  successCount!: number;
+
+  @Column({ name: "failure_count", type: "integer", default: () => "0" })
+  failureCount!: number;
+
+  @Column({ name: "last_run_at", type: "timestamptz", nullable: true })
+  lastRunAt!: Date | null;
+
+  @Column({ name: "last_success_at", type: "timestamptz", nullable: true })
+  lastSuccessAt!: Date | null;
+
+  @Column({ name: "last_failure_at", type: "timestamptz", nullable: true })
+  lastFailureAt!: Date | null;
+
+  @Column({ name: "cooldown_until", type: "timestamptz", nullable: true })
+  cooldownUntil!: Date | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_scrape_queries_hash_uq", ["queryHash"], { unique: true })
+@Index("benefactor_scrape_queries_icp_slug_idx", ["benefactorIcpSlug"])
+@Index("benefactor_scrape_queries_location_id_idx", ["benefactorSearchLocationId"])
+@Index("benefactor_scrape_queries_category_idx", ["serviceCategory"])
+@Index("benefactor_scrape_queries_city_idx", ["targetCity"])
+@Index("benefactor_scrape_queries_state_idx", ["targetState"])
+@Index("benefactor_scrape_queries_military_area_idx", ["targetMilitaryArea"])
+@Index("benefactor_scrape_queries_variant_idx", ["queryVariant"])
+@Index("benefactor_scrape_queries_priority_idx", ["priority"])
+@Index("benefactor_scrape_queries_last_run_idx", ["lastRunAt"])
+@Index("benefactor_scrape_queries_success_count_idx", ["successCount"])
+@Index("benefactor_scrape_queries_failure_count_idx", ["failureCount"])
+@Index("benefactor_scrape_queries_active_idx", ["isActive"])
+@Index("benefactor_scrape_queries_cooldown_idx", ["cooldownUntil"])
+@Index("benefactor_scrape_queries_zero_new_idx", ["consecutiveZeroNewRuns"])
+@Entity({ name: "benefactor_scrape_queries" })
+export class BenefactorScrapeQueriesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "query_text", type: "text" })
+  queryText!: string;
+
+  @Column({ name: "query_hash", type: "varchar", length: 64 })
+  queryHash!: string;
+
+  @Column({ name: "benefactor_icp_slug", type: "varchar", length: 160, nullable: true })
+  benefactorIcpSlug!: string | null;
+
+  @Column({ name: "benefactor_icp_name", type: "varchar", length: 220, nullable: true })
+  benefactorIcpName!: string | null;
+
+  @Column({ name: "benefactor_search_location_id", type: "uuid", nullable: true })
+  benefactorSearchLocationId!: string | null;
+
+  @Column({ name: "service_category", type: "varchar", length: 60, default: () => "'other'" })
+  serviceCategory!: string;
+
+  @Column({ name: "target_city", type: "varchar", length: 120, nullable: true })
+  targetCity!: string | null;
+
+  @Column({ name: "target_state", type: "varchar", length: 80, nullable: true })
+  targetState!: string | null;
+
+  @Column({ name: "target_country", type: "varchar", length: 80, default: () => "'US'" })
+  targetCountry!: string;
+
+  @Column({ name: "target_military_area", type: "varchar", length: 220, nullable: true })
+  targetMilitaryArea!: string | null;
+
+  @Column({ name: "target_installation", type: "varchar", length: 220, nullable: true })
+  targetInstallation!: string | null;
+
+  @Column({ name: "query_variant", type: "varchar", length: 80, default: () => "'email_contact'" })
+  queryVariant!: string;
+
+  @Column({ name: "search_page_depth", type: "integer", default: () => "4" })
+  searchPageDepth!: number;
+
+  @Column({ name: "priority", type: "integer", default: () => "5" })
+  priority!: number;
+
+  @Column({ name: "total_runs", type: "integer", default: () => "0" })
+  totalRuns!: number;
+
+  @Column({ name: "total_urls_visited", type: "integer", default: () => "0" })
+  totalUrlsVisited!: number;
+
+  @Column({ name: "total_emails_found", type: "integer", default: () => "0" })
+  totalEmailsFound!: number;
+
+  @Column({ name: "total_emails_inserted", type: "integer", default: () => "0" })
+  totalEmailsInserted!: number;
+
+  @Column({ name: "total_emails_duplicate", type: "integer", default: () => "0" })
+  totalEmailsDuplicate!: number;
+
+  @Column({ name: "total_errors", type: "integer", default: () => "0" })
+  totalErrors!: number;
+
+  @Column({ name: "success_count", type: "integer", default: () => "0" })
+  successCount!: number;
+
+  @Column({ name: "failure_count", type: "integer", default: () => "0" })
+  failureCount!: number;
+
+  @Column({ name: "last_run_at", type: "timestamptz", nullable: true })
+  lastRunAt!: Date | null;
+
+  @Column({ name: "last_success_at", type: "timestamptz", nullable: true })
+  lastSuccessAt!: Date | null;
+
+  @Column({ name: "last_failure_at", type: "timestamptz", nullable: true })
+  lastFailureAt!: Date | null;
+
+  @Column({ name: "last_run_emails_found", type: "integer", default: () => "0" })
+  lastRunEmailsFound!: number;
+
+  @Column({ name: "last_run_emails_inserted", type: "integer", default: () => "0" })
+  lastRunEmailsInserted!: number;
+
+  @Column({ name: "last_run_success", type: "boolean", default: () => "false" })
+  lastRunSuccess!: boolean;
+
+  @Column({ name: "last_run_duration_ms", type: "integer", default: () => "0" })
+  lastRunDurationMs!: number;
+
+  @Column({ name: "last_run_error", type: "text", nullable: true })
+  lastRunError!: string | null;
+
+  @Column({ name: "cooldown_until", type: "timestamptz", nullable: true })
+  cooldownUntil!: Date | null;
+
+  @Column({ name: "consecutive_zero_new_runs", type: "integer", default: () => "0" })
+  consecutiveZeroNewRuns!: number;
+
+  @Column({ name: "last_zero_new_run_at", type: "timestamptz", nullable: true })
+  lastZeroNewRunAt!: Date | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_domain_search_tracking_domain_for_what_uq", ["domain", "forWhat"], { unique: true })
+@Index("benefactor_domain_search_tracking_for_what_idx", ["forWhat"])
+@Index("benefactor_domain_search_tracking_visit_count_idx", ["visitCount"])
+@Index("benefactor_domain_search_tracking_good_result_idx", ["goodResultCount"])
+@Index("benefactor_domain_search_tracking_bad_result_idx", ["badResultCount"])
+@Index("benefactor_domain_search_tracking_email_found_idx", ["emailFoundCount"])
+@Index("benefactor_domain_search_tracking_blocked_until_idx", ["blockedUntil"])
+@Index("benefactor_domain_search_tracking_active_idx", ["isActive"])
+@Entity({ name: "benefactor_domain_search_tracking" })
+export class BenefactorDomainSearchTrackingEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "domain", type: "varchar", length: 255 })
+  domain!: string;
+
+  @Column({ name: "for_what", type: "varchar", length: 80, default: () => "'benefactor_lead_scrape'" })
+  forWhat!: string;
+
+  @Column({ name: "search_result_appearances", type: "integer", default: () => "0" })
+  searchResultAppearances!: number;
+
+  @Column({ name: "queued_visit_count", type: "integer", default: () => "0" })
+  queuedVisitCount!: number;
+
+  @Column({ name: "visit_count", type: "integer", default: () => "0" })
+  visitCount!: number;
+
+  @Column({ name: "good_result_count", type: "integer", default: () => "0" })
+  goodResultCount!: number;
+
+  @Column({ name: "bad_result_count", type: "integer", default: () => "0" })
+  badResultCount!: number;
+
+  @Column({ name: "email_found_count", type: "integer", default: () => "0" })
+  emailFoundCount!: number;
+
+  @Column({ name: "lead_inserted_count", type: "integer", default: () => "0" })
+  leadInsertedCount!: number;
+
+  @Column({ name: "last_queued_at", type: "timestamptz", nullable: true })
+  lastQueuedAt!: Date | null;
+
+  @Column({ name: "last_visited_at", type: "timestamptz", nullable: true })
+  lastVisitedAt!: Date | null;
+
+  @Column({ name: "last_good_result_at", type: "timestamptz", nullable: true })
+  lastGoodResultAt!: Date | null;
+
+  @Column({ name: "last_bad_result_at", type: "timestamptz", nullable: true })
+  lastBadResultAt!: Date | null;
+
+  @Column({ name: "last_email_found_at", type: "timestamptz", nullable: true })
+  lastEmailFoundAt!: Date | null;
+
+  @Column({ name: "last_lead_inserted_at", type: "timestamptz", nullable: true })
+  lastLeadInsertedAt!: Date | null;
+
+  @Column({ name: "last_good_url", type: "text", nullable: true })
+  lastGoodUrl!: string | null;
+
+  @Column({ name: "last_bad_url", type: "text", nullable: true })
+  lastBadUrl!: string | null;
+
+  @Column({ name: "blocked_until", type: "timestamptz", nullable: true })
+  blockedUntil!: Date | null;
+
+  @Column({ name: "is_permanently_blocked", type: "boolean", default: () => "false" })
+  isPermanentlyBlocked!: boolean;
+
+  @Column({ name: "blocked_reason", type: "text", nullable: true })
+  blockedReason!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_icps_slug_uq", ["slug"], { unique: true })
+@Index("benefactor_icps_category_idx", ["category"])
+@Index("benefactor_icps_service_category_idx", ["serviceCategory"])
+@Index("benefactor_icps_priority_idx", ["priority"])
+@Index("benefactor_icps_outcall_fit_idx", ["outcallFitScore"])
+@Index("benefactor_icps_active_idx", ["isActive"])
+@Index("benefactor_icps_soft_deleted_idx", ["isSoftDeleted"])
+@Entity({ name: "benefactor_icps" })
+export class BenefactorIcpsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 160 })
+  slug!: string;
+
+  @Column({ name: "name", type: "varchar", length: 220 })
+  name!: string;
+
+  @Column({ name: "category", type: "varchar", length: 120, default: () => "'local_services'" })
+  category!: string;
+
+  @Column({ name: "service_category", type: "varchar", length: 120, default: () => "'other'" })
+  serviceCategory!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "outcall_fit_score", type: "integer", default: () => "5" })
+  outcallFitScore!: number;
+
+  @Column({ name: "priority", type: "integer", default: () => "5" })
+  priority!: number;
+
+  @Column({ name: "search_terms", type: "jsonb", default: () => "'[]'::jsonb" })
+  searchTerms!: unknown[];
+
+  @Column({ name: "search_signals", type: "jsonb", default: () => "'[]'::jsonb" })
+  searchSignals!: unknown[];
+
+  @Column({ name: "target_home_services", type: "boolean", default: () => "false" })
+  targetHomeServices!: boolean;
+
+  @Column({ name: "target_medical", type: "boolean", default: () => "false" })
+  targetMedical!: boolean;
+
+  @Column({ name: "target_legal", type: "boolean", default: () => "false" })
+  targetLegal!: boolean;
+
+  @Column({ name: "target_events", type: "boolean", default: () => "false" })
+  targetEvents!: boolean;
+
+  @Column({ name: "target_corporate", type: "boolean", default: () => "false" })
+  targetCorporate!: boolean;
+
+  @Column({ name: "target_industrial", type: "boolean", default: () => "false" })
+  targetIndustrial!: boolean;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
 
 }

@@ -192,6 +192,7 @@ class SoundRecorderUploadSessionsTable extends Table {
   DateTimeColumn get expiresAt => dateTime().named("expires_at").nullable().customConstraint("TIMESTAMPTZ")();
   TextColumn get clientTimezone => text().named("client_timezone").withLength(max: 80).nullable()();
   TextColumn get legalRegion => text().named("legal_region").withLength(max: 64).nullable()();
+  TextColumn get useCase => text().named("use_case").clientDefault(() => 'security')();
   TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
@@ -228,6 +229,7 @@ class SoundRecorderSegmentsTable extends Table {
   TextColumn get etag => text().named("etag").withLength(max: 160).nullable()();
   DateTimeColumn get uploadedAt => dateTime().named("uploaded_at").nullable().customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get pinnedAt => dateTime().named("pinned_at").nullable().customConstraint("TIMESTAMPTZ")();
   TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
@@ -2538,6 +2540,267 @@ class UsaccAuditEventsTable extends Table {
   };
 }
 
+@DataClassName("BenefactorLeadsData")
+class BenefactorLeadsTable extends Table {
+  @override String get tableName => "benefactor_leads";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get businessName => text().named("business_name").withLength(max: 300).clientDefault(() => '')();
+  TextColumn get ownerFirstName => text().named("owner_first_name").withLength(max: 120).clientDefault(() => '')();
+  TextColumn get ownerLastName => text().named("owner_last_name").withLength(max: 130).clientDefault(() => '')();
+  TextColumn get primaryEmail => text().named("primary_email").withLength(max: 255).clientDefault(() => '')();
+  TextColumn get secondaryEmail => text().named("secondary_email").withLength(max: 255).nullable()();
+  TextColumn get primaryPhone => text().named("primary_phone").withLength(max: 100).nullable()();
+  TextColumn get websiteUrl => text().named("website_url").withLength(max: 500).nullable()();
+  TextColumn get serviceCategory => text().named("service_category").withLength(max: 60).clientDefault(() => 'other')();
+  TextColumn get serviceSubcategories => text().named("service_subcategories").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get city => text().named("city").withLength(max: 120).nullable()();
+  TextColumn get state => text().named("state").withLength(max: 80).nullable()();
+  TextColumn get zipCode => text().named("zip_code").withLength(max: 20).nullable()();
+  TextColumn get country => text().named("country").withLength(max: 80).clientDefault(() => 'US')();
+  TextColumn get serviceArea => text().named("service_area").withLength(max: 500).nullable()();
+  TextColumn get leadStatus => text().named("lead_status").clientDefault(() => 'new')();
+  TextColumn get outreachStatus => text().named("outreach_status").clientDefault(() => 'pending')();
+  IntColumn get totalOutreachAttempts => integer().named("total_outreach_attempts").clientDefault(() => 0)();
+  DateTimeColumn get lastOutreachAt => dateTime().named("last_outreach_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get contactAttempts => text().named("contact_attempts").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get sourceUrl => text().named("source_url").withLength(max: 1000).nullable()();
+  TextColumn get sourceQuery => text().named("source_query").withLength(max: 500).nullable()();
+  TextColumn get sourceTool => text().named("source_tool").withLength(max: 60).nullable()();
+  TextColumn get sourceEngine => text().named("source_engine").withLength(max: 30).nullable()();
+  BoolColumn get isVerified => boolean().named("is_verified").clientDefault(() => false)();
+  TextColumn get tags => text().named("tags").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get notes => text().named("notes").nullable()();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorLeadsDomainsData")
+class BenefactorLeadsDomainsTable extends Table {
+  @override String get tableName => "benefactor_leads_domains";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get domain => text().named("domain").withLength(max: 255)();
+  TextColumn get domainKind => text().named("domain_kind").clientDefault(() => 'email')();
+  TextColumn get status => text().named("status").clientDefault(() => 'allowed')();
+  TextColumn get reason => text().named("reason").nullable()();
+  TextColumn get source => text().named("source").withLength(max: 80).clientDefault(() => 'manual')();
+  BoolColumn get isBlacklisted => boolean().named("is_blacklisted").clientDefault(() => false)();
+  BoolColumn get isBlocked => boolean().named("is_blocked").clientDefault(() => false)();
+  BoolColumn get isPermanentlyBlocked => boolean().named("is_permanently_blocked").clientDefault(() => false)();
+  TextColumn get blockedReason => text().named("blocked_reason").nullable()();
+  DateTimeColumn get blockedUntil => dateTime().named("blocked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get skipUntil => dateTime().named("skip_until").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get scrapeCount => integer().named("scrape_count").clientDefault(() => 0)();
+  IntColumn get skipCount => integer().named("skip_count").clientDefault(() => 0)();
+  IntColumn get skippedCount => integer().named("skipped_count").clientDefault(() => 0)();
+  IntColumn get emailFoundCount => integer().named("email_found_count").clientDefault(() => 0)();
+  IntColumn get leadInsertedCount => integer().named("lead_inserted_count").clientDefault(() => 0)();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastScrapedAt => dateTime().named("last_scraped_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSkippedAt => dateTime().named("last_skipped_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastEmailFoundAt => dateTime().named("last_email_found_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastLeadInsertedAt => dateTime().named("last_lead_inserted_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastSeenUrl => text().named("last_seen_url").nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorSearchLocationsData")
+class BenefactorSearchLocationsTable extends Table {
+  @override String get tableName => "benefactor_search_locations";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 160)();
+  TextColumn get city => text().named("city").withLength(max: 120)();
+  TextColumn get state => text().named("state").withLength(max: 80)();
+  TextColumn get stateCode => text().named("state_code").withLength(max: 10).nullable()();
+  TextColumn get country => text().named("country").withLength(max: 80).clientDefault(() => 'US')();
+  TextColumn get metroArea => text().named("metro_area").withLength(max: 220).nullable()();
+  TextColumn get militaryArea => text().named("military_area").withLength(max: 220).nullable()();
+  TextColumn get primaryInstallation => text().named("primary_installation").withLength(max: 220).nullable()();
+  TextColumn get installationAliases => text().named("installation_aliases").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get locationType => text().named("location_type").withLength(max: 80).clientDefault(() => 'military_town')();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 5)();
+  IntColumn get searchWeight => integer().named("search_weight").clientDefault(() => 5)();
+  IntColumn get totalQueryRuns => integer().named("total_query_runs").clientDefault(() => 0)();
+  IntColumn get totalEmailsInserted => integer().named("total_emails_inserted").clientDefault(() => 0)();
+  IntColumn get successCount => integer().named("success_count").clientDefault(() => 0)();
+  IntColumn get failureCount => integer().named("failure_count").clientDefault(() => 0)();
+  DateTimeColumn get lastRunAt => dateTime().named("last_run_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSuccessAt => dateTime().named("last_success_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastFailureAt => dateTime().named("last_failure_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get cooldownUntil => dateTime().named("cooldown_until").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorScrapeQueriesData")
+class BenefactorScrapeQueriesTable extends Table {
+  @override String get tableName => "benefactor_scrape_queries";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get queryText => text().named("query_text")();
+  TextColumn get queryHash => text().named("query_hash").withLength(max: 64)();
+  TextColumn get benefactorIcpSlug => text().named("benefactor_icp_slug").withLength(max: 160).nullable()();
+  TextColumn get benefactorIcpName => text().named("benefactor_icp_name").withLength(max: 220).nullable()();
+  TextColumn get benefactorSearchLocationId => text().named("benefactor_search_location_id").nullable().customConstraint("UUID REFERENCES benefactor_search_locations (id)")();
+  TextColumn get serviceCategory => text().named("service_category").withLength(max: 60).clientDefault(() => 'other')();
+  TextColumn get targetCity => text().named("target_city").withLength(max: 120).nullable()();
+  TextColumn get targetState => text().named("target_state").withLength(max: 80).nullable()();
+  TextColumn get targetCountry => text().named("target_country").withLength(max: 80).clientDefault(() => 'US')();
+  TextColumn get targetMilitaryArea => text().named("target_military_area").withLength(max: 220).nullable()();
+  TextColumn get targetInstallation => text().named("target_installation").withLength(max: 220).nullable()();
+  TextColumn get queryVariant => text().named("query_variant").clientDefault(() => 'email_contact')();
+  IntColumn get searchPageDepth => integer().named("search_page_depth").clientDefault(() => 4)();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 5)();
+  IntColumn get totalRuns => integer().named("total_runs").clientDefault(() => 0)();
+  IntColumn get totalUrlsVisited => integer().named("total_urls_visited").clientDefault(() => 0)();
+  IntColumn get totalEmailsFound => integer().named("total_emails_found").clientDefault(() => 0)();
+  IntColumn get totalEmailsInserted => integer().named("total_emails_inserted").clientDefault(() => 0)();
+  IntColumn get totalEmailsDuplicate => integer().named("total_emails_duplicate").clientDefault(() => 0)();
+  IntColumn get totalErrors => integer().named("total_errors").clientDefault(() => 0)();
+  IntColumn get successCount => integer().named("success_count").clientDefault(() => 0)();
+  IntColumn get failureCount => integer().named("failure_count").clientDefault(() => 0)();
+  DateTimeColumn get lastRunAt => dateTime().named("last_run_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSuccessAt => dateTime().named("last_success_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastFailureAt => dateTime().named("last_failure_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get lastRunEmailsFound => integer().named("last_run_emails_found").clientDefault(() => 0)();
+  IntColumn get lastRunEmailsInserted => integer().named("last_run_emails_inserted").clientDefault(() => 0)();
+  BoolColumn get lastRunSuccess => boolean().named("last_run_success").clientDefault(() => false)();
+  IntColumn get lastRunDurationMs => integer().named("last_run_duration_ms").clientDefault(() => 0)();
+  TextColumn get lastRunError => text().named("last_run_error").nullable()();
+  DateTimeColumn get cooldownUntil => dateTime().named("cooldown_until").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get consecutiveZeroNewRuns => integer().named("consecutive_zero_new_runs").clientDefault(() => 0)();
+  DateTimeColumn get lastZeroNewRunAt => dateTime().named("last_zero_new_run_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorDomainSearchTrackingData")
+class BenefactorDomainSearchTrackingTable extends Table {
+  @override String get tableName => "benefactor_domain_search_tracking";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get domain => text().named("domain").withLength(max: 255)();
+  TextColumn get forWhat => text().named("for_what").withLength(max: 80).clientDefault(() => 'benefactor_lead_scrape')();
+  IntColumn get searchResultAppearances => integer().named("search_result_appearances").clientDefault(() => 0)();
+  IntColumn get queuedVisitCount => integer().named("queued_visit_count").clientDefault(() => 0)();
+  IntColumn get visitCount => integer().named("visit_count").clientDefault(() => 0)();
+  IntColumn get goodResultCount => integer().named("good_result_count").clientDefault(() => 0)();
+  IntColumn get badResultCount => integer().named("bad_result_count").clientDefault(() => 0)();
+  IntColumn get emailFoundCount => integer().named("email_found_count").clientDefault(() => 0)();
+  IntColumn get leadInsertedCount => integer().named("lead_inserted_count").clientDefault(() => 0)();
+  DateTimeColumn get lastQueuedAt => dateTime().named("last_queued_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastVisitedAt => dateTime().named("last_visited_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastGoodResultAt => dateTime().named("last_good_result_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastBadResultAt => dateTime().named("last_bad_result_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastEmailFoundAt => dateTime().named("last_email_found_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastLeadInsertedAt => dateTime().named("last_lead_inserted_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastGoodUrl => text().named("last_good_url").nullable()();
+  TextColumn get lastBadUrl => text().named("last_bad_url").nullable()();
+  DateTimeColumn get blockedUntil => dateTime().named("blocked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  BoolColumn get isPermanentlyBlocked => boolean().named("is_permanently_blocked").clientDefault(() => false)();
+  TextColumn get blockedReason => text().named("blocked_reason").nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorIcpsData")
+class BenefactorIcpsTable extends Table {
+  @override String get tableName => "benefactor_icps";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 160)();
+  TextColumn get name => text().named("name").withLength(max: 220)();
+  TextColumn get category => text().named("category").withLength(max: 120).clientDefault(() => 'local_services')();
+  TextColumn get serviceCategory => text().named("service_category").withLength(max: 120).clientDefault(() => 'other')();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  IntColumn get outcallFitScore => integer().named("outcall_fit_score").clientDefault(() => 5)();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 5)();
+  TextColumn get searchTerms => text().named("search_terms").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get searchSignals => text().named("search_signals").clientDefault(() => '[]').customConstraint("JSONB")();
+  BoolColumn get targetHomeServices => boolean().named("target_home_services").clientDefault(() => false)();
+  BoolColumn get targetMedical => boolean().named("target_medical").clientDefault(() => false)();
+  BoolColumn get targetLegal => boolean().named("target_legal").clientDefault(() => false)();
+  BoolColumn get targetEvents => boolean().named("target_events").clientDefault(() => false)();
+  BoolColumn get targetCorporate => boolean().named("target_corporate").clientDefault(() => false)();
+  BoolColumn get targetIndustrial => boolean().named("target_industrial").clientDefault(() => false)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -2636,4 +2899,10 @@ const List<Type> registeredDriftTables = <Type>[
   UsaccContractOperationsTable,
   UsaccSimulationRunsTable,
   UsaccAuditEventsTable,
+  BenefactorLeadsTable,
+  BenefactorLeadsDomainsTable,
+  BenefactorSearchLocationsTable,
+  BenefactorScrapeQueriesTable,
+  BenefactorDomainSearchTrackingTable,
+  BenefactorIcpsTable,
 ];

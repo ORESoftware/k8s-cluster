@@ -106,6 +106,12 @@ defmodule DdPgDefs do
     DdPgDefs.UsaccContractOperations,
     DdPgDefs.UsaccSimulationRuns,
     DdPgDefs.UsaccAuditEvents,
+    DdPgDefs.BenefactorLeads,
+    DdPgDefs.BenefactorLeadsDomains,
+    DdPgDefs.BenefactorSearchLocations,
+    DdPgDefs.BenefactorScrapeQueries,
+    DdPgDefs.BenefactorDomainSearchTracking,
+    DdPgDefs.BenefactorIcps,
   ]
 
   @spec tables() :: [module()]

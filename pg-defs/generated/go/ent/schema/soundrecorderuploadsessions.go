@@ -46,6 +46,7 @@ func (SoundRecorderUploadSessions) Fields() []ent.Field {
 		field.Time("expires_at").Optional().Nillable().StorageKey("expires_at"),
 		field.String("client_timezone").MaxLen(80).Optional().Nillable().StorageKey("client_timezone"),
 		field.String("legal_region").MaxLen(64).Match(regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,64}$`)).Optional().Nillable().StorageKey("legal_region"),
+		field.Enum("use_case").Values("security", "music", "meeting", "voice_note", "ambient").StorageKey("use_case"),
 		field.JSON("meta_data", map[string]interface{}{}).StorageKey("meta_data"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),

@@ -31,12 +31,13 @@ defmodule DdPgDefs.SoundRecorderUploadSessions do
     field :expires_at, :utc_datetime_usec
     field :client_timezone, :string
     field :legal_region, :string
+    field :use_case, :string, default: "security"
     field :meta_data, :map, default: %{}
     timestamps(inserted_at: :created_at, type: :utc_datetime_usec)
   end
 
   @required_fields ~w(account_id device_id storage_bucket storage_prefix)a
-  @optional_fields ~w(status storage_provider content_type codec sample_rate channel_count segment_duration_seconds max_segment_bytes started_at last_heartbeat_at closed_at expires_at client_timezone legal_region meta_data)a
+  @optional_fields ~w(status storage_provider content_type codec sample_rate channel_count segment_duration_seconds max_segment_bytes started_at last_heartbeat_at closed_at expires_at client_timezone legal_region use_case meta_data)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
@@ -55,5 +56,6 @@ defmodule DdPgDefs.SoundRecorderUploadSessions do
     |> validate_length(:client_timezone, max: 80)
     |> validate_format(:legal_region, ~r/^[A-Za-z0-9._:\/-]{1,64}$/)
     |> validate_length(:legal_region, max: 64)
+    |> validate_inclusion(:use_case, ["security", "music", "meeting", "voice_note", "ambient"])
   end
 end

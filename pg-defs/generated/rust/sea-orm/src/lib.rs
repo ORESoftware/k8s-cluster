@@ -306,6 +306,8 @@ pub struct Model {
     pub client_timezone: Option<String>,
     #[sea_orm(column_name = "legal_region")]
     pub legal_region: Option<String>,
+    #[sea_orm(column_name = "use_case")]
+    pub use_case: String,
     #[sea_orm(column_name = "meta_data")]
     pub meta_data: Json,
     #[sea_orm(column_name = "created_at")]
@@ -367,6 +369,8 @@ pub struct Model {
     pub uploaded_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_name = "expires_at")]
     pub expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "pinned_at")]
+    pub pinned_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_name = "meta_data")]
     pub meta_data: Json,
     #[sea_orm(column_name = "created_at")]
@@ -4047,3 +4051,456 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use usacc_audit_events::Entity as UsaccAuditEventsEntity;
 pub use usacc_audit_events::Model as UsaccAuditEventsModel;
+
+pub mod benefactor_leads {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_leads")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "business_name")]
+    pub business_name: String,
+    #[sea_orm(column_name = "owner_first_name")]
+    pub owner_first_name: String,
+    #[sea_orm(column_name = "owner_last_name")]
+    pub owner_last_name: String,
+    #[sea_orm(column_name = "primary_email")]
+    pub primary_email: String,
+    #[sea_orm(column_name = "secondary_email")]
+    pub secondary_email: Option<String>,
+    #[sea_orm(column_name = "primary_phone")]
+    pub primary_phone: Option<String>,
+    #[sea_orm(column_name = "website_url")]
+    pub website_url: Option<String>,
+    #[sea_orm(column_name = "service_category")]
+    pub service_category: String,
+    #[sea_orm(column_name = "service_subcategories")]
+    pub service_subcategories: Json,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    #[sea_orm(column_name = "zip_code")]
+    pub zip_code: Option<String>,
+    pub country: String,
+    #[sea_orm(column_name = "service_area")]
+    pub service_area: Option<String>,
+    #[sea_orm(column_name = "lead_status")]
+    pub lead_status: String,
+    #[sea_orm(column_name = "outreach_status")]
+    pub outreach_status: String,
+    #[sea_orm(column_name = "total_outreach_attempts")]
+    pub total_outreach_attempts: i32,
+    #[sea_orm(column_name = "last_outreach_at")]
+    pub last_outreach_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "contact_attempts")]
+    pub contact_attempts: Json,
+    #[sea_orm(column_name = "source_url")]
+    pub source_url: Option<String>,
+    #[sea_orm(column_name = "source_query")]
+    pub source_query: Option<String>,
+    #[sea_orm(column_name = "source_tool")]
+    pub source_tool: Option<String>,
+    #[sea_orm(column_name = "source_engine")]
+    pub source_engine: Option<String>,
+    #[sea_orm(column_name = "is_verified")]
+    pub is_verified: bool,
+    pub tags: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    pub notes: Option<String>,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_leads::Entity as BenefactorLeadsEntity;
+pub use benefactor_leads::Model as BenefactorLeadsModel;
+
+pub mod benefactor_leads_domains {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_leads_domains")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub domain: String,
+    #[sea_orm(column_name = "domain_kind")]
+    pub domain_kind: String,
+    pub status: String,
+    pub reason: Option<String>,
+    pub source: String,
+    #[sea_orm(column_name = "is_blacklisted")]
+    pub is_blacklisted: bool,
+    #[sea_orm(column_name = "is_blocked")]
+    pub is_blocked: bool,
+    #[sea_orm(column_name = "is_permanently_blocked")]
+    pub is_permanently_blocked: bool,
+    #[sea_orm(column_name = "blocked_reason")]
+    pub blocked_reason: Option<String>,
+    #[sea_orm(column_name = "blocked_until")]
+    pub blocked_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "skip_until")]
+    pub skip_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "scrape_count")]
+    pub scrape_count: i32,
+    #[sea_orm(column_name = "skip_count")]
+    pub skip_count: i32,
+    #[sea_orm(column_name = "skipped_count")]
+    pub skipped_count: i32,
+    #[sea_orm(column_name = "email_found_count")]
+    pub email_found_count: i32,
+    #[sea_orm(column_name = "lead_inserted_count")]
+    pub lead_inserted_count: i32,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_scraped_at")]
+    pub last_scraped_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_skipped_at")]
+    pub last_skipped_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_email_found_at")]
+    pub last_email_found_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_lead_inserted_at")]
+    pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_seen_url")]
+    pub last_seen_url: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_leads_domains::Entity as BenefactorLeadsDomainsEntity;
+pub use benefactor_leads_domains::Model as BenefactorLeadsDomainsModel;
+
+pub mod benefactor_search_locations {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_search_locations")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    pub city: String,
+    pub state: String,
+    #[sea_orm(column_name = "state_code")]
+    pub state_code: Option<String>,
+    pub country: String,
+    #[sea_orm(column_name = "metro_area")]
+    pub metro_area: Option<String>,
+    #[sea_orm(column_name = "military_area")]
+    pub military_area: Option<String>,
+    #[sea_orm(column_name = "primary_installation")]
+    pub primary_installation: Option<String>,
+    #[sea_orm(column_name = "installation_aliases")]
+    pub installation_aliases: Json,
+    #[sea_orm(column_name = "location_type")]
+    pub location_type: String,
+    pub priority: i32,
+    #[sea_orm(column_name = "search_weight")]
+    pub search_weight: i32,
+    #[sea_orm(column_name = "total_query_runs")]
+    pub total_query_runs: i32,
+    #[sea_orm(column_name = "total_emails_inserted")]
+    pub total_emails_inserted: i32,
+    #[sea_orm(column_name = "success_count")]
+    pub success_count: i32,
+    #[sea_orm(column_name = "failure_count")]
+    pub failure_count: i32,
+    #[sea_orm(column_name = "last_run_at")]
+    pub last_run_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_success_at")]
+    pub last_success_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_failure_at")]
+    pub last_failure_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "cooldown_until")]
+    pub cooldown_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_search_locations::Entity as BenefactorSearchLocationsEntity;
+pub use benefactor_search_locations::Model as BenefactorSearchLocationsModel;
+
+pub mod benefactor_scrape_queries {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_scrape_queries")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "query_text")]
+    pub query_text: String,
+    #[sea_orm(column_name = "query_hash")]
+    pub query_hash: String,
+    #[sea_orm(column_name = "benefactor_icp_slug")]
+    pub benefactor_icp_slug: Option<String>,
+    #[sea_orm(column_name = "benefactor_icp_name")]
+    pub benefactor_icp_name: Option<String>,
+    #[sea_orm(column_name = "benefactor_search_location_id")]
+    pub benefactor_search_location_id: Option<Uuid>,
+    #[sea_orm(column_name = "service_category")]
+    pub service_category: String,
+    #[sea_orm(column_name = "target_city")]
+    pub target_city: Option<String>,
+    #[sea_orm(column_name = "target_state")]
+    pub target_state: Option<String>,
+    #[sea_orm(column_name = "target_country")]
+    pub target_country: String,
+    #[sea_orm(column_name = "target_military_area")]
+    pub target_military_area: Option<String>,
+    #[sea_orm(column_name = "target_installation")]
+    pub target_installation: Option<String>,
+    #[sea_orm(column_name = "query_variant")]
+    pub query_variant: String,
+    #[sea_orm(column_name = "search_page_depth")]
+    pub search_page_depth: i32,
+    pub priority: i32,
+    #[sea_orm(column_name = "total_runs")]
+    pub total_runs: i32,
+    #[sea_orm(column_name = "total_urls_visited")]
+    pub total_urls_visited: i32,
+    #[sea_orm(column_name = "total_emails_found")]
+    pub total_emails_found: i32,
+    #[sea_orm(column_name = "total_emails_inserted")]
+    pub total_emails_inserted: i32,
+    #[sea_orm(column_name = "total_emails_duplicate")]
+    pub total_emails_duplicate: i32,
+    #[sea_orm(column_name = "total_errors")]
+    pub total_errors: i32,
+    #[sea_orm(column_name = "success_count")]
+    pub success_count: i32,
+    #[sea_orm(column_name = "failure_count")]
+    pub failure_count: i32,
+    #[sea_orm(column_name = "last_run_at")]
+    pub last_run_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_success_at")]
+    pub last_success_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_failure_at")]
+    pub last_failure_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_run_emails_found")]
+    pub last_run_emails_found: i32,
+    #[sea_orm(column_name = "last_run_emails_inserted")]
+    pub last_run_emails_inserted: i32,
+    #[sea_orm(column_name = "last_run_success")]
+    pub last_run_success: bool,
+    #[sea_orm(column_name = "last_run_duration_ms")]
+    pub last_run_duration_ms: i32,
+    #[sea_orm(column_name = "last_run_error")]
+    pub last_run_error: Option<String>,
+    #[sea_orm(column_name = "cooldown_until")]
+    pub cooldown_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "consecutive_zero_new_runs")]
+    pub consecutive_zero_new_runs: i32,
+    #[sea_orm(column_name = "last_zero_new_run_at")]
+    pub last_zero_new_run_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_scrape_queries::Entity as BenefactorScrapeQueriesEntity;
+pub use benefactor_scrape_queries::Model as BenefactorScrapeQueriesModel;
+
+pub mod benefactor_domain_search_tracking {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_domain_search_tracking")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub domain: String,
+    #[sea_orm(column_name = "for_what")]
+    pub for_what: String,
+    #[sea_orm(column_name = "search_result_appearances")]
+    pub search_result_appearances: i32,
+    #[sea_orm(column_name = "queued_visit_count")]
+    pub queued_visit_count: i32,
+    #[sea_orm(column_name = "visit_count")]
+    pub visit_count: i32,
+    #[sea_orm(column_name = "good_result_count")]
+    pub good_result_count: i32,
+    #[sea_orm(column_name = "bad_result_count")]
+    pub bad_result_count: i32,
+    #[sea_orm(column_name = "email_found_count")]
+    pub email_found_count: i32,
+    #[sea_orm(column_name = "lead_inserted_count")]
+    pub lead_inserted_count: i32,
+    #[sea_orm(column_name = "last_queued_at")]
+    pub last_queued_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_visited_at")]
+    pub last_visited_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_good_result_at")]
+    pub last_good_result_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_bad_result_at")]
+    pub last_bad_result_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_email_found_at")]
+    pub last_email_found_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_lead_inserted_at")]
+    pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_good_url")]
+    pub last_good_url: Option<String>,
+    #[sea_orm(column_name = "last_bad_url")]
+    pub last_bad_url: Option<String>,
+    #[sea_orm(column_name = "blocked_until")]
+    pub blocked_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "is_permanently_blocked")]
+    pub is_permanently_blocked: bool,
+    #[sea_orm(column_name = "blocked_reason")]
+    pub blocked_reason: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_domain_search_tracking::Entity as BenefactorDomainSearchTrackingEntity;
+pub use benefactor_domain_search_tracking::Model as BenefactorDomainSearchTrackingModel;
+
+pub mod benefactor_icps {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "benefactor_icps")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub category: String,
+    #[sea_orm(column_name = "service_category")]
+    pub service_category: String,
+    pub description: String,
+    #[sea_orm(column_name = "outcall_fit_score")]
+    pub outcall_fit_score: i32,
+    pub priority: i32,
+    #[sea_orm(column_name = "search_terms")]
+    pub search_terms: Json,
+    #[sea_orm(column_name = "search_signals")]
+    pub search_signals: Json,
+    #[sea_orm(column_name = "target_home_services")]
+    pub target_home_services: bool,
+    #[sea_orm(column_name = "target_medical")]
+    pub target_medical: bool,
+    #[sea_orm(column_name = "target_legal")]
+    pub target_legal: bool,
+    #[sea_orm(column_name = "target_events")]
+    pub target_events: bool,
+    #[sea_orm(column_name = "target_corporate")]
+    pub target_corporate: bool,
+    #[sea_orm(column_name = "target_industrial")]
+    pub target_industrial: bool,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_icps::Entity as BenefactorIcpsEntity;
+pub use benefactor_icps::Model as BenefactorIcpsModel;
