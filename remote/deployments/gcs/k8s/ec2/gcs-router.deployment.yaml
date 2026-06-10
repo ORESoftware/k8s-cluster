@@ -98,7 +98,8 @@ spec:
                 --upstream-port=3001 \
                 --vnodes=160 \
                 --connect-timeout=15s \
-                --ws-idle-timeout=4h
+                --ws-idle-timeout=4h \
+                --max-active-conns=60000
           ports:
             - name: ws
               containerPort: 3001
