@@ -106,17 +106,43 @@ EOF
   # Reserve headroom for the OS, kubelet, container runtime, and control plane
   # so workloads can never starve them. Without this, allocatable == capacity and
   # a workload burst (e.g. a cold-start build stampede) can wedge kubelet/apiserver.
+  #
+  # Sized proportionally to the box (single-node cluster you scale up, not out):
+  #   - per-pool CPU  ~6% of cores, clamped to [250m, 1000m]
+  #   - per-pool mem  ~5% of RAM,   clamped to [512Mi, 2048Mi]
+  #   - hard mem-eviction floor ~2% of RAM, clamped to [512Mi, 2048Mi]
+  # On the target x8i.2xlarge (8 vCPU / 128 GiB) this reserves ~1 vCPU + ~4 GiB
+  # total, leaving allocatable ~7 vCPU so kube-system pods still fit alongside
+  # the dd-dev ResourceQuota (requests.cpu=6). A flat 1000m/pool reserved 2 of 8
+  # vCPU (25%) and collided with that quota; flat values also over-reserve on the
+  # 4-vCPU smoke box.
   if ! grep -q '^systemReserved:' "${config}"; then
-    echo "==> Adding kubelet node reservations + eviction thresholds"
-    cat >> "${config}" <<'KUBELET_RESERVATIONS'
+    local total_mcpu total_mem_mi res_cpu res_mem evict_mem
+    total_mcpu=$(( $(nproc) * 1000 ))
+    total_mem_mi=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
+
+    res_cpu=$(( total_mcpu * 6 / 100 ))
+    if (( res_cpu < 250 ));  then res_cpu=250;  fi
+    if (( res_cpu > 1000 )); then res_cpu=1000; fi
+
+    res_mem=$(( total_mem_mi * 5 / 100 ))
+    if (( res_mem < 512 ));  then res_mem=512;  fi
+    if (( res_mem > 2048 )); then res_mem=2048; fi
+
+    evict_mem=$(( total_mem_mi * 2 / 100 ))
+    if (( evict_mem < 512 ));  then evict_mem=512;  fi
+    if (( evict_mem > 2048 )); then evict_mem=2048; fi
+
+    echo "==> Adding kubelet reservations: system+kube ${res_cpu}m cpu / ${res_mem}Mi each (evict <${evict_mem}Mi avail)"
+    cat >> "${config}" <<KUBELET_RESERVATIONS
 systemReserved:
-  cpu: 1000m
-  memory: 2Gi
+  cpu: ${res_cpu}m
+  memory: ${res_mem}Mi
 kubeReserved:
-  cpu: 1000m
-  memory: 2Gi
+  cpu: ${res_cpu}m
+  memory: ${res_mem}Mi
 evictionHard:
-  memory.available: 2Gi
+  memory.available: ${evict_mem}Mi
   nodefs.available: 10%
   imagefs.available: 10%
 KUBELET_RESERVATIONS
