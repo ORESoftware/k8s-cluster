@@ -180,6 +180,7 @@ struct Metrics {
     confirmations_finalized_total: AtomicU64,
     confirmations_failed_total: AtomicU64,
     confirmations_pending_total: AtomicU64,
+    confirmations_deferred_total: AtomicU64,
     rpc_get_health_requests_total: AtomicU64,
     rpc_get_health_errors_total: AtomicU64,
     rpc_get_version_requests_total: AtomicU64,
