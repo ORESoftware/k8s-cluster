@@ -969,6 +969,10 @@ class SessionSupervisor {
     // Keeps the demo bulletproof; remove for stricter prod semantics.
     if (conversations.get(conversationId) == null) {
       _handleConversationOpen(sessionId, conversationId, conversationId, 'chat');
+      // Creation may have been refused at the per-shard conversation cap.
+      // Don't append a message to (and thereby resurrect) a conversation
+      // that has no metadata row.
+      if (conversations.get(conversationId) == null) return;
     }
     if (!conversations.members(conversationId).contains(userId)) {
       _handleConversationJoin(sessionId, conversationId);

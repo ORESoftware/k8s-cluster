@@ -10,10 +10,7 @@ spec:
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app: dd-music-rs
@@ -22,6 +19,7 @@ spec:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-music-server'
         dd.dev/des-engine-revision: '61bd09c6c86df1ffe55ac7b9c6b52ead81cb129c'
+        dd.dev/source-revision: '2026-06-07-music-degraded-readiness'
       labels:
         app: dd-music-rs
         dd.dev/redis-cache-client: 'true'
@@ -33,7 +31,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: music-rs
-          image: docker.io/library/rust:1.90-bookworm
+          image: docker.io/library/rust:1.91.1-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -208,6 +206,12 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: MUSIC_VOTE_HASH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: MUSIC_VOTE_HASH_SALT
                   optional: true
           ports:
             - name: http

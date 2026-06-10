@@ -285,6 +285,7 @@ Future<void> _runShard(GatewayShardBoot boot) async {
       shardId: boot.shardId,
       metrics: metrics,
       supervisor: supervisor,
+      allowedOrigins: boot.allowedOrigins,
     ));
   }
 
@@ -332,6 +333,7 @@ Future<void> _route(
   required int shardId,
   required Metrics metrics,
   required SessionSupervisor supervisor,
+  List<String> allowedOrigins = const <String>[],
 }) async {
   final path = req.uri.path;
   final method = req.method.toUpperCase();
@@ -350,6 +352,26 @@ Future<void> _route(
         status: HttpStatus.upgradeRequired,
       );
       return;
+    }
+    // Cross-site WebSocket hijacking (CSWSH) defence. The browser sets
+    // `Origin` on a WS handshake but — unlike fetch/XHR — the same-origin
+    // policy does NOT block cross-origin WebSocket connections, so without
+    // this check any page in a victim's browser could open `/dart/wss` and
+    // drive the full protocol as that browser. We only enforce when an
+    // allowlist is configured AND the request actually carries an Origin
+    // (non-browser clients omit it), so load testers and server-to-server
+    // callers are unaffected.
+    if (allowedOrigins.isNotEmpty) {
+      final origin = req.headers.value('origin');
+      if (origin != null && !allowedOrigins.contains(origin)) {
+        metrics.inc('dart_wss_upgrade_rejected_origin_total');
+        await _plain(
+          req,
+          'forbidden_origin\n',
+          status: HttpStatus.forbidden,
+        );
+        return;
+      }
     }
     if (supervisor.isDraining) {
       metrics.inc('dart_wss_upgrade_refused_draining_total');

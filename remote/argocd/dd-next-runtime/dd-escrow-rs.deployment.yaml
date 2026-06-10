@@ -6,14 +6,14 @@ metadata:
   labels:
     app: dd-escrow-rs
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-escrow-rs
@@ -72,6 +72,10 @@ spec:
               value: 'false'
             - name: SOLANA_SETTLEMENT_ENABLED
               value: 'false'
+            - name: SOLANA_MAINNET_SETTLEMENT_ENABLED
+              value: 'false'
+            - name: ESCROW_SETTLEMENT_REQUIRE_INTENT
+              value: 'true'
             - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
             - name: ESCROW_SETTLEMENT_AUTH_SECRET

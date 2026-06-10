@@ -27,6 +27,9 @@ The built-in catalog covers the sources named for the first deployment:
 ## Endpoints
 
 - `GET /` - HTML operator home.
+- `GET /ui` - authenticated Axum/HTMX operator dashboard.
+- `GET /ui/fragments/*` - authenticated HTMX dashboard fragments.
+- `POST /ui/actions/scrape` - authenticated HTMX scrape action backed by `POST /scrape`.
 - `GET /descriptor` - service descriptor, source catalog, NATS subjects, and endpoint map.
 - `GET /sources` - public-data source catalog.
 - `GET /schema` - request/response contract summary.

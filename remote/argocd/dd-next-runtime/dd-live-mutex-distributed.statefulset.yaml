@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dd-live-mutex-distributed
+  namespace: default
+  labels:
+    app: dd-live-mutex-distributed
+    role: live-mutex-broker
+    variant: distributed-quorum-node
+spec:
+  serviceName: dd-live-mutex-distributed-peer
+  # Node/TypeScript port of the quorum/vote consensus engine, from
+  # github.com/ORESoftware/live-mutex.distributed (src/distributed). Five voters
+  # -> quorum 3, tolerating 2 failures. In-memory; recovery via leases + fencing.
+  replicas: 5
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: dd-live-mutex-distributed
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-live-mutex-distributed'
+      labels:
+        app: dd-live-mutex-distributed
+        role: live-mutex-broker
+        variant: distributed-quorum-node
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: live-mutex-distributed
+          # Source-build bootstrap: clone at start (fallback to mounted
+          # submodule), compile only the dependency-free `src/distributed`
+          # module with TypeScript, then run the `lmxd` peer.
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # Source comes only from the git clone (no hostPath fallback, so
+              # the pod satisfies the PodSecurity "restricted" profile).
+              : "${LMX_DIST_GIT_URL:?LMX_DIST_GIT_URL is required}"
+              rm -rf /tmp/dist-build
+              if ! git clone --depth 1 --branch "${LMX_DIST_GIT_REF:-main}" "${LMX_DIST_GIT_URL}" /tmp/dist-build; then
+                echo "[dist] source clone failed for ${LMX_DIST_GIT_URL}@${LMX_DIST_GIT_REF:-main}" >&2
+                exit 1
+              fi
+              echo "[dist] cloned ${LMX_DIST_GIT_URL}@${LMX_DIST_GIT_REF:-main} ($(git -C /tmp/dist-build rev-parse --short HEAD))"
+              cd /tmp/dist-build
+              # The src/distributed engine is dependency-free, so only the
+              # TypeScript compiler is needed to build it.
+              npm install --no-save --no-audit --no-fund --ignore-scripts typescript@5.9.3
+              ./node_modules/.bin/tsc -p tsconfig.distributed.json
+              ord="${POD_NAME##*-}"
+              peer_svc="dd-live-mutex-distributed-peer.default.svc.cluster.local"
+              port="${LMX_DIST_PORT:-7991}"
+              peers=""
+              for i in $(seq 0 $((LMX_DIST_REPLICAS - 1))); do
+                peers="${peers} dd-live-mutex-distributed-${i}.${peer_svc}:${port}"
+              done
+              self="dd-live-mutex-distributed-${ord}.${peer_svc}"
+              until getent hosts "${self}" >/dev/null 2>&1; do
+                echo "[dist] waiting for own DNS ${self}"; sleep 1;
+              done
+              echo "[dist] node ${ord} peers:${peers}"
+              exec node dist/src/distributed/lmxd.js "${ord}" ${peers}
+          env:
+            - name: LMX_DIST_GIT_URL
+              value: https://github.com/ORESoftware/live-mutex.distributed.git
+            - name: LMX_DIST_GIT_REF
+              value: main
+            - name: LMX_DIST_REPLICAS
+              value: '5'
+            - name: LMX_DIST_PORT
+              value: '7991'
+            # Self-test workload: every pod contends for the same 3-key
+            # composite, so `kubectl logs` shows exclusive multi-key handoff
+            # across the cluster with monotonic per-key fences. Set to '0' once
+            # a real client/broker front-end drives the cluster instead.
+            - name: LMX_DEMO
+              value: '1'
+            - name: LMX_DEMO_KEYS
+              value: cap,mid,zed
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: HOME
+              value: /tmp
+            - name: npm_config_cache
+              value: /tmp/.npm
+          ports:
+            - name: peer
+              containerPort: 7991
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket:
+              port: peer
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

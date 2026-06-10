@@ -34,3 +34,11 @@
 [submodule "remote/deployments/mip-solver-node.rs"]
 	path = remote/deployments/mip-solver-node.rs
 	url = git@github.com:ORESoftware/mip-solver-node.rs.git
+[submodule "remote/submodules/live-mutex-mills.rs"]
+	path = remote/submodules/live-mutex-mills.rs
+	url = git@github.com:ORESoftware/live-mutex-mills.rs.git
+	branch = main
+[submodule "remote/submodules/live-mutex.distributed"]
+	path = remote/submodules/live-mutex.distributed
+	url = git@github.com:ORESoftware/live-mutex.distributed.git
+	branch = main

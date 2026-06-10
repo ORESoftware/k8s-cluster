@@ -7,8 +7,9 @@ music-production module.
 
 - Generates WAV songs in-process through `des_engine::des::general::music_production`.
 - Curates candidates with a simple listenability score and stores discarded attempts in Postgres.
-- Uploads published audio to S3 by default.
-- Serves a public HTML page with a native browser audio player, not an embedded third-party player.
+- Uploads published audio to S3 by default with S3-managed server-side encryption.
+- Serves a public HTMX landing page with native browser audio players, not an embedded third-party
+  player.
 - Stores song metadata and anonymous votes in RDS Postgres through the canonical
   `remote/libs/pg-defs/schema/schema.sql` contract.
 - Uses Redis only for short-lived coordination: daily target cache, generation lock, and vote
@@ -16,14 +17,21 @@ music-production module.
 
 ## Routes
 
-- `GET /` — public song shelf and player.
+- `GET /` — public landing page, song shelf, and player.
 - `GET /songs` — latest published songs.
+- `GET /songs/shelf` — HTMX-rendered latest-song shelf.
 - `GET /songs/:song_id` — one song.
 - `GET /songs/:song_id/audio` — increments `play_count` and redirects to the stored audio URL.
 - `POST /songs/:song_id/votes` — anonymous up/down vote; durable state is one vote per visitor hash.
+  JSON clients receive JSON, while HTMX requests receive an updated song card.
 - `POST /internal/generate` — server-authenticated manual generation.
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
+
+At the public gateway, `/music/`, `/music/songs`, `/music/songs/:song_id`, and
+`/music/songs/:song_id/audio` are anonymous read routes. Anonymous vote writes are limited to
+`POST /music/songs/:song_id/votes` with gateway rate limiting. Internal generation, health,
+readiness, metrics, and generated API docs are operator-authenticated at the gateway.
 
 ## Environment
 
@@ -39,10 +47,15 @@ music-production module.
 | `MUSIC_REDIS_URL` / `REDIS_URL` | in-cluster `dd-redis-cache` | Optional but recommended. |
 | `MUSIC_GENERATOR_ENABLED` | `false` | Enables the daily background generator. |
 | `MUSIC_DAILY_TARGET_MIN` / `MUSIC_DAILY_TARGET_MAX` | `3` / `5` | Daily published-song target. |
-| `MUSIC_SONG_DURATION_SECONDS` | `180` | Duration per generated song. |
+| `MUSIC_SONG_DURATION_SECONDS` | `180` | Duration per generated song; clamped to 10-600 seconds. |
 | `MUSIC_MIN_LISTENABILITY_SCORE` | `0.55` | Candidates below this are discarded. |
 | `MUSIC_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for `/internal/generate` unless local unauth is enabled. |
-| `MUSIC_VOTE_HASH_SALT` | `SERVER_AUTH_SECRET` or local fallback | Salt for anonymous visitor hashes. |
+| `MUSIC_VOTE_HASH_SALT` | `SERVER_AUTH_SECRET` or local fallback | Salt for anonymous visitor hashes; readiness requires either this or `SERVER_AUTH_SECRET`. |
+
+`/readyz` reports HTTP readiness for Kubernetes and includes `generationReady` plus degraded-mode
+fields for Postgres, storage, internal auth, and vote hash salt configuration. Public read pages stay
+reachable in degraded mode; the background generator only starts after Postgres and storage are
+configured.
 
 ## Local Smoke
 

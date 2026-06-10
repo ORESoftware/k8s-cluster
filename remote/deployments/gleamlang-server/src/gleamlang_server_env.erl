@@ -2,10 +2,7 @@
 -export([getenv/1, json_message_id/1, now_ms/0, publish_nats/1]).
 
 getenv(Name) when is_binary(Name) ->
-    case os:getenv(binary_to_list(Name)) of
-        false -> {error, nil};
-        Value -> {ok, unicode:characters_to_binary(Value)}
-    end.
+    dd_cli_config_client_ffi:env(Name).
 
 now_ms() ->
     erlang:system_time(millisecond).
@@ -21,23 +18,30 @@ json_message_id(Payload) when is_binary(Payload) ->
     end.
 
 publish_nats(Payload) when is_binary(Payload) ->
-    case os:getenv("GLEAM_BROADCAST_SECRET") of
-        false ->
+    case dd_cli_config_client_ffi:env(<<"GLEAM_BROADCAST_SECRET">>) of
+        {error, nil} ->
             {error, nil};
-        "" ->
+        {ok, <<>>} ->
             {error, nil};
-        Secret ->
-            Url = os:getenv("GLEAM_NATS_PUBLISH_URL", "http://127.0.0.1:8083/publish"),
+        {ok, SecretBin} ->
+            Secret = binary_to_list(SecretBin),
+            Url = binary_to_list(
+                dd_cli_config_client_ffi:getenv(
+                    <<"GLEAM_NATS_PUBLISH_URL">>,
+                    <<"http://127.0.0.1:8083/publish">>
+                )
+            ),
             %% NATS_PUBLISH_SUBJECT default comes from dd_nats_subject_consts
             %% (auto-generated from remote/libs/nats/subject-defs/schema/
             %% runtime-events.schema.json) so a schema rename surfaces at
             %% build time instead of silently drifting between Erlang FFI
             %% and the rest of the codebase.
-            Subject = case os:getenv("NATS_PUBLISH_SUBJECT") of
-                false -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
-                "" -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
-                Override -> Override
-            end,
+            Subject = binary_to_list(
+                dd_cli_config_client_ffi:getenv(
+                    <<"NATS_PUBLISH_SUBJECT">>,
+                    dd_nats_subject_consts:websocket_events_subject()
+                )
+            ),
             spawn(fun() -> post_nats_publish(Url, Secret, Subject, Payload) end),
             {ok, nil}
     end.

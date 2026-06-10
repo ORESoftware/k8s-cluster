@@ -5,6 +5,8 @@ Rust public web layer for remote-dev.
 ## Purpose
 
 - serves `GET /` and `GET /home` as the operator-facing homepage
+- serves `GET /jello` as the Athlet-O product concept page, with `GET /jello/sample`
+  returning htmx sample-pack fragments
 - serves `GET /agents/tasks` as the cluster-hosted remote-dev diagnostics table
 - serves `GET /agents/threads` as the thread-first chat/task UI with stored response events
 - serves `GET /presence-test` as a 1-user, N-conversation in-browser harness for

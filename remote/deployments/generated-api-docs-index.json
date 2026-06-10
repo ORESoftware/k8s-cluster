@@ -40,6 +40,19 @@
       ]
     },
     {
+      "service": "apostille-services-server-rs",
+      "language": "rust",
+      "routeCount": 23,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 16
+      },
+      "generated": [
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "auth-server-rs",
       "language": "rust",
       "routeCount": 11,
@@ -108,6 +121,20 @@
       ]
     },
     {
+      "service": "cluster-mcp-rs",
+      "language": "rust",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 3,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "container-pool-rs",
       "language": "rust",
       "routeCount": 12,
@@ -149,12 +176,53 @@
       ]
     },
     {
-      "service": "dd-escrow-rs",
+      "service": "dd-benefactor-marketing-rs",
       "language": "rust",
-      "routeCount": 16,
+      "routeCount": 64,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 57
+      },
+      "generated": [
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-compliance-rs",
+      "language": "rust",
+      "routeCount": 24,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-compliance-rs/generated/api-docs.json",
+        "remote/deployments/dd-compliance-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-document-rs",
+      "language": "rust",
+      "routeCount": 25,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 7,
+        "user-generated": 16,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-document-rs/generated/api-docs.json",
+        "remote/deployments/dd-document-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-escrow-rs",
+      "language": "rust",
+      "routeCount": 19,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 10,
         "runtime-config": 3
       },
       "generated": [
@@ -165,14 +233,27 @@
     {
       "service": "dd-music-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 5
+        "user-generated": 6
       },
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",
         "remote/deployments/dd-music-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-sound-recorder-rs",
+      "language": "rust",
+      "routeCount": 29,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 22
+      },
+      "generated": [
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.html"
       ]
     },
     {
@@ -206,10 +287,10 @@
     {
       "service": "economics-server-rs",
       "language": "rust",
-      "routeCount": 25,
+      "routeCount": 32,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 15,
+        "user-generated": 22,
         "runtime-config": 3
       },
       "generated": [
@@ -220,10 +301,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 286,
+      "routeCount": 505,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 276,
+        "user-generated": 495,
         "runtime-config": 3
       },
       "generated": [
@@ -370,12 +451,26 @@
       ]
     },
     {
-      "service": "public-data-server-rs",
+      "service": "patent-filing-rs",
       "language": "rust",
-      "routeCount": 21,
+      "routeCount": 20,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 14
+        "user-generated": 10,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/patent-filing-rs/generated/api-docs.json",
+        "remote/deployments/patent-filing-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "public-data-server-rs",
+      "language": "rust",
+      "routeCount": 26,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 19
       },
       "generated": [
         "remote/deployments/public-data-server-rs/generated/api-docs.json",
@@ -452,6 +547,19 @@
       ]
     },
     {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 15
+      },
+      "generated": [
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "wal-gateway-rs",
       "language": "rust",
       "routeCount": 10,
@@ -467,10 +575,10 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 44,
+      "routeCount": 48,
       "routeTypeCounts": {
         "service": 10,
-        "user-generated": 31,
+        "user-generated": 35,
         "runtime-config": 3
       },
       "generated": [

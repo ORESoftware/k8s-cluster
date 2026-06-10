@@ -11,6 +11,8 @@ Tiny Rust worker that runs cluster maintenance loops:
   reconciled back toward their `min_warm` ready floor
 - worker-image cron: build `docker.io/library/dd-dev-server:dev` every day at
   4am America/New_York from the latest `dev` branch
+- container-pool reaper: remove labeled EC2/containerd warm-pool workers that are stopped,
+  orphaned after a pool-service restart, or surplus idle past their pool TTL plus grace
 
 ## Env
 
@@ -59,6 +61,17 @@ Tiny Rust worker that runs cluster maintenance loops:
 | `WORKER_IMAGE_BUILD_NERDCTL` | no | `/usr/local/bin/nerdctl` |
 | `WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY` | yes, when enabled | — |
 | `WORKER_IMAGE_BUILD_RUN_ON_START` | no | `false` |
+| `CONTAINER_POOL_REAP_ENABLED` | no | `false` |
+| `CONTAINER_POOL_REAP_CONTAINER_POOL_URL` | no | `RUNTIME_FLOOR_CONTAINER_POOL_URL` or `http://dd-container-pool.default.svc.cluster.local:8102` |
+| `CONTAINER_POOL_REAP_NAMESPACE` | no | `dd-pool` |
+| `CONTAINER_POOL_REAP_LABEL` | no | `dd.container-pool.managed=true` |
+| `CONTAINER_POOL_REAP_INTERVAL_SECONDS` | no | `300` |
+| `CONTAINER_POOL_REAP_IDLE_GRACE_SECONDS` | no | `300` |
+| `CONTAINER_POOL_REAP_STOPPED_TTL_SECONDS` | no | `300` |
+| `CONTAINER_POOL_REAP_ORPHAN_TTL_SECONDS` | no | `3600` |
+| `CONTAINER_POOL_REAP_NERDCTL` | no | `/usr/local/bin/nerdctl` |
+| `CONTAINER_POOL_REAP_EVENT_SUBJECT` | no | `dd.remote.events` |
+| `CONTAINER_POOL_REAP_DRY_RUN` | no | `false` |
 
 The cluster doctor prompt is inline in `src/main.rs` for now. It tells the
 agent to inspect Prometheus, Loki, Grafana, NATS, OTel, and runtime service
@@ -70,6 +83,13 @@ so the runtime has one maintenance supervisor. It uses Rust scheduling rather
 than Linux `cron`/`at`; the pod still mounts the EC2 containerd socket and
 `nerdctl` binary so the build lands in the local `k8s.io` image store as
 `docker.io/library/dd-dev-server:dev`.
+
+The container-pool reaper is a host/containerd backstop, not the primary pool
+reconciler. It first asks `dd-container-pool` for current pool state so it can
+preserve each pool's `min_warm` idle floor, then uses the host `nerdctl`
+namespace to remove only containers with the configured managed label. If the
+pool API is unavailable, it still clears stopped labeled containers but does
+not treat running workers as orphaned.
 
 ## Build
 

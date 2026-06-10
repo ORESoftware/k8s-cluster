@@ -122,12 +122,14 @@ pub fn start(
         // name gets sanitised.
         let slot_name = "presence_wal_" <> sanitise(self_node_string())
         case ensure_slot(conn, slot_name) {
-          Error(reason) ->
-            Error("pg_wal: ensure_slot failed: " <> reason)
+          Error(reason) -> Error("pg_wal: ensure_slot failed: " <> reason)
           Ok(_) -> {
             io.println(
-              "pg_wal: slot ready (" <> slot_name <> "); polling every "
-              <> int.to_string(tick_ms) <> "ms",
+              "pg_wal: slot ready ("
+              <> slot_name
+              <> "); polling every "
+              <> int.to_string(tick_ms)
+              <> "ms",
             )
             process.send_after(self, tick_ms, Tick)
             actor.initialised(State(
@@ -227,8 +229,7 @@ fn poll_once(state: State) -> Nil {
     })
     |> pog.execute(state.conn)
   case result {
-    Error(e) ->
-      io.println("pg_wal: poll failed: " <> string.inspect(e))
+    Error(e) -> io.println("pg_wal: poll failed: " <> string.inspect(e))
     Ok(returned) -> {
       // wal2json emits one row per change message (plus periodic
       // BEGIN/COMMIT envelopes which we discard). For each row we

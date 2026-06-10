@@ -2,22 +2,16 @@
 %%
 %% Kept tiny on purpose — most of these are one-liners that wrap an
 %% Erlang/OTP standard call to give Gleam a strongly-typed `String ->
-%% Int` (or similar) signature without forcing every callsite to deal
-%% with `os:getenv/1` returning the atom `false` for missing keys.
+%% Int` (or similar) signature.
 
 -module(lock_loadtest_gleam_env_ffi).
 
 -export([getenv/2, system_time_micro/0, sleep_ms/1, uuid_v4/0]).
 
-%% Read an env var. Erlang's `os:getenv/1` returns the atom `false`
-%% when the variable is unset, which is awkward to thread through
-%% Gleam's `Result`. Returning the supplied fallback on miss lets the
-%% Gleam side stay branch-free.
+%% Read a reconciled CLI/env value. Returning the supplied fallback on miss
+%% lets the Gleam side stay branch-free.
 getenv(Name, Fallback) ->
-    case os:getenv(binary_to_list(Name)) of
-        false -> Fallback;
-        Value -> list_to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, Fallback).
 
 %% Microsecond-precision wall clock. We use this for both the
 %% per-acquire latency stopwatch (nanoseconds is overkill given the

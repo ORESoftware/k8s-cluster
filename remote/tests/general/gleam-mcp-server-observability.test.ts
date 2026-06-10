@@ -56,7 +56,10 @@ function writeMockResponse(req: IncomingMessage, res: ServerResponse): void {
     '/api/health': { contentType: 'application/json', body: JSON.stringify({ database: 'ok' }) },
     '/api/datasources': {
       contentType: 'application/json',
-      body: JSON.stringify([{ name: 'Prometheus', type: 'prometheus' }, { name: 'Loki', type: 'loki' }]),
+      body: JSON.stringify([
+        { name: 'Prometheus', type: 'prometheus', secureJsonData: { apiToken: 'grafana-secret-token' } },
+        { name: 'Loki', type: 'loki' },
+      ]),
     },
     '/api/search': {
       contentType: 'application/json',
@@ -90,7 +93,7 @@ function writeMockResponse(req: IncomingMessage, res: ServerResponse): void {
         apiVersion: 'meta.k8s.io/v1',
         kind: 'PartialObjectMetadataList',
         items: [
-          { metadata: { name: 'dd-dev-server-api', namespace: 'default' } },
+          { metadata: { name: 'dd-dev-server-api', namespace: 'default', labels: { token: 'k8s-secret-token' } } },
           { metadata: { name: 'dd-gleam-mcp-server', namespace: 'default' } },
         ],
       }),
@@ -257,6 +260,32 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       assert.ok(toolNames.includes('grafana_inventory'));
       assert.ok(toolNames.includes('nats_metrics'));
 
+      const pingWithToolText = await fetchJson(port, '/mcp', {
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 43,
+          method: 'ping',
+          params: { note: 'tools/list' },
+        }),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(pingWithToolText.id, 43);
+      assert.deepEqual(pingWithToolText.result, {});
+
+      const misplacedToolName = await fetchJson(port, '/mcp', {
+        method: 'POST',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 44,
+          method: 'tools/call',
+          params: { arguments: { name: 'kubernetes_inventory' } },
+        }),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(misplacedToolName.id, 44);
+      assert.equal(misplacedToolName.error.code, -32602);
+
       const summary = await fetchJson(port, '/mcp', {
         method: 'POST',
         body: rpcBody('telemetry_summary'),
@@ -290,6 +319,8 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       assert.equal(grafana.result.structuredContent.datasources.ok, true);
       assert.equal(grafana.result.structuredContent.dashboards.ok, true);
       assert.match(grafana.result.structuredContent.datasources.sample, /Prometheus/);
+      assert.doesNotMatch(grafana.result.structuredContent.datasources.sample, /grafana-secret-token/);
+      assert.match(grafana.result.structuredContent.datasources.sample, /<redacted>/);
       assert.match(grafana.result.structuredContent.dashboards.sample, /Gleam MCP Runtime/);
 
       const nats = await fetchJson(port, '/mcp', {
@@ -310,6 +341,7 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       assert.equal(deployments.result.structuredContent.readOnly, true);
       assert.equal(deployments.result.structuredContent.response.ok, true);
       assert.match(deployments.result.structuredContent.response.sample, /dd-dev-server-api/);
+      assert.doesNotMatch(deployments.result.structuredContent.response.sample, /k8s-secret-token/);
 
       const inventory = await fetchJson(port, '/mcp', {
         method: 'POST',

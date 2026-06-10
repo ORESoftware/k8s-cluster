@@ -46,6 +46,27 @@ test("gateway sets baseline browser security headers", async () => {
   assert.match(gateway, /server_tokens\s+off;/);
 });
 
+test("gateway quotes regex locations that contain quantifier braces", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(
+    gateway,
+    /location\s+~\s+"\^\/music\/songs\/\[0-9a-fA-F\]\{8\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{12\}\/votes\$"/,
+  );
+  assert.doesNotMatch(gateway, /location\s+~\s+\^\/music\/songs\/\[0-9a-fA-F\]\{8\}/);
+});
+
+test("dd-music-rs pins a rustc image new enough for the locked AWS SDK crates", async () => {
+  const music = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-music-rs.deployment.yaml",
+  );
+
+  assert.match(music, /image:\s*docker\.io\/library\/rust:1\.91\.1-bookworm/);
+  assert.doesNotMatch(music, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+});
+
 test("/telemetry/ proxies websocket upgrades to grafana live", async () => {
   const gateway = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
@@ -63,6 +84,44 @@ test("/telemetry/ proxies websocket upgrades to grafana live", async () => {
   assert.match(telemetryBlock, /proxy_http_version\s+1\.1;/);
 });
 
+test("gateway defers optional cluster MCP DNS resolution until request time", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(
+    gateway,
+    /location\s+=\s+\/cluster-mcp\s*\{[\s\S]*set\s+\$dd_cluster_mcp_upstream\s+dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091;[\s\S]*proxy_pass\s+http:\/\/\$dd_cluster_mcp_upstream\/mcp;/,
+  );
+  assert.match(
+    gateway,
+    /location\s+\/cluster-mcp\/\s*\{[\s\S]*set\s+\$dd_cluster_mcp_upstream\s+dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091;[\s\S]*proxy_pass\s+http:\/\/\$dd_cluster_mcp_upstream\/;/,
+  );
+  assert.doesNotMatch(gateway, /proxy_pass\s+http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local/);
+});
+
+test("cluster MCP Rust server hardens MCP request and response boundaries", async () => {
+  const source = await readRepoFile("remote/deployments/cluster-mcp-rs/src/main.rs");
+  const deployment = await readRepoFile(
+    "remote/deployments/cluster-mcp-rs/k8s/ec2/dd-cluster-mcp-rs.deployment.yaml",
+  );
+  const pdb = await readRepoFile(
+    "remote/deployments/cluster-mcp-rs/k8s/ec2/dd-cluster-mcp-rs.pdb.yaml",
+  );
+
+  assert.match(source, /const MAX_RPC_BODY_BYTES:\s*usize\s*=\s*1_000_000/);
+  assert.match(source, /DefaultBodyLimit::max\(MAX_RPC_BODY_BYTES\)/);
+  assert.match(source, /request\.jsonrpc\.as_deref\(\)\s*!=\s*Some\("2\.0"\)/);
+  assert.match(source, /fn sanitize_rpc_id/);
+  assert.match(source, /fn allowed_mcp_base_url/);
+  assert.match(source, /\.ends_with\("\.svc\.cluster\.local"\)/);
+  assert.match(source, /fn response_sample/);
+  assert.match(source, /fn redact_json_value/);
+  assert.match(source, /fn sanitize_url_for_output/);
+  assert.match(deployment, /name:\s*MCP_ALLOW_EXTERNAL_URLS[\s\S]*value:\s*'false'/);
+  assert.match(pdb, /minAvailable:\s*1/);
+});
+
 test("dd-idle-reaper has additive baseline securityContext", async () => {
   const reaper = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-idle-reaper.deployment.yaml",
@@ -72,6 +131,8 @@ test("dd-idle-reaper has additive baseline securityContext", async () => {
   // one. The "containers:" block should contain both fields below.
   assert.match(reaper, /allowPrivilegeEscalation:\s*false/);
   assert.match(reaper, /seccompProfile:\s*\n\s*type:\s*RuntimeDefault/);
+  assert.doesNotMatch(reaper, /privileged:\s*true/);
+  assert.doesNotMatch(reaper, /mountPropagation:\s*Bidirectional/);
 });
 
 test("nats main container drops all linux capabilities", async () => {
@@ -112,6 +173,23 @@ test("promtail host log reader keeps root scope constrained", async () => {
   );
 });
 
+test("grafana anonymous access is viewer-only and git-provisioned", async () => {
+  const grafana = await readRepoFile(
+    "remote/argocd/observability/grafana.deployment.yaml",
+  );
+  const provisioning = await readRepoFile(
+    "remote/argocd/observability/grafana.provisioning.configmap.yaml",
+  );
+
+  assert.match(grafana, /GF_AUTH_ANONYMOUS_ENABLED[\s\S]*value:\s*"true"/);
+  assert.match(grafana, /GF_AUTH_ANONYMOUS_ORG_ROLE[\s\S]*value:\s*Viewer/);
+  assert.doesNotMatch(grafana, /GF_AUTH_ANONYMOUS_ORG_ROLE[\s\S]*value:\s*Admin/);
+  assert.match(grafana, /GF_AUTH_BASIC_ENABLED[\s\S]*value:\s*"false"/);
+  assert.match(grafana, /GF_AUTH_DISABLE_LOGIN_FORM[\s\S]*value:\s*"true"/);
+  assert.match(grafana, /GF_USERS_ALLOW_SIGN_UP[\s\S]*value:\s*"false"/);
+  assert.match(provisioning, /allowUiUpdates:\s*false/);
+});
+
 test("dd-dev-server-api declares resource requests and limits", async () => {
   const devServer = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",
@@ -121,6 +199,116 @@ test("dd-dev-server-api declares resource requests and limits", async () => {
     /resources:\s*\n\s*requests:\s*\n\s*cpu:\s*([^\n]+)\n\s*memory:\s*([^\n]+)\n\s*limits:\s*\n\s*cpu:\s*([^\n]+)\n\s*memory:\s*([^\n]+)/,
   );
   assert.ok(resourcesMatch, "dd-dev-server-api should declare requests + limits");
+});
+
+test("dd-next-runtime two-replica rollouts stay within single-node CPU capacity", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const runtimeRoot = resolve(repoRoot, "remote/argocd/dd-next-runtime");
+  const entries = await readdir(runtimeRoot, { withFileTypes: true });
+  const offenders: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".deployment.yaml")) {
+      continue;
+    }
+
+    const path = resolve(runtimeRoot, entry.name);
+    const text = await readFile(path, "utf8");
+    const replicas = Number.parseInt(text.match(/^\s*replicas:\s*(\d+)/m)?.[1] ?? "1", 10);
+    if (replicas < 2 || !/type:\s*RollingUpdate/.test(text)) {
+      continue;
+    }
+
+    if (!/maxSurge:\s*0/.test(text) || !/maxUnavailable:\s*1/.test(text)) {
+      offenders.push(entry.name);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `two-replica rollouts should not require surge capacity on the single-node cluster:\n${offenders.join("\n")}`,
+  );
+});
+
+test("hostPath Rust source-build services use bounded scheduler CPU requests", async () => {
+  const sourceBuildDeployments = [
+    "remote/argocd/dd-next-runtime/dd-economics-server.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-fabrication-server.deployment.yaml",
+    "remote/argocd/dd-next-runtime/dd-public-data-server.deployment.yaml",
+  ];
+  const offenders: string[] = [];
+
+  for (const relativePath of sourceBuildDeployments) {
+    const text = await readRepoFile(relativePath);
+    if (!/CARGO_BUILD_JOBS[\s\S]*value:\s*'1'/.test(text)) {
+      offenders.push(`${relativePath}: missing CARGO_BUILD_JOBS=1`);
+    }
+    if (/requests:\s*\n\s*cpu:\s*250m/.test(text)) {
+      offenders.push(`${relativePath}: request still uses 250m`);
+    }
+    if (!/requests:\s*\n\s*cpu:\s*100m/.test(text)) {
+      offenders.push(`${relativePath}: missing 100m request`);
+    }
+  }
+
+  assert.deepEqual(offenders, [], `source-build CPU request guard failed:\n${offenders.join("\n")}`);
+});
+
+test("benchmark websocket services do not reserve whole idle cores", async () => {
+  const requestBudgets = [
+    {
+      path: "remote/deployments/dart-server/k8s/ec2/dd-dart-server.deployment.yaml",
+      cpu: "250m",
+    },
+    {
+      path: "remote/deployments/akka-ws-server/k8s/ec2/dd-akka-ws-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/argocd/dd-next-runtime/dd-go-wss-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/argocd/dd-next-runtime/dd-rust-wss-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/deployments/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.deployment.yaml",
+      cpu: "100m",
+    },
+    {
+      path: "remote/deployments/gleamlang-ws-loadtest/k8s/gcs/dd-gleamlang-ws-loadtest-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
+    {
+      path: "remote/deployments/gleamlang-ws-loadtest/k8s/gcs-node/dd-nodejs-ws-loadtest-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
+    {
+      path: "remote/deployments/ws-loadtest-rs/k8s/gcs/dd-ws-loadtest-rs-gcs.deployment.yaml",
+      cpu: "1m",
+      memoryLimit: "8Gi",
+    },
+  ];
+  const offenders: string[] = [];
+
+  for (const { path, cpu, memoryLimit } of requestBudgets) {
+    const text = await readRepoFile(path);
+    if (!new RegExp(`requests:\\s*\\n\\s*cpu:\\s*${cpu}`).test(text)) {
+      offenders.push(`${path}: expected CPU request ${cpu}`);
+    }
+    if (
+      memoryLimit &&
+      !new RegExp(`limits:\\s*\\n\\s*cpu:\\s*"6"\\s*\\n\\s*memory:\\s*${memoryLimit}`).test(text)
+    ) {
+      offenders.push(`${path}: expected memory limit ${memoryLimit}`);
+    }
+  }
+
+  assert.deepEqual(offenders, [], `websocket benchmark CPU request guard failed:\n${offenders.join("\n")}`);
 });
 
 test("no kubernetes manifest in argocd uses the :latest image tag", async () => {

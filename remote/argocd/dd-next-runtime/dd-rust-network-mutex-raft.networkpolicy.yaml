@@ -1,0 +1,76 @@
+# Defense-in-depth network policy for the BrokerRaft cluster.
+#
+# NOT wired into kustomization.yaml yet: the cluster CNI is Cilium, which
+# enforces NetworkPolicy, so an over-tight policy can block kubelet httpGet
+# probes (-> restarts -> quorum loss). Cilium normally treats node/host traffic
+# as the "host" entity and allows it, so probes usually keep working under a
+# standard policy — but VERIFY before relying on it:
+#
+#   1. kubectl apply -f dd-rust-network-mutex-raft.networkpolicy.yaml
+#   2. watch `kubectl get pods -l app=dd-rust-network-mutex-raft` for ~2 min:
+#      probes must stay READY and restart counts must not climb.
+#   3. confirm /raft/status still reports a stable leader and clusterSize 5.
+#   4. only then add this file to kustomization.yaml for GitOps management.
+#
+# Restricts raft RPC (7980) to peers, and HTTP (6971) to peers + the gateway +
+# the observability namespace (metrics scraping). Egress is limited to DNS and
+# peer RPC/HTTP. Adjust the gateway/observability selectors to match your mesh.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-rust-network-mutex-raft
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-raft
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-rust-network-mutex-raft
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Raft consensus RPC: peers only.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-rust-network-mutex-raft
+      ports:
+        - protocol: TCP
+          port: 7980
+    # HTTP API (/v1/*, /raft/*, /healthz, /metrics): peers (follower proxy),
+    # the gateway, and the observability namespace.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-rust-network-mutex-raft
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 6971
+  egress:
+    # DNS resolution.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Peer-to-peer raft RPC + follower->leader proxy.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-rust-network-mutex-raft
+      ports:
+        - protocol: TCP
+          port: 7980
+        - protocol: TCP
+          port: 6971

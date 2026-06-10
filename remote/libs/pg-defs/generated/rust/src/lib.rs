@@ -46,7 +46,7 @@ impl AppConfigStatus {
 impl TryFrom<&str> for AppConfigStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -296,7 +296,7 @@ impl MusicSongsStatus {
 impl TryFrom<&str> for MusicSongsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "generated" => Ok(Self::Generated),
             "published" => Ok(Self::Published),
@@ -335,7 +335,7 @@ impl MusicSongsStorageProvider {
 impl TryFrom<&str> for MusicSongsStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -597,6 +597,1556 @@ pub fn validate_music_song_votes_insert(value: &MusicSongVotesInsert) -> Result<
     Ok(())
 }
 
+pub const SOUND_RECORDER_ACCOUNTS_TABLE: &str = "sound_recorder_accounts";
+pub const SOUND_RECORDER_ACCOUNTS_COLUMNS: &[&str] = &["id", "status", "external_subject", "display_name", "legal_region", "retention_hours", "retention_policy_version", "created_at", "updated_at"];
+pub const SOUND_RECORDER_ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      status,
+      external_subject,
+      display_name,
+      legal_region,
+      retention_hours,
+      retention_policy_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_accounts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderAccountsStatus {
+    Active,
+    Paused,
+    Locked,
+    Deleted,
+}
+
+impl SoundRecorderAccountsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "locked", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Locked => "locked",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderAccountsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "locked" => Ok(Self::Locked),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAccountsRow {
+    pub id: String,
+    pub status: String,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: i32,
+    pub retention_policy_version: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAccountsInsert {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub external_subject: Option<String>,
+    pub display_name: Option<String>,
+    pub legal_region: Option<String>,
+    pub retention_hours: Option<i32>,
+    pub retention_policy_version: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_accounts_row(value: &SoundRecorderAccountsRow) -> Result<(), String> {
+    if !["active", "paused", "locked", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", &value.status)); }
+    if let Some(value) = &value.external_subject {
+        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+    }
+    if *(&value.retention_hours) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
+    if *(&value.retention_hours) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
+    validate_string_length("sound_recorder_accounts.retention_policy_version", &value.retention_policy_version, None, Some(80))?;
+    Ok(())
+}
+
+pub fn validate_sound_recorder_accounts_insert(value: &SoundRecorderAccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "paused", "locked", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_accounts.status: {}", value)); }
+    }
+    if let Some(value) = &value.external_subject {
+        validate_string_length("sound_recorder_accounts.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_accounts.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_accounts.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_accounts.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_accounts.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.retention_hours {
+        if *(value) < 1 { return Err("sound_recorder_accounts.retention_hours is below the minimum".to_string()); }
+        if *(value) > 500 { return Err("sound_recorder_accounts.retention_hours is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.retention_policy_version {
+        validate_string_length("sound_recorder_accounts.retention_policy_version", value, None, Some(80))?;
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_DEVICES_TABLE: &str = "sound_recorder_devices";
+pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &["id", "account_id", "platform", "status", "install_id", "device_label", "app_version", "os_version", "token_hash", "token_last4", "consent_version", "consent_accepted_at", "recording_indicator_acknowledged", "last_seen_at", "created_at", "updated_at"];
+pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      platform,
+      status,
+      install_id,
+      device_label,
+      app_version,
+      os_version,
+      token_hash,
+      token_last4,
+      consent_version,
+      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
+      recording_indicator_acknowledged,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_devices"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesPlatform {
+    Ios,
+    Android,
+}
+
+impl SoundRecorderDevicesPlatform {
+    pub const VALUES: &'static [&'static str] = &["ios", "android"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ios => "ios",
+            Self::Android => "android",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesPlatform {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "ios" => Ok(Self::Ios),
+            "android" => Ok(Self::Android),
+            _ => Err(format!("unsupported platform: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesStatus {
+    Active,
+    Revoked,
+    Lost,
+    Replaced,
+    Deleted,
+}
+
+impl SoundRecorderDevicesStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "revoked", "lost", "replaced", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Revoked => "revoked",
+            Self::Lost => "lost",
+            Self::Replaced => "replaced",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "revoked" => Ok(Self::Revoked),
+            "lost" => Ok(Self::Lost),
+            "replaced" => Ok(Self::Replaced),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderDevicesRow {
+    pub id: String,
+    pub account_id: String,
+    pub platform: String,
+    pub status: String,
+    pub install_id: String,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: String,
+    pub token_last4: String,
+    pub consent_version: String,
+    pub consent_accepted_at: String,
+    pub recording_indicator_acknowledged: bool,
+    pub last_seen_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderDevicesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub platform: Option<String>,
+    pub status: Option<String>,
+    pub install_id: Option<String>,
+    pub device_label: Option<String>,
+    pub app_version: Option<String>,
+    pub os_version: Option<String>,
+    pub token_hash: Option<String>,
+    pub token_last4: Option<String>,
+    pub consent_version: Option<String>,
+    pub consent_accepted_at: Option<String>,
+    pub recording_indicator_acknowledged: Option<bool>,
+    pub last_seen_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> Result<(), String> {
+    if !["ios", "android"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", &value.platform)); }
+    if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", &value.status)); }
+    validate_string_length("sound_recorder_devices.install_id", &value.install_id, None, Some(160))?;
+    if (&value.install_id).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+    if let Some(value) = &value.device_label {
+        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.app_version {
+        validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.os_version {
+        validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+    }
+    validate_string_length("sound_recorder_devices.token_hash", &value.token_hash, None, Some(64))?;
+    validate_string_length("sound_recorder_devices.token_last4", &value.token_last4, None, Some(4))?;
+    validate_string_length("sound_recorder_devices.consent_version", &value.consent_version, None, Some(80))?;
+    Ok(())
+}
+
+pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.platform {
+        if !["ios", "android"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", value)); }
+    }
+    if let Some(value) = &value.install_id {
+        validate_string_length("sound_recorder_devices.install_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.device_label {
+        validate_string_length("sound_recorder_devices.device_label", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_devices.device_label exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.app_version {
+        validate_string_length("sound_recorder_devices.app_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.app_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.os_version {
+        validate_string_length("sound_recorder_devices.os_version", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_devices.os_version exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.token_hash {
+        validate_string_length("sound_recorder_devices.token_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_last4 {
+        validate_string_length("sound_recorder_devices.token_last4", value, None, Some(4))?;
+    }
+    if let Some(value) = &value.consent_version {
+        validate_string_length("sound_recorder_devices.consent_version", value, None, Some(80))?;
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_TABLE: &str = "sound_recorder_upload_sessions";
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "status", "storage_provider", "storage_bucket", "storage_prefix", "content_type", "codec", "sample_rate", "channel_count", "segment_duration_seconds", "max_segment_bytes", "started_at", "last_heartbeat_at", "closed_at", "expires_at", "client_timezone", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_UPLOAD_SESSIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_prefix,
+      content_type,
+      codec,
+      sample_rate,
+      channel_count,
+      segment_duration_seconds,
+      max_segment_bytes,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_heartbeat_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      client_timezone,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_upload_sessions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderUploadSessionsStatus {
+    Active,
+    Closed,
+    Revoked,
+    Expired,
+}
+
+impl SoundRecorderUploadSessionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "closed", "revoked", "expired"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Closed => "closed",
+            Self::Revoked => "revoked",
+            Self::Expired => "expired",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderUploadSessionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "closed" => Ok(Self::Closed),
+            "revoked" => Ok(Self::Revoked),
+            "expired" => Ok(Self::Expired),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderUploadSessionsStorageProvider {
+    S3,
+}
+
+impl SoundRecorderUploadSessionsStorageProvider {
+    pub const VALUES: &'static [&'static str] = &["s3"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderUploadSessionsStorageProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "s3" => Ok(Self::S3),
+            _ => Err(format!("unsupported storage_provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderUploadSessionsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_prefix: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: i32,
+    pub segment_duration_seconds: i32,
+    pub max_segment_bytes: i32,
+    pub started_at: String,
+    pub last_heartbeat_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderUploadSessionsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_prefix: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub sample_rate: Option<i32>,
+    pub channel_count: Option<i32>,
+    pub segment_duration_seconds: Option<i32>,
+    pub max_segment_bytes: Option<i32>,
+    pub started_at: Option<String>,
+    pub last_heartbeat_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub client_timezone: Option<String>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_upload_sessions_row(value: &SoundRecorderUploadSessionsRow) -> Result<(), String> {
+    if !["active", "closed", "revoked", "expired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", &value.status)); }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", &value.storage_provider)); }
+    validate_string_length("sound_recorder_upload_sessions.storage_bucket", &value.storage_bucket, None, Some(200))?;
+    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
+    if (&value.storage_prefix).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
+    validate_string_length("sound_recorder_upload_sessions.content_type", &value.content_type, None, Some(120))?;
+    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+    }
+    if *(&value.channel_count) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
+    if *(&value.channel_count) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
+    if *(&value.segment_duration_seconds) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
+    if *(&value.segment_duration_seconds) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
+    if *(&value.max_segment_bytes) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
+    if *(&value.max_segment_bytes) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+    if let Some(value) = &value.client_timezone {
+        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_upload_sessions_insert(value: &SoundRecorderUploadSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "closed", "revoked", "expired"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.status: {}", value)); }
+    }
+    if let Some(value) = &value.storage_provider {
+        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_upload_sessions.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("sound_recorder_upload_sessions.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("sound_recorder_upload_sessions.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_prefix {
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_upload_sessions.storage_prefix exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("sound_recorder_upload_sessions.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("sound_recorder_upload_sessions.content_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_upload_sessions.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sample_rate {
+        if *(value) < 8000 { return Err("sound_recorder_upload_sessions.sample_rate is below the minimum".to_string()); }
+        if *(value) > 192000 { return Err("sound_recorder_upload_sessions.sample_rate is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.channel_count {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.channel_count is below the minimum".to_string()); }
+        if *(value) > 8 { return Err("sound_recorder_upload_sessions.channel_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.segment_duration_seconds {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is below the minimum".to_string()); }
+        if *(value) > 600 { return Err("sound_recorder_upload_sessions.segment_duration_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_segment_bytes {
+        if *(value) < 1 { return Err("sound_recorder_upload_sessions.max_segment_bytes is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_upload_sessions.max_segment_bytes is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.client_timezone {
+        validate_string_length("sound_recorder_upload_sessions.client_timezone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_upload_sessions.client_timezone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("sound_recorder_upload_sessions.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_upload_sessions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_SEGMENTS_TABLE: &str = "sound_recorder_segments";
+pub const SOUND_RECORDER_SEGMENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "session_id", "sequence_number", "status", "storage_provider", "storage_bucket", "storage_key", "content_type", "codec", "captured_started_at", "captured_ended_at", "duration_millis", "byte_count", "sha256_hex", "upload_url_expires_at", "etag", "uploaded_at", "expires_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_SEGMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      session_id::text as session_id,
+      sequence_number,
+      status,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      content_type,
+      codec,
+      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_started_at,
+      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as captured_ended_at,
+      duration_millis,
+      byte_count,
+      sha256_hex,
+      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as upload_url_expires_at,
+      etag,
+      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_segments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderSegmentsStatus {
+    Pending,
+    Uploaded,
+    Failed,
+    Expired,
+    Deleted,
+}
+
+impl SoundRecorderSegmentsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "uploaded", "failed", "expired", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Uploaded => "uploaded",
+            Self::Failed => "failed",
+            Self::Expired => "expired",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderSegmentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "uploaded" => Ok(Self::Uploaded),
+            "failed" => Ok(Self::Failed),
+            "expired" => Ok(Self::Expired),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderSegmentsStorageProvider {
+    S3,
+}
+
+impl SoundRecorderSegmentsStorageProvider {
+    pub const VALUES: &'static [&'static str] = &["s3"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderSegmentsStorageProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "s3" => Ok(Self::S3),
+            _ => Err(format!("unsupported storage_provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderSegmentsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub session_id: String,
+    pub sequence_number: i32,
+    pub status: String,
+    pub storage_provider: String,
+    pub storage_bucket: String,
+    pub storage_key: String,
+    pub content_type: String,
+    pub codec: Option<String>,
+    pub captured_started_at: String,
+    pub captured_ended_at: Option<String>,
+    pub duration_millis: i32,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<String>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub expires_at: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderSegmentsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub session_id: Option<String>,
+    pub sequence_number: Option<i32>,
+    pub status: Option<String>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
+    pub content_type: Option<String>,
+    pub codec: Option<String>,
+    pub captured_started_at: Option<String>,
+    pub captured_ended_at: Option<String>,
+    pub duration_millis: Option<i32>,
+    pub byte_count: Option<i32>,
+    pub sha256_hex: Option<String>,
+    pub upload_url_expires_at: Option<String>,
+    pub etag: Option<String>,
+    pub uploaded_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_segments_row(value: &SoundRecorderSegmentsRow) -> Result<(), String> {
+    if *(&value.sequence_number) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
+    if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", &value.status)); }
+    if !["s3"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", &value.storage_provider)); }
+    validate_string_length("sound_recorder_segments.storage_bucket", &value.storage_bucket, None, Some(200))?;
+    if (&value.storage_bucket).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
+    if (&value.storage_key).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
+    validate_string_length("sound_recorder_segments.content_type", &value.content_type, None, Some(120))?;
+    if (&value.content_type).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+    }
+    if *(&value.duration_millis) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
+    if *(&value.duration_millis) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+    if let Some(value) = &value.byte_count {
+        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.sha256_hex {
+        validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.etag {
+        validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_segments_insert(value: &SoundRecorderSegmentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.sequence_number {
+        if *(value) < 0 { return Err("sound_recorder_segments.sequence_number is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "uploaded", "failed", "expired", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.status: {}", value)); }
+    }
+    if let Some(value) = &value.storage_provider {
+        if !["s3"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_segments.storage_provider: {}", value)); }
+    }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("sound_recorder_segments.storage_bucket", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("sound_recorder_segments.storage_bucket exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_key {
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_segments.storage_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("sound_recorder_segments.content_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("sound_recorder_segments.content_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.codec {
+        validate_string_length("sound_recorder_segments.codec", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("sound_recorder_segments.codec exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.duration_millis {
+        if *(value) < 1 { return Err("sound_recorder_segments.duration_millis is below the minimum".to_string()); }
+        if *(value) > 600000 { return Err("sound_recorder_segments.duration_millis is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.byte_count {
+        if *(value) < 0 { return Err("sound_recorder_segments.byte_count is below the minimum".to_string()); }
+        if *(value) > 209715200 { return Err("sound_recorder_segments.byte_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.sha256_hex {
+        validate_string_length("sound_recorder_segments.sha256_hex", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.etag {
+        validate_string_length("sound_recorder_segments.etag", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_segments.etag exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_segments.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_TABLE: &str = "sound_recorder_evidence_exports";
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "created_by_device_id", "status", "requested_from", "requested_to", "segment_count", "manifest", "download_url_expires_at", "requested_at", "ready_at", "expires_at", "meta_data"];
+pub const SOUND_RECORDER_EVIDENCE_EXPORTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      created_by_device_id::text as created_by_device_id,
+      status,
+      to_char(requested_from at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_from,
+      to_char(requested_to at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_to,
+      segment_count,
+      manifest,
+      to_char(download_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as download_url_expires_at,
+      to_char(requested_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as requested_at,
+      to_char(ready_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ready_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      meta_data
+    from sound_recorder_evidence_exports"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderEvidenceExportsStatus {
+    Requested,
+    Ready,
+    Expired,
+    Revoked,
+}
+
+impl SoundRecorderEvidenceExportsStatus {
+    pub const VALUES: &'static [&'static str] = &["requested", "ready", "expired", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Requested => "requested",
+            Self::Ready => "ready",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderEvidenceExportsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "requested" => Ok(Self::Requested),
+            "ready" => Ok(Self::Ready),
+            "expired" => Ok(Self::Expired),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderEvidenceExportsRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub status: String,
+    pub requested_from: String,
+    pub requested_to: String,
+    pub segment_count: i32,
+    pub manifest: Value,
+    pub download_url_expires_at: Option<String>,
+    pub requested_at: String,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Value,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderEvidenceExportsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub status: Option<String>,
+    pub requested_from: Option<String>,
+    pub requested_to: Option<String>,
+    pub segment_count: Option<i32>,
+    pub manifest: Option<Value>,
+    pub download_url_expires_at: Option<String>,
+    pub requested_at: Option<String>,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub meta_data: Option<Value>,
+}
+
+pub fn validate_sound_recorder_evidence_exports_row(value: &SoundRecorderEvidenceExportsRow) -> Result<(), String> {
+    if !["requested", "ready", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", &value.status)); }
+    if *(&value.segment_count) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
+    if !(&value.manifest).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_evidence_exports_insert(value: &SoundRecorderEvidenceExportsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["requested", "ready", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_evidence_exports.status: {}", value)); }
+    }
+    if let Some(value) = &value.segment_count {
+        if *(value) < 0 { return Err("sound_recorder_evidence_exports.segment_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.manifest {
+        if !(value).is_object() { return Err("sound_recorder_evidence_exports.manifest must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_evidence_exports.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_AUDIT_EVENTS_TABLE: &str = "sound_recorder_audit_events";
+pub const SOUND_RECORDER_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "account_id", "device_id", "event_type", "event_hash", "payload", "created_at"];
+pub const SOUND_RECORDER_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      event_type,
+      event_hash,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from sound_recorder_audit_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAuditEventsRow {
+    pub id: String,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderAuditEventsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_audit_events_row(value: &SoundRecorderAuditEventsRow) -> Result<(), String> {
+    validate_string_length("sound_recorder_audit_events.event_type", &value.event_type, None, Some(80))?;
+    validate_string_length("sound_recorder_audit_events.event_hash", &value.event_hash, None, Some(64))?;
+    if !(&value.payload).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_audit_events_insert(value: &SoundRecorderAuditEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        validate_string_length("sound_recorder_audit_events.event_type", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.event_hash {
+        validate_string_length("sound_recorder_audit_events.event_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("sound_recorder_audit_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_OAUTH_STATES_TABLE: &str = "sound_recorder_oauth_states";
+pub const SOUND_RECORDER_OAUTH_STATES_COLUMNS: &[&str] = &["id", "account_id", "device_id", "provider", "state_hash", "redirect_uri", "folder_path", "status", "expires_at", "consumed_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_OAUTH_STATES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      device_id::text as device_id,
+      provider,
+      state_hash,
+      redirect_uri,
+      folder_path,
+      status,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_oauth_states"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderOauthStatesProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderOauthStatesStatus {
+    Pending,
+    Consumed,
+    Expired,
+    Revoked,
+}
+
+impl SoundRecorderOauthStatesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "consumed", "expired", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Consumed => "consumed",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderOauthStatesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "consumed" => Ok(Self::Consumed),
+            "expired" => Ok(Self::Expired),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesRow {
+    pub id: String,
+    pub account_id: String,
+    pub device_id: String,
+    pub provider: String,
+    pub state_hash: String,
+    pub redirect_uri: String,
+    pub folder_path: Option<String>,
+    pub status: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderOauthStatesInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub device_id: Option<String>,
+    pub provider: Option<String>,
+    pub state_hash: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub folder_path: Option<String>,
+    pub status: Option<String>,
+    pub expires_at: Option<String>,
+    pub consumed_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStatesRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
+    validate_string_length("sound_recorder_oauth_states.state_hash", &value.state_hash, None, Some(64))?;
+    validate_string_length("sound_recorder_oauth_states.redirect_uri", &value.redirect_uri, None, Some(512))?;
+    if (&value.redirect_uri).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if !["pending", "consumed", "expired", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_oauth_states_insert(value: &SoundRecorderOauthStatesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
+    }
+    if let Some(value) = &value.state_hash {
+        validate_string_length("sound_recorder_oauth_states.state_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.redirect_uri {
+        validate_string_length("sound_recorder_oauth_states.redirect_uri", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_oauth_states.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "consumed", "expired", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_oauth_states.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_TABLE: &str = "sound_recorder_cloud_connections";
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_COLUMNS: &[&str] = &["id", "account_id", "created_by_device_id", "provider", "link_mode", "status", "display_name", "provider_account_id", "provider_subject_hash", "root_folder_id", "folder_path", "oauth_scope", "token_ciphertext", "token_nonce", "token_aad", "token_version", "token_expires_at", "last_sync_at", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_CONNECTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      created_by_device_id::text as created_by_device_id,
+      provider,
+      link_mode,
+      status,
+      display_name,
+      provider_account_id,
+      provider_subject_hash,
+      root_folder_id,
+      folder_path,
+      oauth_scope,
+      token_ciphertext,
+      token_nonce,
+      token_aad,
+      token_version,
+      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as token_expires_at,
+      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_sync_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connections"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudConnectionsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsLinkMode {
+    ServerOauth,
+    ClientManaged,
+}
+
+impl SoundRecorderCloudConnectionsLinkMode {
+    pub const VALUES: &'static [&'static str] = &["server_oauth", "client_managed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ServerOauth => "server_oauth",
+            Self::ClientManaged => "client_managed",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsLinkMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "server_oauth" => Ok(Self::ServerOauth),
+            "client_managed" => Ok(Self::ClientManaged),
+            _ => Err(format!("unsupported link_mode: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudConnectionsStatus {
+    Active,
+    Paused,
+    Revoked,
+    Failed,
+}
+
+impl SoundRecorderCloudConnectionsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "revoked", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Revoked => "revoked",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudConnectionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "revoked" => Ok(Self::Revoked),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsRow {
+    pub id: String,
+    pub account_id: String,
+    pub created_by_device_id: Option<String>,
+    pub provider: String,
+    pub link_mode: String,
+    pub status: String,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: String,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub created_by_device_id: Option<String>,
+    pub provider: Option<String>,
+    pub link_mode: Option<String>,
+    pub status: Option<String>,
+    pub display_name: Option<String>,
+    pub provider_account_id: Option<String>,
+    pub provider_subject_hash: Option<String>,
+    pub root_folder_id: Option<String>,
+    pub folder_path: Option<String>,
+    pub oauth_scope: Option<String>,
+    pub token_ciphertext: Option<String>,
+    pub token_nonce: Option<String>,
+    pub token_aad: Option<String>,
+    pub token_version: Option<i32>,
+    pub token_expires_at: Option<String>,
+    pub last_sync_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudConnectionsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
+    if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", &value.link_mode)); }
+    if !["active", "paused", "revoked", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", &value.status)); }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    validate_string_length("sound_recorder_cloud_connections.folder_path", &value.folder_path, None, Some(512))?;
+    if (&value.folder_path).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderCloudConnectionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
+    }
+    if let Some(value) = &value.link_mode {
+        if !["server_oauth", "client_managed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "revoked", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", value)); }
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("sound_recorder_cloud_connections.display_name", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("sound_recorder_cloud_connections.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_account_id {
+        validate_string_length("sound_recorder_cloud_connections.provider_account_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("sound_recorder_cloud_connections.provider_account_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject_hash {
+        validate_string_length("sound_recorder_cloud_connections.provider_subject_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.root_folder_id {
+        validate_string_length("sound_recorder_cloud_connections.root_folder_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.root_folder_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.folder_path {
+        validate_string_length("sound_recorder_cloud_connections.folder_path", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_connections.folder_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.token_nonce {
+        validate_string_length("sound_recorder_cloud_connections.token_nonce", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.token_aad {
+        validate_string_length("sound_recorder_cloud_connections.token_aad", value, None, Some(512))?;
+    }
+    if let Some(value) = &value.token_version {
+        if *(value) < 1 { return Err("sound_recorder_cloud_connections.token_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_connections.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_TABLE: &str = "sound_recorder_cloud_copy_jobs";
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &["id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_COPY_JOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      account_id::text as account_id,
+      connection_id::text as connection_id,
+      segment_id::text as segment_id,
+      provider,
+      status,
+      destination_key,
+      provider_file_id,
+      attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      last_error,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_copy_jobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsProvider {
+    GoogleDrive,
+    MicrosoftOnedrive,
+    AppleIcloud,
+}
+
+impl SoundRecorderCloudCopyJobsProvider {
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GoogleDrive => "google_drive",
+            Self::MicrosoftOnedrive => "microsoft_onedrive",
+            Self::AppleIcloud => "apple_icloud",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "google_drive" => Ok(Self::GoogleDrive),
+            "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
+            "apple_icloud" => Ok(Self::AppleIcloud),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderCloudCopyJobsStatus {
+    Pending,
+    Running,
+    WaitingClient,
+    Completed,
+    Failed,
+    Skipped,
+}
+
+impl SoundRecorderCloudCopyJobsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "waiting_client", "completed", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::WaitingClient => "waiting_client",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderCloudCopyJobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "waiting_client" => Ok(Self::WaitingClient),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsRow {
+    pub id: String,
+    pub account_id: String,
+    pub connection_id: String,
+    pub segment_id: String,
+    pub provider: String,
+    pub status: String,
+    pub destination_key: String,
+    pub provider_file_id: Option<String>,
+    pub attempts: i32,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudCopyJobsInsert {
+    pub id: Option<String>,
+    pub account_id: Option<String>,
+    pub connection_id: Option<String>,
+    pub segment_id: Option<String>,
+    pub provider: Option<String>,
+    pub status: Option<String>,
+    pub destination_key: Option<String>,
+    pub provider_file_id: Option<String>,
+    pub attempts: Option<i32>,
+    pub locked_until: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCopyJobsRow) -> Result<(), String> {
+    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
+    if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", &value.status)); }
+    validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", &value.destination_key, None, Some(2048))?;
+    if (&value.destination_key).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if *(&value.attempts) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+    if *(&value.attempts) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_copy_jobs_insert(value: &SoundRecorderCloudCopyJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.destination_key {
+        validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", value, None, Some(2048))?;
+        if (value).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_file_id {
+        validate_string_length("sound_recorder_cloud_copy_jobs.provider_file_id", value, None, Some(512))?;
+        if (value).as_bytes().len() > 512 { return Err("sound_recorder_cloud_copy_jobs.provider_file_id exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.attempts {
+        if *(value) < 0 { return Err("sound_recorder_cloud_copy_jobs.attempts is below the minimum".to_string()); }
+        if *(value) > 50 { return Err("sound_recorder_cloud_copy_jobs.attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_copy_jobs.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_copy_jobs.last_error exceeds 500 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("sound_recorder_cloud_copy_jobs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
 pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select
@@ -648,7 +2198,7 @@ impl ContainerPoolConfigsStatus {
 impl TryFrom<&str> for ContainerPoolConfigsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -850,7 +2400,7 @@ impl KnownGitRepoProvider {
 impl TryFrom<&str> for KnownGitRepoProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "github" => Ok(Self::Github),
             "gitlab" => Ok(Self::Gitlab),
@@ -884,7 +2434,7 @@ impl KnownGitRepoStatus {
 impl TryFrom<&str> for KnownGitRepoStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -1009,7 +2559,7 @@ impl AgentContextBlobsStatus {
 impl TryFrom<&str> for AgentContextBlobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -1302,7 +2852,7 @@ impl AgentRemoteDevTaskStatus {
 impl TryFrom<&str> for AgentRemoteDevTaskStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -1344,7 +2894,7 @@ impl AgentRemoteDevTaskPrState {
 impl TryFrom<&str> for AgentRemoteDevTaskPrState {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "open" => Ok(Self::Open),
@@ -1378,7 +2928,7 @@ impl AgentRemoteDevTaskExitReason {
 impl TryFrom<&str> for AgentRemoteDevTaskExitReason {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "cancelled" => Ok(Self::Cancelled),
@@ -1661,7 +3211,7 @@ impl AgentRemoteDevArtifactStorageProvider {
 impl TryFrom<&str> for AgentRemoteDevArtifactStorageProvider {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "s3" => Ok(Self::S3),
             "r2" => Ok(Self::R2),
@@ -1794,7 +3344,7 @@ impl AgentRemoteDevRuntimeLockStatus {
 impl TryFrom<&str> for AgentRemoteDevRuntimeLockStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "released" => Ok(Self::Released),
@@ -1948,7 +3498,7 @@ impl MipSolverSolvesNodeRole {
 impl TryFrom<&str> for MipSolverSolvesNodeRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "master" => Ok(Self::Master),
             "slave" => Ok(Self::Slave),
@@ -2340,7 +3890,7 @@ impl LambdaFunctionRuntime {
 impl TryFrom<&str> for LambdaFunctionRuntime {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "nodejs" => Ok(Self::Nodejs),
             "javascript" => Ok(Self::Javascript),
@@ -2393,7 +3943,7 @@ impl LambdaFunctionContainerBuildStatus {
 impl TryFrom<&str> for LambdaFunctionContainerBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "not_requested" => Ok(Self::NotRequested),
             "pending" => Ok(Self::Pending),
@@ -2431,7 +3981,7 @@ impl LambdaFunctionStatus {
 impl TryFrom<&str> for LambdaFunctionStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "draft" => Ok(Self::Draft),
             "active" => Ok(Self::Active),
@@ -2627,7 +4177,7 @@ impl ContainerPoolImageRevisionsSource {
 impl TryFrom<&str> for ContainerPoolImageRevisionsSource {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "disk-default" => Ok(Self::DiskDefault),
             "user" => Ok(Self::User),
@@ -2660,7 +4210,7 @@ impl ContainerPoolImageRevisionsStatus {
 impl TryFrom<&str> for ContainerPoolImageRevisionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -2816,7 +4366,7 @@ impl ContainerPoolBuildRunsBuildStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsBuildStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "building" => Ok(Self::Building),
@@ -2860,7 +4410,7 @@ impl ContainerPoolBuildRunsTestStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsTestStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "not_started" => Ok(Self::NotStarted),
             "pending" => Ok(Self::Pending),
@@ -2903,7 +4453,7 @@ impl ContainerPoolBuildRunsOverallStatus {
 impl TryFrom<&str> for ContainerPoolBuildRunsOverallStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -3061,7 +4611,7 @@ impl PresenceConvsStatus {
 impl TryFrom<&str> for PresenceConvsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -3173,7 +4723,7 @@ impl PresenceConvMembersRole {
 impl TryFrom<&str> for PresenceConvMembersRole {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "owner" => Ok(Self::Owner),
             "admin" => Ok(Self::Admin),
@@ -3210,7 +4760,7 @@ impl PresenceConvMembersStatus {
 impl TryFrom<&str> for PresenceConvMembersStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "muted" => Ok(Self::Muted),
@@ -3349,7 +4899,7 @@ impl PresenceEventsOp {
 impl TryFrom<&str> for PresenceEventsOp {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "INSERT" => Ok(Self::INSERT),
             "UPDATE" => Ok(Self::UPDATE),
@@ -3476,7 +5026,7 @@ impl DesSoccerLearningExperimentsStatus {
 impl TryFrom<&str> for DesSoccerLearningExperimentsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "active" => Ok(Self::Active),
             "paused" => Ok(Self::Paused),
@@ -3618,7 +5168,7 @@ impl DesSoccerLearningPolicyVersionsSourceKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "seed" => Ok(Self::Seed),
             "merge" => Ok(Self::Merge),
@@ -3656,7 +5206,7 @@ impl DesSoccerLearningPolicyVersionsStatus {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "candidate" => Ok(Self::Candidate),
             "active" => Ok(Self::Active),
@@ -3690,7 +5240,7 @@ impl DesSoccerLearningPolicyVersionsRetentionKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyVersionsRetentionKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "branch_tip" => Ok(Self::BranchTip),
             "retain_all" => Ok(Self::RetainAll),
@@ -3854,7 +5404,7 @@ impl DesSoccerLearningPolicyEntriesTeam {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -3884,7 +5434,7 @@ impl DesSoccerLearningPolicyEntriesEntryKind {
 impl TryFrom<&str> for DesSoccerLearningPolicyEntriesEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -4037,7 +5587,7 @@ impl DesSoccerLearningJobsSpawnStrategy {
 impl TryFrom<&str> for DesSoccerLearningJobsSpawnStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "latest" => Ok(Self::Latest),
             "elite" => Ok(Self::Elite),
@@ -4077,7 +5627,7 @@ impl DesSoccerLearningJobsStatus {
 impl TryFrom<&str> for DesSoccerLearningJobsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
@@ -4243,7 +5793,7 @@ impl DesSoccerLearningRunsStatus {
 impl TryFrom<&str> for DesSoccerLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -4275,7 +5825,7 @@ impl DesSoccerLearningRunsHomeOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsHomeOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -4308,7 +5858,7 @@ impl DesSoccerLearningRunsAwayOutcome {
 impl TryFrom<&str> for DesSoccerLearningRunsAwayOutcome {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "win" => Ok(Self::Win),
             "draw" => Ok(Self::Draw),
@@ -4499,7 +6049,7 @@ impl DesSoccerLearningRunDeltasTeam {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasTeam {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "home" => Ok(Self::Home),
             "away" => Ok(Self::Away),
@@ -4529,7 +6079,7 @@ impl DesSoccerLearningRunDeltasEntryKind {
 impl TryFrom<&str> for DesSoccerLearningRunDeltasEntryKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "action" => Ok(Self::Action),
             "target" => Ok(Self::Target),
@@ -4683,7 +6233,7 @@ impl DesSoccerLearningMergeEventsStrategy {
 impl TryFrom<&str> for DesSoccerLearningMergeEventsStrategy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "outcome_weighted_average" => Ok(Self::OutcomeWeightedAverage),
             "elite" => Ok(Self::Elite),
@@ -4810,7 +6360,7 @@ impl DesFelElevatorLearningRunsStatus {
 impl TryFrom<&str> for DesFelElevatorLearningRunsStatus {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "completed" => Ok(Self::Completed),
             "failed" => Ok(Self::Failed),
@@ -4847,7 +6397,7 @@ impl DesFelElevatorLearningRunsDispatchPolicy {
 impl TryFrom<&str> for DesFelElevatorLearningRunsDispatchPolicy {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -5081,7 +6631,7 @@ impl DesFelElevatorPolicyStatesPolicyKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -5118,7 +6668,7 @@ impl DesFelElevatorPolicyStatesSourceKind {
 impl TryFrom<&str> for DesFelElevatorPolicyStatesSourceKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "run-final" => Ok(Self::RunFinal),
             "offline-training" => Ok(Self::OfflineTraining),
@@ -5243,7 +6793,7 @@ impl DesFelElevatorDispatchDecisionsPolicyKind {
 impl TryFrom<&str> for DesFelElevatorDispatchDecisionsPolicyKind {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "look" => Ok(Self::Look),
             "mdp-table" => Ok(Self::MdpTable),
@@ -5354,7 +6904,7 @@ impl DesFelElevatorPomdpBeliefsAction {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsAction {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "hold" => Ok(Self::Hold),
             "dispatch" => Ok(Self::Dispatch),
@@ -5384,7 +6934,7 @@ impl DesFelElevatorPomdpBeliefsObservation {
 impl TryFrom<&str> for DesFelElevatorPomdpBeliefsObservation {
     type Error = String;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
         match value {
             "quiet" => Ok(Self::Quiet),
             "call" => Ok(Self::Call),
@@ -5474,6 +7024,8658 @@ pub fn validate_des_fel_elevator_pomdp_beliefs_insert(value: &DesFelElevatorPomd
     }
     if let Some(value) = &value.belief {
         if !(value).is_object() { return Err("des_fel_elevator_pomdp_beliefs.belief must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CLIENTS_TABLE: &str = "benefactor_marketing_clients";
+pub const BENEFACTOR_MARKETING_CLIENTS_COLUMNS: &[&str] = &["id", "status", "name", "slug", "industry", "website_url", "billing_email", "owner_user_id", "service_package", "onboarding_stage", "portal_enabled", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CLIENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      status,
+      name,
+      slug,
+      industry,
+      website_url,
+      billing_email,
+      owner_user_id::text as owner_user_id,
+      service_package,
+      onboarding_stage,
+      portal_enabled,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_clients"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingClientsStatus {
+    Onboarding,
+    Active,
+    Paused,
+    Archived,
+}
+
+impl BenefactorMarketingClientsStatus {
+    pub const VALUES: &'static [&'static str] = &["onboarding", "active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Onboarding => "onboarding",
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingClientsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "onboarding" => Ok(Self::Onboarding),
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingClientsRow {
+    pub id: String,
+    pub status: String,
+    pub name: String,
+    pub slug: String,
+    pub industry: Option<String>,
+    pub website_url: Option<String>,
+    pub billing_email: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub service_package: Option<String>,
+    pub onboarding_stage: String,
+    pub portal_enabled: bool,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingClientsInsert {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub name: Option<String>,
+    pub slug: Option<String>,
+    pub industry: Option<String>,
+    pub website_url: Option<String>,
+    pub billing_email: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub service_package: Option<String>,
+    pub onboarding_stage: Option<String>,
+    pub portal_enabled: Option<bool>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_clients_row(value: &BenefactorMarketingClientsRow) -> Result<(), String> {
+    if !["onboarding", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_clients.status: {}", &value.status)); }
+    validate_string_length("benefactor_marketing_clients.name", &value.name, None, Some(200))?;
+    if (&value.name).as_bytes().len() > 200 { return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string()); }
+    validate_slug("benefactor_marketing_clients.slug", &value.slug)?;
+    if let Some(value) = &value.industry {
+        validate_string_length("benefactor_marketing_clients.industry", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.website_url {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.billing_email {
+        validate_string_length("benefactor_marketing_clients.billing_email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.service_package {
+        validate_string_length("benefactor_marketing_clients.service_package", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.service_package exceeds 120 bytes".to_string()); }
+    }
+    validate_string_length("benefactor_marketing_clients.onboarding_stage", &value.onboarding_stage, None, Some(80))?;
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_clients_insert(value: &BenefactorMarketingClientsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["onboarding", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_clients.status: {}", value)); }
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_clients.name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_clients.name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.slug {
+        validate_slug("benefactor_marketing_clients.slug", value)?;
+    }
+    if let Some(value) = &value.industry {
+        validate_string_length("benefactor_marketing_clients.industry", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.industry exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.website_url {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_clients.website_url exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.billing_email {
+        validate_string_length("benefactor_marketing_clients.billing_email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_clients.billing_email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.service_package {
+        validate_string_length("benefactor_marketing_clients.service_package", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_clients.service_package exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.onboarding_stage {
+        validate_string_length("benefactor_marketing_clients.onboarding_stage", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_clients.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CONTACTS_TABLE: &str = "benefactor_marketing_contacts";
+pub const BENEFACTOR_MARKETING_CONTACTS_COLUMNS: &[&str] = &["id", "client_id", "status", "first_name", "last_name", "email", "phone", "job_title", "lifecycle_role", "consent_status", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTACTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      first_name,
+      last_name,
+      email,
+      phone,
+      job_title,
+      lifecycle_role,
+      consent_status,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_contacts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContactsStatus {
+    Active,
+    Inactive,
+    Bounced,
+    Unsubscribed,
+}
+
+impl BenefactorMarketingContactsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "inactive", "bounced", "unsubscribed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Inactive => "inactive",
+            Self::Bounced => "bounced",
+            Self::Unsubscribed => "unsubscribed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContactsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "inactive" => Ok(Self::Inactive),
+            "bounced" => Ok(Self::Bounced),
+            "unsubscribed" => Ok(Self::Unsubscribed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContactsLifecycleRole {
+    Primary,
+    DecisionMaker,
+    Billing,
+    Technical,
+    Marketing,
+    Other,
+}
+
+impl BenefactorMarketingContactsLifecycleRole {
+    pub const VALUES: &'static [&'static str] = &["primary", "decision_maker", "billing", "technical", "marketing", "other"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::DecisionMaker => "decision_maker",
+            Self::Billing => "billing",
+            Self::Technical => "technical",
+            Self::Marketing => "marketing",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContactsLifecycleRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "primary" => Ok(Self::Primary),
+            "decision_maker" => Ok(Self::DecisionMaker),
+            "billing" => Ok(Self::Billing),
+            "technical" => Ok(Self::Technical),
+            "marketing" => Ok(Self::Marketing),
+            "other" => Ok(Self::Other),
+            _ => Err(format!("unsupported lifecycle_role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContactsConsentStatus {
+    Unknown,
+    OptedIn,
+    OptedOut,
+}
+
+impl BenefactorMarketingContactsConsentStatus {
+    pub const VALUES: &'static [&'static str] = &["unknown", "opted_in", "opted_out"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::OptedIn => "opted_in",
+            Self::OptedOut => "opted_out",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContactsConsentStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "unknown" => Ok(Self::Unknown),
+            "opted_in" => Ok(Self::OptedIn),
+            "opted_out" => Ok(Self::OptedOut),
+            _ => Err(format!("unsupported consent_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContactsRow {
+    pub id: String,
+    pub client_id: String,
+    pub status: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub job_title: Option<String>,
+    pub lifecycle_role: String,
+    pub consent_status: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContactsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub status: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub job_title: Option<String>,
+    pub lifecycle_role: Option<String>,
+    pub consent_status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_contacts_row(value: &BenefactorMarketingContactsRow) -> Result<(), String> {
+    if !["active", "inactive", "bounced", "unsubscribed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.status: {}", &value.status)); }
+    if let Some(value) = &value.first_name {
+        validate_string_length("benefactor_marketing_contacts.first_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_name {
+        validate_string_length("benefactor_marketing_contacts.last_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email {
+        validate_string_length("benefactor_marketing_contacts.email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        validate_string_length("benefactor_marketing_contacts.phone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.job_title {
+        validate_string_length("benefactor_marketing_contacts.job_title", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string()); }
+    }
+    if !["primary", "decision_maker", "billing", "technical", "marketing", "other"].contains(&(&value.lifecycle_role).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.lifecycle_role: {}", &value.lifecycle_role)); }
+    if !["unknown", "opted_in", "opted_out"].contains(&(&value.consent_status).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.consent_status: {}", &value.consent_status)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_contacts.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_contacts_insert(value: &BenefactorMarketingContactsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "inactive", "bounced", "unsubscribed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.status: {}", value)); }
+    }
+    if let Some(value) = &value.first_name {
+        validate_string_length("benefactor_marketing_contacts.first_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.first_name exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_name {
+        validate_string_length("benefactor_marketing_contacts.last_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contacts.last_name exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email {
+        validate_string_length("benefactor_marketing_contacts.email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_contacts.email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        validate_string_length("benefactor_marketing_contacts.phone", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("benefactor_marketing_contacts.phone exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.job_title {
+        validate_string_length("benefactor_marketing_contacts.job_title", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_contacts.job_title exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.lifecycle_role {
+        if !["primary", "decision_maker", "billing", "technical", "marketing", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.lifecycle_role: {}", value)); }
+    }
+    if let Some(value) = &value.consent_status {
+        if !["unknown", "opted_in", "opted_out"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contacts.consent_status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_contacts.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_TABLE: &str = "benefactor_marketing_service_packages";
+pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_COLUMNS: &[&str] = &["id", "status", "code", "name", "channel_mix", "deliverables", "monthly_budget_cents", "retainer_cents", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_SERVICE_PACKAGES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      status,
+      code,
+      name,
+      channel_mix,
+      deliverables,
+      monthly_budget_cents,
+      retainer_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_service_packages"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingServicePackagesStatus {
+    Active,
+    Retired,
+}
+
+impl BenefactorMarketingServicePackagesStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "retired"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Retired => "retired",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingServicePackagesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "retired" => Ok(Self::Retired),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingServicePackagesRow {
+    pub id: String,
+    pub status: String,
+    pub code: String,
+    pub name: String,
+    pub channel_mix: Value,
+    pub deliverables: Value,
+    pub monthly_budget_cents: i32,
+    pub retainer_cents: i32,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingServicePackagesInsert {
+    pub id: Option<String>,
+    pub status: Option<String>,
+    pub code: Option<String>,
+    pub name: Option<String>,
+    pub channel_mix: Option<Value>,
+    pub deliverables: Option<Value>,
+    pub monthly_budget_cents: Option<i32>,
+    pub retainer_cents: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_service_packages_row(value: &BenefactorMarketingServicePackagesRow) -> Result<(), String> {
+    if !["active", "retired"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_service_packages.status: {}", &value.status)); }
+    validate_string_length("benefactor_marketing_service_packages.code", &value.code, None, Some(120))?;
+    validate_string_length("benefactor_marketing_service_packages.name", &value.name, None, Some(200))?;
+    if (&value.name).as_bytes().len() > 200 { return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string()); }
+    if !(&value.channel_mix).is_array() { return Err("benefactor_marketing_service_packages.channel_mix must be a JSON array".to_string()); }
+    if !(&value.deliverables).is_array() { return Err("benefactor_marketing_service_packages.deliverables must be a JSON array".to_string()); }
+    if *(&value.monthly_budget_cents) < 0 { return Err("benefactor_marketing_service_packages.monthly_budget_cents is below the minimum".to_string()); }
+    if *(&value.retainer_cents) < 0 { return Err("benefactor_marketing_service_packages.retainer_cents is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_service_packages.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_service_packages_insert(value: &BenefactorMarketingServicePackagesInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "retired"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_service_packages.status: {}", value)); }
+    }
+    if let Some(value) = &value.code {
+        validate_string_length("benefactor_marketing_service_packages.code", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_service_packages.name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_service_packages.name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.channel_mix {
+        if !(value).is_array() { return Err("benefactor_marketing_service_packages.channel_mix must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.deliverables {
+        if !(value).is_array() { return Err("benefactor_marketing_service_packages.deliverables must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.monthly_budget_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_service_packages.monthly_budget_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.retainer_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_service_packages.retainer_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_service_packages.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CONTRACTS_TABLE: &str = "benefactor_marketing_contracts";
+pub const BENEFACTOR_MARKETING_CONTRACTS_COLUMNS: &[&str] = &["id", "client_id", "package_id", "status", "contract_number", "starts_on", "ends_on", "billing_terms", "total_value_cents", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTRACTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      package_id::text as package_id,
+      status,
+      contract_number,
+      starts_on,
+      ends_on,
+      billing_terms,
+      total_value_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_contracts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContractsStatus {
+    Draft,
+    Active,
+    Renewal,
+    Expired,
+    Terminated,
+}
+
+impl BenefactorMarketingContractsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "active", "renewal", "expired", "terminated"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Renewal => "renewal",
+            Self::Expired => "expired",
+            Self::Terminated => "terminated",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContractsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "renewal" => Ok(Self::Renewal),
+            "expired" => Ok(Self::Expired),
+            "terminated" => Ok(Self::Terminated),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContractsRow {
+    pub id: String,
+    pub client_id: String,
+    pub package_id: Option<String>,
+    pub status: String,
+    pub contract_number: Option<String>,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub billing_terms: Value,
+    pub total_value_cents: i32,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContractsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub package_id: Option<String>,
+    pub status: Option<String>,
+    pub contract_number: Option<String>,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub billing_terms: Option<Value>,
+    pub total_value_cents: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_contracts_row(value: &BenefactorMarketingContractsRow) -> Result<(), String> {
+    if !["draft", "active", "renewal", "expired", "terminated"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_contracts.status: {}", &value.status)); }
+    if let Some(value) = &value.contract_number {
+        validate_string_length("benefactor_marketing_contracts.contract_number", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_contracts.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_contracts.ends_on", value, None, Some(10))?;
+    }
+    if !(&value.billing_terms).is_object() { return Err("benefactor_marketing_contracts.billing_terms must be a JSON object".to_string()); }
+    if *(&value.total_value_cents) < 0 { return Err("benefactor_marketing_contracts.total_value_cents is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_contracts.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_contracts_insert(value: &BenefactorMarketingContractsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "active", "renewal", "expired", "terminated"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_contracts.status: {}", value)); }
+    }
+    if let Some(value) = &value.contract_number {
+        validate_string_length("benefactor_marketing_contracts.contract_number", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_contracts.contract_number exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_contracts.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_contracts.ends_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.billing_terms {
+        if !(value).is_object() { return Err("benefactor_marketing_contracts.billing_terms must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.total_value_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_contracts.total_value_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_contracts.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_INVOICES_TABLE: &str = "benefactor_marketing_invoices";
+pub const BENEFACTOR_MARKETING_INVOICES_COLUMNS: &[&str] = &["id", "client_id", "contract_id", "status", "invoice_number", "due_on", "amount_cents", "paid_at", "line_items", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INVOICES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      contract_id::text as contract_id,
+      status,
+      invoice_number,
+      due_on,
+      amount_cents,
+      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as paid_at,
+      line_items,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_invoices"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingInvoicesStatus {
+    Draft,
+    Sent,
+    Paid,
+    Overdue,
+    Void,
+}
+
+impl BenefactorMarketingInvoicesStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "sent", "paid", "overdue", "void"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Sent => "sent",
+            Self::Paid => "paid",
+            Self::Overdue => "overdue",
+            Self::Void => "void",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingInvoicesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "sent" => Ok(Self::Sent),
+            "paid" => Ok(Self::Paid),
+            "overdue" => Ok(Self::Overdue),
+            "void" => Ok(Self::Void),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingInvoicesRow {
+    pub id: String,
+    pub client_id: String,
+    pub contract_id: Option<String>,
+    pub status: String,
+    pub invoice_number: Option<String>,
+    pub due_on: Option<String>,
+    pub amount_cents: i32,
+    pub paid_at: Option<String>,
+    pub line_items: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingInvoicesInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub contract_id: Option<String>,
+    pub status: Option<String>,
+    pub invoice_number: Option<String>,
+    pub due_on: Option<String>,
+    pub amount_cents: Option<i32>,
+    pub paid_at: Option<String>,
+    pub line_items: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_invoices_row(value: &BenefactorMarketingInvoicesRow) -> Result<(), String> {
+    if !["draft", "sent", "paid", "overdue", "void"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_invoices.status: {}", &value.status)); }
+    if let Some(value) = &value.invoice_number {
+        validate_string_length("benefactor_marketing_invoices.invoice_number", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.due_on {
+        validate_string_length("benefactor_marketing_invoices.due_on", value, None, Some(10))?;
+    }
+    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_invoices.amount_cents is below the minimum".to_string()); }
+    if !(&value.line_items).is_array() { return Err("benefactor_marketing_invoices.line_items must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_invoices.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_invoices_insert(value: &BenefactorMarketingInvoicesInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "sent", "paid", "overdue", "void"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_invoices.status: {}", value)); }
+    }
+    if let Some(value) = &value.invoice_number {
+        validate_string_length("benefactor_marketing_invoices.invoice_number", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_invoices.invoice_number exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.due_on {
+        validate_string_length("benefactor_marketing_invoices.due_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_invoices.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.line_items {
+        if !(value).is_array() { return Err("benefactor_marketing_invoices.line_items must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_invoices.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_INTEGRATIONS_TABLE: &str = "benefactor_marketing_integrations";
+pub const BENEFACTOR_MARKETING_INTEGRATIONS_COLUMNS: &[&str] = &["id", "client_id", "platform", "status", "auth_kind", "external_account_id", "sync_cursor", "config", "last_sync_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INTEGRATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      platform,
+      status,
+      auth_kind,
+      external_account_id,
+      sync_cursor,
+      config,
+      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_sync_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_integrations"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationsPlatform {
+    Salesforce,
+    Hubspot,
+    Apollo,
+    Zoominfo,
+    GoogleAnalytics,
+    GoogleAds,
+    LinkedinAds,
+    MetaAds,
+    Mailchimp,
+    Sendgrid,
+    Scraper,
+    Custom,
+}
+
+impl BenefactorMarketingIntegrationsPlatform {
+    pub const VALUES: &'static [&'static str] = &["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Salesforce => "salesforce",
+            Self::Hubspot => "hubspot",
+            Self::Apollo => "apollo",
+            Self::Zoominfo => "zoominfo",
+            Self::GoogleAnalytics => "google_analytics",
+            Self::GoogleAds => "google_ads",
+            Self::LinkedinAds => "linkedin_ads",
+            Self::MetaAds => "meta_ads",
+            Self::Mailchimp => "mailchimp",
+            Self::Sendgrid => "sendgrid",
+            Self::Scraper => "scraper",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationsPlatform {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "salesforce" => Ok(Self::Salesforce),
+            "hubspot" => Ok(Self::Hubspot),
+            "apollo" => Ok(Self::Apollo),
+            "zoominfo" => Ok(Self::Zoominfo),
+            "google_analytics" => Ok(Self::GoogleAnalytics),
+            "google_ads" => Ok(Self::GoogleAds),
+            "linkedin_ads" => Ok(Self::LinkedinAds),
+            "meta_ads" => Ok(Self::MetaAds),
+            "mailchimp" => Ok(Self::Mailchimp),
+            "sendgrid" => Ok(Self::Sendgrid),
+            "scraper" => Ok(Self::Scraper),
+            "custom" => Ok(Self::Custom),
+            _ => Err(format!("unsupported platform: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationsStatus {
+    Connected,
+    Disabled,
+    Error,
+}
+
+impl BenefactorMarketingIntegrationsStatus {
+    pub const VALUES: &'static [&'static str] = &["connected", "disabled", "error"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Connected => "connected",
+            Self::Disabled => "disabled",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "connected" => Ok(Self::Connected),
+            "disabled" => Ok(Self::Disabled),
+            "error" => Ok(Self::Error),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationsAuthKind {
+    Oauth2,
+    ApiKey,
+    Webhook,
+    Manual,
+}
+
+impl BenefactorMarketingIntegrationsAuthKind {
+    pub const VALUES: &'static [&'static str] = &["oauth2", "api_key", "webhook", "manual"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Oauth2 => "oauth2",
+            Self::ApiKey => "api_key",
+            Self::Webhook => "webhook",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationsAuthKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "oauth2" => Ok(Self::Oauth2),
+            "api_key" => Ok(Self::ApiKey),
+            "webhook" => Ok(Self::Webhook),
+            "manual" => Ok(Self::Manual),
+            _ => Err(format!("unsupported auth_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingIntegrationsRow {
+    pub id: String,
+    pub client_id: Option<String>,
+    pub platform: String,
+    pub status: String,
+    pub auth_kind: String,
+    pub external_account_id: Option<String>,
+    pub sync_cursor: Option<String>,
+    pub config: Value,
+    pub last_sync_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingIntegrationsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub platform: Option<String>,
+    pub status: Option<String>,
+    pub auth_kind: Option<String>,
+    pub external_account_id: Option<String>,
+    pub sync_cursor: Option<String>,
+    pub config: Option<Value>,
+    pub last_sync_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_integrations_row(value: &BenefactorMarketingIntegrationsRow) -> Result<(), String> {
+    if !["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.platform: {}", &value.platform)); }
+    if !["connected", "disabled", "error"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.status: {}", &value.status)); }
+    if !["oauth2", "api_key", "webhook", "manual"].contains(&(&value.auth_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.auth_kind: {}", &value.auth_kind)); }
+    if let Some(value) = &value.external_account_id {
+        validate_string_length("benefactor_marketing_integrations.external_account_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_integrations.external_account_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sync_cursor {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string()); }
+    }
+    if !(&value.config).is_object() { return Err("benefactor_marketing_integrations.config must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_integrations_insert(value: &BenefactorMarketingIntegrationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.platform {
+        if !["salesforce", "hubspot", "apollo", "zoominfo", "google_analytics", "google_ads", "linkedin_ads", "meta_ads", "mailchimp", "sendgrid", "scraper", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.platform: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["connected", "disabled", "error"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.status: {}", value)); }
+    }
+    if let Some(value) = &value.auth_kind {
+        if !["oauth2", "api_key", "webhook", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integrations.auth_kind: {}", value)); }
+    }
+    if let Some(value) = &value.external_account_id {
+        validate_string_length("benefactor_marketing_integrations.external_account_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_integrations.external_account_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sync_cursor {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integrations.sync_cursor exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.config {
+        if !(value).is_object() { return Err("benefactor_marketing_integrations.config must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_LEADS_TABLE: &str = "benefactor_marketing_leads";
+pub const BENEFACTOR_MARKETING_LEADS_COLUMNS: &[&str] = &["id", "client_id", "source_integration_id", "status", "company_name", "domain", "contact_name", "contact_email", "contact_title", "country_code", "lead_score", "icp_fit_score", "verification_status", "enrichment_status", "company_profile", "signals", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_LEADS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      source_integration_id::text as source_integration_id,
+      status,
+      company_name,
+      domain,
+      contact_name,
+      contact_email,
+      contact_title,
+      country_code,
+      lead_score,
+      icp_fit_score,
+      verification_status,
+      enrichment_status,
+      company_profile,
+      signals,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_leads"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingLeadsStatus {
+    New,
+    Researching,
+    Qualified,
+    Disqualified,
+    Contacted,
+    Converted,
+}
+
+impl BenefactorMarketingLeadsStatus {
+    pub const VALUES: &'static [&'static str] = &["new", "researching", "qualified", "disqualified", "contacted", "converted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::New => "new",
+            Self::Researching => "researching",
+            Self::Qualified => "qualified",
+            Self::Disqualified => "disqualified",
+            Self::Contacted => "contacted",
+            Self::Converted => "converted",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingLeadsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "new" => Ok(Self::New),
+            "researching" => Ok(Self::Researching),
+            "qualified" => Ok(Self::Qualified),
+            "disqualified" => Ok(Self::Disqualified),
+            "contacted" => Ok(Self::Contacted),
+            "converted" => Ok(Self::Converted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingLeadsVerificationStatus {
+    Unknown,
+    Verified,
+    Invalid,
+    Risky,
+}
+
+impl BenefactorMarketingLeadsVerificationStatus {
+    pub const VALUES: &'static [&'static str] = &["unknown", "verified", "invalid", "risky"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Verified => "verified",
+            Self::Invalid => "invalid",
+            Self::Risky => "risky",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingLeadsVerificationStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "unknown" => Ok(Self::Unknown),
+            "verified" => Ok(Self::Verified),
+            "invalid" => Ok(Self::Invalid),
+            "risky" => Ok(Self::Risky),
+            _ => Err(format!("unsupported verification_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingLeadsEnrichmentStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+}
+
+impl BenefactorMarketingLeadsEnrichmentStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "completed", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingLeadsEnrichmentStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported enrichment_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingLeadsRow {
+    pub id: String,
+    pub client_id: String,
+    pub source_integration_id: Option<String>,
+    pub status: String,
+    pub company_name: String,
+    pub domain: Option<String>,
+    pub contact_name: Option<String>,
+    pub contact_email: Option<String>,
+    pub contact_title: Option<String>,
+    pub country_code: Option<String>,
+    pub lead_score: i32,
+    pub icp_fit_score: i32,
+    pub verification_status: String,
+    pub enrichment_status: String,
+    pub company_profile: Value,
+    pub signals: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingLeadsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub source_integration_id: Option<String>,
+    pub status: Option<String>,
+    pub company_name: Option<String>,
+    pub domain: Option<String>,
+    pub contact_name: Option<String>,
+    pub contact_email: Option<String>,
+    pub contact_title: Option<String>,
+    pub country_code: Option<String>,
+    pub lead_score: Option<i32>,
+    pub icp_fit_score: Option<i32>,
+    pub verification_status: Option<String>,
+    pub enrichment_status: Option<String>,
+    pub company_profile: Option<Value>,
+    pub signals: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_leads_row(value: &BenefactorMarketingLeadsRow) -> Result<(), String> {
+    if !["new", "researching", "qualified", "disqualified", "contacted", "converted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.status: {}", &value.status)); }
+    validate_string_length("benefactor_marketing_leads.company_name", &value.company_name, None, Some(240))?;
+    if (&value.company_name).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string()); }
+    if let Some(value) = &value.domain {
+        validate_string_length("benefactor_marketing_leads.domain", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_name {
+        validate_string_length("benefactor_marketing_leads.contact_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_email {
+        validate_string_length("benefactor_marketing_leads.contact_email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_title {
+        validate_string_length("benefactor_marketing_leads.contact_title", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.country_code {
+        validate_string_length("benefactor_marketing_leads.country_code", value, None, Some(8))?;
+        if (value).as_bytes().len() > 8 { return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string()); }
+    }
+    if *(&value.lead_score) < 0 { return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string()); }
+    if *(&value.lead_score) > 100 { return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string()); }
+    if *(&value.icp_fit_score) < 0 { return Err("benefactor_marketing_leads.icp_fit_score is below the minimum".to_string()); }
+    if *(&value.icp_fit_score) > 100 { return Err("benefactor_marketing_leads.icp_fit_score is above the maximum".to_string()); }
+    if !["unknown", "verified", "invalid", "risky"].contains(&(&value.verification_status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.verification_status: {}", &value.verification_status)); }
+    if !["pending", "running", "completed", "failed"].contains(&(&value.enrichment_status).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.enrichment_status: {}", &value.enrichment_status)); }
+    if !(&value.company_profile).is_object() { return Err("benefactor_marketing_leads.company_profile must be a JSON object".to_string()); }
+    if !(&value.signals).is_array() { return Err("benefactor_marketing_leads.signals must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_leads_insert(value: &BenefactorMarketingLeadsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["new", "researching", "qualified", "disqualified", "contacted", "converted"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.status: {}", value)); }
+    }
+    if let Some(value) = &value.company_name {
+        validate_string_length("benefactor_marketing_leads.company_name", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.company_name exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.domain {
+        validate_string_length("benefactor_marketing_leads.domain", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.domain exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_name {
+        validate_string_length("benefactor_marketing_leads.contact_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_leads.contact_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_email {
+        validate_string_length("benefactor_marketing_leads.contact_email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_leads.contact_email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contact_title {
+        validate_string_length("benefactor_marketing_leads.contact_title", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("benefactor_marketing_leads.contact_title exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.country_code {
+        validate_string_length("benefactor_marketing_leads.country_code", value, None, Some(8))?;
+        if (value).as_bytes().len() > 8 { return Err("benefactor_marketing_leads.country_code exceeds 8 bytes".to_string()); }
+    }
+    if let Some(value) = &value.lead_score {
+        if *(value) < 0 { return Err("benefactor_marketing_leads.lead_score is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("benefactor_marketing_leads.lead_score is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.icp_fit_score {
+        if *(value) < 0 { return Err("benefactor_marketing_leads.icp_fit_score is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("benefactor_marketing_leads.icp_fit_score is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.verification_status {
+        if !["unknown", "verified", "invalid", "risky"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.verification_status: {}", value)); }
+    }
+    if let Some(value) = &value.enrichment_status {
+        if !["pending", "running", "completed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_leads.enrichment_status: {}", value)); }
+    }
+    if let Some(value) = &value.company_profile {
+        if !(value).is_object() { return Err("benefactor_marketing_leads.company_profile must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.signals {
+        if !(value).is_array() { return Err("benefactor_marketing_leads.signals must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_leads.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_TABLE: &str = "benefactor_marketing_enrichment_jobs";
+pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "job_kind", "status", "external_job_id", "scraper_handoff_url", "input", "result", "error_summary", "queued_at", "started_at", "completed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_ENRICHMENT_JOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      job_kind,
+      status,
+      external_job_id,
+      scraper_handoff_url,
+      input,
+      result,
+      error_summary,
+      to_char(queued_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as queued_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_enrichment_jobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingEnrichmentJobsJobKind {
+    LeadEnrichment,
+    CompanyResearch,
+    ContactVerification,
+    ProspectScrape,
+    CompetitiveIntel,
+}
+
+impl BenefactorMarketingEnrichmentJobsJobKind {
+    pub const VALUES: &'static [&'static str] = &["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LeadEnrichment => "lead_enrichment",
+            Self::CompanyResearch => "company_research",
+            Self::ContactVerification => "contact_verification",
+            Self::ProspectScrape => "prospect_scrape",
+            Self::CompetitiveIntel => "competitive_intel",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingEnrichmentJobsJobKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "lead_enrichment" => Ok(Self::LeadEnrichment),
+            "company_research" => Ok(Self::CompanyResearch),
+            "contact_verification" => Ok(Self::ContactVerification),
+            "prospect_scrape" => Ok(Self::ProspectScrape),
+            "competitive_intel" => Ok(Self::CompetitiveIntel),
+            _ => Err(format!("unsupported job_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingEnrichmentJobsStatus {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Canceled,
+}
+
+impl BenefactorMarketingEnrichmentJobsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "completed", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingEnrichmentJobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingEnrichmentJobsRow {
+    pub id: String,
+    pub client_id: String,
+    pub lead_id: Option<String>,
+    pub job_kind: String,
+    pub status: String,
+    pub external_job_id: Option<String>,
+    pub scraper_handoff_url: Option<String>,
+    pub input: Value,
+    pub result: Value,
+    pub error_summary: Option<String>,
+    pub queued_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingEnrichmentJobsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub job_kind: Option<String>,
+    pub status: Option<String>,
+    pub external_job_id: Option<String>,
+    pub scraper_handoff_url: Option<String>,
+    pub input: Option<Value>,
+    pub result: Option<Value>,
+    pub error_summary: Option<String>,
+    pub queued_at: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_enrichment_jobs_row(value: &BenefactorMarketingEnrichmentJobsRow) -> Result<(), String> {
+    if !["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"].contains(&(&value.job_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.job_kind: {}", &value.job_kind)); }
+    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.status: {}", &value.status)); }
+    if let Some(value) = &value.external_job_id {
+        validate_string_length("benefactor_marketing_enrichment_jobs.external_job_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.scraper_handoff_url {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes".to_string()); }
+    }
+    if !(&value.input).is_object() { return Err("benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string()); }
+    if !(&value.result).is_object() { return Err("benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string()); }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_enrichment_jobs_insert(value: &BenefactorMarketingEnrichmentJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.job_kind {
+        if !["lead_enrichment", "company_research", "contact_verification", "prospect_scrape", "competitive_intel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.job_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_enrichment_jobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.external_job_id {
+        validate_string_length("benefactor_marketing_enrichment_jobs.external_job_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_enrichment_jobs.external_job_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.scraper_handoff_url {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_enrichment_jobs.scraper_handoff_url exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("benefactor_marketing_enrichment_jobs.input must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.result {
+        if !(value).is_object() { return Err("benefactor_marketing_enrichment_jobs.result must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_enrichment_jobs.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CAMPAIGNS_TABLE: &str = "benefactor_marketing_campaigns";
+pub const BENEFACTOR_MARKETING_CAMPAIGNS_COLUMNS: &[&str] = &["id", "client_id", "status", "campaign_kind", "name", "objective", "budget_cents", "starts_on", "ends_on", "target_segments", "kpis", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      campaign_kind,
+      name,
+      objective,
+      budget_cents,
+      starts_on,
+      ends_on,
+      target_segments,
+      kpis,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_campaigns"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignsStatus {
+    Draft,
+    Active,
+    Paused,
+    Completed,
+    Archived,
+}
+
+impl BenefactorMarketingCampaignsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "completed", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "completed" => Ok(Self::Completed),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignsCampaignKind {
+    SocialMedia,
+    SeoAeo,
+    Email,
+    Outreach,
+    PaidAds,
+    Content,
+    MultiChannel,
+}
+
+impl BenefactorMarketingCampaignsCampaignKind {
+    pub const VALUES: &'static [&'static str] = &["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SocialMedia => "social_media",
+            Self::SeoAeo => "seo_aeo",
+            Self::Email => "email",
+            Self::Outreach => "outreach",
+            Self::PaidAds => "paid_ads",
+            Self::Content => "content",
+            Self::MultiChannel => "multi_channel",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignsCampaignKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "social_media" => Ok(Self::SocialMedia),
+            "seo_aeo" => Ok(Self::SeoAeo),
+            "email" => Ok(Self::Email),
+            "outreach" => Ok(Self::Outreach),
+            "paid_ads" => Ok(Self::PaidAds),
+            "content" => Ok(Self::Content),
+            "multi_channel" => Ok(Self::MultiChannel),
+            _ => Err(format!("unsupported campaign_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignsRow {
+    pub id: String,
+    pub client_id: String,
+    pub status: String,
+    pub campaign_kind: String,
+    pub name: String,
+    pub objective: Option<String>,
+    pub budget_cents: i32,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub target_segments: Value,
+    pub kpis: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub status: Option<String>,
+    pub campaign_kind: Option<String>,
+    pub name: Option<String>,
+    pub objective: Option<String>,
+    pub budget_cents: Option<i32>,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub target_segments: Option<Value>,
+    pub kpis: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_campaigns_row(value: &BenefactorMarketingCampaignsRow) -> Result<(), String> {
+    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.status: {}", &value.status)); }
+    if !["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"].contains(&(&value.campaign_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.campaign_kind: {}", &value.campaign_kind)); }
+    validate_string_length("benefactor_marketing_campaigns.name", &value.name, None, Some(220))?;
+    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string()); }
+    if let Some(value) = &value.objective {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string()); }
+    }
+    if *(&value.budget_cents) < 0 { return Err("benefactor_marketing_campaigns.budget_cents is below the minimum".to_string()); }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_campaigns.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_campaigns.ends_on", value, None, Some(10))?;
+    }
+    if !(&value.target_segments).is_array() { return Err("benefactor_marketing_campaigns.target_segments must be a JSON array".to_string()); }
+    if !(&value.kpis).is_object() { return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_campaigns.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_campaigns_insert(value: &BenefactorMarketingCampaignsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.status: {}", value)); }
+    }
+    if let Some(value) = &value.campaign_kind {
+        if !["social_media", "seo_aeo", "email", "outreach", "paid_ads", "content", "multi_channel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaigns.campaign_kind: {}", value)); }
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_campaigns.name", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_campaigns.name exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.objective {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaigns.objective exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.budget_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_campaigns.budget_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_campaigns.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_campaigns.ends_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.target_segments {
+        if !(value).is_array() { return Err("benefactor_marketing_campaigns.target_segments must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.kpis {
+        if !(value).is_object() { return Err("benefactor_marketing_campaigns.kpis must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_campaigns.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_TABLE: &str = "benefactor_marketing_campaign_channels";
+pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_COLUMNS: &[&str] = &["id", "campaign_id", "channel", "status", "external_campaign_id", "strategy", "schedule", "metrics_snapshot", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGN_CHANNELS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      campaign_id::text as campaign_id,
+      channel,
+      status,
+      external_campaign_id,
+      strategy,
+      schedule,
+      metrics_snapshot,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_campaign_channels"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignChannelsChannel {
+    Social,
+    Linkedin,
+    Email,
+    Sms,
+    Seo,
+    Aeo,
+    GoogleAds,
+    MetaAds,
+    LandingPage,
+    Content,
+}
+
+impl BenefactorMarketingCampaignChannelsChannel {
+    pub const VALUES: &'static [&'static str] = &["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Social => "social",
+            Self::Linkedin => "linkedin",
+            Self::Email => "email",
+            Self::Sms => "sms",
+            Self::Seo => "seo",
+            Self::Aeo => "aeo",
+            Self::GoogleAds => "google_ads",
+            Self::MetaAds => "meta_ads",
+            Self::LandingPage => "landing_page",
+            Self::Content => "content",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignChannelsChannel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "social" => Ok(Self::Social),
+            "linkedin" => Ok(Self::Linkedin),
+            "email" => Ok(Self::Email),
+            "sms" => Ok(Self::Sms),
+            "seo" => Ok(Self::Seo),
+            "aeo" => Ok(Self::Aeo),
+            "google_ads" => Ok(Self::GoogleAds),
+            "meta_ads" => Ok(Self::MetaAds),
+            "landing_page" => Ok(Self::LandingPage),
+            "content" => Ok(Self::Content),
+            _ => Err(format!("unsupported channel: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignChannelsStatus {
+    Draft,
+    Scheduled,
+    Live,
+    Paused,
+    Completed,
+}
+
+impl BenefactorMarketingCampaignChannelsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "scheduled", "live", "paused", "completed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Scheduled => "scheduled",
+            Self::Live => "live",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignChannelsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "scheduled" => Ok(Self::Scheduled),
+            "live" => Ok(Self::Live),
+            "paused" => Ok(Self::Paused),
+            "completed" => Ok(Self::Completed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignChannelsRow {
+    pub id: String,
+    pub campaign_id: String,
+    pub channel: String,
+    pub status: String,
+    pub external_campaign_id: Option<String>,
+    pub strategy: Value,
+    pub schedule: Value,
+    pub metrics_snapshot: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignChannelsInsert {
+    pub id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub channel: Option<String>,
+    pub status: Option<String>,
+    pub external_campaign_id: Option<String>,
+    pub strategy: Option<Value>,
+    pub schedule: Option<Value>,
+    pub metrics_snapshot: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_campaign_channels_row(value: &BenefactorMarketingCampaignChannelsRow) -> Result<(), String> {
+    if !["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.channel: {}", &value.channel)); }
+    if !["draft", "scheduled", "live", "paused", "completed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.status: {}", &value.status)); }
+    if let Some(value) = &value.external_campaign_id {
+        validate_string_length("benefactor_marketing_campaign_channels.external_campaign_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes".to_string()); }
+    }
+    if !(&value.strategy).is_object() { return Err("benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string()); }
+    if !(&value.schedule).is_object() { return Err("benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string()); }
+    if !(&value.metrics_snapshot).is_object() { return Err("benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_campaign_channels_insert(value: &BenefactorMarketingCampaignChannelsInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel {
+        if !["social", "linkedin", "email", "sms", "seo", "aeo", "google_ads", "meta_ads", "landing_page", "content"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.channel: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "scheduled", "live", "paused", "completed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_channels.status: {}", value)); }
+    }
+    if let Some(value) = &value.external_campaign_id {
+        validate_string_length("benefactor_marketing_campaign_channels.external_campaign_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_campaign_channels.external_campaign_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.strategy {
+        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.strategy must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.schedule {
+        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.schedule must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.metrics_snapshot {
+        if !(value).is_object() { return Err("benefactor_marketing_campaign_channels.metrics_snapshot must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_TABLE: &str = "benefactor_marketing_campaign_experiments";
+pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_COLUMNS: &[&str] = &["id", "campaign_id", "status", "experiment_kind", "hypothesis", "variants", "winning_variant", "result_summary", "started_at", "ended_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CAMPAIGN_EXPERIMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      campaign_id::text as campaign_id,
+      status,
+      experiment_kind,
+      hypothesis,
+      variants,
+      winning_variant,
+      result_summary,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ended_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_campaign_experiments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignExperimentsStatus {
+    Draft,
+    Running,
+    WinnerSelected,
+    Stopped,
+}
+
+impl BenefactorMarketingCampaignExperimentsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "running", "winner_selected", "stopped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Running => "running",
+            Self::WinnerSelected => "winner_selected",
+            Self::Stopped => "stopped",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignExperimentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "running" => Ok(Self::Running),
+            "winner_selected" => Ok(Self::WinnerSelected),
+            "stopped" => Ok(Self::Stopped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCampaignExperimentsExperimentKind {
+    SubjectLine,
+    Creative,
+    Copy,
+    LandingPage,
+    Audience,
+    Budget,
+}
+
+impl BenefactorMarketingCampaignExperimentsExperimentKind {
+    pub const VALUES: &'static [&'static str] = &["subject_line", "creative", "copy", "landing_page", "audience", "budget"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SubjectLine => "subject_line",
+            Self::Creative => "creative",
+            Self::Copy => "copy",
+            Self::LandingPage => "landing_page",
+            Self::Audience => "audience",
+            Self::Budget => "budget",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCampaignExperimentsExperimentKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "subject_line" => Ok(Self::SubjectLine),
+            "creative" => Ok(Self::Creative),
+            "copy" => Ok(Self::Copy),
+            "landing_page" => Ok(Self::LandingPage),
+            "audience" => Ok(Self::Audience),
+            "budget" => Ok(Self::Budget),
+            _ => Err(format!("unsupported experiment_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignExperimentsRow {
+    pub id: String,
+    pub campaign_id: String,
+    pub status: String,
+    pub experiment_kind: String,
+    pub hypothesis: Option<String>,
+    pub variants: Value,
+    pub winning_variant: Option<String>,
+    pub result_summary: Value,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCampaignExperimentsInsert {
+    pub id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub status: Option<String>,
+    pub experiment_kind: Option<String>,
+    pub hypothesis: Option<String>,
+    pub variants: Option<Value>,
+    pub winning_variant: Option<String>,
+    pub result_summary: Option<Value>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_campaign_experiments_row(value: &BenefactorMarketingCampaignExperimentsRow) -> Result<(), String> {
+    if !["draft", "running", "winner_selected", "stopped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.status: {}", &value.status)); }
+    if !["subject_line", "creative", "copy", "landing_page", "audience", "budget"].contains(&(&value.experiment_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}", &value.experiment_kind)); }
+    if let Some(value) = &value.hypothesis {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes".to_string()); }
+    }
+    if !(&value.variants).is_array() { return Err("benefactor_marketing_campaign_experiments.variants must be a JSON array".to_string()); }
+    if let Some(value) = &value.winning_variant {
+        validate_string_length("benefactor_marketing_campaign_experiments.winning_variant", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes".to_string()); }
+    }
+    if !(&value.result_summary).is_object() { return Err("benefactor_marketing_campaign_experiments.result_summary must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_campaign_experiments_insert(value: &BenefactorMarketingCampaignExperimentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "running", "winner_selected", "stopped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.status: {}", value)); }
+    }
+    if let Some(value) = &value.experiment_kind {
+        if !["subject_line", "creative", "copy", "landing_page", "audience", "budget"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_campaign_experiments.experiment_kind: {}", value)); }
+    }
+    if let Some(value) = &value.hypothesis {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_campaign_experiments.hypothesis exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.variants {
+        if !(value).is_array() { return Err("benefactor_marketing_campaign_experiments.variants must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.winning_variant {
+        validate_string_length("benefactor_marketing_campaign_experiments.winning_variant", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_campaign_experiments.winning_variant exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.result_summary {
+        if !(value).is_object() { return Err("benefactor_marketing_campaign_experiments.result_summary must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_TABLE: &str = "benefactor_marketing_automation_workflows";
+pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_COLUMNS: &[&str] = &["id", "client_id", "status", "name", "trigger_kind", "trigger_config", "action_graph", "last_run_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_AUTOMATION_WORKFLOWS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      name,
+      trigger_kind,
+      trigger_config,
+      action_graph,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_automation_workflows"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingAutomationWorkflowsStatus {
+    Draft,
+    Active,
+    Paused,
+    Archived,
+}
+
+impl BenefactorMarketingAutomationWorkflowsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingAutomationWorkflowsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingAutomationWorkflowsTriggerKind {
+    LeadCreated,
+    ScoreChanged,
+    FormSubmit,
+    EmailEvent,
+    CampaignEvent,
+    Manual,
+    Schedule,
+    Webhook,
+}
+
+impl BenefactorMarketingAutomationWorkflowsTriggerKind {
+    pub const VALUES: &'static [&'static str] = &["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LeadCreated => "lead_created",
+            Self::ScoreChanged => "score_changed",
+            Self::FormSubmit => "form_submit",
+            Self::EmailEvent => "email_event",
+            Self::CampaignEvent => "campaign_event",
+            Self::Manual => "manual",
+            Self::Schedule => "schedule",
+            Self::Webhook => "webhook",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingAutomationWorkflowsTriggerKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "lead_created" => Ok(Self::LeadCreated),
+            "score_changed" => Ok(Self::ScoreChanged),
+            "form_submit" => Ok(Self::FormSubmit),
+            "email_event" => Ok(Self::EmailEvent),
+            "campaign_event" => Ok(Self::CampaignEvent),
+            "manual" => Ok(Self::Manual),
+            "schedule" => Ok(Self::Schedule),
+            "webhook" => Ok(Self::Webhook),
+            _ => Err(format!("unsupported trigger_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAutomationWorkflowsRow {
+    pub id: String,
+    pub client_id: String,
+    pub status: String,
+    pub name: String,
+    pub trigger_kind: String,
+    pub trigger_config: Value,
+    pub action_graph: Value,
+    pub last_run_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAutomationWorkflowsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub status: Option<String>,
+    pub name: Option<String>,
+    pub trigger_kind: Option<String>,
+    pub trigger_config: Option<Value>,
+    pub action_graph: Option<Value>,
+    pub last_run_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_automation_workflows_row(value: &BenefactorMarketingAutomationWorkflowsRow) -> Result<(), String> {
+    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.status: {}", &value.status)); }
+    validate_string_length("benefactor_marketing_automation_workflows.name", &value.name, None, Some(220))?;
+    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string()); }
+    if !["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"].contains(&(&value.trigger_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.trigger_kind: {}", &value.trigger_kind)); }
+    if !(&value.trigger_config).is_object() { return Err("benefactor_marketing_automation_workflows.trigger_config must be a JSON object".to_string()); }
+    if !(&value.action_graph).is_object() { return Err("benefactor_marketing_automation_workflows.action_graph must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_automation_workflows_insert(value: &BenefactorMarketingAutomationWorkflowsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.status: {}", value)); }
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_automation_workflows.name", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_automation_workflows.name exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.trigger_kind {
+        if !["lead_created", "score_changed", "form_submit", "email_event", "campaign_event", "manual", "schedule", "webhook"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_workflows.trigger_kind: {}", value)); }
+    }
+    if let Some(value) = &value.trigger_config {
+        if !(value).is_object() { return Err("benefactor_marketing_automation_workflows.trigger_config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.action_graph {
+        if !(value).is_object() { return Err("benefactor_marketing_automation_workflows.action_graph must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_TABLE: &str = "benefactor_marketing_automation_events";
+pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "workflow_id", "lead_id", "event_kind", "status", "payload", "error_summary", "created_at"];
+pub const BENEFACTOR_MARKETING_AUTOMATION_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      workflow_id::text as workflow_id,
+      lead_id::text as lead_id,
+      event_kind,
+      status,
+      payload,
+      error_summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_automation_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingAutomationEventsStatus {
+    Received,
+    Processed,
+    Failed,
+    Skipped,
+}
+
+impl BenefactorMarketingAutomationEventsStatus {
+    pub const VALUES: &'static [&'static str] = &["received", "processed", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Received => "received",
+            Self::Processed => "processed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingAutomationEventsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "received" => Ok(Self::Received),
+            "processed" => Ok(Self::Processed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAutomationEventsRow {
+    pub id: String,
+    pub client_id: String,
+    pub workflow_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub event_kind: String,
+    pub status: String,
+    pub payload: Value,
+    pub error_summary: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAutomationEventsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub workflow_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub event_kind: Option<String>,
+    pub status: Option<String>,
+    pub payload: Option<Value>,
+    pub error_summary: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_automation_events_row(value: &BenefactorMarketingAutomationEventsRow) -> Result<(), String> {
+    validate_string_length("benefactor_marketing_automation_events.event_kind", &value.event_kind, None, Some(80))?;
+    if !["received", "processed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_events.status: {}", &value.status)); }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_automation_events.payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_automation_events.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_automation_events_insert(value: &BenefactorMarketingAutomationEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_kind {
+        validate_string_length("benefactor_marketing_automation_events.event_kind", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.status {
+        if !["received", "processed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_automation_events.status: {}", value)); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_automation_events.payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_automation_events.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_REPORTS_TABLE: &str = "benefactor_marketing_reports";
+pub const BENEFACTOR_MARKETING_REPORTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "report_kind", "status", "period_start", "period_end", "metrics", "narrative", "delivery_targets", "generated_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_REPORTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      report_kind,
+      status,
+      period_start,
+      period_end,
+      metrics,
+      narrative,
+      delivery_targets,
+      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as generated_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_reports"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingReportsReportKind {
+    Dashboard,
+    ExecutiveSummary,
+    Attribution,
+    Funnel,
+    Roi,
+    SeoAeo,
+    ClientPortal,
+}
+
+impl BenefactorMarketingReportsReportKind {
+    pub const VALUES: &'static [&'static str] = &["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dashboard => "dashboard",
+            Self::ExecutiveSummary => "executive_summary",
+            Self::Attribution => "attribution",
+            Self::Funnel => "funnel",
+            Self::Roi => "roi",
+            Self::SeoAeo => "seo_aeo",
+            Self::ClientPortal => "client_portal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingReportsReportKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "dashboard" => Ok(Self::Dashboard),
+            "executive_summary" => Ok(Self::ExecutiveSummary),
+            "attribution" => Ok(Self::Attribution),
+            "funnel" => Ok(Self::Funnel),
+            "roi" => Ok(Self::Roi),
+            "seo_aeo" => Ok(Self::SeoAeo),
+            "client_portal" => Ok(Self::ClientPortal),
+            _ => Err(format!("unsupported report_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingReportsStatus {
+    Draft,
+    Ready,
+    Sent,
+    Archived,
+}
+
+impl BenefactorMarketingReportsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "ready", "sent", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Ready => "ready",
+            Self::Sent => "sent",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingReportsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "ready" => Ok(Self::Ready),
+            "sent" => Ok(Self::Sent),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingReportsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub report_kind: String,
+    pub status: String,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub metrics: Value,
+    pub narrative: Option<String>,
+    pub delivery_targets: Value,
+    pub generated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingReportsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub report_kind: Option<String>,
+    pub status: Option<String>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub metrics: Option<Value>,
+    pub narrative: Option<String>,
+    pub delivery_targets: Option<Value>,
+    pub generated_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_reports_row(value: &BenefactorMarketingReportsRow) -> Result<(), String> {
+    if !["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"].contains(&(&value.report_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.report_kind: {}", &value.report_kind)); }
+    if !["draft", "ready", "sent", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.status: {}", &value.status)); }
+    if let Some(value) = &value.period_start {
+        validate_string_length("benefactor_marketing_reports.period_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.period_end {
+        validate_string_length("benefactor_marketing_reports.period_end", value, None, Some(10))?;
+    }
+    if !(&value.metrics).is_object() { return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string()); }
+    if let Some(value) = &value.narrative {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string()); }
+    }
+    if !(&value.delivery_targets).is_array() { return Err("benefactor_marketing_reports.delivery_targets must be a JSON array".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_reports_insert(value: &BenefactorMarketingReportsInsert) -> Result<(), String> {
+    if let Some(value) = &value.report_kind {
+        if !["dashboard", "executive_summary", "attribution", "funnel", "roi", "seo_aeo", "client_portal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.report_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "ready", "sent", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_reports.status: {}", value)); }
+    }
+    if let Some(value) = &value.period_start {
+        validate_string_length("benefactor_marketing_reports.period_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.period_end {
+        validate_string_length("benefactor_marketing_reports.period_end", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("benefactor_marketing_reports.metrics must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.narrative {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_reports.narrative exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.delivery_targets {
+        if !(value).is_array() { return Err("benefactor_marketing_reports.delivery_targets must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_TABLE: &str = "benefactor_marketing_attribution_events";
+pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "lead_id", "event_type", "source_platform", "source_event_id", "occurred_at", "value_cents", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_ATTRIBUTION_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      event_type,
+      source_platform,
+      source_event_id,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as occurred_at,
+      value_cents,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_attribution_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingAttributionEventsEventType {
+    Impression,
+    Click,
+    FormSubmit,
+    EmailOpen,
+    EmailClick,
+    MeetingBooked,
+    OpportunityCreated,
+    DealWon,
+    Revenue,
+}
+
+impl BenefactorMarketingAttributionEventsEventType {
+    pub const VALUES: &'static [&'static str] = &["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Impression => "impression",
+            Self::Click => "click",
+            Self::FormSubmit => "form_submit",
+            Self::EmailOpen => "email_open",
+            Self::EmailClick => "email_click",
+            Self::MeetingBooked => "meeting_booked",
+            Self::OpportunityCreated => "opportunity_created",
+            Self::DealWon => "deal_won",
+            Self::Revenue => "revenue",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingAttributionEventsEventType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "impression" => Ok(Self::Impression),
+            "click" => Ok(Self::Click),
+            "form_submit" => Ok(Self::FormSubmit),
+            "email_open" => Ok(Self::EmailOpen),
+            "email_click" => Ok(Self::EmailClick),
+            "meeting_booked" => Ok(Self::MeetingBooked),
+            "opportunity_created" => Ok(Self::OpportunityCreated),
+            "deal_won" => Ok(Self::DealWon),
+            "revenue" => Ok(Self::Revenue),
+            _ => Err(format!("unsupported event_type: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAttributionEventsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub event_type: String,
+    pub source_platform: Option<String>,
+    pub source_event_id: Option<String>,
+    pub occurred_at: String,
+    pub value_cents: i32,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingAttributionEventsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub event_type: Option<String>,
+    pub source_platform: Option<String>,
+    pub source_event_id: Option<String>,
+    pub occurred_at: Option<String>,
+    pub value_cents: Option<i32>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_attribution_events_row(value: &BenefactorMarketingAttributionEventsRow) -> Result<(), String> {
+    if !["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"].contains(&(&value.event_type).as_str()) { return Err(format!("unsupported benefactor_marketing_attribution_events.event_type: {}", &value.event_type)); }
+    if let Some(value) = &value.source_platform {
+        validate_string_length("benefactor_marketing_attribution_events.source_platform", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_attribution_events.source_platform exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source_event_id {
+        validate_string_length("benefactor_marketing_attribution_events.source_event_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes".to_string()); }
+    }
+    if *(&value.value_cents) < 0 { return Err("benefactor_marketing_attribution_events.value_cents is below the minimum".to_string()); }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_attribution_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_attribution_events_insert(value: &BenefactorMarketingAttributionEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        if !["impression", "click", "form_submit", "email_open", "email_click", "meeting_booked", "opportunity_created", "deal_won", "revenue"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_attribution_events.event_type: {}", value)); }
+    }
+    if let Some(value) = &value.source_platform {
+        validate_string_length("benefactor_marketing_attribution_events.source_platform", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_attribution_events.source_platform exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source_event_id {
+        validate_string_length("benefactor_marketing_attribution_events.source_event_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_attribution_events.source_event_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.value_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_attribution_events.value_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_attribution_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_OPPORTUNITIES_TABLE: &str = "benefactor_marketing_opportunities";
+pub const BENEFACTOR_MARKETING_OPPORTUNITIES_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "status", "stage", "name", "amount_cents", "probability_micros", "expected_close_on", "owner_user_id", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OPPORTUNITIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      status,
+      stage,
+      name,
+      amount_cents,
+      probability_micros,
+      expected_close_on,
+      owner_user_id::text as owner_user_id,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_opportunities"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOpportunitiesStatus {
+    Open,
+    Won,
+    Lost,
+    Paused,
+}
+
+impl BenefactorMarketingOpportunitiesStatus {
+    pub const VALUES: &'static [&'static str] = &["open", "won", "lost", "paused"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Won => "won",
+            Self::Lost => "lost",
+            Self::Paused => "paused",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOpportunitiesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "open" => Ok(Self::Open),
+            "won" => Ok(Self::Won),
+            "lost" => Ok(Self::Lost),
+            "paused" => Ok(Self::Paused),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOpportunitiesStage {
+    Prospecting,
+    Qualified,
+    Meeting,
+    Proposal,
+    Negotiation,
+    Closed,
+}
+
+impl BenefactorMarketingOpportunitiesStage {
+    pub const VALUES: &'static [&'static str] = &["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Prospecting => "prospecting",
+            Self::Qualified => "qualified",
+            Self::Meeting => "meeting",
+            Self::Proposal => "proposal",
+            Self::Negotiation => "negotiation",
+            Self::Closed => "closed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOpportunitiesStage {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "prospecting" => Ok(Self::Prospecting),
+            "qualified" => Ok(Self::Qualified),
+            "meeting" => Ok(Self::Meeting),
+            "proposal" => Ok(Self::Proposal),
+            "negotiation" => Ok(Self::Negotiation),
+            "closed" => Ok(Self::Closed),
+            _ => Err(format!("unsupported stage: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOpportunitiesRow {
+    pub id: String,
+    pub client_id: String,
+    pub lead_id: Option<String>,
+    pub status: String,
+    pub stage: String,
+    pub name: String,
+    pub amount_cents: i32,
+    pub probability_micros: i32,
+    pub expected_close_on: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOpportunitiesInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub status: Option<String>,
+    pub stage: Option<String>,
+    pub name: Option<String>,
+    pub amount_cents: Option<i32>,
+    pub probability_micros: Option<i32>,
+    pub expected_close_on: Option<String>,
+    pub owner_user_id: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_opportunities_row(value: &BenefactorMarketingOpportunitiesRow) -> Result<(), String> {
+    if !["open", "won", "lost", "paused"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.status: {}", &value.status)); }
+    if !["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"].contains(&(&value.stage).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.stage: {}", &value.stage)); }
+    validate_string_length("benefactor_marketing_opportunities.name", &value.name, None, Some(220))?;
+    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string()); }
+    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_opportunities.amount_cents is below the minimum".to_string()); }
+    if *(&value.probability_micros) < 0 { return Err("benefactor_marketing_opportunities.probability_micros is below the minimum".to_string()); }
+    if *(&value.probability_micros) > 1000000 { return Err("benefactor_marketing_opportunities.probability_micros is above the maximum".to_string()); }
+    if let Some(value) = &value.expected_close_on {
+        validate_string_length("benefactor_marketing_opportunities.expected_close_on", value, None, Some(10))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_opportunities.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_opportunities_insert(value: &BenefactorMarketingOpportunitiesInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["open", "won", "lost", "paused"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.status: {}", value)); }
+    }
+    if let Some(value) = &value.stage {
+        if !["prospecting", "qualified", "meeting", "proposal", "negotiation", "closed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_opportunities.stage: {}", value)); }
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_opportunities.name", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_opportunities.name exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_opportunities.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.probability_micros {
+        if *(value) < 0 { return Err("benefactor_marketing_opportunities.probability_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("benefactor_marketing_opportunities.probability_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.expected_close_on {
+        validate_string_length("benefactor_marketing_opportunities.expected_close_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_opportunities.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_TABLE: &str = "benefactor_marketing_content_assets";
+pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "status", "asset_kind", "title", "channel", "body", "asset_uri", "seo_keywords", "approval_status", "publish_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CONTENT_ASSETS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      status,
+      asset_kind,
+      title,
+      channel,
+      body,
+      asset_uri,
+      seo_keywords,
+      approval_status,
+      to_char(publish_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as publish_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_content_assets"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContentAssetsStatus {
+    Draft,
+    InReview,
+    Approved,
+    Scheduled,
+    Published,
+    Archived,
+}
+
+impl BenefactorMarketingContentAssetsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "in_review", "approved", "scheduled", "published", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::InReview => "in_review",
+            Self::Approved => "approved",
+            Self::Scheduled => "scheduled",
+            Self::Published => "published",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContentAssetsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "in_review" => Ok(Self::InReview),
+            "approved" => Ok(Self::Approved),
+            "scheduled" => Ok(Self::Scheduled),
+            "published" => Ok(Self::Published),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContentAssetsAssetKind {
+    Blog,
+    SocialPost,
+    Email,
+    LandingPage,
+    AdCreative,
+    Video,
+    Script,
+    Proposal,
+    Report,
+}
+
+impl BenefactorMarketingContentAssetsAssetKind {
+    pub const VALUES: &'static [&'static str] = &["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Blog => "blog",
+            Self::SocialPost => "social_post",
+            Self::Email => "email",
+            Self::LandingPage => "landing_page",
+            Self::AdCreative => "ad_creative",
+            Self::Video => "video",
+            Self::Script => "script",
+            Self::Proposal => "proposal",
+            Self::Report => "report",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContentAssetsAssetKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "blog" => Ok(Self::Blog),
+            "social_post" => Ok(Self::SocialPost),
+            "email" => Ok(Self::Email),
+            "landing_page" => Ok(Self::LandingPage),
+            "ad_creative" => Ok(Self::AdCreative),
+            "video" => Ok(Self::Video),
+            "script" => Ok(Self::Script),
+            "proposal" => Ok(Self::Proposal),
+            "report" => Ok(Self::Report),
+            _ => Err(format!("unsupported asset_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingContentAssetsApprovalStatus {
+    Pending,
+    Approved,
+    Rejected,
+    ChangesRequested,
+}
+
+impl BenefactorMarketingContentAssetsApprovalStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "approved", "rejected", "changes_requested"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+            Self::ChangesRequested => "changes_requested",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingContentAssetsApprovalStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "approved" => Ok(Self::Approved),
+            "rejected" => Ok(Self::Rejected),
+            "changes_requested" => Ok(Self::ChangesRequested),
+            _ => Err(format!("unsupported approval_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContentAssetsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub status: String,
+    pub asset_kind: String,
+    pub title: String,
+    pub channel: Option<String>,
+    pub body: Option<String>,
+    pub asset_uri: Option<String>,
+    pub seo_keywords: Value,
+    pub approval_status: String,
+    pub publish_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingContentAssetsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub status: Option<String>,
+    pub asset_kind: Option<String>,
+    pub title: Option<String>,
+    pub channel: Option<String>,
+    pub body: Option<String>,
+    pub asset_uri: Option<String>,
+    pub seo_keywords: Option<Value>,
+    pub approval_status: Option<String>,
+    pub publish_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_content_assets_row(value: &BenefactorMarketingContentAssetsRow) -> Result<(), String> {
+    if !["draft", "in_review", "approved", "scheduled", "published", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.status: {}", &value.status)); }
+    if !["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"].contains(&(&value.asset_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.asset_kind: {}", &value.asset_kind)); }
+    validate_string_length("benefactor_marketing_content_assets.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string()); }
+    if let Some(value) = &value.channel {
+        validate_string_length("benefactor_marketing_content_assets.channel", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.asset_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string()); }
+    }
+    if !(&value.seo_keywords).is_array() { return Err("benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string()); }
+    if !["pending", "approved", "rejected", "changes_requested"].contains(&(&value.approval_status).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.approval_status: {}", &value.approval_status)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_content_assets.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_content_assets_insert(value: &BenefactorMarketingContentAssetsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "in_review", "approved", "scheduled", "published", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.status: {}", value)); }
+    }
+    if let Some(value) = &value.asset_kind {
+        if !["blog", "social_post", "email", "landing_page", "ad_creative", "video", "script", "proposal", "report"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.asset_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_content_assets.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_content_assets.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.channel {
+        validate_string_length("benefactor_marketing_content_assets.channel", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_content_assets.channel exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_content_assets.body exceeds 100000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.asset_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_content_assets.asset_uri exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.seo_keywords {
+        if !(value).is_array() { return Err("benefactor_marketing_content_assets.seo_keywords must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.approval_status {
+        if !["pending", "approved", "rejected", "changes_requested"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_content_assets.approval_status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_content_assets.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_PROJECT_TASKS_TABLE: &str = "benefactor_marketing_project_tasks";
+pub const BENEFACTOR_MARKETING_PROJECT_TASKS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "status", "priority", "title", "description", "assigned_to", "due_on", "sla_due_at", "time_spent_minutes", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PROJECT_TASKS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      status,
+      priority,
+      title,
+      description,
+      assigned_to::text as assigned_to,
+      due_on,
+      to_char(sla_due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sla_due_at,
+      time_spent_minutes,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_project_tasks"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingProjectTasksStatus {
+    Todo,
+    InProgress,
+    Blocked,
+    Done,
+    Canceled,
+}
+
+impl BenefactorMarketingProjectTasksStatus {
+    pub const VALUES: &'static [&'static str] = &["todo", "in_progress", "blocked", "done", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::InProgress => "in_progress",
+            Self::Blocked => "blocked",
+            Self::Done => "done",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingProjectTasksStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "todo" => Ok(Self::Todo),
+            "in_progress" => Ok(Self::InProgress),
+            "blocked" => Ok(Self::Blocked),
+            "done" => Ok(Self::Done),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingProjectTasksPriority {
+    Low,
+    Normal,
+    High,
+    Urgent,
+}
+
+impl BenefactorMarketingProjectTasksPriority {
+    pub const VALUES: &'static [&'static str] = &["low", "normal", "high", "urgent"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+            Self::Urgent => "urgent",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingProjectTasksPriority {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "low" => Ok(Self::Low),
+            "normal" => Ok(Self::Normal),
+            "high" => Ok(Self::High),
+            "urgent" => Ok(Self::Urgent),
+            _ => Err(format!("unsupported priority: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingProjectTasksRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub status: String,
+    pub priority: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub assigned_to: Option<String>,
+    pub due_on: Option<String>,
+    pub sla_due_at: Option<String>,
+    pub time_spent_minutes: i32,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingProjectTasksInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub assigned_to: Option<String>,
+    pub due_on: Option<String>,
+    pub sla_due_at: Option<String>,
+    pub time_spent_minutes: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_project_tasks_row(value: &BenefactorMarketingProjectTasksRow) -> Result<(), String> {
+    if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.status: {}", &value.status)); }
+    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.priority: {}", &value.priority)); }
+    validate_string_length("benefactor_marketing_project_tasks.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string()); }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.due_on {
+        validate_string_length("benefactor_marketing_project_tasks.due_on", value, None, Some(10))?;
+    }
+    if *(&value.time_spent_minutes) < 0 { return Err("benefactor_marketing_project_tasks.time_spent_minutes is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_project_tasks_insert(value: &BenefactorMarketingProjectTasksInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["todo", "in_progress", "blocked", "done", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.status: {}", value)); }
+    }
+    if let Some(value) = &value.priority {
+        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_project_tasks.priority: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_project_tasks.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_project_tasks.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_project_tasks.description exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.due_on {
+        validate_string_length("benefactor_marketing_project_tasks.due_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.time_spent_minutes {
+        if *(value) < 0 { return Err("benefactor_marketing_project_tasks.time_spent_minutes is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_project_tasks.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_TABLE: &str = "benefactor_marketing_client_approvals";
+pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "requested_by", "status", "approval_kind", "title", "request_payload", "response_note", "due_at", "decided_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CLIENT_APPROVALS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      requested_by::text as requested_by,
+      status,
+      approval_kind,
+      title,
+      request_payload,
+      response_note,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as due_at,
+      to_char(decided_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as decided_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_client_approvals"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingClientApprovalsStatus {
+    Pending,
+    Approved,
+    Rejected,
+    Expired,
+    Canceled,
+}
+
+impl BenefactorMarketingClientApprovalsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "approved", "rejected", "expired", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Rejected => "rejected",
+            Self::Expired => "expired",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingClientApprovalsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "approved" => Ok(Self::Approved),
+            "rejected" => Ok(Self::Rejected),
+            "expired" => Ok(Self::Expired),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingClientApprovalsApprovalKind {
+    CampaignLaunch,
+    ContentPublish,
+    BudgetChange,
+    ReportSend,
+    LeadList,
+}
+
+impl BenefactorMarketingClientApprovalsApprovalKind {
+    pub const VALUES: &'static [&'static str] = &["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CampaignLaunch => "campaign_launch",
+            Self::ContentPublish => "content_publish",
+            Self::BudgetChange => "budget_change",
+            Self::ReportSend => "report_send",
+            Self::LeadList => "lead_list",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingClientApprovalsApprovalKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "campaign_launch" => Ok(Self::CampaignLaunch),
+            "content_publish" => Ok(Self::ContentPublish),
+            "budget_change" => Ok(Self::BudgetChange),
+            "report_send" => Ok(Self::ReportSend),
+            "lead_list" => Ok(Self::LeadList),
+            _ => Err(format!("unsupported approval_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingClientApprovalsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub requested_by: Option<String>,
+    pub status: String,
+    pub approval_kind: String,
+    pub title: String,
+    pub request_payload: Value,
+    pub response_note: Option<String>,
+    pub due_at: Option<String>,
+    pub decided_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingClientApprovalsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub requested_by: Option<String>,
+    pub status: Option<String>,
+    pub approval_kind: Option<String>,
+    pub title: Option<String>,
+    pub request_payload: Option<Value>,
+    pub response_note: Option<String>,
+    pub due_at: Option<String>,
+    pub decided_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_client_approvals_row(value: &BenefactorMarketingClientApprovalsRow) -> Result<(), String> {
+    if !["pending", "approved", "rejected", "expired", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.status: {}", &value.status)); }
+    if !["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"].contains(&(&value.approval_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.approval_kind: {}", &value.approval_kind)); }
+    validate_string_length("benefactor_marketing_client_approvals.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string()); }
+    if !(&value.request_payload).is_object() { return Err("benefactor_marketing_client_approvals.request_payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.response_note {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_client_approvals.response_note exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_client_approvals_insert(value: &BenefactorMarketingClientApprovalsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["pending", "approved", "rejected", "expired", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.status: {}", value)); }
+    }
+    if let Some(value) = &value.approval_kind {
+        if !["campaign_launch", "content_publish", "budget_change", "report_send", "lead_list"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_client_approvals.approval_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_client_approvals.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_client_approvals.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.request_payload {
+        if !(value).is_object() { return Err("benefactor_marketing_client_approvals.request_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.response_note {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_client_approvals.response_note exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_TICKETS_TABLE: &str = "benefactor_marketing_tickets";
+pub const BENEFACTOR_MARKETING_TICKETS_COLUMNS: &[&str] = &["id", "client_id", "status", "priority", "subject", "description", "source", "assigned_to", "last_activity_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TICKETS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      status,
+      priority,
+      subject,
+      description,
+      source,
+      assigned_to::text as assigned_to,
+      to_char(last_activity_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_activity_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_tickets"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingTicketsStatus {
+    Open,
+    PendingClient,
+    PendingAgency,
+    Resolved,
+    Closed,
+}
+
+impl BenefactorMarketingTicketsStatus {
+    pub const VALUES: &'static [&'static str] = &["open", "pending_client", "pending_agency", "resolved", "closed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::PendingClient => "pending_client",
+            Self::PendingAgency => "pending_agency",
+            Self::Resolved => "resolved",
+            Self::Closed => "closed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingTicketsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "open" => Ok(Self::Open),
+            "pending_client" => Ok(Self::PendingClient),
+            "pending_agency" => Ok(Self::PendingAgency),
+            "resolved" => Ok(Self::Resolved),
+            "closed" => Ok(Self::Closed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingTicketsPriority {
+    Low,
+    Normal,
+    High,
+    Urgent,
+}
+
+impl BenefactorMarketingTicketsPriority {
+    pub const VALUES: &'static [&'static str] = &["low", "normal", "high", "urgent"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+            Self::Urgent => "urgent",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingTicketsPriority {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "low" => Ok(Self::Low),
+            "normal" => Ok(Self::Normal),
+            "high" => Ok(Self::High),
+            "urgent" => Ok(Self::Urgent),
+            _ => Err(format!("unsupported priority: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingTicketsSource {
+    Portal,
+    Email,
+    Internal,
+}
+
+impl BenefactorMarketingTicketsSource {
+    pub const VALUES: &'static [&'static str] = &["portal", "email", "internal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Portal => "portal",
+            Self::Email => "email",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingTicketsSource {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "portal" => Ok(Self::Portal),
+            "email" => Ok(Self::Email),
+            "internal" => Ok(Self::Internal),
+            _ => Err(format!("unsupported source: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTicketsRow {
+    pub id: String,
+    pub client_id: String,
+    pub status: String,
+    pub priority: String,
+    pub subject: String,
+    pub description: Option<String>,
+    pub source: String,
+    pub assigned_to: Option<String>,
+    pub last_activity_at: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTicketsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    pub subject: Option<String>,
+    pub description: Option<String>,
+    pub source: Option<String>,
+    pub assigned_to: Option<String>,
+    pub last_activity_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_tickets_row(value: &BenefactorMarketingTicketsRow) -> Result<(), String> {
+    if !["open", "pending_client", "pending_agency", "resolved", "closed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.status: {}", &value.status)); }
+    if !["low", "normal", "high", "urgent"].contains(&(&value.priority).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.priority: {}", &value.priority)); }
+    validate_string_length("benefactor_marketing_tickets.subject", &value.subject, None, Some(240))?;
+    if (&value.subject).as_bytes().len() > 240 { return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string()); }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string()); }
+    }
+    if !["portal", "email", "internal"].contains(&(&value.source).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.source: {}", &value.source)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_tickets_insert(value: &BenefactorMarketingTicketsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["open", "pending_client", "pending_agency", "resolved", "closed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.status: {}", value)); }
+    }
+    if let Some(value) = &value.priority {
+        if !["low", "normal", "high", "urgent"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.priority: {}", value)); }
+    }
+    if let Some(value) = &value.subject {
+        validate_string_length("benefactor_marketing_tickets.subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_tickets.subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_tickets.description exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source {
+        if !["portal", "email", "internal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_tickets.source: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_tickets.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_MEETINGS_TABLE: &str = "benefactor_marketing_meetings";
+pub const BENEFACTOR_MARKETING_MEETINGS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "opportunity_id", "status", "meeting_kind", "title", "scheduled_at", "duration_minutes", "notes", "recording_uri", "transcript_summary", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_MEETINGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      opportunity_id::text as opportunity_id,
+      status,
+      meeting_kind,
+      title,
+      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scheduled_at,
+      duration_minutes,
+      notes,
+      recording_uri,
+      transcript_summary,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_meetings"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingMeetingsStatus {
+    Scheduled,
+    Completed,
+    Canceled,
+    NoShow,
+}
+
+impl BenefactorMarketingMeetingsStatus {
+    pub const VALUES: &'static [&'static str] = &["scheduled", "completed", "canceled", "no_show"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Scheduled => "scheduled",
+            Self::Completed => "completed",
+            Self::Canceled => "canceled",
+            Self::NoShow => "no_show",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingMeetingsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "scheduled" => Ok(Self::Scheduled),
+            "completed" => Ok(Self::Completed),
+            "canceled" => Ok(Self::Canceled),
+            "no_show" => Ok(Self::NoShow),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingMeetingsMeetingKind {
+    Onboarding,
+    ReportReview,
+    SalesDiscovery,
+    Strategy,
+    ContentReview,
+    Support,
+}
+
+impl BenefactorMarketingMeetingsMeetingKind {
+    pub const VALUES: &'static [&'static str] = &["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Onboarding => "onboarding",
+            Self::ReportReview => "report_review",
+            Self::SalesDiscovery => "sales_discovery",
+            Self::Strategy => "strategy",
+            Self::ContentReview => "content_review",
+            Self::Support => "support",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingMeetingsMeetingKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "onboarding" => Ok(Self::Onboarding),
+            "report_review" => Ok(Self::ReportReview),
+            "sales_discovery" => Ok(Self::SalesDiscovery),
+            "strategy" => Ok(Self::Strategy),
+            "content_review" => Ok(Self::ContentReview),
+            "support" => Ok(Self::Support),
+            _ => Err(format!("unsupported meeting_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingMeetingsRow {
+    pub id: String,
+    pub client_id: String,
+    pub lead_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub status: String,
+    pub meeting_kind: String,
+    pub title: String,
+    pub scheduled_at: String,
+    pub duration_minutes: i32,
+    pub notes: Option<String>,
+    pub recording_uri: Option<String>,
+    pub transcript_summary: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingMeetingsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub status: Option<String>,
+    pub meeting_kind: Option<String>,
+    pub title: Option<String>,
+    pub scheduled_at: Option<String>,
+    pub duration_minutes: Option<i32>,
+    pub notes: Option<String>,
+    pub recording_uri: Option<String>,
+    pub transcript_summary: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_meetings_row(value: &BenefactorMarketingMeetingsRow) -> Result<(), String> {
+    if !["scheduled", "completed", "canceled", "no_show"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.status: {}", &value.status)); }
+    if !["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"].contains(&(&value.meeting_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.meeting_kind: {}", &value.meeting_kind)); }
+    validate_string_length("benefactor_marketing_meetings.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string()); }
+    if *(&value.duration_minutes) < 1 { return Err("benefactor_marketing_meetings.duration_minutes is below the minimum".to_string()); }
+    if *(&value.duration_minutes) > 1440 { return Err("benefactor_marketing_meetings.duration_minutes is above the maximum".to_string()); }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.recording_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string()); }
+    }
+    if !(&value.transcript_summary).is_object() { return Err("benefactor_marketing_meetings.transcript_summary must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_meetings_insert(value: &BenefactorMarketingMeetingsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["scheduled", "completed", "canceled", "no_show"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.status: {}", value)); }
+    }
+    if let Some(value) = &value.meeting_kind {
+        if !["onboarding", "report_review", "sales_discovery", "strategy", "content_review", "support"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_meetings.meeting_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_meetings.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_meetings.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.duration_minutes {
+        if *(value) < 1 { return Err("benefactor_marketing_meetings.duration_minutes is below the minimum".to_string()); }
+        if *(value) > 1440 { return Err("benefactor_marketing_meetings.duration_minutes is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_meetings.notes exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.recording_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_meetings.recording_uri exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.transcript_summary {
+        if !(value).is_object() { return Err("benefactor_marketing_meetings.transcript_summary must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_TABLE: &str = "benefactor_marketing_team_allocations";
+pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "user_id", "role", "allocation_percent", "starts_on", "ends_on", "billable", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TEAM_ALLOCATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      user_id::text as user_id,
+      role,
+      allocation_percent,
+      starts_on,
+      ends_on,
+      billable,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_team_allocations"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingTeamAllocationsRole {
+    Strategist,
+    Designer,
+    Copywriter,
+    Analyst,
+    Sdr,
+    AccountManager,
+    SeoSpecialist,
+}
+
+impl BenefactorMarketingTeamAllocationsRole {
+    pub const VALUES: &'static [&'static str] = &["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strategist => "strategist",
+            Self::Designer => "designer",
+            Self::Copywriter => "copywriter",
+            Self::Analyst => "analyst",
+            Self::Sdr => "sdr",
+            Self::AccountManager => "account_manager",
+            Self::SeoSpecialist => "seo_specialist",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingTeamAllocationsRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "strategist" => Ok(Self::Strategist),
+            "designer" => Ok(Self::Designer),
+            "copywriter" => Ok(Self::Copywriter),
+            "analyst" => Ok(Self::Analyst),
+            "sdr" => Ok(Self::Sdr),
+            "account_manager" => Ok(Self::AccountManager),
+            "seo_specialist" => Ok(Self::SeoSpecialist),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTeamAllocationsRow {
+    pub id: String,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub user_id: String,
+    pub role: String,
+    pub allocation_percent: i32,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub billable: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTeamAllocationsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub allocation_percent: Option<i32>,
+    pub starts_on: Option<String>,
+    pub ends_on: Option<String>,
+    pub billable: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_team_allocations_row(value: &BenefactorMarketingTeamAllocationsRow) -> Result<(), String> {
+    if !["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"].contains(&(&value.role).as_str()) { return Err(format!("unsupported benefactor_marketing_team_allocations.role: {}", &value.role)); }
+    if *(&value.allocation_percent) < 0 { return Err("benefactor_marketing_team_allocations.allocation_percent is below the minimum".to_string()); }
+    if *(&value.allocation_percent) > 100 { return Err("benefactor_marketing_team_allocations.allocation_percent is above the maximum".to_string()); }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_team_allocations.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_team_allocations.ends_on", value, None, Some(10))?;
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_team_allocations_insert(value: &BenefactorMarketingTeamAllocationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["strategist", "designer", "copywriter", "analyst", "sdr", "account_manager", "seo_specialist"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_team_allocations.role: {}", value)); }
+    }
+    if let Some(value) = &value.allocation_percent {
+        if *(value) < 0 { return Err("benefactor_marketing_team_allocations.allocation_percent is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("benefactor_marketing_team_allocations.allocation_percent is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.starts_on {
+        validate_string_length("benefactor_marketing_team_allocations.starts_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.ends_on {
+        validate_string_length("benefactor_marketing_team_allocations.ends_on", value, None, Some(10))?;
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_TABLE: &str = "benefactor_marketing_integration_sync_runs";
+pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_COLUMNS: &[&str] = &["id", "integration_id", "client_id", "sync_kind", "direction", "status", "records_seen", "records_changed", "cursor_before", "cursor_after", "payload", "error_summary", "started_at", "completed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_INTEGRATION_SYNC_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      integration_id::text as integration_id,
+      client_id::text as client_id,
+      sync_kind,
+      direction,
+      status,
+      records_seen,
+      records_changed,
+      cursor_before,
+      cursor_after,
+      payload,
+      error_summary,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_integration_sync_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationSyncRunsSyncKind {
+    Incremental,
+    Full,
+    Webhook,
+    Backfill,
+    Export,
+}
+
+impl BenefactorMarketingIntegrationSyncRunsSyncKind {
+    pub const VALUES: &'static [&'static str] = &["incremental", "full", "webhook", "backfill", "export"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Incremental => "incremental",
+            Self::Full => "full",
+            Self::Webhook => "webhook",
+            Self::Backfill => "backfill",
+            Self::Export => "export",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsSyncKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "incremental" => Ok(Self::Incremental),
+            "full" => Ok(Self::Full),
+            "webhook" => Ok(Self::Webhook),
+            "backfill" => Ok(Self::Backfill),
+            "export" => Ok(Self::Export),
+            _ => Err(format!("unsupported sync_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationSyncRunsDirection {
+    Import,
+    Export,
+    Bidirectional,
+}
+
+impl BenefactorMarketingIntegrationSyncRunsDirection {
+    pub const VALUES: &'static [&'static str] = &["import", "export", "bidirectional"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Import => "import",
+            Self::Export => "export",
+            Self::Bidirectional => "bidirectional",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsDirection {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "import" => Ok(Self::Import),
+            "export" => Ok(Self::Export),
+            "bidirectional" => Ok(Self::Bidirectional),
+            _ => Err(format!("unsupported direction: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingIntegrationSyncRunsStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Canceled,
+}
+
+impl BenefactorMarketingIntegrationSyncRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingIntegrationSyncRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingIntegrationSyncRunsRow {
+    pub id: String,
+    pub integration_id: String,
+    pub client_id: Option<String>,
+    pub sync_kind: String,
+    pub direction: String,
+    pub status: String,
+    pub records_seen: i32,
+    pub records_changed: i32,
+    pub cursor_before: Option<String>,
+    pub cursor_after: Option<String>,
+    pub payload: Value,
+    pub error_summary: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingIntegrationSyncRunsInsert {
+    pub id: Option<String>,
+    pub integration_id: Option<String>,
+    pub client_id: Option<String>,
+    pub sync_kind: Option<String>,
+    pub direction: Option<String>,
+    pub status: Option<String>,
+    pub records_seen: Option<i32>,
+    pub records_changed: Option<i32>,
+    pub cursor_before: Option<String>,
+    pub cursor_after: Option<String>,
+    pub payload: Option<Value>,
+    pub error_summary: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_integration_sync_runs_row(value: &BenefactorMarketingIntegrationSyncRunsRow) -> Result<(), String> {
+    if !["incremental", "full", "webhook", "backfill", "export"].contains(&(&value.sync_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}", &value.sync_kind)); }
+    if !["import", "export", "bidirectional"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.direction: {}", &value.direction)); }
+    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.status: {}", &value.status)); }
+    if *(&value.records_seen) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_seen is below the minimum".to_string()); }
+    if *(&value.records_changed) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_changed is below the minimum".to_string()); }
+    if let Some(value) = &value.cursor_before {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.cursor_after {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes".to_string()); }
+    }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_integration_sync_runs.payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_integration_sync_runs_insert(value: &BenefactorMarketingIntegrationSyncRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.sync_kind {
+        if !["incremental", "full", "webhook", "backfill", "export"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.sync_kind: {}", value)); }
+    }
+    if let Some(value) = &value.direction {
+        if !["import", "export", "bidirectional"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.direction: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_integration_sync_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.records_seen {
+        if *(value) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_seen is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.records_changed {
+        if *(value) < 0 { return Err("benefactor_marketing_integration_sync_runs.records_changed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.cursor_before {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_before exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.cursor_after {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.cursor_after exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_integration_sync_runs.payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error_summary {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_integration_sync_runs.error_summary exceeds 4000 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_TABLE: &str = "benefactor_marketing_outreach_sequences";
+pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "status", "channel", "name", "audience_filter", "cadence", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_SEQUENCES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      status,
+      channel,
+      name,
+      audience_filter,
+      cadence,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_sequences"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachSequencesStatus {
+    Draft,
+    Active,
+    Paused,
+    Completed,
+    Archived,
+}
+
+impl BenefactorMarketingOutreachSequencesStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "completed", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachSequencesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "completed" => Ok(Self::Completed),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachSequencesChannel {
+    Email,
+    Linkedin,
+    Sms,
+    Phone,
+    MultiChannel,
+}
+
+impl BenefactorMarketingOutreachSequencesChannel {
+    pub const VALUES: &'static [&'static str] = &["email", "linkedin", "sms", "phone", "multi_channel"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Linkedin => "linkedin",
+            Self::Sms => "sms",
+            Self::Phone => "phone",
+            Self::MultiChannel => "multi_channel",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachSequencesChannel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email" => Ok(Self::Email),
+            "linkedin" => Ok(Self::Linkedin),
+            "sms" => Ok(Self::Sms),
+            "phone" => Ok(Self::Phone),
+            "multi_channel" => Ok(Self::MultiChannel),
+            _ => Err(format!("unsupported channel: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachSequencesRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub status: String,
+    pub channel: String,
+    pub name: String,
+    pub audience_filter: Value,
+    pub cadence: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachSequencesInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub status: Option<String>,
+    pub channel: Option<String>,
+    pub name: Option<String>,
+    pub audience_filter: Option<Value>,
+    pub cadence: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_outreach_sequences_row(value: &BenefactorMarketingOutreachSequencesRow) -> Result<(), String> {
+    if !["draft", "active", "paused", "completed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.status: {}", &value.status)); }
+    if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.channel: {}", &value.channel)); }
+    validate_string_length("benefactor_marketing_outreach_sequences.name", &value.name, None, Some(220))?;
+    if (&value.name).as_bytes().len() > 220 { return Err("benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string()); }
+    if !(&value.audience_filter).is_object() { return Err("benefactor_marketing_outreach_sequences.audience_filter must be a JSON object".to_string()); }
+    if !(&value.cadence).is_object() { return Err("benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_outreach_sequences.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_outreach_sequences_insert(value: &BenefactorMarketingOutreachSequencesInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "active", "paused", "completed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.status: {}", value)); }
+    }
+    if let Some(value) = &value.channel {
+        if !["email", "linkedin", "sms", "phone", "multi_channel"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_sequences.channel: {}", value)); }
+    }
+    if let Some(value) = &value.name {
+        validate_string_length("benefactor_marketing_outreach_sequences.name", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("benefactor_marketing_outreach_sequences.name exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.audience_filter {
+        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.audience_filter must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.cadence {
+        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.cadence must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_outreach_sequences.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_TABLE: &str = "benefactor_marketing_outreach_steps";
+pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_COLUMNS: &[&str] = &["id", "sequence_id", "status", "step_order", "channel", "delay_minutes", "subject", "body_template", "personalization_hints", "experiment_key", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_STEPS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      sequence_id::text as sequence_id,
+      status,
+      step_order,
+      channel,
+      delay_minutes,
+      subject,
+      body_template,
+      personalization_hints,
+      experiment_key,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_steps"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachStepsStatus {
+    Active,
+    Disabled,
+    Archived,
+}
+
+impl BenefactorMarketingOutreachStepsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "disabled", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachStepsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "disabled" => Ok(Self::Disabled),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachStepsChannel {
+    Email,
+    Linkedin,
+    Sms,
+    Phone,
+    Task,
+}
+
+impl BenefactorMarketingOutreachStepsChannel {
+    pub const VALUES: &'static [&'static str] = &["email", "linkedin", "sms", "phone", "task"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Linkedin => "linkedin",
+            Self::Sms => "sms",
+            Self::Phone => "phone",
+            Self::Task => "task",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachStepsChannel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email" => Ok(Self::Email),
+            "linkedin" => Ok(Self::Linkedin),
+            "sms" => Ok(Self::Sms),
+            "phone" => Ok(Self::Phone),
+            "task" => Ok(Self::Task),
+            _ => Err(format!("unsupported channel: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachStepsRow {
+    pub id: String,
+    pub sequence_id: String,
+    pub status: String,
+    pub step_order: i32,
+    pub channel: String,
+    pub delay_minutes: i32,
+    pub subject: Option<String>,
+    pub body_template: Option<String>,
+    pub personalization_hints: Value,
+    pub experiment_key: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachStepsInsert {
+    pub id: Option<String>,
+    pub sequence_id: Option<String>,
+    pub status: Option<String>,
+    pub step_order: Option<i32>,
+    pub channel: Option<String>,
+    pub delay_minutes: Option<i32>,
+    pub subject: Option<String>,
+    pub body_template: Option<String>,
+    pub personalization_hints: Option<Value>,
+    pub experiment_key: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_outreach_steps_row(value: &BenefactorMarketingOutreachStepsRow) -> Result<(), String> {
+    if !["active", "disabled", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.status: {}", &value.status)); }
+    if *(&value.step_order) < 1 { return Err("benefactor_marketing_outreach_steps.step_order is below the minimum".to_string()); }
+    if *(&value.step_order) > 100 { return Err("benefactor_marketing_outreach_steps.step_order is above the maximum".to_string()); }
+    if !["email", "linkedin", "sms", "phone", "task"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.channel: {}", &value.channel)); }
+    if *(&value.delay_minutes) < 0 { return Err("benefactor_marketing_outreach_steps.delay_minutes is below the minimum".to_string()); }
+    if *(&value.delay_minutes) > 525600 { return Err("benefactor_marketing_outreach_steps.delay_minutes is above the maximum".to_string()); }
+    if let Some(value) = &value.subject {
+        validate_string_length("benefactor_marketing_outreach_steps.subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body_template {
+        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes".to_string()); }
+    }
+    if !(&value.personalization_hints).is_array() { return Err("benefactor_marketing_outreach_steps.personalization_hints must be a JSON array".to_string()); }
+    if let Some(value) = &value.experiment_key {
+        validate_string_length("benefactor_marketing_outreach_steps.experiment_key", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_outreach_steps_insert(value: &BenefactorMarketingOutreachStepsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "disabled", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.status: {}", value)); }
+    }
+    if let Some(value) = &value.step_order {
+        if *(value) < 1 { return Err("benefactor_marketing_outreach_steps.step_order is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("benefactor_marketing_outreach_steps.step_order is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.channel {
+        if !["email", "linkedin", "sms", "phone", "task"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_steps.channel: {}", value)); }
+    }
+    if let Some(value) = &value.delay_minutes {
+        if *(value) < 0 { return Err("benefactor_marketing_outreach_steps.delay_minutes is below the minimum".to_string()); }
+        if *(value) > 525600 { return Err("benefactor_marketing_outreach_steps.delay_minutes is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.subject {
+        validate_string_length("benefactor_marketing_outreach_steps.subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_steps.subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body_template {
+        if (value).as_bytes().len() > 100000 { return Err("benefactor_marketing_outreach_steps.body_template exceeds 100000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.personalization_hints {
+        if !(value).is_array() { return Err("benefactor_marketing_outreach_steps.personalization_hints must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.experiment_key {
+        validate_string_length("benefactor_marketing_outreach_steps.experiment_key", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_outreach_steps.experiment_key exceeds 120 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_TABLE: &str = "benefactor_marketing_outreach_enrollments";
+pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_COLUMNS: &[&str] = &["id", "client_id", "sequence_id", "lead_id", "contact_id", "status", "current_step_order", "enrollment_context", "last_touch_at", "next_touch_at", "outcome", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_ENROLLMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      sequence_id::text as sequence_id,
+      lead_id::text as lead_id,
+      contact_id::text as contact_id,
+      status,
+      current_step_order,
+      enrollment_context,
+      to_char(last_touch_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_touch_at,
+      to_char(next_touch_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_touch_at,
+      outcome,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_outreach_enrollments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachEnrollmentsStatus {
+    Active,
+    Paused,
+    Completed,
+    Bounced,
+    Unsubscribed,
+    Failed,
+}
+
+impl BenefactorMarketingOutreachEnrollmentsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "completed", "bounced", "unsubscribed", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Bounced => "bounced",
+            Self::Unsubscribed => "unsubscribed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachEnrollmentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "completed" => Ok(Self::Completed),
+            "bounced" => Ok(Self::Bounced),
+            "unsubscribed" => Ok(Self::Unsubscribed),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachEnrollmentsRow {
+    pub id: String,
+    pub client_id: String,
+    pub sequence_id: String,
+    pub lead_id: Option<String>,
+    pub contact_id: Option<String>,
+    pub status: String,
+    pub current_step_order: i32,
+    pub enrollment_context: Value,
+    pub last_touch_at: Option<String>,
+    pub next_touch_at: Option<String>,
+    pub outcome: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachEnrollmentsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub sequence_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub contact_id: Option<String>,
+    pub status: Option<String>,
+    pub current_step_order: Option<i32>,
+    pub enrollment_context: Option<Value>,
+    pub last_touch_at: Option<String>,
+    pub next_touch_at: Option<String>,
+    pub outcome: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_outreach_enrollments_row(value: &BenefactorMarketingOutreachEnrollmentsRow) -> Result<(), String> {
+    if !["active", "paused", "completed", "bounced", "unsubscribed", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_enrollments.status: {}", &value.status)); }
+    if *(&value.current_step_order) < 1 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is below the minimum".to_string()); }
+    if *(&value.current_step_order) > 100 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is above the maximum".to_string()); }
+    if !(&value.enrollment_context).is_object() { return Err("benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object".to_string()); }
+    if let Some(value) = &value.outcome {
+        validate_string_length("benefactor_marketing_outreach_enrollments.outcome", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_outreach_enrollments_insert(value: &BenefactorMarketingOutreachEnrollmentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "paused", "completed", "bounced", "unsubscribed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_enrollments.status: {}", value)); }
+    }
+    if let Some(value) = &value.current_step_order {
+        if *(value) < 1 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("benefactor_marketing_outreach_enrollments.current_step_order is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.enrollment_context {
+        if !(value).is_object() { return Err("benefactor_marketing_outreach_enrollments.enrollment_context must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.outcome {
+        validate_string_length("benefactor_marketing_outreach_enrollments.outcome", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_outreach_enrollments.outcome exceeds 64 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_TABLE: &str = "benefactor_marketing_outreach_touchpoints";
+pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_COLUMNS: &[&str] = &["id", "client_id", "sequence_id", "enrollment_id", "campaign_id", "lead_id", "contact_id", "channel", "direction", "status", "subject", "body_excerpt", "external_message_id", "occurred_at", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_OUTREACH_TOUCHPOINTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      sequence_id::text as sequence_id,
+      enrollment_id::text as enrollment_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      contact_id::text as contact_id,
+      channel,
+      direction,
+      status,
+      subject,
+      body_excerpt,
+      external_message_id,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as occurred_at,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_outreach_touchpoints"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachTouchpointsChannel {
+    Email,
+    Linkedin,
+    Sms,
+    Phone,
+    Task,
+    Meeting,
+}
+
+impl BenefactorMarketingOutreachTouchpointsChannel {
+    pub const VALUES: &'static [&'static str] = &["email", "linkedin", "sms", "phone", "task", "meeting"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Linkedin => "linkedin",
+            Self::Sms => "sms",
+            Self::Phone => "phone",
+            Self::Task => "task",
+            Self::Meeting => "meeting",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsChannel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email" => Ok(Self::Email),
+            "linkedin" => Ok(Self::Linkedin),
+            "sms" => Ok(Self::Sms),
+            "phone" => Ok(Self::Phone),
+            "task" => Ok(Self::Task),
+            "meeting" => Ok(Self::Meeting),
+            _ => Err(format!("unsupported channel: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachTouchpointsDirection {
+    Outbound,
+    Inbound,
+    Internal,
+}
+
+impl BenefactorMarketingOutreachTouchpointsDirection {
+    pub const VALUES: &'static [&'static str] = &["outbound", "inbound", "internal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Outbound => "outbound",
+            Self::Inbound => "inbound",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsDirection {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "outbound" => Ok(Self::Outbound),
+            "inbound" => Ok(Self::Inbound),
+            "internal" => Ok(Self::Internal),
+            _ => Err(format!("unsupported direction: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingOutreachTouchpointsStatus {
+    Planned,
+    Sent,
+    Delivered,
+    Opened,
+    Clicked,
+    Replied,
+    Failed,
+    Bounced,
+}
+
+impl BenefactorMarketingOutreachTouchpointsStatus {
+    pub const VALUES: &'static [&'static str] = &["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Sent => "sent",
+            Self::Delivered => "delivered",
+            Self::Opened => "opened",
+            Self::Clicked => "clicked",
+            Self::Replied => "replied",
+            Self::Failed => "failed",
+            Self::Bounced => "bounced",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingOutreachTouchpointsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "planned" => Ok(Self::Planned),
+            "sent" => Ok(Self::Sent),
+            "delivered" => Ok(Self::Delivered),
+            "opened" => Ok(Self::Opened),
+            "clicked" => Ok(Self::Clicked),
+            "replied" => Ok(Self::Replied),
+            "failed" => Ok(Self::Failed),
+            "bounced" => Ok(Self::Bounced),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachTouchpointsRow {
+    pub id: String,
+    pub client_id: String,
+    pub sequence_id: Option<String>,
+    pub enrollment_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub contact_id: Option<String>,
+    pub channel: String,
+    pub direction: String,
+    pub status: String,
+    pub subject: Option<String>,
+    pub body_excerpt: Option<String>,
+    pub external_message_id: Option<String>,
+    pub occurred_at: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingOutreachTouchpointsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub sequence_id: Option<String>,
+    pub enrollment_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub contact_id: Option<String>,
+    pub channel: Option<String>,
+    pub direction: Option<String>,
+    pub status: Option<String>,
+    pub subject: Option<String>,
+    pub body_excerpt: Option<String>,
+    pub external_message_id: Option<String>,
+    pub occurred_at: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_outreach_touchpoints_row(value: &BenefactorMarketingOutreachTouchpointsRow) -> Result<(), String> {
+    if !["email", "linkedin", "sms", "phone", "task", "meeting"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.channel: {}", &value.channel)); }
+    if !["outbound", "inbound", "internal"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.direction: {}", &value.direction)); }
+    if !["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.status: {}", &value.status)); }
+    if let Some(value) = &value.subject {
+        validate_string_length("benefactor_marketing_outreach_touchpoints.subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body_excerpt {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.external_message_id {
+        validate_string_length("benefactor_marketing_outreach_touchpoints.external_message_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes".to_string()); }
+    }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_outreach_touchpoints.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_outreach_touchpoints_insert(value: &BenefactorMarketingOutreachTouchpointsInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel {
+        if !["email", "linkedin", "sms", "phone", "task", "meeting"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.channel: {}", value)); }
+    }
+    if let Some(value) = &value.direction {
+        if !["outbound", "inbound", "internal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.direction: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["planned", "sent", "delivered", "opened", "clicked", "replied", "failed", "bounced"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_outreach_touchpoints.status: {}", value)); }
+    }
+    if let Some(value) = &value.subject {
+        validate_string_length("benefactor_marketing_outreach_touchpoints.subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_outreach_touchpoints.subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body_excerpt {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_outreach_touchpoints.body_excerpt exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.external_message_id {
+        validate_string_length("benefactor_marketing_outreach_touchpoints.external_message_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_outreach_touchpoints.external_message_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_outreach_touchpoints.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_TABLE: &str = "benefactor_marketing_prospect_research_briefs";
+pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_COLUMNS: &[&str] = &["id", "client_id", "lead_id", "status", "research_kind", "source", "summary", "findings", "recommended_actions", "confidence_micros", "model_name", "generated_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PROSPECT_RESEARCH_BRIEFS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      lead_id::text as lead_id,
+      status,
+      research_kind,
+      source,
+      summary,
+      findings,
+      recommended_actions,
+      confidence_micros,
+      model_name,
+      to_char(generated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as generated_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_prospect_research_briefs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingProspectResearchBriefsStatus {
+    Draft,
+    Ready,
+    Stale,
+    Failed,
+}
+
+impl BenefactorMarketingProspectResearchBriefsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "ready", "stale", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Ready => "ready",
+            Self::Stale => "stale",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "ready" => Ok(Self::Ready),
+            "stale" => Ok(Self::Stale),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingProspectResearchBriefsResearchKind {
+    AccountResearch,
+    ContactResearch,
+    CompetitiveIntel,
+    ProposalBrief,
+    OutreachPersonalization,
+}
+
+impl BenefactorMarketingProspectResearchBriefsResearchKind {
+    pub const VALUES: &'static [&'static str] = &["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AccountResearch => "account_research",
+            Self::ContactResearch => "contact_research",
+            Self::CompetitiveIntel => "competitive_intel",
+            Self::ProposalBrief => "proposal_brief",
+            Self::OutreachPersonalization => "outreach_personalization",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsResearchKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "account_research" => Ok(Self::AccountResearch),
+            "contact_research" => Ok(Self::ContactResearch),
+            "competitive_intel" => Ok(Self::CompetitiveIntel),
+            "proposal_brief" => Ok(Self::ProposalBrief),
+            "outreach_personalization" => Ok(Self::OutreachPersonalization),
+            _ => Err(format!("unsupported research_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingProspectResearchBriefsSource {
+    AiAssisted,
+    Analyst,
+    Scraper,
+    Integration,
+}
+
+impl BenefactorMarketingProspectResearchBriefsSource {
+    pub const VALUES: &'static [&'static str] = &["ai_assisted", "analyst", "scraper", "integration"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AiAssisted => "ai_assisted",
+            Self::Analyst => "analyst",
+            Self::Scraper => "scraper",
+            Self::Integration => "integration",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingProspectResearchBriefsSource {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "ai_assisted" => Ok(Self::AiAssisted),
+            "analyst" => Ok(Self::Analyst),
+            "scraper" => Ok(Self::Scraper),
+            "integration" => Ok(Self::Integration),
+            _ => Err(format!("unsupported source: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingProspectResearchBriefsRow {
+    pub id: String,
+    pub client_id: String,
+    pub lead_id: Option<String>,
+    pub status: String,
+    pub research_kind: String,
+    pub source: String,
+    pub summary: Option<String>,
+    pub findings: Value,
+    pub recommended_actions: Value,
+    pub confidence_micros: i32,
+    pub model_name: Option<String>,
+    pub generated_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingProspectResearchBriefsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub status: Option<String>,
+    pub research_kind: Option<String>,
+    pub source: Option<String>,
+    pub summary: Option<String>,
+    pub findings: Option<Value>,
+    pub recommended_actions: Option<Value>,
+    pub confidence_micros: Option<i32>,
+    pub model_name: Option<String>,
+    pub generated_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_prospect_research_briefs_row(value: &BenefactorMarketingProspectResearchBriefsRow) -> Result<(), String> {
+    if !["draft", "ready", "stale", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.status: {}", &value.status)); }
+    if !["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"].contains(&(&value.research_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}", &value.research_kind)); }
+    if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(&value.source).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.source: {}", &value.source)); }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes".to_string()); }
+    }
+    if !(&value.findings).is_array() { return Err("benefactor_marketing_prospect_research_briefs.findings must be a JSON array".to_string()); }
+    if !(&value.recommended_actions).is_array() { return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string()); }
+    if *(&value.confidence_micros) < 0 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum".to_string()); }
+    if *(&value.confidence_micros) > 1000000 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum".to_string()); }
+    if let Some(value) = &value.model_name {
+        validate_string_length("benefactor_marketing_prospect_research_briefs.model_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_prospect_research_briefs_insert(value: &BenefactorMarketingProspectResearchBriefsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["draft", "ready", "stale", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.status: {}", value)); }
+    }
+    if let Some(value) = &value.research_kind {
+        if !["account_research", "contact_research", "competitive_intel", "proposal_brief", "outreach_personalization"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.research_kind: {}", value)); }
+    }
+    if let Some(value) = &value.source {
+        if !["ai_assisted", "analyst", "scraper", "integration"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_prospect_research_briefs.source: {}", value)); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_prospect_research_briefs.summary exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.findings {
+        if !(value).is_array() { return Err("benefactor_marketing_prospect_research_briefs.findings must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.recommended_actions {
+        if !(value).is_array() { return Err("benefactor_marketing_prospect_research_briefs.recommended_actions must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.confidence_micros {
+        if *(value) < 0 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("benefactor_marketing_prospect_research_briefs.confidence_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.model_name {
+        validate_string_length("benefactor_marketing_prospect_research_briefs.model_name", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_prospect_research_briefs.model_name exceeds 120 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_TABLE: &str = "benefactor_marketing_conversion_events";
+pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "lead_id", "content_asset_id", "event_type", "source_platform", "source_event_id", "session_id", "visitor_key", "occurred_at", "value_cents", "utm", "payload", "created_at"];
+pub const BENEFACTOR_MARKETING_CONVERSION_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      lead_id::text as lead_id,
+      content_asset_id::text as content_asset_id,
+      event_type,
+      source_platform,
+      source_event_id,
+      session_id,
+      visitor_key,
+      to_char(occurred_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as occurred_at,
+      value_cents,
+      utm,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from benefactor_marketing_conversion_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingConversionEventsEventType {
+    LandingPageView,
+    FormSubmit,
+    ChatStarted,
+    CalendarBooked,
+    AssetDownload,
+    TrialSignup,
+    Purchase,
+    Custom,
+}
+
+impl BenefactorMarketingConversionEventsEventType {
+    pub const VALUES: &'static [&'static str] = &["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LandingPageView => "landing_page_view",
+            Self::FormSubmit => "form_submit",
+            Self::ChatStarted => "chat_started",
+            Self::CalendarBooked => "calendar_booked",
+            Self::AssetDownload => "asset_download",
+            Self::TrialSignup => "trial_signup",
+            Self::Purchase => "purchase",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingConversionEventsEventType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "landing_page_view" => Ok(Self::LandingPageView),
+            "form_submit" => Ok(Self::FormSubmit),
+            "chat_started" => Ok(Self::ChatStarted),
+            "calendar_booked" => Ok(Self::CalendarBooked),
+            "asset_download" => Ok(Self::AssetDownload),
+            "trial_signup" => Ok(Self::TrialSignup),
+            "purchase" => Ok(Self::Purchase),
+            "custom" => Ok(Self::Custom),
+            _ => Err(format!("unsupported event_type: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingConversionEventsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub event_type: String,
+    pub source_platform: Option<String>,
+    pub source_event_id: Option<String>,
+    pub session_id: Option<String>,
+    pub visitor_key: Option<String>,
+    pub occurred_at: String,
+    pub value_cents: i32,
+    pub utm: Value,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingConversionEventsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub event_type: Option<String>,
+    pub source_platform: Option<String>,
+    pub source_event_id: Option<String>,
+    pub session_id: Option<String>,
+    pub visitor_key: Option<String>,
+    pub occurred_at: Option<String>,
+    pub value_cents: Option<i32>,
+    pub utm: Option<Value>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_conversion_events_row(value: &BenefactorMarketingConversionEventsRow) -> Result<(), String> {
+    if !["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"].contains(&(&value.event_type).as_str()) { return Err(format!("unsupported benefactor_marketing_conversion_events.event_type: {}", &value.event_type)); }
+    if let Some(value) = &value.source_platform {
+        validate_string_length("benefactor_marketing_conversion_events.source_platform", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_conversion_events.source_platform exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source_event_id {
+        validate_string_length("benefactor_marketing_conversion_events.source_event_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("benefactor_marketing_conversion_events.session_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.visitor_key {
+        validate_string_length("benefactor_marketing_conversion_events.visitor_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string()); }
+    }
+    if *(&value.value_cents) < 0 { return Err("benefactor_marketing_conversion_events.value_cents is below the minimum".to_string()); }
+    if !(&value.utm).is_object() { return Err("benefactor_marketing_conversion_events.utm must be a JSON object".to_string()); }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_conversion_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_conversion_events_insert(value: &BenefactorMarketingConversionEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        if !["landing_page_view", "form_submit", "chat_started", "calendar_booked", "asset_download", "trial_signup", "purchase", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_conversion_events.event_type: {}", value)); }
+    }
+    if let Some(value) = &value.source_platform {
+        validate_string_length("benefactor_marketing_conversion_events.source_platform", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_conversion_events.source_platform exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.source_event_id {
+        validate_string_length("benefactor_marketing_conversion_events.source_event_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.source_event_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("benefactor_marketing_conversion_events.session_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.session_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.visitor_key {
+        validate_string_length("benefactor_marketing_conversion_events.visitor_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_conversion_events.visitor_key exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.value_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_conversion_events.value_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.utm {
+        if !(value).is_object() { return Err("benefactor_marketing_conversion_events.utm must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_conversion_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_TABLE: &str = "benefactor_marketing_portal_members";
+pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_COLUMNS: &[&str] = &["id", "client_id", "contact_id", "user_id", "email", "status", "role", "access_scope", "last_seen_at", "invited_at", "accepted_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_PORTAL_MEMBERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      contact_id::text as contact_id,
+      user_id::text as user_id,
+      email,
+      status,
+      role,
+      access_scope,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(invited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as invited_at,
+      to_char(accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as accepted_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_portal_members"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingPortalMembersStatus {
+    Invited,
+    Active,
+    Disabled,
+    Revoked,
+}
+
+impl BenefactorMarketingPortalMembersStatus {
+    pub const VALUES: &'static [&'static str] = &["invited", "active", "disabled", "revoked"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Invited => "invited",
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Revoked => "revoked",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingPortalMembersStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "invited" => Ok(Self::Invited),
+            "active" => Ok(Self::Active),
+            "disabled" => Ok(Self::Disabled),
+            "revoked" => Ok(Self::Revoked),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingPortalMembersRole {
+    Owner,
+    Approver,
+    Viewer,
+    Billing,
+    Collaborator,
+}
+
+impl BenefactorMarketingPortalMembersRole {
+    pub const VALUES: &'static [&'static str] = &["owner", "approver", "viewer", "billing", "collaborator"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Approver => "approver",
+            Self::Viewer => "viewer",
+            Self::Billing => "billing",
+            Self::Collaborator => "collaborator",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingPortalMembersRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "owner" => Ok(Self::Owner),
+            "approver" => Ok(Self::Approver),
+            "viewer" => Ok(Self::Viewer),
+            "billing" => Ok(Self::Billing),
+            "collaborator" => Ok(Self::Collaborator),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingPortalMembersRow {
+    pub id: String,
+    pub client_id: String,
+    pub contact_id: Option<String>,
+    pub user_id: Option<String>,
+    pub email: String,
+    pub status: String,
+    pub role: String,
+    pub access_scope: Value,
+    pub last_seen_at: Option<String>,
+    pub invited_at: String,
+    pub accepted_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingPortalMembersInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub contact_id: Option<String>,
+    pub user_id: Option<String>,
+    pub email: Option<String>,
+    pub status: Option<String>,
+    pub role: Option<String>,
+    pub access_scope: Option<Value>,
+    pub last_seen_at: Option<String>,
+    pub invited_at: Option<String>,
+    pub accepted_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_portal_members_row(value: &BenefactorMarketingPortalMembersRow) -> Result<(), String> {
+    validate_string_length("benefactor_marketing_portal_members.email", &value.email, None, Some(240))?;
+    if (&value.email).as_bytes().len() > 240 { return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string()); }
+    if !["invited", "active", "disabled", "revoked"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.status: {}", &value.status)); }
+    if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(&value.role).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.role: {}", &value.role)); }
+    if !(&value.access_scope).is_object() { return Err("benefactor_marketing_portal_members.access_scope must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_portal_members_insert(value: &BenefactorMarketingPortalMembersInsert) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        validate_string_length("benefactor_marketing_portal_members.email", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_portal_members.email exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["invited", "active", "disabled", "revoked"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.status: {}", value)); }
+    }
+    if let Some(value) = &value.role {
+        if !["owner", "approver", "viewer", "billing", "collaborator"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_portal_members.role: {}", value)); }
+    }
+    if let Some(value) = &value.access_scope {
+        if !(value).is_object() { return Err("benefactor_marketing_portal_members.access_scope must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_TABLE: &str = "benefactor_marketing_shared_documents";
+pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "content_asset_id", "status", "document_kind", "title", "storage_uri", "mime_type", "visibility", "uploaded_by", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_SHARED_DOCUMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      content_asset_id::text as content_asset_id,
+      status,
+      document_kind,
+      title,
+      storage_uri,
+      mime_type,
+      visibility,
+      uploaded_by::text as uploaded_by,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_shared_documents"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingSharedDocumentsStatus {
+    Active,
+    Archived,
+    Deleted,
+}
+
+impl BenefactorMarketingSharedDocumentsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "archived", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Archived => "archived",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingSharedDocumentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "archived" => Ok(Self::Archived),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingSharedDocumentsDocumentKind {
+    Contract,
+    Invoice,
+    Report,
+    Creative,
+    BrandAsset,
+    Proposal,
+    MeetingNotes,
+    Other,
+}
+
+impl BenefactorMarketingSharedDocumentsDocumentKind {
+    pub const VALUES: &'static [&'static str] = &["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Contract => "contract",
+            Self::Invoice => "invoice",
+            Self::Report => "report",
+            Self::Creative => "creative",
+            Self::BrandAsset => "brand_asset",
+            Self::Proposal => "proposal",
+            Self::MeetingNotes => "meeting_notes",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingSharedDocumentsDocumentKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "contract" => Ok(Self::Contract),
+            "invoice" => Ok(Self::Invoice),
+            "report" => Ok(Self::Report),
+            "creative" => Ok(Self::Creative),
+            "brand_asset" => Ok(Self::BrandAsset),
+            "proposal" => Ok(Self::Proposal),
+            "meeting_notes" => Ok(Self::MeetingNotes),
+            "other" => Ok(Self::Other),
+            _ => Err(format!("unsupported document_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingSharedDocumentsVisibility {
+    Internal,
+    ClientPortal,
+    PublicLink,
+}
+
+impl BenefactorMarketingSharedDocumentsVisibility {
+    pub const VALUES: &'static [&'static str] = &["internal", "client_portal", "public_link"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::ClientPortal => "client_portal",
+            Self::PublicLink => "public_link",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingSharedDocumentsVisibility {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "internal" => Ok(Self::Internal),
+            "client_portal" => Ok(Self::ClientPortal),
+            "public_link" => Ok(Self::PublicLink),
+            _ => Err(format!("unsupported visibility: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingSharedDocumentsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub status: String,
+    pub document_kind: String,
+    pub title: String,
+    pub storage_uri: String,
+    pub mime_type: Option<String>,
+    pub visibility: String,
+    pub uploaded_by: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingSharedDocumentsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub content_asset_id: Option<String>,
+    pub status: Option<String>,
+    pub document_kind: Option<String>,
+    pub title: Option<String>,
+    pub storage_uri: Option<String>,
+    pub mime_type: Option<String>,
+    pub visibility: Option<String>,
+    pub uploaded_by: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_shared_documents_row(value: &BenefactorMarketingSharedDocumentsRow) -> Result<(), String> {
+    if !["active", "archived", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.status: {}", &value.status)); }
+    if !["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"].contains(&(&value.document_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.document_kind: {}", &value.document_kind)); }
+    validate_string_length("benefactor_marketing_shared_documents.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string()); }
+    if (&value.storage_uri).as_bytes().len() > 2048 { return Err("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string()); }
+    if let Some(value) = &value.mime_type {
+        validate_string_length("benefactor_marketing_shared_documents.mime_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string()); }
+    }
+    if !["internal", "client_portal", "public_link"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.visibility: {}", &value.visibility)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_shared_documents_insert(value: &BenefactorMarketingSharedDocumentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["active", "archived", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.status: {}", value)); }
+    }
+    if let Some(value) = &value.document_kind {
+        if !["contract", "invoice", "report", "creative", "brand_asset", "proposal", "meeting_notes", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.document_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_shared_documents.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_shared_documents.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.storage_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_shared_documents.storage_uri exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.mime_type {
+        validate_string_length("benefactor_marketing_shared_documents.mime_type", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_shared_documents.mime_type exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.visibility {
+        if !["internal", "client_portal", "public_link"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_shared_documents.visibility: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_shared_documents.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_TABLE: &str = "benefactor_marketing_collaboration_comments";
+pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_COLUMNS: &[&str] = &["id", "client_id", "parent_comment_id", "resource_type", "resource_id", "author_user_id", "author_contact_id", "body", "status", "visibility", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_COLLABORATION_COMMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      parent_comment_id::text as parent_comment_id,
+      resource_type,
+      resource_id::text as resource_id,
+      author_user_id::text as author_user_id,
+      author_contact_id::text as author_contact_id,
+      body,
+      status,
+      visibility,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_collaboration_comments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCollaborationCommentsResourceType {
+    Client,
+    Campaign,
+    ContentAsset,
+    Approval,
+    Ticket,
+    Document,
+    Report,
+    Meeting,
+}
+
+impl BenefactorMarketingCollaborationCommentsResourceType {
+    pub const VALUES: &'static [&'static str] = &["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Client => "client",
+            Self::Campaign => "campaign",
+            Self::ContentAsset => "content_asset",
+            Self::Approval => "approval",
+            Self::Ticket => "ticket",
+            Self::Document => "document",
+            Self::Report => "report",
+            Self::Meeting => "meeting",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsResourceType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "client" => Ok(Self::Client),
+            "campaign" => Ok(Self::Campaign),
+            "content_asset" => Ok(Self::ContentAsset),
+            "approval" => Ok(Self::Approval),
+            "ticket" => Ok(Self::Ticket),
+            "document" => Ok(Self::Document),
+            "report" => Ok(Self::Report),
+            "meeting" => Ok(Self::Meeting),
+            _ => Err(format!("unsupported resource_type: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCollaborationCommentsStatus {
+    Open,
+    Resolved,
+    Archived,
+}
+
+impl BenefactorMarketingCollaborationCommentsStatus {
+    pub const VALUES: &'static [&'static str] = &["open", "resolved", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Resolved => "resolved",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "open" => Ok(Self::Open),
+            "resolved" => Ok(Self::Resolved),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCollaborationCommentsVisibility {
+    Internal,
+    ClientPortal,
+}
+
+impl BenefactorMarketingCollaborationCommentsVisibility {
+    pub const VALUES: &'static [&'static str] = &["internal", "client_portal"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::ClientPortal => "client_portal",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCollaborationCommentsVisibility {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "internal" => Ok(Self::Internal),
+            "client_portal" => Ok(Self::ClientPortal),
+            _ => Err(format!("unsupported visibility: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCollaborationCommentsRow {
+    pub id: String,
+    pub client_id: String,
+    pub parent_comment_id: Option<String>,
+    pub resource_type: String,
+    pub resource_id: Option<String>,
+    pub author_user_id: Option<String>,
+    pub author_contact_id: Option<String>,
+    pub body: String,
+    pub status: String,
+    pub visibility: String,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCollaborationCommentsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub parent_comment_id: Option<String>,
+    pub resource_type: Option<String>,
+    pub resource_id: Option<String>,
+    pub author_user_id: Option<String>,
+    pub author_contact_id: Option<String>,
+    pub body: Option<String>,
+    pub status: Option<String>,
+    pub visibility: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_collaboration_comments_row(value: &BenefactorMarketingCollaborationCommentsRow) -> Result<(), String> {
+    if !["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"].contains(&(&value.resource_type).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.resource_type: {}", &value.resource_type)); }
+    if (&value.body).as_bytes().len() > 20000 { return Err("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string()); }
+    if !["open", "resolved", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.status: {}", &value.status)); }
+    if !["internal", "client_portal"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.visibility: {}", &value.visibility)); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_collaboration_comments.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_collaboration_comments_insert(value: &BenefactorMarketingCollaborationCommentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.resource_type {
+        if !["client", "campaign", "content_asset", "approval", "ticket", "document", "report", "meeting"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.resource_type: {}", value)); }
+    }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_collaboration_comments.body exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["open", "resolved", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.status: {}", value)); }
+    }
+    if let Some(value) = &value.visibility {
+        if !["internal", "client_portal"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_collaboration_comments.visibility: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_collaboration_comments.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_NOTIFICATIONS_TABLE: &str = "benefactor_marketing_notifications";
+pub const BENEFACTOR_MARKETING_NOTIFICATIONS_COLUMNS: &[&str] = &["id", "client_id", "recipient_user_id", "recipient_contact_id", "channel", "status", "notification_kind", "title", "body", "payload", "scheduled_at", "sent_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_NOTIFICATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      recipient_user_id::text as recipient_user_id,
+      recipient_contact_id::text as recipient_contact_id,
+      channel,
+      status,
+      notification_kind,
+      title,
+      body,
+      payload,
+      to_char(scheduled_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scheduled_at,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_notifications"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingNotificationsChannel {
+    Email,
+    Sms,
+    Portal,
+    Slack,
+    Webhook,
+}
+
+impl BenefactorMarketingNotificationsChannel {
+    pub const VALUES: &'static [&'static str] = &["email", "sms", "portal", "slack", "webhook"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Email => "email",
+            Self::Sms => "sms",
+            Self::Portal => "portal",
+            Self::Slack => "slack",
+            Self::Webhook => "webhook",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingNotificationsChannel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "email" => Ok(Self::Email),
+            "sms" => Ok(Self::Sms),
+            "portal" => Ok(Self::Portal),
+            "slack" => Ok(Self::Slack),
+            "webhook" => Ok(Self::Webhook),
+            _ => Err(format!("unsupported channel: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingNotificationsStatus {
+    Queued,
+    Scheduled,
+    Sent,
+    Failed,
+    Canceled,
+}
+
+impl BenefactorMarketingNotificationsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "scheduled", "sent", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Scheduled => "scheduled",
+            Self::Sent => "sent",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingNotificationsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "scheduled" => Ok(Self::Scheduled),
+            "sent" => Ok(Self::Sent),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingNotificationsNotificationKind {
+    ApprovalRequest,
+    Comment,
+    ReportReady,
+    TicketUpdate,
+    MeetingReminder,
+    BudgetAlert,
+    Custom,
+}
+
+impl BenefactorMarketingNotificationsNotificationKind {
+    pub const VALUES: &'static [&'static str] = &["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ApprovalRequest => "approval_request",
+            Self::Comment => "comment",
+            Self::ReportReady => "report_ready",
+            Self::TicketUpdate => "ticket_update",
+            Self::MeetingReminder => "meeting_reminder",
+            Self::BudgetAlert => "budget_alert",
+            Self::Custom => "custom",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingNotificationsNotificationKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "approval_request" => Ok(Self::ApprovalRequest),
+            "comment" => Ok(Self::Comment),
+            "report_ready" => Ok(Self::ReportReady),
+            "ticket_update" => Ok(Self::TicketUpdate),
+            "meeting_reminder" => Ok(Self::MeetingReminder),
+            "budget_alert" => Ok(Self::BudgetAlert),
+            "custom" => Ok(Self::Custom),
+            _ => Err(format!("unsupported notification_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingNotificationsRow {
+    pub id: String,
+    pub client_id: String,
+    pub recipient_user_id: Option<String>,
+    pub recipient_contact_id: Option<String>,
+    pub channel: String,
+    pub status: String,
+    pub notification_kind: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub payload: Value,
+    pub scheduled_at: Option<String>,
+    pub sent_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingNotificationsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub recipient_user_id: Option<String>,
+    pub recipient_contact_id: Option<String>,
+    pub channel: Option<String>,
+    pub status: Option<String>,
+    pub notification_kind: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub payload: Option<Value>,
+    pub scheduled_at: Option<String>,
+    pub sent_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_notifications_row(value: &BenefactorMarketingNotificationsRow) -> Result<(), String> {
+    if !["email", "sms", "portal", "slack", "webhook"].contains(&(&value.channel).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.channel: {}", &value.channel)); }
+    if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.status: {}", &value.status)); }
+    if !["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"].contains(&(&value.notification_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.notification_kind: {}", &value.notification_kind)); }
+    validate_string_length("benefactor_marketing_notifications.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string()); }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string()); }
+    }
+    if !(&value.payload).is_object() { return Err("benefactor_marketing_notifications.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_notifications_insert(value: &BenefactorMarketingNotificationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.channel {
+        if !["email", "sms", "portal", "slack", "webhook"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.channel: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["queued", "scheduled", "sent", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.status: {}", value)); }
+    }
+    if let Some(value) = &value.notification_kind {
+        if !["approval_request", "comment", "report_ready", "ticket_update", "meeting_reminder", "budget_alert", "custom"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_notifications.notification_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("benefactor_marketing_notifications.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("benefactor_marketing_notifications.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.body {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_notifications.body exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("benefactor_marketing_notifications.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_TIME_ENTRIES_TABLE: &str = "benefactor_marketing_time_entries";
+pub const BENEFACTOR_MARKETING_TIME_ENTRIES_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "project_task_id", "user_id", "entry_date", "minutes", "billable", "rate_cents", "cost_cents", "notes", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_TIME_ENTRIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      project_task_id::text as project_task_id,
+      user_id::text as user_id,
+      entry_date,
+      minutes,
+      billable,
+      rate_cents,
+      cost_cents,
+      notes,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_time_entries"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTimeEntriesRow {
+    pub id: String,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub project_task_id: Option<String>,
+    pub user_id: String,
+    pub entry_date: String,
+    pub minutes: i32,
+    pub billable: bool,
+    pub rate_cents: i32,
+    pub cost_cents: i32,
+    pub notes: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingTimeEntriesInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub project_task_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_date: Option<String>,
+    pub minutes: Option<i32>,
+    pub billable: Option<bool>,
+    pub rate_cents: Option<i32>,
+    pub cost_cents: Option<i32>,
+    pub notes: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_time_entries_row(value: &BenefactorMarketingTimeEntriesRow) -> Result<(), String> {
+    validate_string_length("benefactor_marketing_time_entries.entry_date", &value.entry_date, None, Some(10))?;
+    if *(&value.minutes) < 1 { return Err("benefactor_marketing_time_entries.minutes is below the minimum".to_string()); }
+    if *(&value.minutes) > 1440 { return Err("benefactor_marketing_time_entries.minutes is above the maximum".to_string()); }
+    if *(&value.rate_cents) < 0 { return Err("benefactor_marketing_time_entries.rate_cents is below the minimum".to_string()); }
+    if *(&value.cost_cents) < 0 { return Err("benefactor_marketing_time_entries.cost_cents is below the minimum".to_string()); }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_time_entries.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_time_entries_insert(value: &BenefactorMarketingTimeEntriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.entry_date {
+        validate_string_length("benefactor_marketing_time_entries.entry_date", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.minutes {
+        if *(value) < 1 { return Err("benefactor_marketing_time_entries.minutes is below the minimum".to_string()); }
+        if *(value) > 1440 { return Err("benefactor_marketing_time_entries.minutes is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.rate_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_time_entries.rate_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.cost_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_time_entries.cost_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 4000 { return Err("benefactor_marketing_time_entries.notes exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_time_entries.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_VENDOR_COSTS_TABLE: &str = "benefactor_marketing_vendor_costs";
+pub const BENEFACTOR_MARKETING_VENDOR_COSTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "vendor_name", "category", "status", "amount_cents", "incurred_on", "invoice_ref", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_VENDOR_COSTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      vendor_name,
+      category,
+      status,
+      amount_cents,
+      incurred_on,
+      invoice_ref,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_vendor_costs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingVendorCostsCategory {
+    Ads,
+    Creative,
+    Data,
+    Software,
+    Contractor,
+    Events,
+    Other,
+}
+
+impl BenefactorMarketingVendorCostsCategory {
+    pub const VALUES: &'static [&'static str] = &["ads", "creative", "data", "software", "contractor", "events", "other"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ads => "ads",
+            Self::Creative => "creative",
+            Self::Data => "data",
+            Self::Software => "software",
+            Self::Contractor => "contractor",
+            Self::Events => "events",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingVendorCostsCategory {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "ads" => Ok(Self::Ads),
+            "creative" => Ok(Self::Creative),
+            "data" => Ok(Self::Data),
+            "software" => Ok(Self::Software),
+            "contractor" => Ok(Self::Contractor),
+            "events" => Ok(Self::Events),
+            "other" => Ok(Self::Other),
+            _ => Err(format!("unsupported category: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingVendorCostsStatus {
+    Planned,
+    Approved,
+    Incurred,
+    Invoiced,
+    Paid,
+    Canceled,
+}
+
+impl BenefactorMarketingVendorCostsStatus {
+    pub const VALUES: &'static [&'static str] = &["planned", "approved", "incurred", "invoiced", "paid", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Approved => "approved",
+            Self::Incurred => "incurred",
+            Self::Invoiced => "invoiced",
+            Self::Paid => "paid",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingVendorCostsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "planned" => Ok(Self::Planned),
+            "approved" => Ok(Self::Approved),
+            "incurred" => Ok(Self::Incurred),
+            "invoiced" => Ok(Self::Invoiced),
+            "paid" => Ok(Self::Paid),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingVendorCostsRow {
+    pub id: String,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub vendor_name: String,
+    pub category: String,
+    pub status: String,
+    pub amount_cents: i32,
+    pub incurred_on: Option<String>,
+    pub invoice_ref: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingVendorCostsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub vendor_name: Option<String>,
+    pub category: Option<String>,
+    pub status: Option<String>,
+    pub amount_cents: Option<i32>,
+    pub incurred_on: Option<String>,
+    pub invoice_ref: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_vendor_costs_row(value: &BenefactorMarketingVendorCostsRow) -> Result<(), String> {
+    validate_string_length("benefactor_marketing_vendor_costs.vendor_name", &value.vendor_name, None, Some(200))?;
+    if (&value.vendor_name).as_bytes().len() > 200 { return Err("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string()); }
+    if !["ads", "creative", "data", "software", "contractor", "events", "other"].contains(&(&value.category).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.category: {}", &value.category)); }
+    if !["planned", "approved", "incurred", "invoiced", "paid", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.status: {}", &value.status)); }
+    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string()); }
+    if let Some(value) = &value.incurred_on {
+        validate_string_length("benefactor_marketing_vendor_costs.incurred_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.invoice_ref {
+        validate_string_length("benefactor_marketing_vendor_costs.invoice_ref", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_vendor_costs_insert(value: &BenefactorMarketingVendorCostsInsert) -> Result<(), String> {
+    if let Some(value) = &value.vendor_name {
+        validate_string_length("benefactor_marketing_vendor_costs.vendor_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("benefactor_marketing_vendor_costs.vendor_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.category {
+        if !["ads", "creative", "data", "software", "contractor", "events", "other"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.category: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["planned", "approved", "incurred", "invoiced", "paid", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_vendor_costs.status: {}", value)); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_vendor_costs.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.incurred_on {
+        validate_string_length("benefactor_marketing_vendor_costs.incurred_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.invoice_ref {
+        validate_string_length("benefactor_marketing_vendor_costs.invoice_ref", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("benefactor_marketing_vendor_costs.invoice_ref exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_vendor_costs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_TABLE: &str = "benefactor_marketing_commission_entries";
+pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_COLUMNS: &[&str] = &["id", "client_id", "opportunity_id", "user_id", "status", "commission_kind", "basis_cents", "rate_micros", "amount_cents", "earned_on", "paid_at", "meta_data", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_COMMISSION_ENTRIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      opportunity_id::text as opportunity_id,
+      user_id::text as user_id,
+      status,
+      commission_kind,
+      basis_cents,
+      rate_micros,
+      amount_cents,
+      earned_on,
+      to_char(paid_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as paid_at,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_commission_entries"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCommissionEntriesStatus {
+    Pending,
+    Approved,
+    Paid,
+    Void,
+}
+
+impl BenefactorMarketingCommissionEntriesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "approved", "paid", "void"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Approved => "approved",
+            Self::Paid => "paid",
+            Self::Void => "void",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCommissionEntriesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "approved" => Ok(Self::Approved),
+            "paid" => Ok(Self::Paid),
+            "void" => Ok(Self::Void),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCommissionEntriesCommissionKind {
+    Deal,
+    Retainer,
+    Renewal,
+    Upsell,
+    Appointment,
+}
+
+impl BenefactorMarketingCommissionEntriesCommissionKind {
+    pub const VALUES: &'static [&'static str] = &["deal", "retainer", "renewal", "upsell", "appointment"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Deal => "deal",
+            Self::Retainer => "retainer",
+            Self::Renewal => "renewal",
+            Self::Upsell => "upsell",
+            Self::Appointment => "appointment",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCommissionEntriesCommissionKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "deal" => Ok(Self::Deal),
+            "retainer" => Ok(Self::Retainer),
+            "renewal" => Ok(Self::Renewal),
+            "upsell" => Ok(Self::Upsell),
+            "appointment" => Ok(Self::Appointment),
+            _ => Err(format!("unsupported commission_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCommissionEntriesRow {
+    pub id: String,
+    pub client_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub user_id: String,
+    pub status: String,
+    pub commission_kind: String,
+    pub basis_cents: i32,
+    pub rate_micros: i32,
+    pub amount_cents: i32,
+    pub earned_on: Option<String>,
+    pub paid_at: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCommissionEntriesInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub user_id: Option<String>,
+    pub status: Option<String>,
+    pub commission_kind: Option<String>,
+    pub basis_cents: Option<i32>,
+    pub rate_micros: Option<i32>,
+    pub amount_cents: Option<i32>,
+    pub earned_on: Option<String>,
+    pub paid_at: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_commission_entries_row(value: &BenefactorMarketingCommissionEntriesRow) -> Result<(), String> {
+    if !["pending", "approved", "paid", "void"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.status: {}", &value.status)); }
+    if !["deal", "retainer", "renewal", "upsell", "appointment"].contains(&(&value.commission_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.commission_kind: {}", &value.commission_kind)); }
+    if *(&value.basis_cents) < 0 { return Err("benefactor_marketing_commission_entries.basis_cents is below the minimum".to_string()); }
+    if *(&value.rate_micros) < 0 { return Err("benefactor_marketing_commission_entries.rate_micros is below the minimum".to_string()); }
+    if *(&value.rate_micros) > 1000000 { return Err("benefactor_marketing_commission_entries.rate_micros is above the maximum".to_string()); }
+    if *(&value.amount_cents) < 0 { return Err("benefactor_marketing_commission_entries.amount_cents is below the minimum".to_string()); }
+    if let Some(value) = &value.earned_on {
+        validate_string_length("benefactor_marketing_commission_entries.earned_on", value, None, Some(10))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("benefactor_marketing_commission_entries.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_commission_entries_insert(value: &BenefactorMarketingCommissionEntriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["pending", "approved", "paid", "void"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.status: {}", value)); }
+    }
+    if let Some(value) = &value.commission_kind {
+        if !["deal", "retainer", "renewal", "upsell", "appointment"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_commission_entries.commission_kind: {}", value)); }
+    }
+    if let Some(value) = &value.basis_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.basis_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.rate_micros {
+        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.rate_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("benefactor_marketing_commission_entries.rate_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_commission_entries.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.earned_on {
+        validate_string_length("benefactor_marketing_commission_entries.earned_on", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_marketing_commission_entries.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_TABLE: &str = "benefactor_marketing_budget_forecasts";
+pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_COLUMNS: &[&str] = &["id", "client_id", "campaign_id", "forecast_kind", "period_start", "period_end", "status", "revenue_cents", "media_spend_cents", "labor_cost_cents", "vendor_cost_cents", "gross_margin_cents", "assumptions", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_BUDGET_FORECASTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      campaign_id::text as campaign_id,
+      forecast_kind,
+      period_start,
+      period_end,
+      status,
+      revenue_cents,
+      media_spend_cents,
+      labor_cost_cents,
+      vendor_cost_cents,
+      gross_margin_cents,
+      assumptions,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_budget_forecasts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingBudgetForecastsForecastKind {
+    Monthly,
+    Quarterly,
+    Campaign,
+    Annual,
+}
+
+impl BenefactorMarketingBudgetForecastsForecastKind {
+    pub const VALUES: &'static [&'static str] = &["monthly", "quarterly", "campaign", "annual"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Monthly => "monthly",
+            Self::Quarterly => "quarterly",
+            Self::Campaign => "campaign",
+            Self::Annual => "annual",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingBudgetForecastsForecastKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "monthly" => Ok(Self::Monthly),
+            "quarterly" => Ok(Self::Quarterly),
+            "campaign" => Ok(Self::Campaign),
+            "annual" => Ok(Self::Annual),
+            _ => Err(format!("unsupported forecast_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingBudgetForecastsStatus {
+    Draft,
+    Approved,
+    Locked,
+    Archived,
+}
+
+impl BenefactorMarketingBudgetForecastsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "approved", "locked", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Approved => "approved",
+            Self::Locked => "locked",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingBudgetForecastsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "approved" => Ok(Self::Approved),
+            "locked" => Ok(Self::Locked),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingBudgetForecastsRow {
+    pub id: String,
+    pub client_id: String,
+    pub campaign_id: Option<String>,
+    pub forecast_kind: String,
+    pub period_start: String,
+    pub period_end: String,
+    pub status: String,
+    pub revenue_cents: i32,
+    pub media_spend_cents: i32,
+    pub labor_cost_cents: i32,
+    pub vendor_cost_cents: i32,
+    pub gross_margin_cents: i32,
+    pub assumptions: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingBudgetForecastsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub campaign_id: Option<String>,
+    pub forecast_kind: Option<String>,
+    pub period_start: Option<String>,
+    pub period_end: Option<String>,
+    pub status: Option<String>,
+    pub revenue_cents: Option<i32>,
+    pub media_spend_cents: Option<i32>,
+    pub labor_cost_cents: Option<i32>,
+    pub vendor_cost_cents: Option<i32>,
+    pub gross_margin_cents: Option<i32>,
+    pub assumptions: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_budget_forecasts_row(value: &BenefactorMarketingBudgetForecastsRow) -> Result<(), String> {
+    if !["monthly", "quarterly", "campaign", "annual"].contains(&(&value.forecast_kind).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}", &value.forecast_kind)); }
+    validate_string_length("benefactor_marketing_budget_forecasts.period_start", &value.period_start, None, Some(10))?;
+    validate_string_length("benefactor_marketing_budget_forecasts.period_end", &value.period_end, None, Some(10))?;
+    if !["draft", "approved", "locked", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.status: {}", &value.status)); }
+    if *(&value.revenue_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum".to_string()); }
+    if *(&value.media_spend_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum".to_string()); }
+    if *(&value.labor_cost_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum".to_string()); }
+    if *(&value.vendor_cost_cents) < 0 { return Err("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum".to_string()); }
+    if !(&value.assumptions).is_object() { return Err("benefactor_marketing_budget_forecasts.assumptions must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_budget_forecasts_insert(value: &BenefactorMarketingBudgetForecastsInsert) -> Result<(), String> {
+    if let Some(value) = &value.forecast_kind {
+        if !["monthly", "quarterly", "campaign", "annual"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.forecast_kind: {}", value)); }
+    }
+    if let Some(value) = &value.period_start {
+        validate_string_length("benefactor_marketing_budget_forecasts.period_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.period_end {
+        validate_string_length("benefactor_marketing_budget_forecasts.period_end", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "approved", "locked", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_budget_forecasts.status: {}", value)); }
+    }
+    if let Some(value) = &value.revenue_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.revenue_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.media_spend_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.media_spend_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.labor_cost_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.labor_cost_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.vendor_cost_cents {
+        if *(value) < 0 { return Err("benefactor_marketing_budget_forecasts.vendor_cost_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.assumptions {
+        if !(value).is_object() { return Err("benefactor_marketing_budget_forecasts.assumptions must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_TABLE: &str = "benefactor_marketing_call_insights";
+pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_COLUMNS: &[&str] = &["id", "client_id", "meeting_id", "lead_id", "opportunity_id", "status", "provider", "transcript_uri", "summary", "sentiment", "action_items", "objections", "next_steps", "confidence_micros", "analyzed_at", "created_at", "updated_at"];
+pub const BENEFACTOR_MARKETING_CALL_INSIGHTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      client_id::text as client_id,
+      meeting_id::text as meeting_id,
+      lead_id::text as lead_id,
+      opportunity_id::text as opportunity_id,
+      status,
+      provider,
+      transcript_uri,
+      summary,
+      sentiment,
+      action_items,
+      objections,
+      next_steps,
+      confidence_micros,
+      to_char(analyzed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as analyzed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from benefactor_marketing_call_insights"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCallInsightsStatus {
+    Processing,
+    Ready,
+    Failed,
+    Archived,
+}
+
+impl BenefactorMarketingCallInsightsStatus {
+    pub const VALUES: &'static [&'static str] = &["processing", "ready", "failed", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Processing => "processing",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCallInsightsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "processing" => Ok(Self::Processing),
+            "ready" => Ok(Self::Ready),
+            "failed" => Ok(Self::Failed),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BenefactorMarketingCallInsightsSentiment {
+    Positive,
+    Neutral,
+    Negative,
+    Mixed,
+}
+
+impl BenefactorMarketingCallInsightsSentiment {
+    pub const VALUES: &'static [&'static str] = &["positive", "neutral", "negative", "mixed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Positive => "positive",
+            Self::Neutral => "neutral",
+            Self::Negative => "negative",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
+impl TryFrom<&str> for BenefactorMarketingCallInsightsSentiment {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "positive" => Ok(Self::Positive),
+            "neutral" => Ok(Self::Neutral),
+            "negative" => Ok(Self::Negative),
+            "mixed" => Ok(Self::Mixed),
+            _ => Err(format!("unsupported sentiment: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCallInsightsRow {
+    pub id: String,
+    pub client_id: String,
+    pub meeting_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub status: String,
+    pub provider: Option<String>,
+    pub transcript_uri: Option<String>,
+    pub summary: Option<String>,
+    pub sentiment: Option<String>,
+    pub action_items: Value,
+    pub objections: Value,
+    pub next_steps: Value,
+    pub confidence_micros: i32,
+    pub analyzed_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorMarketingCallInsightsInsert {
+    pub id: Option<String>,
+    pub client_id: Option<String>,
+    pub meeting_id: Option<String>,
+    pub lead_id: Option<String>,
+    pub opportunity_id: Option<String>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    pub transcript_uri: Option<String>,
+    pub summary: Option<String>,
+    pub sentiment: Option<String>,
+    pub action_items: Option<Value>,
+    pub objections: Option<Value>,
+    pub next_steps: Option<Value>,
+    pub confidence_micros: Option<i32>,
+    pub analyzed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_benefactor_marketing_call_insights_row(value: &BenefactorMarketingCallInsightsRow) -> Result<(), String> {
+    if !["processing", "ready", "failed", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.status: {}", &value.status)); }
+    if let Some(value) = &value.provider {
+        validate_string_length("benefactor_marketing_call_insights.provider", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.transcript_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sentiment {
+        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.sentiment: {}", value)); }
+    }
+    if !(&value.action_items).is_array() { return Err("benefactor_marketing_call_insights.action_items must be a JSON array".to_string()); }
+    if !(&value.objections).is_array() { return Err("benefactor_marketing_call_insights.objections must be a JSON array".to_string()); }
+    if !(&value.next_steps).is_array() { return Err("benefactor_marketing_call_insights.next_steps must be a JSON array".to_string()); }
+    if *(&value.confidence_micros) < 0 { return Err("benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string()); }
+    if *(&value.confidence_micros) > 1000000 { return Err("benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_marketing_call_insights_insert(value: &BenefactorMarketingCallInsightsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["processing", "ready", "failed", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.status: {}", value)); }
+    }
+    if let Some(value) = &value.provider {
+        validate_string_length("benefactor_marketing_call_insights.provider", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("benefactor_marketing_call_insights.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.transcript_uri {
+        if (value).as_bytes().len() > 2048 { return Err("benefactor_marketing_call_insights.transcript_uri exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 { return Err("benefactor_marketing_call_insights.summary exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.sentiment {
+        if !["positive", "neutral", "negative", "mixed"].contains(&(value).as_str()) { return Err(format!("unsupported benefactor_marketing_call_insights.sentiment: {}", value)); }
+    }
+    if let Some(value) = &value.action_items {
+        if !(value).is_array() { return Err("benefactor_marketing_call_insights.action_items must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.objections {
+        if !(value).is_array() { return Err("benefactor_marketing_call_insights.objections must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.next_steps {
+        if !(value).is_array() { return Err("benefactor_marketing_call_insights.next_steps must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.confidence_micros {
+        if *(value) < 0 { return Err("benefactor_marketing_call_insights.confidence_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("benefactor_marketing_call_insights.confidence_micros is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_USERS_TABLE: &str = "usacc_users";
+pub const USACC_USERS_COLUMNS: &[&str] = &["id", "external_subject", "email_hash", "display_name", "user_kind", "status", "kyc_level", "roles", "is_legal_entity", "legal_region", "meta_data", "created_at", "updated_at"];
+pub const USACC_USERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      external_subject,
+      email_hash,
+      display_name,
+      user_kind,
+      status,
+      kyc_level,
+      roles,
+      is_legal_entity,
+      legal_region,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_users"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersUserKind {
+    NaturalPerson,
+    LegalEntity,
+    ServiceAccount,
+    SimAgent,
+}
+
+impl UsaccUsersUserKind {
+    pub const VALUES: &'static [&'static str] = &["natural_person", "legal_entity", "service_account", "sim_agent"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NaturalPerson => "natural_person",
+            Self::LegalEntity => "legal_entity",
+            Self::ServiceAccount => "service_account",
+            Self::SimAgent => "sim_agent",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersUserKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "natural_person" => Ok(Self::NaturalPerson),
+            "legal_entity" => Ok(Self::LegalEntity),
+            "service_account" => Ok(Self::ServiceAccount),
+            "sim_agent" => Ok(Self::SimAgent),
+            _ => Err(format!("unsupported user_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersStatus {
+    Active,
+    Pending,
+    Suspended,
+    Banned,
+    Alumni,
+    Archived,
+}
+
+impl UsaccUsersStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "pending", "suspended", "banned", "alumni", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Suspended => "suspended",
+            Self::Banned => "banned",
+            Self::Alumni => "alumni",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "pending" => Ok(Self::Pending),
+            "suspended" => Ok(Self::Suspended),
+            "banned" => Ok(Self::Banned),
+            "alumni" => Ok(Self::Alumni),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccUsersKycLevel {
+    None,
+    Light,
+    Medium,
+    High,
+}
+
+impl UsaccUsersKycLevel {
+    pub const VALUES: &'static [&'static str] = &["none", "light", "medium", "high"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Light => "light",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccUsersKycLevel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "none" => Ok(Self::None),
+            "light" => Ok(Self::Light),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            _ => Err(format!("unsupported kyc_level: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccUsersRow {
+    pub id: String,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: String,
+    pub user_kind: String,
+    pub status: String,
+    pub kyc_level: String,
+    pub roles: Value,
+    pub is_legal_entity: bool,
+    pub legal_region: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccUsersInsert {
+    pub id: Option<String>,
+    pub external_subject: Option<String>,
+    pub email_hash: Option<String>,
+    pub display_name: Option<String>,
+    pub user_kind: Option<String>,
+    pub status: Option<String>,
+    pub kyc_level: Option<String>,
+    pub roles: Option<Value>,
+    pub is_legal_entity: Option<bool>,
+    pub legal_region: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_users_row(value: &UsaccUsersRow) -> Result<(), String> {
+    if let Some(value) = &value.external_subject {
+        validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email_hash {
+        validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
+    }
+    validate_string_length("usacc_users.display_name", &value.display_name, None, Some(200))?;
+    if (&value.display_name).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
+    if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(&value.user_kind).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", &value.user_kind)); }
+    if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_users.status: {}", &value.status)); }
+    if !["none", "light", "medium", "high"].contains(&(&value.kyc_level).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", &value.kyc_level)); }
+    if !(&value.roles).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_users_insert(value: &UsaccUsersInsert) -> Result<(), String> {
+    if let Some(value) = &value.external_subject {
+        validate_string_length("usacc_users.external_subject", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_users.external_subject exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email_hash {
+        validate_string_length("usacc_users.email_hash", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("usacc_users.display_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("usacc_users.display_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.user_kind {
+        if !["natural_person", "legal_entity", "service_account", "sim_agent"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.user_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "pending", "suspended", "banned", "alumni", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.status: {}", value)); }
+    }
+    if let Some(value) = &value.kyc_level {
+        if !["none", "light", "medium", "high"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_users.kyc_level: {}", value)); }
+    }
+    if let Some(value) = &value.roles {
+        if !(value).is_object() { return Err("usacc_users.roles must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.legal_region {
+        validate_string_length("usacc_users.legal_region", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_users.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASES_TABLE: &str = "usacc_cases";
+pub const USACC_CASES_COLUMNS: &[&str] = &["id", "case_number", "title", "status", "filing_tier", "plaintiff_user_id", "defendant_summary", "conduct_summary", "conduct_fingerprint", "conduct_window_start", "conduct_window_end", "priority_score_micros", "meta_data", "opened_at", "closed_at", "created_at", "updated_at"];
+pub const USACC_CASES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_number,
+      title,
+      status,
+      filing_tier,
+      plaintiff_user_id::text as plaintiff_user_id,
+      defendant_summary,
+      conduct_summary,
+      conduct_fingerprint,
+      conduct_window_start,
+      conduct_window_end,
+      priority_score_micros,
+      meta_data,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_cases"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCasesStatus {
+    Draft,
+    SignatureCollection,
+    Screening,
+    Inquiry,
+    AdmissionReview,
+    Trial,
+    Appeal,
+    Resolved,
+    Canceled,
+    Archived,
+}
+
+impl UsaccCasesStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::SignatureCollection => "signature_collection",
+            Self::Screening => "screening",
+            Self::Inquiry => "inquiry",
+            Self::AdmissionReview => "admission_review",
+            Self::Trial => "trial",
+            Self::Appeal => "appeal",
+            Self::Resolved => "resolved",
+            Self::Canceled => "canceled",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCasesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "signature_collection" => Ok(Self::SignatureCollection),
+            "screening" => Ok(Self::Screening),
+            "inquiry" => Ok(Self::Inquiry),
+            "admission_review" => Ok(Self::AdmissionReview),
+            "trial" => Ok(Self::Trial),
+            "appeal" => Ok(Self::Appeal),
+            "resolved" => Ok(Self::Resolved),
+            "canceled" => Ok(Self::Canceled),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCasesFilingTier {
+    Screen,
+    Inquiry,
+    Trial1,
+    Trial2,
+    Trial3,
+    Trial5,
+    Trial10,
+}
+
+impl UsaccCasesFilingTier {
+    pub const VALUES: &'static [&'static str] = &["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Screen => "screen",
+            Self::Inquiry => "inquiry",
+            Self::Trial1 => "trial_1",
+            Self::Trial2 => "trial_2",
+            Self::Trial3 => "trial_3",
+            Self::Trial5 => "trial_5",
+            Self::Trial10 => "trial_10",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCasesFilingTier {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "screen" => Ok(Self::Screen),
+            "inquiry" => Ok(Self::Inquiry),
+            "trial_1" => Ok(Self::Trial1),
+            "trial_2" => Ok(Self::Trial2),
+            "trial_3" => Ok(Self::Trial3),
+            "trial_5" => Ok(Self::Trial5),
+            "trial_10" => Ok(Self::Trial10),
+            _ => Err(format!("unsupported filing_tier: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCasesRow {
+    pub id: String,
+    pub case_number: String,
+    pub title: String,
+    pub status: String,
+    pub filing_tier: String,
+    pub plaintiff_user_id: Option<String>,
+    pub defendant_summary: String,
+    pub conduct_summary: String,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: i32,
+    pub meta_data: Value,
+    pub opened_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCasesInsert {
+    pub id: Option<String>,
+    pub case_number: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub filing_tier: Option<String>,
+    pub plaintiff_user_id: Option<String>,
+    pub defendant_summary: Option<String>,
+    pub conduct_summary: Option<String>,
+    pub conduct_fingerprint: Option<String>,
+    pub conduct_window_start: Option<String>,
+    pub conduct_window_end: Option<String>,
+    pub priority_score_micros: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub opened_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_cases_row(value: &UsaccCasesRow) -> Result<(), String> {
+    validate_string_length("usacc_cases.case_number", &value.case_number, None, Some(80))?;
+    validate_string_length("usacc_cases.title", &value.title, None, Some(240))?;
+    if (&value.title).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
+    if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", &value.status)); }
+    if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(&value.filing_tier).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", &value.filing_tier)); }
+    if (&value.defendant_summary).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
+    if (&value.conduct_summary).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+    if let Some(value) = &value.conduct_fingerprint {
+        validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.conduct_window_start {
+        validate_string_length("usacc_cases.conduct_window_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.conduct_window_end {
+        validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
+    }
+    if *(&value.priority_score_micros) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
+    if *(&value.priority_score_micros) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_cases_insert(value: &UsaccCasesInsert) -> Result<(), String> {
+    if let Some(value) = &value.case_number {
+        validate_string_length("usacc_cases.case_number", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_cases.title", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_cases.title exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "signature_collection", "screening", "inquiry", "admission_review", "trial", "appeal", "resolved", "canceled", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.status: {}", value)); }
+    }
+    if let Some(value) = &value.filing_tier {
+        if !["screen", "inquiry", "trial_1", "trial_2", "trial_3", "trial_5", "trial_10"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_cases.filing_tier: {}", value)); }
+    }
+    if let Some(value) = &value.defendant_summary {
+        if (value).as_bytes().len() > 4000 { return Err("usacc_cases.defendant_summary exceeds 4000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.conduct_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_cases.conduct_summary exceeds 12000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.conduct_fingerprint {
+        validate_string_length("usacc_cases.conduct_fingerprint", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.conduct_window_start {
+        validate_string_length("usacc_cases.conduct_window_start", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.conduct_window_end {
+        validate_string_length("usacc_cases.conduct_window_end", value, None, Some(10))?;
+    }
+    if let Some(value) = &value.priority_score_micros {
+        if *(value) < 0 { return Err("usacc_cases.priority_score_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_cases.priority_score_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_cases.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASE_PARTICIPANTS_TABLE: &str = "usacc_case_participants";
+pub const USACC_CASE_PARTICIPANTS_COLUMNS: &[&str] = &["id", "case_id", "user_id", "role", "status", "granted_by", "granted_by_policy_version", "ended_at", "ended_reason", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_PARTICIPANTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      user_id::text as user_id,
+      role,
+      status,
+      granted_by::text as granted_by,
+      granted_by_policy_version,
+      to_char(ended_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as ended_at,
+      ended_reason,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_participants"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseParticipantsRole {
+    Plaintiff,
+    Defendant,
+    Sponsor,
+    Witness,
+    Judge,
+    PanelJuror,
+    AppealJudge,
+    PresidingJuror,
+    Paralegal,
+    Investigator,
+    IntakeReviewer,
+    ClerkOfCourt,
+    ComplianceMonitor,
+    Counsel,
+    OversightBoard,
+    Auditor,
+    Ombuds,
+}
+
+impl UsaccCaseParticipantsRole {
+    pub const VALUES: &'static [&'static str] = &["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plaintiff => "plaintiff",
+            Self::Defendant => "defendant",
+            Self::Sponsor => "sponsor",
+            Self::Witness => "witness",
+            Self::Judge => "judge",
+            Self::PanelJuror => "panel_juror",
+            Self::AppealJudge => "appeal_judge",
+            Self::PresidingJuror => "presiding_juror",
+            Self::Paralegal => "paralegal",
+            Self::Investigator => "investigator",
+            Self::IntakeReviewer => "intake_reviewer",
+            Self::ClerkOfCourt => "clerk_of_court",
+            Self::ComplianceMonitor => "compliance_monitor",
+            Self::Counsel => "counsel",
+            Self::OversightBoard => "oversight_board",
+            Self::Auditor => "auditor",
+            Self::Ombuds => "ombuds",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseParticipantsRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "plaintiff" => Ok(Self::Plaintiff),
+            "defendant" => Ok(Self::Defendant),
+            "sponsor" => Ok(Self::Sponsor),
+            "witness" => Ok(Self::Witness),
+            "judge" => Ok(Self::Judge),
+            "panel_juror" => Ok(Self::PanelJuror),
+            "appeal_judge" => Ok(Self::AppealJudge),
+            "presiding_juror" => Ok(Self::PresidingJuror),
+            "paralegal" => Ok(Self::Paralegal),
+            "investigator" => Ok(Self::Investigator),
+            "intake_reviewer" => Ok(Self::IntakeReviewer),
+            "clerk_of_court" => Ok(Self::ClerkOfCourt),
+            "compliance_monitor" => Ok(Self::ComplianceMonitor),
+            "counsel" => Ok(Self::Counsel),
+            "oversight_board" => Ok(Self::OversightBoard),
+            "auditor" => Ok(Self::Auditor),
+            "ombuds" => Ok(Self::Ombuds),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseParticipantsStatus {
+    Active,
+    Pending,
+    Declined,
+    Suspended,
+    Ended,
+    Banned,
+}
+
+impl UsaccCaseParticipantsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "pending", "declined", "suspended", "ended", "banned"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Declined => "declined",
+            Self::Suspended => "suspended",
+            Self::Ended => "ended",
+            Self::Banned => "banned",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseParticipantsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "pending" => Ok(Self::Pending),
+            "declined" => Ok(Self::Declined),
+            "suspended" => Ok(Self::Suspended),
+            "ended" => Ok(Self::Ended),
+            "banned" => Ok(Self::Banned),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseParticipantsRow {
+    pub id: String,
+    pub case_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub status: String,
+    pub granted_by: Option<String>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<String>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseParticipantsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+    pub granted_by: Option<String>,
+    pub granted_by_policy_version: Option<String>,
+    pub ended_at: Option<String>,
+    pub ended_reason: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_case_participants_row(value: &UsaccCaseParticipantsRow) -> Result<(), String> {
+    if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(&value.role).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", &value.role)); }
+    if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", &value.status)); }
+    if let Some(value) = &value.granted_by_policy_version {
+        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_case_participants_insert(value: &UsaccCaseParticipantsInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["plaintiff", "defendant", "sponsor", "witness", "judge", "panel_juror", "appeal_judge", "presiding_juror", "paralegal", "investigator", "intake_reviewer", "clerk_of_court", "compliance_monitor", "counsel", "oversight_board", "auditor", "ombuds"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.role: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "pending", "declined", "suspended", "ended", "banned"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_participants.status: {}", value)); }
+    }
+    if let Some(value) = &value.granted_by_policy_version {
+        validate_string_length("usacc_case_participants.granted_by_policy_version", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.ended_reason {
+        validate_string_length("usacc_case_participants.ended_reason", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_case_participants.ended_reason exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_case_participants.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CASE_STAGES_TABLE: &str = "usacc_case_stages";
+pub const USACC_CASE_STAGES_COLUMNS: &[&str] = &["id", "case_id", "stage_key", "stage_order", "title", "status", "assigned_user_id", "opened_at", "due_at", "closed_at", "decision_summary", "meta_data", "created_at", "updated_at"];
+pub const USACC_CASE_STAGES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      stage_key,
+      stage_order,
+      title,
+      status,
+      assigned_user_id::text as assigned_user_id,
+      to_char(opened_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opened_at,
+      to_char(due_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as due_at,
+      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closed_at,
+      decision_summary,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_case_stages"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccCaseStagesStatus {
+    Pending,
+    Open,
+    Blocked,
+    Complete,
+    Skipped,
+    Canceled,
+}
+
+impl UsaccCaseStagesStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "open", "blocked", "complete", "skipped", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Open => "open",
+            Self::Blocked => "blocked",
+            Self::Complete => "complete",
+            Self::Skipped => "skipped",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccCaseStagesStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "open" => Ok(Self::Open),
+            "blocked" => Ok(Self::Blocked),
+            "complete" => Ok(Self::Complete),
+            "skipped" => Ok(Self::Skipped),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseStagesRow {
+    pub id: String,
+    pub case_id: String,
+    pub stage_key: String,
+    pub stage_order: i32,
+    pub title: String,
+    pub status: String,
+    pub assigned_user_id: Option<String>,
+    pub opened_at: Option<String>,
+    pub due_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccCaseStagesInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub stage_key: Option<String>,
+    pub stage_order: Option<i32>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub assigned_user_id: Option<String>,
+    pub opened_at: Option<String>,
+    pub due_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub decision_summary: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_case_stages_row(value: &UsaccCaseStagesRow) -> Result<(), String> {
+    validate_string_length("usacc_case_stages.stage_key", &value.stage_key, None, Some(64))?;
+    if *(&value.stage_order) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
+    if *(&value.stage_order) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
+    validate_string_length("usacc_case_stages.title", &value.title, None, Some(200))?;
+    if (&value.title).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
+    if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", &value.status)); }
+    if let Some(value) = &value.decision_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_case_stages_insert(value: &UsaccCaseStagesInsert) -> Result<(), String> {
+    if let Some(value) = &value.stage_key {
+        validate_string_length("usacc_case_stages.stage_key", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.stage_order {
+        if *(value) < 0 { return Err("usacc_case_stages.stage_order is below the minimum".to_string()); }
+        if *(value) > 1000 { return Err("usacc_case_stages.stage_order is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_case_stages.title", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("usacc_case_stages.title exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "open", "blocked", "complete", "skipped", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_case_stages.status: {}", value)); }
+    }
+    if let Some(value) = &value.decision_summary {
+        if (value).as_bytes().len() > 12000 { return Err("usacc_case_stages.decision_summary exceeds 12000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_case_stages.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_ELECTIONS_TABLE: &str = "usacc_elections";
+pub const USACC_ELECTIONS_COLUMNS: &[&str] = &["id", "case_id", "stage_id", "election_kind", "title", "status", "quorum_count", "threshold_micros", "opens_at", "closes_at", "sealed_until", "tally", "meta_data", "created_at", "updated_at"];
+pub const USACC_ELECTIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      stage_id::text as stage_id,
+      election_kind,
+      title,
+      status,
+      quorum_count,
+      threshold_micros,
+      to_char(opens_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as opens_at,
+      to_char(closes_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as closes_at,
+      to_char(sealed_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sealed_until,
+      tally,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_elections"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccElectionsElectionKind {
+    Priority,
+    Admission,
+    PanelVerdict,
+    Appeal,
+    Oversight,
+    Policy,
+    AssignmentAcceptance,
+}
+
+impl UsaccElectionsElectionKind {
+    pub const VALUES: &'static [&'static str] = &["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Priority => "priority",
+            Self::Admission => "admission",
+            Self::PanelVerdict => "panel_verdict",
+            Self::Appeal => "appeal",
+            Self::Oversight => "oversight",
+            Self::Policy => "policy",
+            Self::AssignmentAcceptance => "assignment_acceptance",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccElectionsElectionKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "priority" => Ok(Self::Priority),
+            "admission" => Ok(Self::Admission),
+            "panel_verdict" => Ok(Self::PanelVerdict),
+            "appeal" => Ok(Self::Appeal),
+            "oversight" => Ok(Self::Oversight),
+            "policy" => Ok(Self::Policy),
+            "assignment_acceptance" => Ok(Self::AssignmentAcceptance),
+            _ => Err(format!("unsupported election_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccElectionsStatus {
+    Draft,
+    Open,
+    Sealed,
+    Tallying,
+    Certified,
+    Void,
+    Archived,
+}
+
+impl UsaccElectionsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "open", "sealed", "tallying", "certified", "void", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Open => "open",
+            Self::Sealed => "sealed",
+            Self::Tallying => "tallying",
+            Self::Certified => "certified",
+            Self::Void => "void",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccElectionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "open" => Ok(Self::Open),
+            "sealed" => Ok(Self::Sealed),
+            "tallying" => Ok(Self::Tallying),
+            "certified" => Ok(Self::Certified),
+            "void" => Ok(Self::Void),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccElectionsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub stage_id: Option<String>,
+    pub election_kind: String,
+    pub title: String,
+    pub status: String,
+    pub quorum_count: i32,
+    pub threshold_micros: i32,
+    pub opens_at: Option<String>,
+    pub closes_at: Option<String>,
+    pub sealed_until: Option<String>,
+    pub tally: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccElectionsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub stage_id: Option<String>,
+    pub election_kind: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub quorum_count: Option<i32>,
+    pub threshold_micros: Option<i32>,
+    pub opens_at: Option<String>,
+    pub closes_at: Option<String>,
+    pub sealed_until: Option<String>,
+    pub tally: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_elections_row(value: &UsaccElectionsRow) -> Result<(), String> {
+    if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(&value.election_kind).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", &value.election_kind)); }
+    validate_string_length("usacc_elections.title", &value.title, None, Some(220))?;
+    if (&value.title).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
+    if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", &value.status)); }
+    if *(&value.quorum_count) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
+    if *(&value.quorum_count) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
+    if *(&value.threshold_micros) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
+    if *(&value.threshold_micros) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
+    if !(&value.tally).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_elections_insert(value: &UsaccElectionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.election_kind {
+        if !["priority", "admission", "panel_verdict", "appeal", "oversight", "policy", "assignment_acceptance"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.election_kind: {}", value)); }
+    }
+    if let Some(value) = &value.title {
+        validate_string_length("usacc_elections.title", value, None, Some(220))?;
+        if (value).as_bytes().len() > 220 { return Err("usacc_elections.title exceeds 220 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "open", "sealed", "tallying", "certified", "void", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_elections.status: {}", value)); }
+    }
+    if let Some(value) = &value.quorum_count {
+        if *(value) < 1 { return Err("usacc_elections.quorum_count is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_elections.quorum_count is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.threshold_micros {
+        if *(value) < 1 { return Err("usacc_elections.threshold_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("usacc_elections.threshold_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.tally {
+        if !(value).is_object() { return Err("usacc_elections.tally must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_elections.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_VOTES_TABLE: &str = "usacc_votes";
+pub const USACC_VOTES_COLUMNS: &[&str] = &["id", "election_id", "case_id", "voter_user_id", "vote_kind", "vote_value", "weight_micros", "commitment_hash", "sealed_payload", "revealed_at", "contract_digest", "meta_data", "created_at", "updated_at"];
+pub const USACC_VOTES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      election_id::text as election_id,
+      case_id::text as case_id,
+      voter_user_id::text as voter_user_id,
+      vote_kind,
+      vote_value,
+      weight_micros,
+      commitment_hash,
+      sealed_payload,
+      to_char(revealed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revealed_at,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_votes"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccVotesVoteKind {
+    Choice,
+    PriorityDollarWeighted,
+    Verdict,
+    Approval,
+    AssignmentResponse,
+}
+
+impl UsaccVotesVoteKind {
+    pub const VALUES: &'static [&'static str] = &["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Choice => "choice",
+            Self::PriorityDollarWeighted => "priority_dollar_weighted",
+            Self::Verdict => "verdict",
+            Self::Approval => "approval",
+            Self::AssignmentResponse => "assignment_response",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccVotesVoteKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "choice" => Ok(Self::Choice),
+            "priority_dollar_weighted" => Ok(Self::PriorityDollarWeighted),
+            "verdict" => Ok(Self::Verdict),
+            "approval" => Ok(Self::Approval),
+            "assignment_response" => Ok(Self::AssignmentResponse),
+            _ => Err(format!("unsupported vote_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccVotesRow {
+    pub id: String,
+    pub election_id: String,
+    pub case_id: Option<String>,
+    pub voter_user_id: String,
+    pub vote_kind: String,
+    pub vote_value: String,
+    pub weight_micros: i32,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccVotesInsert {
+    pub id: Option<String>,
+    pub election_id: Option<String>,
+    pub case_id: Option<String>,
+    pub voter_user_id: Option<String>,
+    pub vote_kind: Option<String>,
+    pub vote_value: Option<String>,
+    pub weight_micros: Option<i32>,
+    pub commitment_hash: Option<String>,
+    pub sealed_payload: Option<Value>,
+    pub revealed_at: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_votes_row(value: &UsaccVotesRow) -> Result<(), String> {
+    if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(&value.vote_kind).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", &value.vote_kind)); }
+    validate_string_length("usacc_votes.vote_value", &value.vote_value, None, Some(80))?;
+    if *(&value.weight_micros) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
+    if *(&value.weight_micros) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+    if let Some(value) = &value.commitment_hash {
+        validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.sealed_payload {
+        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_votes_insert(value: &UsaccVotesInsert) -> Result<(), String> {
+    if let Some(value) = &value.vote_kind {
+        if !["choice", "priority_dollar_weighted", "verdict", "approval", "assignment_response"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_votes.vote_kind: {}", value)); }
+    }
+    if let Some(value) = &value.vote_value {
+        validate_string_length("usacc_votes.vote_value", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.weight_micros {
+        if *(value) < 0 { return Err("usacc_votes.weight_micros is below the minimum".to_string()); }
+        if *(value) > 1000000000 { return Err("usacc_votes.weight_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.commitment_hash {
+        validate_string_length("usacc_votes.commitment_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.sealed_payload {
+        if !(value).is_object() { return Err("usacc_votes.sealed_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_votes.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_votes.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_votes.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_ESCROW_ACCOUNTS_TABLE: &str = "usacc_escrow_accounts";
+pub const USACC_ESCROW_ACCOUNTS_COLUMNS: &[&str] = &["id", "case_id", "status", "provider", "provider_account_ref", "currency", "target_amount_cents", "committed_amount_cents", "captured_amount_cents", "disbursed_amount_cents", "meta_data", "created_at", "updated_at"];
+pub const USACC_ESCROW_ACCOUNTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      provider,
+      provider_account_ref,
+      currency,
+      target_amount_cents,
+      committed_amount_cents,
+      captured_amount_cents,
+      disbursed_amount_cents,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_escrow_accounts"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccEscrowAccountsStatus {
+    Pending,
+    Open,
+    Funding,
+    Locked,
+    Disbursing,
+    Closed,
+    Canceled,
+}
+
+impl UsaccEscrowAccountsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Open => "open",
+            Self::Funding => "funding",
+            Self::Locked => "locked",
+            Self::Disbursing => "disbursing",
+            Self::Closed => "closed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccEscrowAccountsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "open" => Ok(Self::Open),
+            "funding" => Ok(Self::Funding),
+            "locked" => Ok(Self::Locked),
+            "disbursing" => Ok(Self::Disbursing),
+            "closed" => Ok(Self::Closed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccEscrowAccountsProvider {
+    StripeTreasury,
+    StripeConnect,
+    Column,
+    Evolve,
+    Mercury,
+    TrustCompany,
+    Manual,
+}
+
+impl UsaccEscrowAccountsProvider {
+    pub const VALUES: &'static [&'static str] = &["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::StripeTreasury => "stripe_treasury",
+            Self::StripeConnect => "stripe_connect",
+            Self::Column => "column",
+            Self::Evolve => "evolve",
+            Self::Mercury => "mercury",
+            Self::TrustCompany => "trust_company",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccEscrowAccountsProvider {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "stripe_treasury" => Ok(Self::StripeTreasury),
+            "stripe_connect" => Ok(Self::StripeConnect),
+            "column" => Ok(Self::Column),
+            "evolve" => Ok(Self::Evolve),
+            "mercury" => Ok(Self::Mercury),
+            "trust_company" => Ok(Self::TrustCompany),
+            "manual" => Ok(Self::Manual),
+            _ => Err(format!("unsupported provider: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccEscrowAccountsRow {
+    pub id: String,
+    pub case_id: String,
+    pub status: String,
+    pub provider: String,
+    pub provider_account_ref: Option<String>,
+    pub currency: String,
+    pub target_amount_cents: i64,
+    pub committed_amount_cents: i64,
+    pub captured_amount_cents: i64,
+    pub disbursed_amount_cents: i64,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccEscrowAccountsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub status: Option<String>,
+    pub provider: Option<String>,
+    pub provider_account_ref: Option<String>,
+    pub currency: Option<String>,
+    pub target_amount_cents: Option<i64>,
+    pub committed_amount_cents: Option<i64>,
+    pub captured_amount_cents: Option<i64>,
+    pub disbursed_amount_cents: Option<i64>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_escrow_accounts_row(value: &UsaccEscrowAccountsRow) -> Result<(), String> {
+    if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", &value.status)); }
+    if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", &value.provider)); }
+    if let Some(value) = &value.provider_account_ref {
+        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+    }
+    validate_string_length("usacc_escrow_accounts.currency", &value.currency, None, Some(12))?;
+    if *(&value.target_amount_cents) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
+    if *(&value.committed_amount_cents) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
+    if *(&value.captured_amount_cents) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
+    if *(&value.disbursed_amount_cents) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_escrow_accounts_insert(value: &UsaccEscrowAccountsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["pending", "open", "funding", "locked", "disbursing", "closed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.status: {}", value)); }
+    }
+    if let Some(value) = &value.provider {
+        if !["stripe_treasury", "stripe_connect", "column", "evolve", "mercury", "trust_company", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_escrow_accounts.provider: {}", value)); }
+    }
+    if let Some(value) = &value.provider_account_ref {
+        validate_string_length("usacc_escrow_accounts.provider_account_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_escrow_accounts.provider_account_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("usacc_escrow_accounts.currency", value, None, Some(12))?;
+    }
+    if let Some(value) = &value.target_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.target_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.committed_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.committed_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.captured_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.captured_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.disbursed_amount_cents {
+        if *(value) < 0 { return Err("usacc_escrow_accounts.disbursed_amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_escrow_accounts.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_LEDGER_ENTRIES_TABLE: &str = "usacc_ledger_entries";
+pub const USACC_LEDGER_ENTRIES_COLUMNS: &[&str] = &["id", "case_id", "escrow_account_id", "user_id", "entry_kind", "direction", "amount_cents", "currency", "provider_ref", "contract_digest", "meta_data", "created_at"];
+pub const USACC_LEDGER_ENTRIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      escrow_account_id::text as escrow_account_id,
+      user_id::text as user_id,
+      entry_kind,
+      direction,
+      amount_cents,
+      currency,
+      provider_ref,
+      contract_digest,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_ledger_entries"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccLedgerEntriesEntryKind {
+    Pledge,
+    Authorization,
+    Capture,
+    Refund,
+    Disbursement,
+    Fee,
+    Adjustment,
+}
+
+impl UsaccLedgerEntriesEntryKind {
+    pub const VALUES: &'static [&'static str] = &["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pledge => "pledge",
+            Self::Authorization => "authorization",
+            Self::Capture => "capture",
+            Self::Refund => "refund",
+            Self::Disbursement => "disbursement",
+            Self::Fee => "fee",
+            Self::Adjustment => "adjustment",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccLedgerEntriesEntryKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pledge" => Ok(Self::Pledge),
+            "authorization" => Ok(Self::Authorization),
+            "capture" => Ok(Self::Capture),
+            "refund" => Ok(Self::Refund),
+            "disbursement" => Ok(Self::Disbursement),
+            "fee" => Ok(Self::Fee),
+            "adjustment" => Ok(Self::Adjustment),
+            _ => Err(format!("unsupported entry_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccLedgerEntriesDirection {
+    Debit,
+    Credit,
+}
+
+impl UsaccLedgerEntriesDirection {
+    pub const VALUES: &'static [&'static str] = &["debit", "credit"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Debit => "debit",
+            Self::Credit => "credit",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccLedgerEntriesDirection {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "debit" => Ok(Self::Debit),
+            "credit" => Ok(Self::Credit),
+            _ => Err(format!("unsupported direction: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccLedgerEntriesRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub escrow_account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_kind: String,
+    pub direction: String,
+    pub amount_cents: i64,
+    pub currency: String,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccLedgerEntriesInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub escrow_account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_kind: Option<String>,
+    pub direction: Option<String>,
+    pub amount_cents: Option<i64>,
+    pub currency: Option<String>,
+    pub provider_ref: Option<String>,
+    pub contract_digest: Option<String>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_usacc_ledger_entries_row(value: &UsaccLedgerEntriesRow) -> Result<(), String> {
+    if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", &value.entry_kind)); }
+    if !["debit", "credit"].contains(&(&value.direction).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", &value.direction)); }
+    if *(&value.amount_cents) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
+    validate_string_length("usacc_ledger_entries.currency", &value.currency, None, Some(12))?;
+    if let Some(value) = &value.provider_ref {
+        validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_ledger_entries_insert(value: &UsaccLedgerEntriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.entry_kind {
+        if !["pledge", "authorization", "capture", "refund", "disbursement", "fee", "adjustment"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.entry_kind: {}", value)); }
+    }
+    if let Some(value) = &value.direction {
+        if !["debit", "credit"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_ledger_entries.direction: {}", value)); }
+    }
+    if let Some(value) = &value.amount_cents {
+        if *(value) < 0 { return Err("usacc_ledger_entries.amount_cents is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.currency {
+        validate_string_length("usacc_ledger_entries.currency", value, None, Some(12))?;
+    }
+    if let Some(value) = &value.provider_ref {
+        validate_string_length("usacc_ledger_entries.provider_ref", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("usacc_ledger_entries.provider_ref exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.contract_digest {
+        validate_string_length("usacc_ledger_entries.contract_digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_ledger_entries.contract_digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("usacc_ledger_entries.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_CONTRACT_OPERATIONS_TABLE: &str = "usacc_contract_operations";
+pub const USACC_CONTRACT_OPERATIONS_COLUMNS: &[&str] = &["id", "case_id", "election_id", "vote_id", "request_id", "operation_kind", "status", "program_id", "digest", "envelope", "response", "created_at", "updated_at"];
+pub const USACC_CONTRACT_OPERATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      election_id::text as election_id,
+      vote_id::text as vote_id,
+      request_id,
+      operation_kind,
+      status,
+      program_id,
+      digest,
+      envelope,
+      response,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_contract_operations"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccContractOperationsOperationKind {
+    ValidateEnvelope,
+    SimulateTransaction,
+    SendTransaction,
+    VoteCommitment,
+    EscrowNotary,
+}
+
+impl UsaccContractOperationsOperationKind {
+    pub const VALUES: &'static [&'static str] = &["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ValidateEnvelope => "validate_envelope",
+            Self::SimulateTransaction => "simulate_transaction",
+            Self::SendTransaction => "send_transaction",
+            Self::VoteCommitment => "vote_commitment",
+            Self::EscrowNotary => "escrow_notary",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccContractOperationsOperationKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "validate_envelope" => Ok(Self::ValidateEnvelope),
+            "simulate_transaction" => Ok(Self::SimulateTransaction),
+            "send_transaction" => Ok(Self::SendTransaction),
+            "vote_commitment" => Ok(Self::VoteCommitment),
+            "escrow_notary" => Ok(Self::EscrowNotary),
+            _ => Err(format!("unsupported operation_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccContractOperationsStatus {
+    Pending,
+    Validated,
+    Simulated,
+    Sent,
+    Failed,
+    Canceled,
+}
+
+impl UsaccContractOperationsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "validated", "simulated", "sent", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Validated => "validated",
+            Self::Simulated => "simulated",
+            Self::Sent => "sent",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccContractOperationsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "validated" => Ok(Self::Validated),
+            "simulated" => Ok(Self::Simulated),
+            "sent" => Ok(Self::Sent),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccContractOperationsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub election_id: Option<String>,
+    pub vote_id: Option<String>,
+    pub request_id: String,
+    pub operation_kind: String,
+    pub status: String,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Value,
+    pub response: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccContractOperationsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub election_id: Option<String>,
+    pub vote_id: Option<String>,
+    pub request_id: Option<String>,
+    pub operation_kind: Option<String>,
+    pub status: Option<String>,
+    pub program_id: Option<String>,
+    pub digest: Option<String>,
+    pub envelope: Option<Value>,
+    pub response: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_contract_operations_row(value: &UsaccContractOperationsRow) -> Result<(), String> {
+    validate_string_length("usacc_contract_operations.request_id", &value.request_id, None, Some(160))?;
+    if (&value.request_id).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
+    if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(&value.operation_kind).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", &value.operation_kind)); }
+    if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", &value.status)); }
+    if let Some(value) = &value.program_id {
+        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
+        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+    }
+    if let Some(value) = &value.digest {
+        validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+    }
+    if !(&value.envelope).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
+    if !(&value.response).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_contract_operations_insert(value: &UsaccContractOperationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.request_id {
+        validate_string_length("usacc_contract_operations.request_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.request_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.operation_kind {
+        if !["validate_envelope", "simulate_transaction", "send_transaction", "vote_commitment", "escrow_notary"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.operation_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "validated", "simulated", "sent", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_contract_operations.status: {}", value)); }
+    }
+    if let Some(value) = &value.program_id {
+        validate_string_length("usacc_contract_operations.program_id", value, None, Some(128))?;
+        if (value).as_bytes().len() > 128 { return Err("usacc_contract_operations.program_id exceeds 128 bytes".to_string()); }
+    }
+    if let Some(value) = &value.digest {
+        validate_string_length("usacc_contract_operations.digest", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("usacc_contract_operations.digest exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.envelope {
+        if !(value).is_object() { return Err("usacc_contract_operations.envelope must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.response {
+        if !(value).is_object() { return Err("usacc_contract_operations.response must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_SIMULATION_RUNS_TABLE: &str = "usacc_simulation_runs";
+pub const USACC_SIMULATION_RUNS_COLUMNS: &[&str] = &["id", "case_id", "status", "mode", "seed", "horizon_days", "actor_count", "event_count", "metrics", "trace", "input", "started_at", "finished_at", "created_at", "updated_at"];
+pub const USACC_SIMULATION_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      status,
+      mode,
+      seed,
+      horizon_days,
+      actor_count,
+      event_count,
+      metrics,
+      trace,
+      input,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from usacc_simulation_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccSimulationRunsStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Canceled,
+}
+
+impl UsaccSimulationRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "succeeded", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccSimulationRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UsaccSimulationRunsMode {
+    Sim,
+    LiveShadow,
+    Replay,
+}
+
+impl UsaccSimulationRunsMode {
+    pub const VALUES: &'static [&'static str] = &["sim", "live_shadow", "replay"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Sim => "sim",
+            Self::LiveShadow => "live_shadow",
+            Self::Replay => "replay",
+        }
+    }
+}
+
+impl TryFrom<&str> for UsaccSimulationRunsMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "sim" => Ok(Self::Sim),
+            "live_shadow" => Ok(Self::LiveShadow),
+            "replay" => Ok(Self::Replay),
+            _ => Err(format!("unsupported mode: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccSimulationRunsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub status: String,
+    pub mode: String,
+    pub seed: i64,
+    pub horizon_days: i32,
+    pub actor_count: i32,
+    pub event_count: i32,
+    pub metrics: Value,
+    pub trace: Value,
+    pub input: Value,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccSimulationRunsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub status: Option<String>,
+    pub mode: Option<String>,
+    pub seed: Option<i64>,
+    pub horizon_days: Option<i32>,
+    pub actor_count: Option<i32>,
+    pub event_count: Option<i32>,
+    pub metrics: Option<Value>,
+    pub trace: Option<Value>,
+    pub input: Option<Value>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_usacc_simulation_runs_row(value: &UsaccSimulationRunsRow) -> Result<(), String> {
+    if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", &value.status)); }
+    if !["sim", "live_shadow", "replay"].contains(&(&value.mode).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", &value.mode)); }
+    if *(&value.horizon_days) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
+    if *(&value.horizon_days) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
+    if *(&value.actor_count) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
+    if *(&value.event_count) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
+    if !(&value.metrics).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
+    if !(&value.trace).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
+    if !(&value.input).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_simulation_runs_insert(value: &UsaccSimulationRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.status {
+        if !["queued", "running", "succeeded", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.mode {
+        if !["sim", "live_shadow", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported usacc_simulation_runs.mode: {}", value)); }
+    }
+    if let Some(value) = &value.horizon_days {
+        if *(value) < 1 { return Err("usacc_simulation_runs.horizon_days is below the minimum".to_string()); }
+        if *(value) > 3650 { return Err("usacc_simulation_runs.horizon_days is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.actor_count {
+        if *(value) < 0 { return Err("usacc_simulation_runs.actor_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.event_count {
+        if *(value) < 0 { return Err("usacc_simulation_runs.event_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("usacc_simulation_runs.metrics must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.trace {
+        if !(value).is_array() { return Err("usacc_simulation_runs.trace must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("usacc_simulation_runs.input must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const USACC_AUDIT_EVENTS_TABLE: &str = "usacc_audit_events";
+pub const USACC_AUDIT_EVENTS_COLUMNS: &[&str] = &["id", "case_id", "actor_user_id", "event_type", "event_hash", "source", "payload", "created_at"];
+pub const USACC_AUDIT_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      case_id::text as case_id,
+      actor_user_id::text as actor_user_id,
+      event_type,
+      event_hash,
+      source,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from usacc_audit_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccAuditEventsRow {
+    pub id: String,
+    pub case_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub event_type: String,
+    pub event_hash: String,
+    pub source: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsaccAuditEventsInsert {
+    pub id: Option<String>,
+    pub case_id: Option<String>,
+    pub actor_user_id: Option<String>,
+    pub event_type: Option<String>,
+    pub event_hash: Option<String>,
+    pub source: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_usacc_audit_events_row(value: &UsaccAuditEventsRow) -> Result<(), String> {
+    validate_string_length("usacc_audit_events.event_type", &value.event_type, None, Some(96))?;
+    validate_string_length("usacc_audit_events.event_hash", &value.event_hash, None, Some(128))?;
+    validate_string_length("usacc_audit_events.source", &value.source, None, Some(80))?;
+    if !(&value.payload).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_usacc_audit_events_insert(value: &UsaccAuditEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.event_type {
+        validate_string_length("usacc_audit_events.event_type", value, None, Some(96))?;
+    }
+    if let Some(value) = &value.event_hash {
+        validate_string_length("usacc_audit_events.event_hash", value, None, Some(128))?;
+    }
+    if let Some(value) = &value.source {
+        validate_string_length("usacc_audit_events.source", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("usacc_audit_events.payload must be a JSON object".to_string()); }
     }
     Ok(())
 }

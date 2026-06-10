@@ -1,0 +1,119 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-cluster-mcp-rs
+  namespace: default
+  labels:
+    app: dd-cluster-mcp-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-cluster-mcp-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-dev-server-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dd-remote-dev
+              app.kubernetes.io/component: thread-pod
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8091
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8091
+    # Warm workers spawned through dd-container-pool often run on the host
+    # network and reach cluster services from the EC2 node's RFC1918 address.
+    # The MCP surface stays read-only; gateway/public paths remain auth-gated.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8091
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 4318
+        - protocol: TCP
+          port: 8889
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 16686
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 7777
+        - protocol: TCP
+          port: 8222
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # This deployment currently follows the repo's hostPath + cargo-run Rust
+    # pattern, so first boot may need crates.io over HTTPS. Tighten this after
+    # moving the service to a prebuilt dd-cluster-mcp-rs image.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443

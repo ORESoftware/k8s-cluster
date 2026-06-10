@@ -146,6 +146,18 @@ spec:
               value: '200'
             - name: WS_SLOW_CLIENT_WINDOWS
               value: '5'
+            # Cross-site WebSocket hijacking (CSWSH) defence. Comma-separated
+            # allowlist of acceptable `Origin` request-header values for the
+            # `/dart/wss` upgrade (exact scheme+host[:port] match). Empty /
+            # unset accepts any origin (current behaviour — leave empty while
+            # the WS load test, which sends no Origin, is the only client).
+            # Requests with no Origin header (non-browser clients) are always
+            # allowed; only a present, non-matching browser Origin is rejected
+            # (403, counted as `dart_wss_upgrade_rejected_origin_total`). Set
+            # to the real front-end origin(s) once browsers connect, e.g.
+            # 'https://dd.example.com'.
+            - name: WS_ALLOWED_ORIGINS
+              value: ''
             # How often each shard pushes a gauge snapshot to the
             # coordinator for /metrics aggregation. 1 s is plenty fresh
             # and the inter-isolate traffic stays trivial.
@@ -248,15 +260,15 @@ spec:
           # Single pod, but ~110 isolates inside it (1 coordinator + 1
           # HTTP + 16 gateway shards + ~60 child hosts at 50K conns),
           # plus jaspr render fan-out at WS_CLOCK_INTERVAL_SECONDS
-          # cadence. Request 2 vCPU / 2 Gi steady-state and let it
-          # burst up to 10 cores / 12 Gi during peak load. Load-tested to
+          # cadence. Reserve 250m / 2 Gi on the shared single-node cluster
+          # and let it burst up to 10 cores / 12 Gi during peak load. Load-tested to
           # 50K concurrent WS at 2 msg/s/client using ~7.3 cores / 2.3 Gi,
           # so 10 cores leaves headroom and 12 Gi is well above the <6 GB
           # target. The hot-path ceiling scales with WS_GATEWAY_SHARDS
           # (16 shards cleared the ~39K cliff seen at 8 shards).
           resources:
             requests:
-              cpu: '2'
+              cpu: 250m
               memory: 2Gi
             limits:
               cpu: '10'

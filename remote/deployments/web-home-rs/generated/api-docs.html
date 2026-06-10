@@ -42,10 +42,10 @@
     <h1>web-home-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>44 routes</span>
+      <span>48 routes</span>
       <span>rust</span>
       <span>10 service</span>
-      <span>31 user-generated</span>
+      <span>35 user-generated</span>
       <span>3 runtime-config</span>
     </div>
   </header>
@@ -340,6 +340,38 @@
   <td data-label="Purpose">Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.</td>
   <td data-label="Handlers"><code>dd_runtime_config_client::handle_apply</code></td>
   <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/jello</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>jello_page</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/jello/</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>jello_page</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/jello/sample</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>jello_sample</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/jello/sample/</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>jello_sample</code></td>
+  <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>

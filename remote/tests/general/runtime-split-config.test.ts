@@ -137,8 +137,8 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*1/);
-  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
 
   assert.match(pdb, /kind:\s*PodDisruptionBudget/);
@@ -187,8 +187,8 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
     assert.match(deployment, /minReadySeconds:\s*5/);
     assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
     assert.match(deployment, /type:\s*RollingUpdate/);
-    assert.match(deployment, /maxSurge:\s*1/);
-    assert.match(deployment, /maxUnavailable:\s*0/);
+    assert.match(deployment, /maxSurge:\s*0/);
+    assert.match(deployment, /maxUnavailable:\s*1/);
     assert.match(deployment, /readinessProbe:[\s\S]*httpGet:/);
     assert.match(
       pdbs,
@@ -225,6 +225,8 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-idle-reaper", file: "dd-idle-reaper.deployment.yaml" },
     { name: "dd-live-mutex", file: "dd-live-mutex.deployment.yaml" },
     { name: "dd-live-mutex-submodule", file: "dd-live-mutex-submodule.deployment.yaml" },
+    { name: "dd-music-rs", file: "dd-music-rs.deployment.yaml" },
+    { name: "dd-sound-recorder-rs", file: "dd-sound-recorder-rs.deployment.yaml" },
     { name: "dd-redis-cache", file: "dd-redis-cache.deployment.yaml" },
     { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },
     { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
@@ -244,7 +246,7 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
   }
 });
 
-test("queue consumer rolls replacement before terminating the old consumer", async () => {
+test("queue consumer rolls within single-node capacity", async () => {
   const deployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
   );
@@ -253,8 +255,25 @@ test("queue consumer rolls replacement before terminating the old consumer", asy
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*1/);
-  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
+});
+
+test("public data server uses source-build rollout and disruption guardrails", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-public-data-server.deployment.yaml",
+  );
+  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+
+  assert.match(deployment, /name:\s*dd-public-data-server/);
+  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
+  assert.match(deployment, /CARGO_BUILD_JOBS[\s\S]*value:\s*'1'/);
+  assert.match(deployment, /requests:[\s\S]*cpu:\s*100m/);
+  assert.match(
+    pdbs,
+    /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-public-data-server[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-public-data-server/,
+  );
 });
 
 test("fabrication server runtime keeps planner replicas hardened and observable", async () => {
@@ -278,8 +297,8 @@ test("fabrication server runtime keeps planner replicas hardened and observable"
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*1/);
-  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /maxSurge:\s*0/);
+  assert.match(deployment, /maxUnavailable:\s*1/);
   assert.match(deployment, /serviceAccountName:\s*dd-fabrication-server/);
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /enableServiceLinks:\s*false/);
@@ -318,7 +337,7 @@ test("fabrication server runtime keeps planner replicas hardened and observable"
   assert.match(service, /targetPort:\s*http/);
 
   assert.match(hpa, /minReplicas:\s*2/);
-  assert.match(hpa, /maxReplicas:\s*8/);
+  assert.match(hpa, /maxReplicas:\s*2/);
   assert.match(hpa, /name:\s*cpu[\s\S]*averageUtilization:\s*70/);
   assert.match(hpa, /name:\s*memory[\s\S]*averageUtilization:\s*80/);
 

@@ -5,6 +5,10 @@ metadata:
   namespace: default
 data:
   default.conf.template: |
+    # The $dd_mcp_bearer_ok map keys on "Bearer <MCP_READONLY_TOKEN>", which is
+    # longer than nginx's default 64-byte map hash bucket, so raise it.
+    map_hash_bucket_size 128;
+
     map $http_auth $dd_gateway_header_auth_ok {
       default 0;
       "${DD_REMOTE_GATEWAY_AUTH_VALUE}" 1;
@@ -30,6 +34,26 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
+    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
+    # only (enforced in those location blocks) so local IDE MCP clients
+    # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
+    # credential instead of the master operator cookie value. Sourced from the
+    # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
+    # secretKeyRef in the gateway Deployment is required, so the token is never
+    # empty in a running pod; do not relax it to optional or "Bearer " alone
+    # would match an empty token.
+    map $http_authorization $dd_mcp_bearer_ok {
+      default 0;
+      "Bearer ${DD_MCP_READONLY_TOKEN}" 1;
+    }
+
+    # MCP endpoints accept EITHER the operator auth (Auth header / dd_auth
+    # cookie) OR the dedicated read-only MCP bearer token.
+    map "$dd_gateway_auth_ok:$dd_mcp_bearer_ok" $dd_mcp_auth_ok {
+      default 0;
+      ~1 1;
+    }
+
     map $http_accept $dd_gateway_accepts_html {
       default 0;
       ~*text/html 1;
@@ -53,6 +77,8 @@ data:
     }
 
     limit_req_zone $dd_fabrication_write_limit_key zone=dd_fabrication_write:10m rate=12r/m;
+    limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
+    limit_req_zone $binary_remote_addr zone=dd_sound_recorder_mobile_write:10m rate=120r/m;
 
     # Redacted path-only access logs make gateway guardrails observable without
     # writing Auth headers, cookies, or query strings into Loki.
@@ -130,11 +156,41 @@ data:
         proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
       }
 
+      location = /auth/login {
+        return 302 /auth?return=/home;
+      }
+
+      location = /auth/logout {
+        return 302 /auth?return=/home;
+      }
+
       location /auth/ {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
+      }
+
+      location = /jello {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+      }
+
+      location = /jello/ {
+        return 302 /jello;
+      }
+
+      location = /jello/sample {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+      }
+
+      location = /jello/sample/ {
+        return 302 /jello/sample$is_args$args;
       }
 
       location = / {
@@ -514,6 +570,13 @@ data:
         proxy_pass http://dd-grafana.observability.svc.cluster.local:3000;
       }
 
+      location ~ "^/grafana/depl/(?<dd_grafana_deployment>[A-Za-z0-9][A-Za-z0-9._-]{0,126})/?$" {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /telemetry/d/dd-deployment-drilldown/deployment-drilldown?orgId=1&var-deployment=$dd_grafana_deployment;
+      }
+
       location = /prometheus {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -744,8 +807,8 @@ data:
         proxy_pass http://dd-dart-server.default.svc.cluster.local:8090;
       }
 
-      location = /mcp {
-        if ($dd_gateway_auth_ok = 0) {
+      location = /cluster-mcp {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -755,12 +818,50 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-Prefix /cluster-mcp;
+        set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
+        proxy_pass http://$dd_cluster_mcp_upstream/mcp;
+      }
+
+      location /cluster-mcp/ {
+        if ($dd_mcp_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-Prefix /cluster-mcp;
+        set $dd_cluster_mcp_upstream dd-cluster-mcp-rs.default.svc.cluster.local:8091;
+        proxy_pass http://$dd_cluster_mcp_upstream/;
+      }
+
+      location = /mcp {
+        if ($dd_mcp_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp;
       }
 
       location /mcp/ {
-        if ($dd_gateway_auth_ok = 0) {
+        if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
@@ -770,6 +871,8 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        # Never forward the MCP bearer token to the read-only upstream pod.
+        proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
@@ -1075,6 +1178,13 @@ data:
         return 302 /des/;
       }
 
+      location = /des/music {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /des-rs/music;
+      }
+
       location /des/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -1120,6 +1230,7 @@ data:
         proxy_read_timeout 900;
         proxy_send_timeout 900;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
@@ -1127,8 +1238,49 @@ data:
         proxy_pass http://dd-music-rs.default.svc.cluster.local:8115/internal/;
       }
 
+      location ~ ^/music/(healthz|readyz|metrics|docs/api|api/docs|api/docs\.json)$ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/music(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-music-rs.default.svc.cluster.local:8115;
+      }
+
+      location ~ "^/music/songs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/votes$" {
+        if ($request_method != POST) {
+          return 405;
+        }
+        limit_req zone=dd_music_vote_write burst=20 nodelay;
+        client_max_body_size 16k;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/music(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-music-rs.default.svc.cluster.local:8115;
+      }
+
       location /music/ {
-        if ($request_method !~ ^(GET|HEAD|POST)$) {
+        if ($request_method !~ ^(GET|HEAD)$) {
           return 405;
         }
         client_max_body_size 2m;
@@ -1137,11 +1289,104 @@ data:
         proxy_read_timeout 120;
         proxy_send_timeout 120;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth "";
         proxy_set_header Cookie "";
         proxy_pass http://dd-music-rs.default.svc.cluster.local:8115/;
+      }
+
+      location = /sound-recorder {
+        return 302 /sound-recorder/;
+      }
+
+      location = /sound-recorder/internal {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /sound-recorder/internal/;
+      }
+
+      location /sound-recorder/internal/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 256k;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        rewrite ^/sound-recorder(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+      }
+
+      location ~ ^/sound-recorder/(healthz|readyz|metrics|docs/api|api/docs|api/docs\.json)$ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/sound-recorder(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+      }
+
+      location /sound-recorder/api/mobile/ {
+        if ($request_method !~ ^(GET|HEAD|POST)$) {
+          return 405;
+        }
+        limit_req zone=dd_sound_recorder_mobile_write burst=120 nodelay;
+        client_max_body_size 256k;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/sound-recorder(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+      }
+
+      location /sound-recorder/ {
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        client_max_body_size 256k;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126/;
       }
 
       location = /des-rs/delivery-planner.html {
@@ -1219,6 +1464,96 @@ data:
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-contract-service.default.svc.cluster.local:8101/;
+      }
+
+      location = /api/usacc {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121/api/usacc;
+      }
+
+      location /api/usacc/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD|POST|PATCH)$) {
+          return 405;
+        }
+        client_max_body_size 2m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+      }
+
+      location = /usacc {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /usacc/;
+      }
+
+      location = /usacc/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/usacc/?$ / break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+      }
+
+      location ~ ^/usacc/(healthz|metrics|docs/api|api/docs|api/docs\.json)$ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        rewrite ^/usacc(/.*)$ $1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
       }
 
       location = /escrow {
@@ -1341,6 +1676,29 @@ data:
         proxy_pass http://dd-trading-server.default.svc.cluster.local:8103/;
       }
 
+      location = /patents {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /patents/;
+      }
+
+      location /patents/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-patent-filing-rs.default.svc.cluster.local:8116/;
+      }
+
       location = /economics {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -1405,6 +1763,29 @@ data:
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-public-data-server.default.svc.cluster.local:8115/;
+      }
+
+      location = /compliance {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /compliance/;
+      }
+
+      location /compliance/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-compliance-rs.default.svc.cluster.local:8118/;
       }
 
       location = /scrape {

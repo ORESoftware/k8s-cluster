@@ -6,7 +6,7 @@ metadata:
   labels:
     app: dd-public-data-server
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -102,7 +102,7 @@ spec:
               value: sparse
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 2Gi
               ephemeral-storage: 4Gi
             limits:
@@ -206,7 +206,7 @@ spec:
               containerPort: 8115
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 512Mi
             limits:
               cpu: '2'

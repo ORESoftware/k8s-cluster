@@ -371,6 +371,7 @@ final class GatewayShardBoot {
     required this.clockIntervalSeconds,
     required this.benchmarkMode,
     required this.gaugeReportIntervalMs,
+    this.allowedOrigins = const <String>[],
     this.poolControllerEnabled = false,
     this.poolMinWarmHosts = 0,
     this.poolMaxHosts = 0,
@@ -409,6 +410,18 @@ final class GatewayShardBoot {
 
   /// How often the shard pushes a [GaugeReport] to [metricsBus].
   final int gaugeReportIntervalMs;
+
+  /// Allowlist of acceptable `Origin` request-header values for the
+  /// `/dart/wss` upgrade. Empty (the default) disables the check and accepts
+  /// any origin — preserving the load-test / same-origin-demo behaviour. When
+  /// non-empty, an upgrade whose `Origin` is not in this list is refused with
+  /// a 403 before the socket is established, which closes the cross-site
+  /// WebSocket hijacking (CSWSH) vector for browser clients. Set via
+  /// `WS_ALLOWED_ORIGINS` (comma-separated, exact scheme+host[:port] match).
+  /// Non-browser clients (load testers, server-to-server) omit `Origin`
+  /// entirely; a request with no `Origin` header is allowed through so those
+  /// paths are unaffected.
+  final List<String> allowedOrigins;
 
   /// When true, the shard's `SessionSupervisor` runs the directive-driven
   /// warm-pool reconciler instead of the legacy lazy-spawn-only policy:

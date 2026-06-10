@@ -87,7 +87,10 @@ pub fn start_postgres(url: String) -> Result(Store, actor.StartError) {
   }
 }
 
-fn handle_mem(state: MemState, message: MemMsg) -> actor.Next(MemState, MemMsg) {
+fn handle_mem(
+  state: MemState,
+  message: MemMsg,
+) -> actor.Next(MemState, MemMsg) {
   case message {
     MemAdd(conv, user, reply) -> {
       let convs =
@@ -99,12 +102,10 @@ fn handle_mem(state: MemState, message: MemMsg) -> actor.Next(MemState, MemMsg) 
         |> result.unwrap(set.new())
         |> set.insert(conv)
       process.send(reply, Ok(Nil))
-      actor.continue(
-        MemState(
-          conv_members: dict.insert(state.conv_members, conv, convs),
-          user_convs: dict.insert(state.user_convs, user, user_convs),
-        ),
-      )
+      actor.continue(MemState(
+        conv_members: dict.insert(state.conv_members, conv, convs),
+        user_convs: dict.insert(state.user_convs, user, user_convs),
+      ))
     }
     MemRemove(conv, user, reply) -> {
       let conv_set =
@@ -124,7 +125,10 @@ fn handle_mem(state: MemState, message: MemMsg) -> actor.Next(MemState, MemMsg) 
         False -> dict.insert(state.user_convs, user, user_set)
       }
       process.send(reply, Ok(Nil))
-      actor.continue(MemState(conv_members: conv_members, user_convs: user_convs))
+      actor.continue(MemState(
+        conv_members: conv_members,
+        user_convs: user_convs,
+      ))
     }
     MemMembers(conv, reply) -> {
       let users =
@@ -330,4 +334,3 @@ pub fn connection(store: Store) -> Option(Connection) {
     InMemory(_) -> option.None
   }
 }
-

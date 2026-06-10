@@ -27,6 +27,12 @@ fn env_get(name: String) -> String
 @external(erlang, "gleam_mcp_json", "parse_request")
 fn parse_request(body: String) -> #(String, String, String, String)
 
+@external(erlang, "gleam_mcp_json", "method")
+fn json_method(body: String) -> String
+
+@external(erlang, "gleam_mcp_json", "tool_name")
+fn json_tool_name(body: String) -> String
+
 const default_host = "0.0.0.0"
 
 const default_port = 8090

@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-cluster-mcp-rs
+  namespace: default
+  labels:
+    app: dd-cluster-mcp-rs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-cluster-mcp-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-rust-cluster-mcp'
+      labels:
+        app: dd-cluster-mcp-rs
+    spec:
+      serviceAccountName: dd-cluster-mcp-rs
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cluster-mcp-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-cluster-mcp-rs-target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/cluster-mcp-rs
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8091'
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-cluster-mcp-rs-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: RUST_BACKTRACE
+              value: '1'
+            - name: MCP_PROMETHEUS_URL
+              value: http://dd-prometheus.observability.svc.cluster.local:9090
+            - name: MCP_LOKI_URL
+              value: http://dd-loki.observability.svc.cluster.local:3100
+            - name: MCP_GRAFANA_URL
+              value: http://dd-grafana.observability.svc.cluster.local:3000
+            - name: MCP_TEMPO_URL
+              value: http://dd-tempo.observability.svc.cluster.local:3200
+            - name: MCP_JAEGER_URL
+              value: http://dd-jaeger.observability.svc.cluster.local:16686
+            - name: MCP_OTEL_COLLECTOR_URL
+              value: http://dd-otel-collector.observability.svc.cluster.local:8889
+            - name: MCP_NATS_MONITOR_URL
+              value: http://dd-nats.messaging.svc.cluster.local:8222
+            - name: MCP_NATS_METRICS_URL
+              value: http://dd-nats.messaging.svc.cluster.local:7777
+            - name: MCP_OBSERVABILITY_TIMEOUT_MS
+              value: '1200'
+            - name: MCP_OBSERVABILITY_BODY_LIMIT_BYTES
+              value: '32768'
+            - name: MCP_KUBERNETES_TIMEOUT_MS
+              value: '1500'
+            - name: MCP_KUBERNETES_BODY_LIMIT_BYTES
+              value: '262144'
+            - name: MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES
+              value: '32768'
+            - name: MCP_KUBERNETES_ITEMS_LIMIT
+              value: '200'
+            - name: MCP_ALLOW_EXTERNAL_URLS
+              value: 'false'
+            - name: OTEL_SERVICE_NAME
+              value: dd-cluster-mcp-rs
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_TRACES_ENABLED
+              value: 'true'
+            - name: OTEL_EXPORT_TIMEOUT_MS
+              value: '800'
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-cluster-mcp-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-cluster-mcp-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8091
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+              ephemeral-storage: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi

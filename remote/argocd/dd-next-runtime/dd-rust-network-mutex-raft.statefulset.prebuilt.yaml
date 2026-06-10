@@ -1,0 +1,196 @@
+# Prebuilt-image variant of the BrokerRaft StatefulSet.
+#
+# This is the durability fix for the source-build StatefulSet
+# (dd-rust-network-mutex-raft.statefulset.yaml): instead of running
+# `cargo run --release` from source on every pod start — which saturates the
+# node CPU and causes Raft leader-election churn while ~5 pods compile at once —
+# it runs the prebuilt image produced by live-mutex-rs CI
+# (.github/workflows/build-raft-image.yml). Pods then start in seconds.
+#
+# CUTOVER (one commit), AFTER the image is published to Docker Hub:
+#   1. ensure live-mutex-rs CI has pushed oresoftware/live-mutex-rs-raft:<tag>
+#      (requires DOCKERHUB_USERNAME / DOCKERHUB_TOKEN repo secrets).
+#   2. in kustomization.yaml, replace
+#        - dd-rust-network-mutex-raft.statefulset.yaml
+#      with
+#        - dd-rust-network-mutex-raft.statefulset.prebuilt.yaml
+#   3. commit + push; ArgoCD rolls the StatefulSet onto the image.
+#
+# To track the dev branch instead of a pinned version, set the image tag to
+# `:dev` and imagePullPolicy: Always (and trigger a rollout per deploy).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dd-rust-network-mutex-raft
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex-raft
+spec:
+  serviceName: dd-rust-network-mutex-raft-peer
+  # Five voters: quorum is 3, so the cluster tolerates 2 node failures. Keep this
+  # odd and in sync with the peer list in dd-rust-network-mutex-raft.configmap.yaml.
+  replicas: 5
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex-raft
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-rust-network-mutex-raft-prebuilt'
+      labels:
+        app: dd-rust-network-mutex-raft
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      # Spread voters across nodes when more than one is available. SOFT
+      # (preferred) so all five still schedule on a single-node cluster today;
+      # becomes real node-failure tolerance the moment a second node is added.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: dd-rust-network-mutex-raft
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-raft-data
+          image: docker.io/library/busybox:1.36
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              add:
+                - CHOWN
+              drop:
+                - ALL
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - mkdir -p "/raft/${POD_NAME}" && chown -R 1000:1000 "/raft/${POD_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: raft-data
+              mountPath: /raft
+      containers:
+        - name: rust-network-mutex-raft
+          # Prebuilt binary from live-mutex-rs CI (Dockerfile.raft). The image
+          # ENTRYPOINT is the broker; no source build, no cargo at runtime.
+          image: docker.io/oresoftware/live-mutex-rs-raft:0.1.127
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # The mounted ConfigMap supplies the full peer list; the LMX_RAFT_*
+            # vars below give each pod its own identity/addresses.
+            - name: LMX_CONFIG
+              value: /etc/dd-rust-network-mutex/lmx-raft.toml
+            - name: LMX_RAFT_ENABLED
+              value: 'true'
+            - name: LMX_RAFT_NODE_ID
+              value: $(POD_NAME)
+            - name: LMX_RAFT_BIND_ADDR
+              value: 0.0.0.0:7980
+            - name: LMX_RAFT_ADVERTISE_ADDR
+              value: $(POD_NAME).dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980
+            - name: LMX_RAFT_DATA_DIR
+              value: /var/lib/dd-rust-network-mutex/raft/$(POD_NAME)
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+            # Gateway/operator auth token (preferred). When set, the broker
+            # requires it as the `Auth` header. optional:true so auth stays off
+            # until dd-agent-secrets.ALL_DOGS exists.
+            - name: ALL_DOGS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: ALL_DOGS
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 6971
+            - name: raft-rpc
+              containerPort: 7980
+          resources:
+            # No compiler at runtime, so this needs far less than the source-build
+            # StatefulSet (which reserved 1Gi / 4Gi for cargo).
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: raft-config
+              mountPath: /etc/dd-rust-network-mutex
+              readOnly: true
+            - name: raft-data
+              mountPath: /var/lib/dd-rust-network-mutex/raft
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: raft-config
+          configMap:
+            name: dd-rust-network-mutex-raft-config
+        - name: raft-data
+          hostPath:
+            path: /var/lib/dd-rust-network-mutex-raft
+            type: DirectoryOrCreate

@@ -38,26 +38,34 @@ const CENTRAL_DOCS_ROUTES = ['/api-docs', '/api-docs.json'];
 
 const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'agent-worker-broker-rs',
+  'apostille-services-server-rs',
   'auth-server-rs',
   'bastion-rs',
   'billing-server-rs',
   'build-server-rs',
+  'cluster-mcp-rs',
   'container-pool-rs',
   'contract-service-rs',
+  'dd-benefactor-marketing-rs',
+  'dd-compliance-rs',
+  'dd-document-rs',
   'dd-escrow-rs',
   'des-simulator-rs',
   'dd-music-rs',
+  'dd-sound-recorder-rs',
   'economics-server-rs',
   'fabrication-server-rs',
   'formal-methods-service-rs',
   'formal-methods-server-rs',
   'fabrication-server-rs',
   'mdp-optimizer-rs',
+  'patent-filing-rs',
   'public-data-server-rs',
   'rest-api-rs',
   'runtime-config-rs',
   'rust-vapi-phone-rs',
   'trading-server-rs',
+  'usacc-rest-api-backend-rs',
   'wal-gateway-rs',
   'web-home-rs',
   'webrtc-media-rs',
@@ -66,7 +74,9 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['billing-server-rs', 'src/api/mod.rs'],
+  ['dd-compliance-rs', 'src/routes.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
+  ['usacc-rest-api-backend-rs', 'src/routes/mod.rs'],
 ]);
 
 // Subscriber receive surface auto-mounted by `dd_runtime_config_client::router()`

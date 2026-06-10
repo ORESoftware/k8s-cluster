@@ -10,6 +10,8 @@ metadata:
     configmap.reloader.stakater.com/reload: "dd-prometheus-config"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: dd-prometheus

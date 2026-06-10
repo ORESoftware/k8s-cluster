@@ -21,9 +21,11 @@
 //!  - On failure: marks the connection's `last_error`, releases lease,
 //!    returns Err so the scheduler retries per `max_attempts`.
 //!
-//! Stripe, Coinflow, Solana, and Wise have first-pass sync bodies. Remaining
-//! providers keep the same contract and should land incrementally without
-//! changing the API + scheduling layer.
+//! Stripe, Coinflow, Solana, and Wise have first-pass sync bodies. Zelle,
+//! Modern Treasury, Dwolla, and Ethereum/EVM wallet support currently land as
+//! typed limited-fit surfaces until tenant-specific contracts map cleanly to
+//! postings. Remaining providers keep the same contract and should land
+//! incrementally without changing the API + scheduling layer.
 
 pub mod braintree_sync;
 pub mod bridge_sync;

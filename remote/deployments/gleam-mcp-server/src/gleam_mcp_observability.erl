@@ -11,6 +11,9 @@
     trace_backends_json/0
 ]).
 
+-define(MAX_TIMEOUT_MS, 5000).
+-define(MAX_BODY_LIMIT_BYTES, 262144).
+
 targets_json() ->
     json_obj([
         {<<"service">>, <<"dd-gleam-mcp-server">>},
@@ -120,11 +123,11 @@ trace_backends_json() ->
     ]).
 
 target_obj(Name, Url, Role) ->
-    json_obj([{<<"name">>, Name}, {<<"url">>, Url}, {<<"role">>, Role}]).
+    json_obj([{<<"name">>, Name}, {<<"url">>, gleam_mcp_redact:url_for_output(Url)}, {<<"role">>, Role}]).
 
 check(Name, Url, Limit) ->
     Result = http_result(Url, Limit),
-    json_obj([{<<"name">>, Name}, {<<"url">>, Url}, {<<"result">>, raw(Result)}]).
+    json_obj([{<<"name">>, Name}, {<<"url">>, gleam_mcp_redact:url_for_output(Url)}, {<<"result">>, raw(Result)}]).
 
 parallel_checks(Specs) ->
     Ref = make_ref(),
@@ -191,7 +194,7 @@ http_result(UrlBin, Limit) ->
     case catch httpc:request(get, {Url, Headers}, HttpOptions, Options) of
         {ok, {{_, Status, Reason}, _RespHeaders, Body0}} ->
             Duration = erlang:monotonic_time(millisecond) - Started,
-            Body = clip(to_binary(Body0), Limit),
+            Body = gleam_mcp_redact:sample(to_binary(Body0), Limit),
             json_obj([
                 {<<"ok">>, Status >= 200 andalso Status < 400},
                 {<<"status">>, Status},
@@ -216,28 +219,28 @@ http_result(UrlBin, Limit) ->
     end.
 
 prometheus_url(Path) ->
-    join_url(env_bin("MCP_PROMETHEUS_URL", <<"http://dd-prometheus.observability.svc.cluster.local:9090">>), Path).
+    join_url(safe_base_url("MCP_PROMETHEUS_URL", <<"http://dd-prometheus.observability.svc.cluster.local:9090">>), Path).
 
 loki_url(Path) ->
-    join_url(env_bin("MCP_LOKI_URL", <<"http://dd-loki.observability.svc.cluster.local:3100">>), Path).
+    join_url(safe_base_url("MCP_LOKI_URL", <<"http://dd-loki.observability.svc.cluster.local:3100">>), Path).
 
 grafana_url(Path) ->
-    join_url(env_bin("MCP_GRAFANA_URL", <<"http://dd-grafana.observability.svc.cluster.local:3000">>), Path).
+    join_url(safe_base_url("MCP_GRAFANA_URL", <<"http://dd-grafana.observability.svc.cluster.local:3000">>), Path).
 
 tempo_url(Path) ->
-    join_url(env_bin("MCP_TEMPO_URL", <<"http://dd-tempo.observability.svc.cluster.local:3200">>), Path).
+    join_url(safe_base_url("MCP_TEMPO_URL", <<"http://dd-tempo.observability.svc.cluster.local:3200">>), Path).
 
 jaeger_url(Path) ->
-    join_url(env_bin("MCP_JAEGER_URL", <<"http://dd-jaeger.observability.svc.cluster.local:16686">>), Path).
+    join_url(safe_base_url("MCP_JAEGER_URL", <<"http://dd-jaeger.observability.svc.cluster.local:16686">>), Path).
 
 otel_url(Path) ->
-    join_url(env_bin("MCP_OTEL_COLLECTOR_URL", <<"http://dd-otel-collector.observability.svc.cluster.local:8889">>), Path).
+    join_url(safe_base_url("MCP_OTEL_COLLECTOR_URL", <<"http://dd-otel-collector.observability.svc.cluster.local:8889">>), Path).
 
 nats_monitor_url(Path) ->
-    join_url(env_bin("MCP_NATS_MONITOR_URL", <<"http://dd-nats.messaging.svc.cluster.local:8222">>), Path).
+    join_url(safe_base_url("MCP_NATS_MONITOR_URL", <<"http://dd-nats.messaging.svc.cluster.local:8222">>), Path).
 
 nats_metrics_url(Path) ->
-    join_url(env_bin("MCP_NATS_METRICS_URL", <<"http://dd-nats.messaging.svc.cluster.local:7777">>), Path).
+    join_url(safe_base_url("MCP_NATS_METRICS_URL", <<"http://dd-nats.messaging.svc.cluster.local:7777">>), Path).
 
 join_url(Base0, Path0) ->
     Base = trim_trailing_slash(Base0),
@@ -257,52 +260,16 @@ trim_trailing_slash(Bin) ->
     end.
 
 timeout_ms() ->
-    env_pos_int("MCP_OBSERVABILITY_TIMEOUT_MS", 1500).
+    bounded_int("MCP_OBSERVABILITY_TIMEOUT_MS", 1500, 100, ?MAX_TIMEOUT_MS).
 
 body_limit_bytes() ->
-    env_pos_int("MCP_OBSERVABILITY_BODY_LIMIT_BYTES", 20000).
+    bounded_int("MCP_OBSERVABILITY_BODY_LIMIT_BYTES", 20000, 1024, ?MAX_BODY_LIMIT_BYTES).
 
-env_pos_int(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Raw ->
-            case string:to_integer(Raw) of
-                {Value, _} when Value > 0 -> Value;
-                _ -> Default
-            end
-    end.
+safe_base_url(Name, Default) ->
+    gleam_mcp_redact:safe_base_url(Name, Default).
 
-env_bin(Name, Default) ->
-    case os:getenv(Name) of
-        false -> Default;
-        "" -> Default;
-        Value -> unicode:characters_to_binary(Value)
-    end.
-
-clip(Bin, Limit) when byte_size(Bin) =< Limit -> Bin;
-clip(Bin, Limit) when Limit > 32 ->
-    Prefix = utf8_prefix(Bin, Limit),
-    <<Prefix/binary, "\n... clipped ...">>;
-clip(Bin, Limit) ->
-    utf8_prefix(Bin, Limit).
-
-%% Truncating at a raw byte offset can split a multi-byte UTF-8 sequence,
-%% which then renders the surrounding JSON string (and so the whole
-%% structuredContent envelope) invalid for the MCP client. Back the cut off
-%% to the nearest valid UTF-8 boundary — at most 3 bytes for valid input,
-%% since a code point is 4 bytes max.
-utf8_prefix(Bin, Max) when Max >= byte_size(Bin) -> Bin;
-utf8_prefix(Bin, Max) -> valid_prefix(Bin, Max, 3).
-
-valid_prefix(_Bin, Take, _Tries) when Take =< 0 -> <<>>;
-valid_prefix(Bin, Take, 0) -> binary:part(Bin, 0, Take);
-valid_prefix(Bin, Take, Tries) ->
-    Candidate = binary:part(Bin, 0, Take),
-    case unicode:characters_to_binary(Candidate, utf8, utf8) of
-        Valid when is_binary(Valid) -> Candidate;
-        _ -> valid_prefix(Bin, Take - 1, Tries - 1)
-    end.
+bounded_int(Name, Default, Min, Max) ->
+    gleam_mcp_redact:bounded_int(Name, Default, Min, Max).
 
 json_obj(Pairs) ->
     <<"{", (join([json_pair(K, V) || {K, V} <- Pairs], <<",">>))/binary, "}">>.

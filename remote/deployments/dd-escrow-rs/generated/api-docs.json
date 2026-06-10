@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-escrow-rs",
   "language": "rust",
-  "routeCount": 16,
+  "routeCount": 19,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 7,
+    "user-generated": 10,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -60,6 +60,40 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-escrow-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/audit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "audit_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-escrow-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/capabilities",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "capabilities_http"
       ],
       "sourceFiles": [
         "remote/deployments/dd-escrow-rs/src/main.rs"
@@ -179,6 +213,23 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-escrow-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/resolve",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolve_http"
       ],
       "sourceFiles": [
         "remote/deployments/dd-escrow-rs/src/main.rs"

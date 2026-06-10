@@ -5,8 +5,4 @@
 getenv(Name) when is_binary(Name) ->
     getenv(binary_to_list(Name));
 getenv(Name) when is_list(Name) ->
-    case os:getenv(Name) of
-        false -> <<>>;
-        "" -> <<>>;
-        Value -> unicode:characters_to_binary(Value)
-    end.
+    dd_cli_config_client_ffi:getenv(Name, <<>>).

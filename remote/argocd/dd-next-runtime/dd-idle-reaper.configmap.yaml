@@ -70,3 +70,17 @@ data:
   BROWSER_JOB_REAP_GRACE_SECONDS: '60'
   BROWSER_JOB_REAP_NERDCTL: '/usr/local/bin/nerdctl'
   BROWSER_JOB_REAP_EVENT_SUBJECT: 'dd.remote.events'
+  # Backstop for EC2/containerd warm-pool workers. The container-pool service
+  # owns normal reconciliation; this loop removes only labeled managed workers
+  # that are stopped, orphaned after a pool-service restart, or surplus idle
+  # workers past their configured idle TTL plus grace.
+  CONTAINER_POOL_REAP_ENABLED: 'true'
+  CONTAINER_POOL_REAP_CONTAINER_POOL_URL: 'http://dd-container-pool.default.svc.cluster.local:8102'
+  CONTAINER_POOL_REAP_NAMESPACE: 'dd-pool'
+  CONTAINER_POOL_REAP_LABEL: 'dd.container-pool.managed=true'
+  CONTAINER_POOL_REAP_INTERVAL_SECONDS: '300'
+  CONTAINER_POOL_REAP_IDLE_GRACE_SECONDS: '300'
+  CONTAINER_POOL_REAP_STOPPED_TTL_SECONDS: '300'
+  CONTAINER_POOL_REAP_ORPHAN_TTL_SECONDS: '3600'
+  CONTAINER_POOL_REAP_NERDCTL: '/usr/local/bin/nerdctl'
+  CONTAINER_POOL_REAP_EVENT_SUBJECT: 'dd.remote.events'

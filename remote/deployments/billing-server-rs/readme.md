@@ -17,12 +17,13 @@ This service answers the two questions from
   Tenants connect their own Stripe / PayPal / Braintree / Plaid / bank
   accounts via OAuth (where supported) or sealed API keys. We read, ledger,
   and reconcile; tenants initiate payments in their own provider dashboards.
-- **Crypto is read-only too.** Tenants connect a Solana wallet pubkey via
-  wallet-adapter signing. We watch the chain; we never request delegated
-  spend authority and never hold private keys.
+- **Crypto is read-only too.** Tenants connect Solana and Ethereum/EVM wallet
+  addresses via wallet signing or explicit metadata. We watch the chain; we
+  never request delegated spend authority and never hold private keys.
 - **Solana is used for two things:** periodic Merkle-root anchoring of the
   ledger (tamper-evidence) and read-only ingestion of on-chain transfers
-  into the same per-entity ledger as fiat.
+  into the same per-entity ledger as fiat. Ethereum/EVM support is observer
+  mode only: native balance, ERC-20 balance, and receipt reads through JSON-RPC.
 
 ## Source of truth
 
@@ -193,19 +194,32 @@ validates the known API-key providers before sealing credentials:
   `{ "api_key", "partner_id", "api_base_url", "watched_recipients", "environment", "notes" }`
 - `moneygram`: `{ "client_id", "client_secret", "agent_partner_id", "user_language", "environment", "webhook_secret" }`
 - `western_union`: `{ "client_id", "environment", "client_certificate_pem", "client_private_key_pem", "notes" }`
+- `us_bank_zelle`: `{ "access_token", "client_id", "program_id", "api_base_url", "payments_path", "enrollment_path", "environment" }`
+- `jpmorgan_zelle`: `{ "access_token", "debtor_account_id", "debtor_name", "debtor_bic", "api_base_url", "environment" }`
+- `bofa_cashpro_gdd`: `{ "client_id", "client_secret", "cashpro_company_id", "access_token", "api_base_url", "disbursements_path", "environment" }`
+- `modern_treasury`: `{ "organization_id", "api_key", "default_originating_account_id", "api_base_url", "environment", "webhook_secret" }`
+- `dwolla`: `{ "access_token", "account_id", "api_base_url", "environment", "webhook_secret" }`
+- `ethereum_wallet`: `{ "address", "rpc_url", "chain_id", "rpc_bearer_token", "tracked_assets" }`
 
 `environment` is `production` or `sandbox`. For Coinflow, Wise, Remitly,
-MoneyGram, and Western Union the server derives `external_account_id` from the
-credential payload when the caller does not provide it. Remitly, MoneyGram, and
-Western Union are accepted as `limited_fit`: typed provider DTOs and mock tests
-exist, but automatic ledger sync is intentionally disabled until a tenant's
-partner contract maps cleanly to postings.
+MoneyGram, Western Union, bank-sponsored Zelle providers, Modern Treasury, and
+Dwolla the server derives `external_account_id` from the credential payload when
+the caller does not provide it. Remitly, MoneyGram, Western Union, Zelle,
+Modern Treasury, Dwolla, and Ethereum wallet support are accepted as
+`limited_fit`: typed provider DTOs and mock tests exist, but automatic ledger
+sync and public money movement are intentionally disabled until a tenant's
+contract maps cleanly to postings.
 
 Remitly partner-export credentials are all-or-nothing: `api_key` and
 `api_base_url` must be provided together, and the base URL must be an HTTPS
 public provider hostname with no URL credentials, query, or fragment. Western
 Union mTLS certificate/key PEMs are accepted only as a pair and validated before
 the credential payload is sealed.
+
+Bank-sponsored Zelle, Modern Treasury, Dwolla, and tenant-supplied Ethereum RPC
+base URLs must be HTTPS public provider hostnames with no URL credentials,
+query, or fragment. Localhost/private addresses are accepted only through
+test-only mock constructors.
 
 ## Webhook posture
 

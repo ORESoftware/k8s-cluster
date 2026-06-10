@@ -1,0 +1,17 @@
+# Allowlist build context for `docker build -f deployments/dd-document-rs/Dockerfile .`
+# (run from this repo root). Ignore everything, then re-include only the
+# dd-document-rs crate and the Cargo path-dependencies it needs.
+#
+# This file only affects `docker build` runs that use this directory as their
+# context; the sibling services build from their own directories.
+**
+
+!deployments/dd-document-rs/**
+!libs/nats/subject-defs/generated/rust/**
+!libs/runtime-config-client-rs/**
+!libs/interfaces/shared/generated/rust/**
+
+# Drop build artifacts back out of the re-included trees.
+**/target/**
+**/dist-newstyle/**
+**/node_modules/**

@@ -6,7 +6,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use dd_nats_subject_defs::{
     DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
@@ -153,6 +153,21 @@ struct BrowserJobReapJob {
     event_subject: String,
 }
 
+#[derive(Clone)]
+struct ContainerPoolReapJob {
+    nerdctl: String,
+    namespace: String,
+    label: String,
+    container_pool_url: String,
+    interval_seconds: u64,
+    idle_grace_seconds: u64,
+    stopped_ttl_seconds: u64,
+    orphan_ttl_seconds: u64,
+    dry_run: bool,
+    nats_url: String,
+    event_subject: String,
+}
+
 type QueueTaskMessage = AgentTaskQueueMessage;
 
 #[derive(Debug, Deserialize)]
@@ -169,6 +184,34 @@ struct RuntimeFloorPoolSummary {
     idle_containers: usize,
     active_containers: usize,
     unhealthy_containers: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapPoolsResponse {
+    pools: Vec<PoolReapPoolSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapPoolSummary {
+    slug: String,
+    min_warm: usize,
+    idle_ttl_seconds: u64,
+    containers: Vec<PoolReapWarmContainer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolReapWarmContainer {
+    name: String,
+    status: String,
+    #[serde(default)]
+    in_flight: usize,
+    #[serde(default)]
+    launched_at_ms: u128,
+    #[serde(default)]
+    last_used_at_ms: u128,
 }
 
 fn is_shadow_task(task: &QueueTaskMessage) -> bool {
@@ -469,8 +512,10 @@ fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
     }
 
     Some(BrowserJobReapJob {
-        nerdctl: env_string("BROWSER_JOB_REAP_NERDCTL").unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
-        namespace: env_string("BROWSER_JOB_REAP_NAMESPACE").unwrap_or_else(|| "dd-browser-jobs".to_string()),
+        nerdctl: env_string("BROWSER_JOB_REAP_NERDCTL")
+            .unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
+        namespace: env_string("BROWSER_JOB_REAP_NAMESPACE")
+            .unwrap_or_else(|| "dd-browser-jobs".to_string()),
         label: env_string("BROWSER_JOB_REAP_LABEL")
             .unwrap_or_else(|| "dd.browser-job.managed=true".to_string()),
         deadline_label: env_string("BROWSER_JOB_REAP_DEADLINE_LABEL")
@@ -483,6 +528,36 @@ fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
         nats_url: env_string("NATS_URL")
             .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
         event_subject: env_string("BROWSER_JOB_REAP_EVENT_SUBJECT")
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
+    })
+}
+
+fn container_pool_reap_job_from_env() -> Option<ContainerPoolReapJob> {
+    if !env_bool("CONTAINER_POOL_REAP_ENABLED", false) {
+        println!("container pool reaper disabled: CONTAINER_POOL_REAP_ENABLED is false");
+        return None;
+    }
+
+    Some(ContainerPoolReapJob {
+        nerdctl: env_string("CONTAINER_POOL_REAP_NERDCTL")
+            .unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
+        namespace: env_string("CONTAINER_POOL_REAP_NAMESPACE")
+            .unwrap_or_else(|| "dd-pool".to_string()),
+        label: env_string("CONTAINER_POOL_REAP_LABEL")
+            .unwrap_or_else(|| "dd.container-pool.managed=true".to_string()),
+        container_pool_url: env_string("CONTAINER_POOL_REAP_CONTAINER_POOL_URL")
+            .or_else(|| env_string("RUNTIME_FLOOR_CONTAINER_POOL_URL"))
+            .unwrap_or_else(|| {
+                "http://dd-container-pool.default.svc.cluster.local:8102".to_string()
+            }),
+        interval_seconds: env_u64("CONTAINER_POOL_REAP_INTERVAL_SECONDS", 300),
+        idle_grace_seconds: env_u64("CONTAINER_POOL_REAP_IDLE_GRACE_SECONDS", 300),
+        stopped_ttl_seconds: env_u64("CONTAINER_POOL_REAP_STOPPED_TTL_SECONDS", 300),
+        orphan_ttl_seconds: env_u64("CONTAINER_POOL_REAP_ORPHAN_TTL_SECONDS", 3600),
+        dry_run: env_bool("CONTAINER_POOL_REAP_DRY_RUN", false),
+        nats_url: env_string("NATS_URL")
+            .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
+        event_subject: env_string("CONTAINER_POOL_REAP_EVENT_SUBJECT")
             .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
     })
 }
@@ -510,7 +585,10 @@ async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[Strin
         "atMs": now_ms(),
     })
     .to_string();
-    if let Err(error) = nats.publish(job.event_subject.clone(), payload.into()).await {
+    if let Err(error) = nats
+        .publish(job.event_subject.clone(), payload.into())
+        .await
+    {
         eprintln!("browser job reap event publish failed: {error}");
     }
 }
@@ -554,7 +632,9 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
         }
         // Reap when past deadline + grace, or when a managed container has no
         // parseable deadline label at all (malformed/leaked → not ours-shaped).
-        let expired = match parse_label_value(labels, &job.deadline_label).and_then(|v| v.parse::<u128>().ok()) {
+        let expired = match parse_label_value(labels, &job.deadline_label)
+            .and_then(|v| v.parse::<u128>().ok())
+        {
             Some(deadline_ms) => now > deadline_ms + grace_ms,
             None => true,
         };
@@ -601,6 +681,367 @@ async fn run_browser_job_reap_loop(job: BrowserJobReapJob) {
     );
     loop {
         run_browser_job_reap_once(&job).await;
+        sleep(Duration::from_secs(job.interval_seconds)).await;
+    }
+}
+
+fn is_pool_container_idle(container: &PoolReapWarmContainer) -> bool {
+    container.status.eq_ignore_ascii_case("idle") && container.in_flight == 0
+}
+
+fn select_stale_pool_idle_containers(
+    pools: &[PoolReapPoolSummary],
+    now_ms: u128,
+    idle_grace_seconds: u64,
+) -> HashMap<String, String> {
+    let mut targets = HashMap::new();
+    for pool in pools {
+        let mut idle = pool
+            .containers
+            .iter()
+            .filter(|container| is_pool_container_idle(container))
+            .collect::<Vec<_>>();
+        idle.sort_by_key(|container| (container.last_used_at_ms, container.launched_at_ms));
+        let mut idle_remaining = idle.len();
+
+        let ttl_ms = u128::from(pool.idle_ttl_seconds.saturating_add(idle_grace_seconds)) * 1000;
+        for container in idle {
+            if idle_remaining <= pool.min_warm {
+                break;
+            }
+            let idle_for_ms = now_ms.saturating_sub(container.last_used_at_ms);
+            if idle_for_ms >= ttl_ms {
+                targets.insert(
+                    container.name.clone(),
+                    format!(
+                        "pool={} idle_for={}s ttl={}s minWarm={}",
+                        pool.slug,
+                        idle_for_ms / 1000,
+                        pool.idle_ttl_seconds.saturating_add(idle_grace_seconds),
+                        pool.min_warm
+                    ),
+                );
+                idle_remaining = idle_remaining.saturating_sub(1);
+            }
+        }
+    }
+    targets
+}
+
+fn parse_rfc3339_ms(value: &str) -> Option<u128> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.starts_with("0001-") {
+        return None;
+    }
+    let timestamp_ms = DateTime::parse_from_rfc3339(trimmed)
+        .ok()?
+        .timestamp_millis();
+    u128::try_from(timestamp_ms).ok()
+}
+
+fn json_at_timestamp_ms(value: &Value, paths: &[&[&str]]) -> Option<u128> {
+    paths
+        .iter()
+        .filter_map(|path| json_at_string(value, path))
+        .find_map(|timestamp| parse_rfc3339_ms(&timestamp))
+}
+
+fn container_inspect_status(container: &Value) -> Option<String> {
+    json_at_string(container, &["State", "Status"])
+        .or_else(|| json_at_string(container, &["State", "status"]))
+        .or_else(|| json_at_string(container, &["State", "State"]))
+        .map(|status| status.to_ascii_lowercase())
+}
+
+fn container_inspect_created_ms(container: &Value) -> Option<u128> {
+    json_at_timestamp_ms(container, &[&["Created"], &["created"]])
+}
+
+fn container_inspect_finished_ms(container: &Value) -> Option<u128> {
+    json_at_timestamp_ms(
+        container,
+        &[
+            &["State", "FinishedAt"],
+            &["State", "finishedAt"],
+            &["State", "Finished"],
+        ],
+    )
+}
+
+async fn fetch_container_pool_reap_pools(
+    client: &Client,
+    job: &ContainerPoolReapJob,
+) -> Result<PoolReapPoolsResponse, String> {
+    let url = format!("{}/pools", job.container_pool_url.trim_end_matches('/'));
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("container pool reaper pools request failed: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "container pool reaper pools failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        ));
+    }
+    serde_json::from_str::<PoolReapPoolsResponse>(&body)
+        .map_err(|error| format!("container pool reaper pools invalid json: {error}"))
+}
+
+async fn list_managed_pool_containers(job: &ContainerPoolReapJob) -> Result<Vec<String>, String> {
+    let mut list = Command::new(&job.nerdctl);
+    list.arg("-n")
+        .arg(&job.namespace)
+        .arg("ps")
+        .arg("-a")
+        .arg("--no-trunc")
+        .arg("--filter")
+        .arg(format!("label={}", job.label))
+        .arg("--format")
+        .arg("{{.Names}}");
+    let output = list
+        .output()
+        .await
+        .map_err(|error| format!("container pool reaper ps could not start: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "container pool reaper ps failed: {}",
+            truncate_for_log(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
+async fn inspect_managed_pool_container(
+    job: &ContainerPoolReapJob,
+    name: &str,
+) -> Result<Value, String> {
+    let mut inspect = Command::new(&job.nerdctl);
+    inspect
+        .arg("-n")
+        .arg(&job.namespace)
+        .arg("inspect")
+        .arg(name);
+    let output = inspect.output().await.map_err(|error| {
+        format!("container pool reaper inspect could not start for {name}: {error}")
+    })?;
+    if !output.status.success() {
+        return Err(format!(
+            "container pool reaper inspect failed for {name}: {}",
+            truncate_for_log(&output.stderr).trim()
+        ));
+    }
+    let value = serde_json::from_slice::<Value>(&output.stdout).map_err(|error| {
+        format!("container pool reaper inspect invalid json for {name}: {error}")
+    })?;
+    if let Some(first) = value.as_array().and_then(|items| items.first()).cloned() {
+        Ok(first)
+    } else {
+        Ok(value)
+    }
+}
+
+fn inspect_reap_reason(
+    name: &str,
+    inspect: &Value,
+    known_to_pool: bool,
+    now_ms: u128,
+    job: &ContainerPoolReapJob,
+) -> Option<String> {
+    let status = container_inspect_status(inspect).unwrap_or_else(|| "unknown".to_string());
+    let is_running = status == "running";
+    if !is_running {
+        let timestamp_ms = container_inspect_finished_ms(inspect)
+            .or_else(|| container_inspect_created_ms(inspect))?;
+        let stopped_for_ms = now_ms.saturating_sub(timestamp_ms);
+        let stopped_ttl_ms = u128::from(job.stopped_ttl_seconds) * 1000;
+        if stopped_for_ms >= stopped_ttl_ms {
+            return Some(format!(
+                "container={} status={} stopped_for={}s ttl={}s",
+                name,
+                status,
+                stopped_for_ms / 1000,
+                job.stopped_ttl_seconds
+            ));
+        }
+    }
+
+    if !known_to_pool {
+        let created_ms = container_inspect_created_ms(inspect)?;
+        let age_ms = now_ms.saturating_sub(created_ms);
+        let orphan_ttl_ms = u128::from(job.orphan_ttl_seconds) * 1000;
+        if age_ms >= orphan_ttl_ms {
+            return Some(format!(
+                "container={} status={} orphan_age={}s ttl={}s",
+                name,
+                status,
+                age_ms / 1000,
+                job.orphan_ttl_seconds
+            ));
+        }
+    }
+
+    None
+}
+
+async fn remove_managed_pool_container(
+    job: &ContainerPoolReapJob,
+    name: &str,
+    reason: &str,
+) -> bool {
+    if job.dry_run {
+        println!("container pool reaper dry-run would remove {name}: {reason}");
+        return true;
+    }
+
+    let mut remove = Command::new(&job.nerdctl);
+    remove
+        .arg("-n")
+        .arg(&job.namespace)
+        .arg("rm")
+        .arg("-f")
+        .arg(name);
+    match remove.output().await {
+        Ok(output) if output.status.success() => {
+            println!("container pool reaper removed {name}: {reason}");
+            true
+        }
+        Ok(output) => {
+            eprintln!(
+                "container pool reaper failed to remove {name}: {}",
+                truncate_for_log(&output.stderr).trim()
+            );
+            false
+        }
+        Err(error) => {
+            eprintln!("container pool reaper remove could not start for {name}: {error}");
+            false
+        }
+    }
+}
+
+async fn publish_container_pool_reap_event(
+    job: &ContainerPoolReapJob,
+    reaped: &[(String, String)],
+) {
+    let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
+        eprintln!("container pool reaper could not publish event: nats connect failed");
+        return;
+    };
+    let containers = reaped
+        .iter()
+        .map(|(name, reason)| json!({ "name": name, "reason": reason }))
+        .collect::<Vec<_>>();
+    let payload = json!({
+        "type": "container-pool-reap",
+        "scope": "admin",
+        "source": "dd-idle-reaper",
+        "namespace": job.namespace,
+        "label": job.label,
+        "dryRun": job.dry_run,
+        "reapedCount": reaped.len(),
+        "containers": containers,
+        "atMs": now_ms(),
+    })
+    .to_string();
+    if let Err(error) = nats
+        .publish(job.event_subject.clone(), payload.into())
+        .await
+    {
+        eprintln!("container pool reap event publish failed: {error}");
+    }
+}
+
+async fn run_container_pool_reap_once(client: &Client, job: &ContainerPoolReapJob) {
+    let now = now_ms();
+    let mut targets: HashMap<String, String> = HashMap::new();
+    let mut known_pool_containers: HashSet<String> = HashSet::new();
+    let mut pool_snapshot_available = false;
+
+    match fetch_container_pool_reap_pools(client, job).await {
+        Ok(response) => {
+            pool_snapshot_available = true;
+            for pool in &response.pools {
+                for container in &pool.containers {
+                    known_pool_containers.insert(container.name.clone());
+                }
+            }
+            targets.extend(select_stale_pool_idle_containers(
+                &response.pools,
+                now,
+                job.idle_grace_seconds,
+            ));
+        }
+        Err(error) => eprintln!("{error}"),
+    }
+
+    let names = match list_managed_pool_containers(job).await {
+        Ok(names) => names,
+        Err(error) => {
+            eprintln!("{error}");
+            return;
+        }
+    };
+
+    for name in names {
+        if targets.contains_key(&name) {
+            continue;
+        }
+        let known_to_pool = known_pool_containers.contains(&name);
+        let Ok(inspect) = inspect_managed_pool_container(job, &name).await else {
+            continue;
+        };
+        let known_for_orphan_check = if pool_snapshot_available {
+            known_to_pool
+        } else {
+            true
+        };
+        if let Some(reason) = inspect_reap_reason(&name, &inspect, known_for_orphan_check, now, job)
+        {
+            targets.insert(name, reason);
+        }
+    }
+
+    if targets.is_empty() {
+        return;
+    }
+
+    let mut target_entries = targets.into_iter().collect::<Vec<_>>();
+    target_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut reaped = Vec::new();
+    for (name, reason) in target_entries {
+        if remove_managed_pool_container(job, &name, &reason).await {
+            reaped.push((name, reason));
+        }
+    }
+
+    if !reaped.is_empty() {
+        publish_container_pool_reap_event(job, &reaped).await;
+    }
+}
+
+async fn run_container_pool_reap_loop(client: Client, job: ContainerPoolReapJob) {
+    println!(
+        "container pool reaper starting: namespace={} label={} interval={}s idleGrace={}s stoppedTtl={}s orphanTtl={}s poolUrl={} dryRun={}",
+        job.namespace,
+        job.label,
+        job.interval_seconds,
+        job.idle_grace_seconds,
+        job.stopped_ttl_seconds,
+        job.orphan_ttl_seconds,
+        job.container_pool_url,
+        job.dry_run
+    );
+    loop {
+        run_container_pool_reap_once(&client, &job).await;
         sleep(Duration::from_secs(job.interval_seconds)).await;
     }
 }
@@ -1892,6 +2333,7 @@ async fn main() {
     let worker_image_build_job = worker_image_build_job_from_env();
     let k8s_runtime_watch_job = k8s_runtime_watch_job_from_env();
     let browser_job_reap_job = browser_job_reap_job_from_env();
+    let container_pool_reap_job = container_pool_reap_job_from_env();
 
     println!("idle-reaper starting: timeout={}s", timeout_seconds);
 
@@ -1924,6 +2366,13 @@ async fn main() {
         enabled_jobs += 1;
         tokio::spawn(run_browser_job_reap_loop(browser_job_reap));
     }
+    if let Some(container_pool_reap) = container_pool_reap_job {
+        enabled_jobs += 1;
+        tokio::spawn(run_container_pool_reap_loop(
+            client.clone(),
+            container_pool_reap,
+        ));
+    }
 
     if enabled_jobs == 0 {
         loop {
@@ -1934,5 +2383,91 @@ async fn main() {
 
     loop {
         sleep(Duration::from_secs(3600)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pool(
+        slug: &str,
+        min_warm: usize,
+        idle_ttl_seconds: u64,
+        containers: Vec<PoolReapWarmContainer>,
+    ) -> PoolReapPoolSummary {
+        PoolReapPoolSummary {
+            slug: slug.to_string(),
+            min_warm,
+            idle_ttl_seconds,
+            containers,
+        }
+    }
+
+    fn warm(name: &str, status: &str, last_used_at_ms: u128) -> PoolReapWarmContainer {
+        PoolReapWarmContainer {
+            name: name.to_string(),
+            status: status.to_string(),
+            in_flight: 0,
+            launched_at_ms: last_used_at_ms,
+            last_used_at_ms,
+        }
+    }
+
+    #[test]
+    fn stale_idle_selection_preserves_min_warm() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("old-a", "idle", 1_000),
+                warm("old-b", "idle", 2_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.contains_key("old-a"));
+        assert_eq!(targets.len(), 1);
+    }
+
+    #[test]
+    fn stale_idle_selection_ignores_busy_and_recent_workers() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("floor", "idle", 1_000),
+                warm("recent", "idle", 1_950_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.contains_key("floor"));
+        assert!(!targets.contains_key("recent"));
+        assert!(!targets.contains_key("busy"));
+        assert_eq!(targets.len(), 1);
+    }
+
+    #[test]
+    fn stale_idle_selection_keeps_last_idle_worker() {
+        let pools = vec![pool(
+            "nodejs",
+            1,
+            900,
+            vec![
+                warm("last-idle", "idle", 1_000),
+                warm("busy", "busy", 1_000),
+            ],
+        )];
+
+        let targets = select_stale_pool_idle_containers(&pools, 2_000_000, 0);
+
+        assert!(targets.is_empty());
     }
 }

@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-apostille-services-server
+  namespace: default
+  labels:
+    app: dd-apostille-services-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-apostille-services-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-07-initial'
+      labels:
+        app: dd-apostille-services-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: apostille-services-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              TOOLCHAIN_BIN=/usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin
+              export PATH="/usr/local/cargo/bin:${TOOLCHAIN_BIN}:${PATH}"
+              export RUSTC="${TOOLCHAIN_BIN}/rustc"
+              export CARGO="${TOOLCHAIN_BIN}/cargo"
+              export CARGO_HOME=/var/cache/dd-apostille-services-server/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-apostille-services-server/target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/apostille-services-server-rs
+              exec "$CARGO" run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8122'
+            - name: RUST_LOG
+              value: dd_apostille_services_server=info,tower_http=info
+            - name: APOSTILLE_DEFAULT_TARGET_LANGUAGE
+              value: en
+            - name: APOSTILLE_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: APOSTILLE_ALLOW_UNAUTHENTICATED_WEBHOOKS
+              value: 'false'
+            - name: APOSTILLE_ALLOW_PRIVATE_PROVIDER_URLS
+              value: 'false'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: APOSTILLE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APOSTILLE_WEBHOOK_SECRET
+                  optional: true
+            - name: APOSTILLE_PROVIDER_CONFIG_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APOSTILLE_PROVIDER_CONFIG_JSON
+                  optional: true
+            - name: APOSTILLE_TRANSLATION_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APOSTILLE_TRANSLATION_BASE_URL
+                  optional: true
+            - name: APOSTILLE_TRANSLATION_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APOSTILLE_TRANSLATION_AUTH_TOKEN
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8122
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-apostille-services-server
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          hostPath:
+            path: /var/cache/dd-apostille-services-server
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

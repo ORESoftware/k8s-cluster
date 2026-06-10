@@ -1,0 +1,359 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "patent-filing-rs",
+  "language": "rust",
+  "routeCount": 20,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 10,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "root"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/descriptor",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "descriptor"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/matters",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "matters"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/matters/:matter_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "matter"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/packages/provisional",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "package_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readiness",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "readiness_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/review/package",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "review_package_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/search/plan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "search_plan_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ui/packages",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "package_form"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

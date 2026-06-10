@@ -1,13 +1,15 @@
 use std::{
     env,
+    fmt::Write as _,
     net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{config::Region, primitives::ByteStream};
+use aws_sdk_s3::{config::Region, primitives::ByteStream, types::ServerSideEncryption};
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
@@ -92,6 +94,8 @@ const DEFAULT_GENERATOR_INTERVAL_SECONDS: u64 = 3600;
 const DEFAULT_GENERATOR_MAX_PER_SWEEP: i64 = 2;
 const DEFAULT_GENERATION_MAX_ATTEMPTS: i64 = 8;
 const DEFAULT_SONG_DURATION_SECONDS: f64 = 180.0;
+const MIN_SONG_DURATION_SECONDS: f64 = 10.0;
+const MAX_SONG_DURATION_SECONDS: f64 = 600.0;
 const DEFAULT_MIN_LISTENABILITY_SCORE: f64 = 0.55;
 const DEFAULT_VOTE_THROTTLE_SECONDS: u64 = 5;
 const MAX_LIST_LIMIT: i64 = 100;
@@ -120,6 +124,7 @@ struct Config {
     min_listenability_score: f64,
     redis_prefix: String,
     vote_hash_salt: String,
+    vote_hash_salt_configured: bool,
     vote_throttle_seconds: u64,
     storage: StorageConfig,
 }
@@ -182,6 +187,11 @@ struct HealthResponse {
 #[derive(Deserialize)]
 struct SongsQuery {
     limit: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct VoteQuery {
+    value: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -334,8 +344,10 @@ fn config_from_env() -> Config {
     let daily_target_min = env_i64("MUSIC_DAILY_TARGET_MIN", DEFAULT_DAILY_TARGET_MIN);
     let daily_target_max =
         env_i64("MUSIC_DAILY_TARGET_MAX", DEFAULT_DAILY_TARGET_MAX).max(daily_target_min);
-    let vote_hash_salt = first_env(&["MUSIC_VOTE_HASH_SALT", "SERVER_AUTH_SECRET"])
-        .unwrap_or_else(|| "dd-music-rs-local-anonymous-votes".to_string());
+    let vote_hash_salt = first_env(&["MUSIC_VOTE_HASH_SALT", "SERVER_AUTH_SECRET"]);
+    let vote_hash_salt_configured = vote_hash_salt.is_some();
+    let vote_hash_salt =
+        vote_hash_salt.unwrap_or_else(|| format!("dd-music-rs-local-{}", Uuid::new_v4()));
 
     Config {
         database_url: first_env(&[
@@ -369,7 +381,8 @@ fn config_from_env() -> Config {
         song_duration_seconds: env_f64(
             "MUSIC_SONG_DURATION_SECONDS",
             DEFAULT_SONG_DURATION_SECONDS,
-        ),
+        )
+        .clamp(MIN_SONG_DURATION_SECONDS, MAX_SONG_DURATION_SECONDS),
         min_listenability_score: env_f64(
             "MUSIC_MIN_LISTENABILITY_SCORE",
             DEFAULT_MIN_LISTENABILITY_SCORE,
@@ -379,6 +392,7 @@ fn config_from_env() -> Config {
             dd_redis_interfaces::MUSIC_DAILY_GENERATION_TARGET_KEY_DEFAULT_PREFIX.to_string()
         }),
         vote_hash_salt,
+        vote_hash_salt_configured,
         vote_throttle_seconds: env_u64(
             "MUSIC_VOTE_THROTTLE_SECONDS",
             DEFAULT_VOTE_THROTTLE_SECONDS,
@@ -439,7 +453,8 @@ impl AppState {
             .get_multiplexed_async_connection()
             .await
             .map_err(|error| {
-                ServiceError::Unavailable(format!("redis connection failed: {error}"))
+                eprintln!("dd-music-rs redis connection failed: {error}");
+                ServiceError::Unavailable("redis connection failed".to_string())
             })?;
         *guard = Some(connection.clone());
         Ok(connection)
@@ -460,18 +475,23 @@ fn now_ms() -> u128 {
 }
 
 async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
-    let database_url = config.database_url.as_deref().ok_or_else(|| {
-        ServiceError::Unavailable("postgres database URL is not configured".to_string())
-    })?;
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| ServiceError::Unavailable("music service is not ready".to_string()))?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-    let (client, connection) = tokio_postgres::connect(database_url, tls)
-        .await
-        .map_err(|error| ServiceError::Unavailable(format!("postgres connect failed: {error}")))?;
+    let (client, connection) =
+        tokio_postgres::connect(database_url, tls)
+            .await
+            .map_err(|error| {
+                eprintln!("dd-music-rs postgres connect failed: {error}");
+                ServiceError::Unavailable("postgres connect failed".to_string())
+            })?;
     tokio::spawn(async move {
         if let Err(error) = connection.await {
             eprintln!("dd-music-rs postgres connection error: {error}");
@@ -493,7 +513,7 @@ fn require_server_auth(headers: &HeaderMap, config: &Config) -> Result<(), Servi
         .or_else(|| headers.get("Auth"))
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
-    if presented == expected {
+    if constant_time_eq(presented, expected) {
         Ok(())
     } else {
         Err(ServiceError::Unauthorized)
@@ -514,28 +534,26 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    let storage_ready = match &state.config.storage {
-        StorageConfig::S3(config) => {
-            !config.bucket.is_empty() && !config.public_base_url.is_empty() && state.s3.is_some()
-        }
-        StorageConfig::Local(config) => {
-            !config.root.is_empty() && !config.public_base_url.is_empty()
-        }
-    };
-    let ok = state.config.database_url.is_some() && storage_ready;
-    let status = if ok {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
+    let storage_ready = storage_ready(&state.config.storage, state.s3.is_some());
+    let internal_auth_ready =
+        state.config.allow_unauthenticated_internal || state.config.server_auth_secret.is_some();
+    let generation_ready = state.config.database_url.is_some()
+        && storage_ready
+        && state.config.vote_hash_salt_configured
+        && internal_auth_ready;
+    let status = StatusCode::OK;
     record_request("GET", "/readyz", status);
     (
         status,
         Json(json!({
-            "ok": ok,
+            "ok": true,
+            "generationReady": generation_ready,
+            "degraded": !generation_ready,
             "postgresConfigured": state.config.database_url.is_some(),
             "storageProvider": storage_provider_name(&state.config.storage),
-            "storageReady": storage_ready
+            "storageReady": storage_ready,
+            "voteHashSaltConfigured": state.config.vote_hash_salt_configured,
+            "internalAuthReady": internal_auth_ready
         })),
     )
 }
@@ -573,13 +591,47 @@ async fn home() -> Html<&'static str> {
     Html(HOME_HTML)
 }
 
+async fn songs_shelf(
+    State(state): State<AppState>,
+    Query(query): Query<SongsQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(36).clamp(1, MAX_LIST_LIMIT);
+    let result = async {
+        let client = connect_postgres(&state.config).await?;
+        fetch_published_songs(&client, limit).await
+    }
+    .await;
+
+    match result {
+        Ok(songs) => {
+            record_request("GET", "/songs/shelf", StatusCode::OK);
+            (StatusCode::OK, Html(render_song_shelf(&songs))).into_response()
+        }
+        Err(error) => {
+            eprintln!("dd-music-rs song shelf unavailable: {error:?}");
+            record_request("GET", "/songs/shelf", StatusCode::OK);
+            (StatusCode::OK, Html(render_shelf_error())).into_response()
+        }
+    }
+}
+
 async fn list_songs(
     State(state): State<AppState>,
     Query(query): Query<SongsQuery>,
 ) -> Result<Json<SongsResponse>, ServiceError> {
     let limit = query.limit.unwrap_or(24).clamp(1, MAX_LIST_LIMIT);
-    let client = connect_postgres(&state.config).await?;
-    let songs = fetch_published_songs(&client, limit).await?;
+    let songs = match async {
+        let client = connect_postgres(&state.config).await?;
+        fetch_published_songs(&client, limit).await
+    }
+    .await
+    {
+        Ok(songs) => songs,
+        Err(error) => {
+            eprintln!("dd-music-rs song list unavailable: {error:?}");
+            Vec::new()
+        }
+    };
     record_request("GET", "/songs", StatusCode::OK);
     Ok(Json(SongsResponse {
         ok: true,
@@ -592,6 +644,7 @@ async fn get_song(
     State(state): State<AppState>,
     Path(song_id): Path<String>,
 ) -> Result<Json<SongRow>, ServiceError> {
+    validate_song_id(&song_id)?;
     let client = connect_postgres(&state.config).await?;
     let song = fetch_song(&client, &song_id).await?;
     record_request("GET", "/songs/:song_id", StatusCode::OK);
@@ -602,6 +655,7 @@ async fn song_audio(
     State(state): State<AppState>,
     Path(song_id): Path<String>,
 ) -> Result<Redirect, ServiceError> {
+    validate_song_id(&song_id)?;
     let client = connect_postgres(&state.config).await?;
     let sql = format!(
         "update {songs}
@@ -619,6 +673,12 @@ async fn song_audio(
     let Some(audio_url) = audio_url else {
         return Err(ServiceError::NotFound("song has no audio URL".to_string()));
     };
+    if !is_allowed_audio_url(&state.config.storage, &audio_url) {
+        eprintln!("dd-music-rs blocked untrusted audio URL for song {song_id}");
+        return Err(ServiceError::NotFound(
+            "song audio URL is not available".to_string(),
+        ));
+    }
     record_request("GET", "/songs/:song_id/audio", StatusCode::FOUND);
     Ok(Redirect::temporary(&audio_url))
 }
@@ -626,9 +686,12 @@ async fn song_audio(
 async fn vote_song(
     State(state): State<AppState>,
     Path(song_id): Path<String>,
+    Query(query): Query<VoteQuery>,
     headers: HeaderMap,
-    Json(request): Json<VoteRequest>,
-) -> Result<Json<VoteResponse>, ServiceError> {
+    body: Bytes,
+) -> Result<Response, ServiceError> {
+    validate_song_id(&song_id)?;
+    let request = vote_request_from_parts(query, &headers, &body)?;
     if !matches!(request.value, -1 | 1) {
         return Err(ServiceError::BadRequest(
             "vote value must be 1 or -1".to_string(),
@@ -650,7 +713,11 @@ async fn vote_song(
         .with_label_values(&[if request.value > 0 { "up" } else { "down" }])
         .inc();
     record_request("POST", "/songs/:song_id/votes", StatusCode::OK);
-    Ok(Json(VoteResponse { ok: true, song }))
+    if is_htmx_request(&headers) {
+        Ok(Html(render_song_card(&song)).into_response())
+    } else {
+        Ok(Json(VoteResponse { ok: true, song }).into_response())
+    }
 }
 
 async fn generate_internal(
@@ -899,10 +966,14 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
                 .bucket(&config.bucket)
                 .key(&key)
                 .content_type("audio/wav")
+                .server_side_encryption(ServerSideEncryption::Aes256)
                 .body(ByteStream::from(song.audio_bytes.clone()))
                 .send()
                 .await
-                .map_err(|error| ServiceError::Unavailable(format!("S3 upload failed: {error}")))?;
+                .map_err(|error| {
+                    eprintln!("dd-music-rs S3 upload failed: {error}");
+                    ServiceError::Unavailable("S3 upload failed".to_string())
+                })?;
             Ok(StoredObject {
                 provider: "s3".to_string(),
                 bucket: Some(config.bucket.clone()),
@@ -916,13 +987,15 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
             let path = std::path::Path::new(&config.root).join(&key);
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|error| {
-                    ServiceError::Unavailable(format!("local storage mkdir failed: {error}"))
+                    eprintln!("dd-music-rs local storage mkdir failed: {error}");
+                    ServiceError::Unavailable("local storage mkdir failed".to_string())
                 })?;
             }
             tokio::fs::write(&path, &song.audio_bytes)
                 .await
                 .map_err(|error| {
-                    ServiceError::Unavailable(format!("local storage write failed: {error}"))
+                    eprintln!("dd-music-rs local storage write failed: {error}");
+                    ServiceError::Unavailable("local storage write failed".to_string())
                 })?;
             Ok(StoredObject {
                 provider: "local".to_string(),
@@ -1101,19 +1174,26 @@ async fn throttle_vote(
     );
     let mut connection = match state.redis_connection().await {
         Ok(connection) => connection,
-        Err(_) => return Ok(()),
+        Err(error) => {
+            eprintln!("dd-music-rs vote throttle unavailable: {error:?}");
+            return Ok(());
+        }
     };
-    let response: Option<String> = redis::cmd("SET")
+    let response: redis::RedisResult<Option<String>> = redis::cmd("SET")
         .arg(&key)
         .arg("1")
         .arg("NX")
         .arg("EX")
         .arg(state.config.vote_throttle_seconds)
         .query_async(&mut connection)
-        .await
-        .map_err(|error| {
-            ServiceError::Unavailable(format!("redis vote throttle failed: {error}"))
-        })?;
+        .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            eprintln!("dd-music-rs redis vote throttle failed: {error}");
+            return Ok(());
+        }
+    };
     if response.is_none() {
         return Err(ServiceError::TooManyRequests(
             "vote accepted too recently; wait a moment before changing it".to_string(),
@@ -1165,7 +1245,8 @@ async fn acquire_generation_lock(state: &AppState, token: &str) -> Result<bool, 
         .query_async(&mut connection)
         .await
         .map_err(|error| {
-            ServiceError::Unavailable(format!("redis generation lock failed: {error}"))
+            eprintln!("dd-music-rs redis generation lock failed: {error}");
+            ServiceError::Unavailable("redis generation lock failed".to_string())
         })?;
     Ok(response.is_some())
 }
@@ -1251,12 +1332,200 @@ fn song_from_row(row: &tokio_postgres::Row) -> SongRow {
     }
 }
 
-fn visitor_hash(headers: &HeaderMap, salt: &str) -> String {
-    let forwarded = headers
+fn vote_request_from_parts(
+    query: VoteQuery,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<VoteRequest, ServiceError> {
+    if let Some(value) = query.value {
+        return Ok(VoteRequest { value });
+    }
+    if body.is_empty() {
+        return Err(ServiceError::BadRequest(
+            "vote value must be supplied".to_string(),
+        ));
+    }
+
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if content_type.starts_with("application/x-www-form-urlencoded") {
+        if let Some(value) = form_vote_value(body) {
+            return Ok(VoteRequest { value });
+        }
+    }
+
+    serde_json::from_slice::<VoteRequest>(body)
+        .map_err(|_| ServiceError::BadRequest("vote value must be supplied".to_string()))
+}
+
+fn form_vote_value(body: &[u8]) -> Option<i32> {
+    let text = std::str::from_utf8(body).ok()?;
+    for pair in text.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        if parts.next()? == "value" {
+            return parts.next()?.parse::<i32>().ok();
+        }
+    }
+    None
+}
+
+fn is_htmx_request(headers: &HeaderMap) -> bool {
+    headers
+        .get("HX-Request")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+fn render_song_shelf(songs: &[SongRow]) -> String {
+    let mut html = String::new();
+    let _ = write!(
+        html,
+        r##"<div class="shelf-head">
+  <div>
+    <p class="eyebrow">Latest transmissions</p>
+    <h2>Generated today and recently</h2>
+  </div>
+  <div class="shelf-actions">
+    <span>{} published tracks</span>
+    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh</button>
+  </div>
+</div>"##,
+        songs.len()
+    );
+
+    if songs.is_empty() {
+        html.push_str(
+            r#"<div class="empty">No published songs yet. The generator will fill this shelf once Postgres and storage are ready.</div>"#,
+        );
+        return html;
+    }
+
+    html.push_str(r#"<div class="grid">"#);
+    for song in songs {
+        html.push_str(&render_song_card(song));
+    }
+    html.push_str("</div>");
+    html
+}
+
+fn render_shelf_error() -> String {
+    r##"<div class="shelf-head">
+  <div>
+    <p class="eyebrow">Latest transmissions</p>
+    <h2>Generated today and recently</h2>
+  </div>
+  <div class="shelf-actions">
+    <span>Offline</span>
+    <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Retry</button>
+  </div>
+</div>
+<div class="empty error">Songs are unavailable right now.</div>"##
+        .to_string()
+}
+
+fn render_song_card(song: &SongRow) -> String {
+    let id = escape_html(&song.id);
+    let title = escape_html(&song.title);
+    let genre = escape_html(&song.genre);
+    let duration = format!("{:.0}s", song.duration_seconds);
+    let bpm = format!("{:.1} bpm", song.bpm);
+    let quality = format!("{:.2}", song.listenability_score);
+    let rms = format!("{:.3}", summary_number(&song.summary, "rms"));
+    let centroid = format!(
+        "{:.0} Hz",
+        summary_number(&song.summary, "spectralCentroidHz")
+    );
+    let published = song
+        .published_at
+        .as_deref()
+        .map(escape_html)
+        .unwrap_or_else(|| "recent".to_string());
+    let audio = song
+        .audio_url
+        .as_deref()
+        .map(|url| {
+            format!(
+                r#"<audio controls preload="none" src="{}"></audio>"#,
+                escape_html(url)
+            )
+        })
+        .unwrap_or_else(|| r#"<div class="empty mini">Audio not available</div>"#.to_string());
+
+    format!(
+        r##"<article id="song-{id}" class="song">
+  <div>
+    <h3>{title}</h3>
+    <div class="meta">
+      <span class="pill">{genre}</span>
+      <span class="pill">{duration}</span>
+      <span class="pill">{bpm}</span>
+    </div>
+  </div>
+  {audio}
+  <div class="quality">
+    <span>quality {quality}</span>
+    <span>plays {plays}</span>
+    <span>rms {rms}</span>
+    <span>centroid {centroid}</span>
+  </div>
+  <div class="votes">
+    <button type="button" hx-post="songs/{id}/votes?value=1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Upvote {title}">Up</button>
+    <strong class="score">{score}</strong>
+    <button type="button" hx-post="songs/{id}/votes?value=-1" hx-target="#song-{id}" hx-swap="outerHTML" aria-label="Downvote {title}">Down</button>
+    <span class="sub">{up} up / {down} down</span>
+  </div>
+  <p class="published">Published {published}</p>
+</article>"##,
+        plays = song.play_count,
+        score = song.vote_score,
+        up = song.up_votes,
+        down = song.down_votes
+    )
+}
+
+fn summary_number(summary: &Value, key: &str) -> f64 {
+    summary.get(key).and_then(Value::as_f64).unwrap_or(0.0)
+}
+
+fn escape_html(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn client_ip_for_hash(headers: &HeaderMap) -> String {
+    if let Some(real_ip) = headers
+        .get("X-Real-IP")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return real_ip.to_string();
+    }
+    headers
         .get("X-Forwarded-For")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .unwrap_or("unknown");
+        .and_then(|value| value.split(',').next_back())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn visitor_hash(headers: &HeaderMap, salt: &str) -> String {
+    let forwarded = client_ip_for_hash(headers);
     let user_agent = headers
         .get(header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
@@ -1429,6 +1698,45 @@ fn join_url(base: &str, key: &str) -> String {
     )
 }
 
+fn validate_song_id(song_id: &str) -> Result<(), ServiceError> {
+    Uuid::parse_str(song_id)
+        .map(|_| ())
+        .map_err(|_| ServiceError::BadRequest("song id must be a UUID".to_string()))
+}
+
+fn storage_ready(storage: &StorageConfig, s3_client_configured: bool) -> bool {
+    match storage {
+        StorageConfig::S3(config) => {
+            !config.bucket.is_empty() && !config.public_base_url.is_empty() && s3_client_configured
+        }
+        StorageConfig::Local(config) => {
+            !config.root.is_empty() && !config.public_base_url.is_empty()
+        }
+    }
+}
+
+fn is_allowed_audio_url(storage: &StorageConfig, audio_url: &str) -> bool {
+    let base = match storage {
+        StorageConfig::S3(config) => config.public_base_url.as_str(),
+        StorageConfig::Local(config) => config.public_base_url.as_str(),
+    }
+    .trim_end_matches('/');
+    !base.is_empty() && (audio_url == base || audio_url.starts_with(&format!("{base}/")))
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let left_byte = left.get(index).copied().unwrap_or(0);
+        let right_byte = right.get(index).copied().unwrap_or(0);
+        diff |= (left_byte ^ right_byte) as usize;
+    }
+    diff == 0
+}
+
 fn millis_i32(value: f64) -> i32 {
     (value.max(0.0) * 1000.0)
         .round()
@@ -1455,13 +1763,15 @@ fn storage_provider_name(storage: &StorageConfig) -> &'static str {
 }
 
 fn db_error(error: tokio_postgres::Error) -> ServiceError {
-    ServiceError::Internal(format!("postgres query failed: {error}"))
+    eprintln!("dd-music-rs postgres query failed: {error}");
+    ServiceError::Internal("postgres query failed".to_string())
 }
 
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
         .route("/songs", get(list_songs))
+        .route("/songs/shelf", get(songs_shelf))
         .route("/songs/:song_id", get(get_song))
         .route("/songs/:song_id/audio", get(song_audio))
         .route("/songs/:song_id/votes", post(vote_song))
@@ -1488,8 +1798,13 @@ async fn main() {
         .await
         .expect("failed to initialize dd-music-rs state");
 
-    if state.config.generator_enabled {
+    if state.config.generator_enabled
+        && state.config.database_url.is_some()
+        && storage_ready(&state.config.storage, state.s3.is_some())
+    {
         tokio::spawn(run_generator_loop(state.clone()));
+    } else if state.config.generator_enabled {
+        eprintln!("dd-music-rs generator disabled until postgres and storage are configured");
     }
 
     let addr: SocketAddr = format!("{host}:{port}")
@@ -1509,138 +1824,259 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
-const HOME_HTML: &str = r#"<!doctype html>
+const HOME_HTML: &str = r##"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>dd music</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
   <style>
-    :root { color-scheme: light; --bg:#f6f7f4; --ink:#171b1f; --muted:#63707a; --panel:#fff; --line:#d8ded7; --green:#236b4b; --coral:#b4463a; --blue:#285f8f; --amber:#906b1f; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    header, main { width:min(1120px, calc(100% - 28px)); margin:0 auto; }
-    header { padding:24px 0 16px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; border-bottom:1px solid var(--line); }
-    h1 { margin:0; font-size:30px; line-height:1.1; letter-spacing:0; }
-    .sub { margin:6px 0 0; color:var(--muted); max-width:62ch; }
-    .status { display:flex; align-items:center; gap:8px; color:var(--muted); white-space:nowrap; }
-    .dot { width:10px; height:10px; border-radius:50%; background:var(--amber); }
-    .dot.ok { background:var(--green); }
-    main { padding:18px 0 36px; }
-    .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
-    button { border:1px solid var(--line); background:var(--panel); color:var(--ink); min-height:34px; padding:6px 10px; border-radius:6px; cursor:pointer; font:inherit; }
-    button:hover { border-color:#a9b4ad; }
+    :root {
+      color-scheme: light;
+      --bg:#f6f7f4;
+      --ink:#14181c;
+      --muted:#5d6972;
+      --panel:#ffffff;
+      --line:#d6ddd6;
+      --green:#236b4b;
+      --coral:#b4463a;
+      --blue:#285f8f;
+      --amber:#906b1f;
+      --night:#17212a;
+      --mint:#dceee4;
+    }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body {
+      margin:0;
+      background:var(--bg);
+      color:var(--ink);
+      font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color:inherit; text-decoration:none; }
+    button, .button {
+      border:1px solid var(--line);
+      background:var(--panel);
+      color:var(--ink);
+      min-height:36px;
+      padding:7px 11px;
+      border-radius:6px;
+      cursor:pointer;
+      font:inherit;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+    }
+    button:hover, .button:hover { border-color:#9fafaa; }
+    .page-nav, .hero-inner, .section-inner { width:min(1160px, calc(100% - 28px)); margin:0 auto; }
+    .page-nav {
+      height:64px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      border-bottom:1px solid var(--line);
+    }
+    .brand { font-weight:800; font-size:18px; letter-spacing:0; }
+    .nav-links { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:13px; }
+    .hero {
+      min-height:calc(100svh - 64px);
+      display:flex;
+      align-items:center;
+      overflow:hidden;
+      background:#eef3ed;
+      border-bottom:1px solid var(--line);
+    }
+    .hero-inner {
+      min-height:calc(100svh - 64px);
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) minmax(340px, 0.8fr);
+      align-items:center;
+      gap:32px;
+      padding:34px 0 44px;
+    }
+    .eyebrow {
+      margin:0 0 8px;
+      color:var(--green);
+      font-weight:800;
+      text-transform:uppercase;
+      font-size:12px;
+      letter-spacing:0;
+    }
+    h1 {
+      margin:0;
+      font-size:clamp(52px, 9vw, 112px);
+      line-height:0.9;
+      letter-spacing:0;
+    }
+    h2 { margin:0; font-size:28px; line-height:1.1; letter-spacing:0; }
+    h3 { margin:0; font-size:18px; line-height:1.2; letter-spacing:0; }
+    .lede { margin:18px 0 0; color:#34404a; max-width:58ch; font-size:18px; line-height:1.55; }
+    .hero-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
+    .button.primary { background:var(--night); border-color:var(--night); color:#fff; }
+    .stats { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-top:28px; max-width:680px; }
+    .stat {
+      border:1px solid rgba(20,24,28,0.14);
+      background:rgba(255,255,255,0.58);
+      border-radius:8px;
+      padding:12px;
+      min-height:78px;
+    }
+    .stat strong { display:block; font-size:22px; color:var(--blue); }
+    .stat span { color:var(--muted); font-size:12px; }
+    .visual {
+      min-height:440px;
+      position:relative;
+      display:grid;
+      align-items:center;
+      overflow:hidden;
+      border-left:1px solid rgba(20,24,28,0.10);
+      padding-left:26px;
+    }
+    .wave {
+      display:grid;
+      grid-template-columns:repeat(24, 1fr);
+      align-items:center;
+      gap:7px;
+      min-height:300px;
+    }
+    .bar {
+      min-height:24px;
+      border-radius:999px;
+      background:linear-gradient(180deg, var(--blue), var(--green));
+      opacity:0.82;
+      box-shadow:0 20px 40px rgba(23,33,42,0.12);
+    }
+    .bar:nth-child(3n) { background:linear-gradient(180deg, var(--coral), var(--amber)); }
+    .bar:nth-child(4n) { background:linear-gradient(180deg, var(--green), #7aa18d); }
+    .bar:nth-child(1) { height:74px; } .bar:nth-child(2) { height:126px; }
+    .bar:nth-child(3) { height:210px; } .bar:nth-child(4) { height:154px; }
+    .bar:nth-child(5) { height:260px; } .bar:nth-child(6) { height:132px; }
+    .bar:nth-child(7) { height:90px; } .bar:nth-child(8) { height:226px; }
+    .bar:nth-child(9) { height:172px; } .bar:nth-child(10) { height:288px; }
+    .bar:nth-child(11) { height:124px; } .bar:nth-child(12) { height:76px; }
+    .bar:nth-child(13) { height:194px; } .bar:nth-child(14) { height:246px; }
+    .bar:nth-child(15) { height:112px; } .bar:nth-child(16) { height:272px; }
+    .bar:nth-child(17) { height:148px; } .bar:nth-child(18) { height:84px; }
+    .bar:nth-child(19) { height:236px; } .bar:nth-child(20) { height:166px; }
+    .bar:nth-child(21) { height:292px; } .bar:nth-child(22) { height:118px; }
+    .bar:nth-child(23) { height:202px; } .bar:nth-child(24) { height:96px; }
+    .visual-caption {
+      color:var(--muted);
+      font-size:12px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      border-top:1px solid rgba(20,24,28,0.12);
+      padding-top:12px;
+    }
+    main { padding:26px 0 42px; }
+    .shelf-band { scroll-margin-top:24px; }
+    #shelf.htmx-request { opacity:0.72; }
+    .shelf-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:16px;
+      margin-bottom:14px;
+    }
+    .shelf-actions { display:flex; align-items:center; gap:10px; color:var(--muted); white-space:nowrap; }
     .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; }
-    .song { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:13px; display:flex; flex-direction:column; gap:10px; min-height:260px; }
-    .song h2 { font-size:18px; margin:0; letter-spacing:0; }
-    .meta { display:flex; flex-wrap:wrap; gap:6px; color:var(--muted); font-size:12px; }
+    .song {
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:8px;
+      padding:13px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:288px;
+    }
+    .meta { display:flex; flex-wrap:wrap; gap:6px; color:var(--muted); font-size:12px; margin-top:8px; }
     .pill { border:1px solid var(--line); border-radius:6px; padding:2px 6px; background:#fbfcfa; }
     audio { width:100%; height:42px; }
-    .votes { display:flex; align-items:center; gap:8px; margin-top:auto; }
-    .score { min-width:42px; text-align:center; font-weight:700; color:var(--blue); }
+    .votes { display:flex; align-items:center; gap:8px; margin-top:auto; flex-wrap:wrap; }
+    .score { min-width:42px; text-align:center; font-weight:800; color:var(--blue); }
     .quality { color:var(--muted); font-size:12px; display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; }
+    .sub, .published { color:var(--muted); }
+    .published { margin:0; font-size:12px; }
     .empty { border:1px dashed var(--line); border-radius:8px; padding:24px; color:var(--muted); background:#fff; }
+    .empty.mini { padding:12px; }
     .error { color:var(--coral); }
-    @media (max-width: 700px) {
-      header { display:block; }
-      .status { margin-top:10px; }
-      .toolbar { align-items:flex-start; flex-direction:column; }
+    @media (max-width: 860px) {
+      .hero-inner { grid-template-columns:1fr; align-items:start; }
+      .hero { min-height:auto; }
+      .hero-inner { min-height:auto; }
+      .visual { min-height:260px; border-left:0; padding-left:0; }
+      .wave { min-height:190px; gap:5px; }
+      .stats { grid-template-columns:1fr; }
+    }
+    @media (max-width: 620px) {
+      .nav-links a:not(.button) { display:none; }
+      .shelf-head { align-items:flex-start; flex-direction:column; }
+      .shelf-actions { white-space:normal; }
+      h1 { font-size:52px; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>dd music</h1>
-      <p class="sub">Generated microtonal tracks, published from the Rust DES music engine. Vote anonymously; the daily generator keeps the shelf moving.</p>
+  <nav class="page-nav" aria-label="Primary">
+    <a class="brand" href=".">dd music</a>
+    <div class="nav-links">
+      <a href="#shelf-section">Tracks</a>
+      <a class="button" href="#shelf-section">Listen</a>
     </div>
-    <div class="status"><span id="status-dot" class="dot"></span><span id="status-text">Loading songs</span></div>
+  </nav>
+  <header class="hero">
+    <div class="hero-inner">
+      <div>
+        <p class="eyebrow">Rust generated music server</p>
+        <h1>dd music</h1>
+        <p class="lede">Microtonal tracks from the DES music engine, published as a daily shelf with native browser playback and anonymous voting.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#shelf-section">Listen now</a>
+          <button type="button" hx-get="songs/shelf?limit=36" hx-target="#shelf" hx-swap="innerHTML">Refresh shelf</button>
+        </div>
+        <div class="stats" aria-label="Service profile">
+          <div class="stat"><strong>3-5</strong><span>new tracks targeted per day</span></div>
+          <div class="stat"><strong>DES</strong><span>in-process Rust generation</span></div>
+          <div class="stat"><strong>S3</strong><span>encrypted published audio</span></div>
+        </div>
+      </div>
+      <div class="visual" aria-hidden="true">
+        <div class="wave">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+        </div>
+        <div class="visual-caption"><span>daily generator</span><span>vote-shaped shelf</span></div>
+      </div>
+    </div>
   </header>
   <main>
-    <div class="toolbar">
-      <div id="count" class="sub"></div>
-      <button id="refresh" type="button">Refresh</button>
-    </div>
-    <section id="songs" class="grid"></section>
-  </main>
-  <script>
-    const songsEl = document.getElementById("songs");
-    const statusText = document.getElementById("status-text");
-    const statusDot = document.getElementById("status-dot");
-    const countEl = document.getElementById("count");
-    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
-    const fmt = (value, digits = 2) => Number(value ?? 0).toFixed(digits);
-
-    async function vote(songId, value) {
-      const response = await fetch(`songs/${encodeURIComponent(songId)}/votes`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ value })
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `vote failed ${response.status}`);
-      }
-      await loadSongs();
-    }
-
-    function renderSong(song) {
-      const audio = song.audioUrl ? `<audio controls preload="none" src="${esc(song.audioUrl)}"></audio>` : `<div class="empty">Audio not available</div>`;
-      return `<article class="song">
-        <div>
-          <h2>${esc(song.title)}</h2>
-          <div class="meta">
-            <span class="pill">${esc(song.genre)}</span>
-            <span class="pill">${fmt(song.durationSeconds, 0)}s</span>
-            <span class="pill">${fmt(song.bpm, 1)} bpm</span>
+    <section id="shelf-section" class="shelf-band">
+      <div class="section-inner">
+        <div id="shelf" hx-get="songs/shelf?limit=36" hx-trigger="load, every 120s" hx-swap="innerHTML">
+          <div class="shelf-head">
+            <div>
+              <p class="eyebrow">Latest transmissions</p>
+              <h2>Generated today and recently</h2>
+            </div>
+            <div class="shelf-actions"><span>Loading</span></div>
           </div>
+          <div class="empty">Loading songs.</div>
         </div>
-        ${audio}
-        <div class="quality">
-          <span>quality ${fmt(song.listenabilityScore, 2)}</span>
-          <span>plays ${song.playCount}</span>
-          <span>rms ${fmt(song.summary?.rms, 3)}</span>
-          <span>centroid ${fmt(song.summary?.spectralCentroidHz, 0)} Hz</span>
-        </div>
-        <div class="votes">
-          <button type="button" data-vote="1" data-song="${esc(song.id)}">Up</button>
-          <strong class="score">${song.voteScore}</strong>
-          <button type="button" data-vote="-1" data-song="${esc(song.id)}">Down</button>
-          <span class="sub">${song.upVotes} up / ${song.downVotes} down</span>
-        </div>
-      </article>`;
-    }
-
-    async function loadSongs() {
-      statusText.textContent = "Loading songs";
-      statusDot.className = "dot";
-      const response = await fetch("songs?limit=36", { cache: "no-store" });
-      if (!response.ok) throw new Error(`songs failed ${response.status}`);
-      const data = await response.json();
-      countEl.textContent = `${data.songs.length} published tracks`;
-      songsEl.innerHTML = data.songs.length ? data.songs.map(renderSong).join("") : `<div class="empty">No published songs yet.</div>`;
-      statusText.textContent = "Live";
-      statusDot.className = "dot ok";
-    }
-
-    document.getElementById("refresh").addEventListener("click", () => loadSongs().catch(showError));
-    songsEl.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-vote]");
-      if (!button) return;
-      vote(button.dataset.song, Number(button.dataset.vote)).catch(showError);
-    });
-    function showError(error) {
-      const message = error.message || error;
-      statusText.innerHTML = `<span class="error">${esc(message)}</span>`;
-      statusDot.className = "dot";
-      countEl.textContent = "Songs unavailable";
-      songsEl.innerHTML = `<div class="empty error">${esc(message)}</div>`;
-    }
-    loadSongs().catch(showError);
-  </script>
+      </div>
+    </section>
+  </main>
 </body>
 </html>
-"#;
+"##;
 
 #[cfg(test)]
 mod tests {
@@ -1666,5 +2102,115 @@ mod tests {
     fn slug_includes_short_uuid() {
         let slug = slug_for_title("Signal Bloom", "12345678-aaaa-bbbb-cccc-123456789abc");
         assert_eq!(slug, "signal-bloom-12345678");
+    }
+
+    #[test]
+    fn client_ip_for_hash_prefers_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Forwarded-For",
+            "198.51.100.4, 203.0.113.9".parse().unwrap(),
+        );
+        headers.insert("X-Real-IP", "192.0.2.10".parse().unwrap());
+        assert_eq!(client_ip_for_hash(&headers), "192.0.2.10");
+    }
+
+    #[test]
+    fn client_ip_for_hash_uses_gateway_appended_forwarded_for() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "X-Forwarded-For",
+            "198.51.100.4, 203.0.113.9".parse().unwrap(),
+        );
+        assert_eq!(client_ip_for_hash(&headers), "203.0.113.9");
+    }
+
+    #[test]
+    fn validate_song_id_rejects_invalid_uuid() {
+        assert!(validate_song_id("not-a-song-id").is_err());
+        assert!(validate_song_id("12345678-aaaa-bbbb-cccc-123456789abc").is_ok());
+    }
+
+    #[test]
+    fn allowed_audio_url_stays_under_storage_base() {
+        let storage = StorageConfig::S3(S3StorageConfig {
+            bucket: "dd-music".to_string(),
+            public_base_url: "https://cdn.example.test/music".to_string(),
+            key_prefix: "generated".to_string(),
+        });
+        assert!(is_allowed_audio_url(
+            &storage,
+            "https://cdn.example.test/music/2026-06-07/song.wav"
+        ));
+        assert!(!is_allowed_audio_url(
+            &storage,
+            "https://cdn.example.test/music.evil/song.wav"
+        ));
+        assert!(!is_allowed_audio_url(
+            &storage,
+            "https://evil.example.test/music/song.wav"
+        ));
+    }
+
+    #[test]
+    fn constant_time_eq_matches_expected() {
+        assert!(constant_time_eq("secret", "secret"));
+        assert!(!constant_time_eq("secret", "secrex"));
+        assert!(!constant_time_eq("secret", "secret-longer"));
+    }
+
+    #[test]
+    fn vote_request_accepts_query_and_json_body() {
+        let headers = HeaderMap::new();
+        let query_request = vote_request_from_parts(
+            VoteQuery { value: Some(1) },
+            &headers,
+            Bytes::new().as_ref(),
+        )
+        .unwrap();
+        assert_eq!(query_request.value, 1);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+        let json_request = vote_request_from_parts(
+            VoteQuery { value: None },
+            &headers,
+            Bytes::from_static(br#"{"value":-1}"#).as_ref(),
+        )
+        .unwrap();
+        assert_eq!(json_request.value, -1);
+    }
+
+    #[test]
+    fn render_song_card_escapes_content_and_uses_htmx_votes() {
+        let id = "12345678-aaaa-bbbb-cccc-123456789abc".to_string();
+        let song = SongRow {
+            id: id.clone(),
+            title: "Signal <Bloom>".to_string(),
+            slug: "signal-bloom".to_string(),
+            genre: "House & Bass".to_string(),
+            status: "published".to_string(),
+            audio_url: Some(format!("songs/{id}/audio")),
+            content_type: Some("audio/wav".to_string()),
+            duration_seconds: 180.0,
+            bpm: 128.0,
+            listenability_score: 0.82,
+            vote_score: 3,
+            up_votes: 4,
+            down_votes: 1,
+            play_count: 9,
+            summary: json!({
+                "rms": 0.12345,
+                "spectralCentroidHz": 4321.0
+            }),
+            published_at: Some("2026-06-07T12:00:00Z".to_string()),
+            created_at: "2026-06-07T12:00:00Z".to_string(),
+        };
+
+        let html = render_song_card(&song);
+        assert!(html.contains("Signal &lt;Bloom&gt;"));
+        assert!(html.contains("House &amp; Bass"));
+        assert!(html.contains(&format!(r##"hx-post="songs/{id}/votes?value=1""##)));
+        assert!(html.contains(&format!(r##"hx-target="#song-{id}""##)));
     }
 }

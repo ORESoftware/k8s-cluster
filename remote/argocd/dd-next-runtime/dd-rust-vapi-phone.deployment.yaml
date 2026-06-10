@@ -12,8 +12,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-rust-vapi-phone
@@ -26,6 +26,12 @@ spec:
         dd.dev/redis-cache-client: 'true'
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       terminationGracePeriodSeconds: 20
       containers:
         - name: rust-vapi-phone
@@ -159,7 +165,7 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: VAPI_SERVER_SECRET
-                  optional: true
+                  optional: false
             - name: VAPI_SERVER_CREDENTIAL_ID
               valueFrom:
                 secretKeyRef:
@@ -172,7 +178,7 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-                  optional: true
+                  optional: false
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.
@@ -191,7 +197,7 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-                  optional: true
+                  optional: false
           ports:
             - name: http
               containerPort: 8113

@@ -29,7 +29,6 @@ resources:
   - dd-fabrication-server.serviceaccount.yaml
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
-  - dd-fabrication-server.hpa.yaml
   - dd-fabrication-server.networkpolicy.yaml
   - dd-des-simulator.deployment.yaml
   - dd-des-simulator.service.yaml
@@ -40,12 +39,21 @@ resources:
   - dd-music-rs.deployment.yaml
   - dd-music-rs.networkpolicy.yaml
   - dd-music-rs.service.yaml
+  - dd-sound-recorder-rs.deployment.yaml
+  - dd-sound-recorder-rs.networkpolicy.yaml
+  - dd-sound-recorder-rs.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.networkpolicy.yaml
   - dd-contract-service.service.yaml
+  - usacc-rest-api-backend-rs.deployment.yaml
+  - usacc-rest-api-backend-rs.networkpolicy.yaml
+  - usacc-rest-api-backend-rs.service.yaml
   - dd-escrow-rs.deployment.yaml
   - dd-escrow-rs.networkpolicy.yaml
   - dd-escrow-rs.service.yaml
+  - dd-document-rs.deployment.yaml
+  - dd-document-rs.networkpolicy.yaml
+  - dd-document-rs.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
   - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml
@@ -55,6 +63,11 @@ resources:
   - dd-economics-server.service.yaml
   - dd-public-data-server.deployment.yaml
   - dd-public-data-server.service.yaml
+  - dd-compliance-rs.deployment.yaml
+  - dd-compliance-rs.networkpolicy.yaml
+  - dd-compliance-rs.service.yaml
+  - dd-patent-filing-rs.deployment.yaml
+  - dd-patent-filing-rs.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
   - dd-live-mutex-submodule.deployment.yaml

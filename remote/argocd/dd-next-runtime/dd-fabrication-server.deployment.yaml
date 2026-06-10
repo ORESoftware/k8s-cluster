@@ -9,15 +9,15 @@ metadata:
     app.kubernetes.io/part-of: dd-next-runtime
     app.kubernetes.io/component: fabrication-planner
 spec:
-  replicas: 2
+  replicas: 0
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-fabrication-server
@@ -131,7 +131,13 @@ spec:
                 fi
               done
               for route in \
+                '"path": "/fabrication"' \
+                '"path": "/fabrication/landing"' \
+                '"path": "/fabrication/how-it-works"' \
+                '"path": "/fabrication/objective/coverage"' \
                 '"path": "/fabrication/capabilities"' \
+                '"path": "/fabrication/intake/catalog"' \
+                '"path": "/fabrication/templates/catalog"' \
                 '"path": "/fabrication/schema"' \
                 '"path": "/fabrication/examples"' \
                 '"path": "/fabrication/plan"' \
@@ -142,18 +148,72 @@ spec:
                 '"path": "/fabrication/instructions/improve"' \
                 '"path": "/fabrication/instructions/boundaries/review"' \
                 '"path": "/fabrication/machines/catalog"' \
+                '"path": "/fabrication/printers/catalog"' \
+                '"path": "/fabrication/fdm-printer/catalog"' \
+                '"path": "/fabrication/resin-printer/catalog"' \
+                '"path": "/fabrication/material-jetting/catalog"' \
+                '"path": "/fabrication/pellet-fgf/catalog"' \
+                '"path": "/fabrication/robotic-additive/catalog"' \
+                '"path": "/fabrication/sheet-lamination/catalog"' \
+                '"path": "/fabrication/directed-energy-deposition/catalog"' \
+                '"path": "/fabrication/composite-fiber/catalog"' \
+                '"path": "/fabrication/composite-layup/catalog"' \
+                '"path": "/fabrication/powder-bed/catalog"' \
+                '"path": "/fabrication/hot-wire-foam/catalog"' \
+                '"path": "/fabrication/printers/preflight/catalog"' \
+                '"path": "/fabrication/subtractive/catalog"' \
+                '"path": "/fabrication/subtractive/preflight/catalog"' \
+                '"path": "/fabrication/mill-router/catalog"' \
+                '"path": "/fabrication/vertical-mill/catalog"' \
+                '"path": "/fabrication/horizontal-mill/catalog"' \
+                '"path": "/fabrication/sheet-cutting/catalog"' \
+                '"path": "/fabrication/hot-wire-foam/catalog"' \
+                '"path": "/fabrication/sheet-forming/catalog"' \
+                '"path": "/fabrication/gear-cutting/catalog"' \
+                '"path": "/fabrication/precision-grinding/catalog"' \
+                '"path": "/fabrication/dimensional-inspection/catalog"' \
+                '"path": "/fabrication/thermal-postprocess/catalog"' \
+                '"path": "/fabrication/surface-finishing/catalog"' \
+                '"path": "/fabrication/metal-joining/catalog"' \
+                '"path": "/fabrication/molding-casting/catalog"' \
+                '"path": "/fabrication/pcb-electronics/catalog"' \
+                '"path": "/fabrication/joining/catalog"' \
+                '"path": "/fabrication/bonding-joining/catalog"' \
+                '"path": "/fabrication/fixture-adaptive/catalog"' \
+                '"path": "/fabrication/mechanical-installation/catalog"' \
+                '"path": "/fabrication/balancing-marking/catalog"' \
+                '"path": "/fabrication/packaging-labeling/catalog"' \
+                '"path": "/fabrication/part-separation/catalog"' \
+                '"path": "/fabrication/edm/catalog"' \
+                '"path": "/fabrication/turning/catalog"' \
+                '"path": "/fabrication/lathe/catalog"' \
+                '"path": "/fabrication/turning/preflight/catalog"' \
+                '"path": "/fabrication/cleanliness/catalog"' \
+                '"path": "/fabrication/cleanliness/preflight/catalog"' \
+                '"path": "/fabrication/interfaces/catalog"' \
+                '"path": "/fabrication/interfaces/preflight/catalog"' \
+                '"path": "/fabrication/interfaces/result"' \
+                '"path": "/fabrication/joining/result"' \
+                '"path": "/fabrication/cnc/catalog"' \
+                '"path": "/fabrication/hybrid/catalog"' \
+                '"path": "/fabrication/hybrid/plan"' \
+                '"path": "/fabrication/cells/catalog"' \
                 '"path": "/fabrication/machines/select"' \
                 '"path": "/fabrication/controllers/catalog"' \
+                '"path": "/fabrication/controllers/preflight/catalog"' \
+                '"path": "/fabrication/controllers/plan"' \
                 '"path": "/fabrication/controllers/result"' \
                 '"path": "/fabrication/materials/catalog"' \
                 '"path": "/fabrication/materials/plan"' \
                 '"path": "/fabrication/materials/result"' \
                 '"path": "/fabrication/formats/catalog"' \
                 '"path": "/fabrication/slicers/catalog"' \
+                '"path": "/fabrication/slicers/plan"' \
                 '"path": "/fabrication/slicers/result"' \
                 '"path": "/fabrication/mesh-repair/catalog"' \
                 '"path": "/fabrication/mesh-repair/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
+                '"path": "/fabrication/design/preflight/catalog"' \
                 '"path": "/fabrication/design/import/review"' \
                 '"path": "/fabrication/design/import/result"' \
                 '"path": "/fabrication/design/convert/plan"' \
@@ -164,39 +224,63 @@ spec:
                 '"path": "/fabrication/handoff/catalog"' \
                 '"path": "/fabrication/handoff/result"' \
                 '"path": "/fabrication/subjects/catalog"' \
+                '"path": "/fabrication/workers/catalog"' \
+                '"path": "/fabrication/results/catalog"' \
+                '"path": "/fabrication/instructions/review-pipeline/catalog"' \
+                '"path": "/fabrication/instructions/import/catalog"' \
+                '"path": "/fabrication/instructions/import/preflight/catalog"' \
+                '"path": "/fabrication/instructions/import/review"' \
                 '"path": "/fabrication/instructions/validation/catalog"' \
+                '"path": "/fabrication/instructions/validation/preflight/catalog"' \
                 '"path": "/fabrication/instructions/generation/catalog"' \
+                '"path": "/fabrication/instructions/generation/preflight/catalog"' \
                 '"path": "/fabrication/instructions/generate"' \
                 '"path": "/fabrication/instructions/generation/result"' \
                 '"path": "/fabrication/instructions/review/result"' \
                 '"path": "/fabrication/instructions/validation/result"' \
+                '"path": "/fabrication/instructions/improvement/result"' \
                 '"path": "/fabrication/machine-code/catalog"' \
+                '"path": "/fabrication/machine-code/preflight/catalog"' \
                 '"path": "/fabrication/machine-code/generate"' \
                 '"path": "/fabrication/machine-code/result"' \
+                '"path": "/fabrication/toolpaths/catalog"' \
                 '"path": "/fabrication/toolpaths/plan"' \
                 '"path": "/fabrication/toolpaths/result"' \
                 '"path": "/fabrication/improvements/catalog"' \
+                '"path": "/fabrication/improvements/preflight/catalog"' \
                 '"path": "/fabrication/decomposition/catalog"' \
+                '"path": "/fabrication/recomposition/catalog"' \
                 '"path": "/fabrication/decomposition/plan"' \
                 '"path": "/fabrication/decomposition/result"' \
                 '"path": "/fabrication/assembly/catalog"' \
+                '"path": "/fabrication/assembly/preflight/catalog"' \
                 '"path": "/fabrication/assembly/plan"' \
                 '"path": "/fabrication/assembly/result"' \
+                '"path": "/fabrication/joining/result"' \
                 '"path": "/fabrication/release/catalog"' \
+                '"path": "/fabrication/release/gates/catalog"' \
+                '"path": "/fabrication/release/preflight/catalog"' \
                 '"path": "/fabrication/release/preview"' \
                 '"path": "/fabrication/release/result"' \
+                '"path": "/fabrication/evidence/catalog"' \
                 '"path": "/fabrication/strategy/catalog"' \
                 '"path": "/fabrication/methods/catalog"' \
+                '"path": "/fabrication/process/catalog"' \
+                '"path": "/fabrication/packages/catalog"' \
+                '"path": "/fabrication/packages/plan"' \
                 '"path": "/fabrication/strategy/recommend"' \
                 '"path": "/fabrication/strategy/result"' \
                 '"path": "/fabrication/schedule/catalog"' \
                 '"path": "/fabrication/schedule/result"' \
+                '"path": "/fabrication/execution/preflight/catalog"' \
                 '"path": "/fabrication/execution/plan"' \
                 '"path": "/fabrication/execution/result"' \
                 '"path": "/fabrication/simulation/catalog"' \
+                '"path": "/fabrication/simulation/preflight/catalog"' \
                 '"path": "/fabrication/simulation/run"' \
                 '"path": "/fabrication/simulation/result"' \
                 '"path": "/fabrication/quality/catalog"' \
+                '"path": "/fabrication/quality/preflight/catalog"' \
                 '"path": "/fabrication/dispositions/catalog"' \
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
@@ -218,12 +302,18 @@ spec:
                 '"path": "/fabrication/calibration/plan"' \
                 '"path": "/fabrication/calibration/result"' \
                 '"path": "/fabrication/interventions/catalog"' \
+                '"path": "/fabrication/interventions/result"' \
                 '"path": "/fabrication/setup/catalog"' \
                 '"path": "/fabrication/tooling/catalog"' \
+                '"path": "/fabrication/tooling/result"' \
                 '"path": "/fabrication/consumables/catalog"' \
                 '"path": "/fabrication/consumables/result"' \
                 '"path": "/fabrication/workholding/catalog"' \
+                '"path": "/fabrication/workholding/preflight/catalog"' \
+                '"path": "/fabrication/workholding/plan"' \
                 '"path": "/fabrication/workholding/result"' \
+                '"path": "/fabrication/nesting/catalog"' \
+                '"path": "/fabrication/nesting/result"' \
                 '"path": "/fabrication/support-strategies/catalog"' \
                 '"path": "/fabrication/support-strategies/result"' \
                 '"path": "/fabrication/process-recipes/catalog"' \
@@ -231,18 +321,27 @@ spec:
                 '"path": "/fabrication/kinematics/catalog"' \
                 '"path": "/fabrication/kinematics/result"' \
                 '"path": "/fabrication/tolerances/catalog"' \
+                '"path": "/fabrication/tolerances/plan"' \
                 '"path": "/fabrication/tolerances/result"' \
                 '"path": "/fabrication/process-capabilities/catalog"' \
+                '"path": "/fabrication/process-capabilities/plan"' \
                 '"path": "/fabrication/process-capabilities/result"' \
                 '"path": "/fabrication/manufacturability/catalog"' \
+                '"path": "/fabrication/manufacturability/plan"' \
                 '"path": "/fabrication/failure-modes/catalog"' \
+                '"path": "/fabrication/failure-modes/plan"' \
                 '"path": "/fabrication/failure-modes/result"' \
                 '"path": "/fabrication/safety/catalog"' \
+                '"path": "/fabrication/safety/plan"' \
                 '"path": "/fabrication/safety/result"' \
                 '"path": "/fabrication/environment/catalog"' \
+                '"path": "/fabrication/environment/plan"' \
                 '"path": "/fabrication/environment/result"' \
                 '"path": "/fabrication/provenance/catalog"' \
+                '"path": "/fabrication/provenance/plan"' \
                 '"path": "/fabrication/as-built/catalog"' \
+                '"path": "/fabrication/as-built/plan"' \
+                '"path": "/fabrication/as-built/result"' \
                 '"path": "/fabrication/provenance/result"' \
                 '"path": "/fabrication/setup/plan"' \
                 '"path": "/fabrication/setup/result"' \
@@ -257,11 +356,23 @@ spec:
                 '"path": "/fabrication/design/formats"' \
                 '"path": "/fabrication/instructions/languages"' \
                 '"path": "/fabrication/boundaries/catalog"' \
+                '"path": "/fabrication/boundaries/preflight/catalog"' \
+                '"path": "/fabrication/boundaries/result"' \
                 '"path": "/fabrication/remediation/catalog"' \
                 '"path": "/fabrication/remediation/plan"' \
                 '"path": "/fabrication/remediation/result"' \
                 '"path": "/fabrication/learning/capabilities"' \
+                '"path": "/fabrication/learning/engines/catalog"' \
+                '"path": "/fabrication/learning/preflight/catalog"' \
+                '"path": "/fabrication/learning/features/catalog"' \
                 '"path": "/fabrication/learning/rewards/catalog"' \
+                '"path": "/fabrication/learning/models/catalog"' \
+                '"path": "/fabrication/learning/replay/catalog"' \
+                '"path": "/fabrication/learning/scenarios/catalog"' \
+                '"path": "/fabrication/learning/beliefs/catalog"' \
+                '"path": "/fabrication/learning/optimizers/catalog"' \
+                '"path": "/fabrication/learning/models/result"' \
+                '"path": "/fabrication/learning/optimizers/result"' \
                 '"path": "/jobs"' \
                 '"path": "/fabrication/jobs"' \
                 '"path": "/jobs/:job_id"' \
@@ -271,6 +382,7 @@ spec:
                 '"path": "/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/jobs/:job_id/artifacts/:artifact_id"' \
                 '"path": "/fabrication/learning/policy"' \
+                '"path": "/fabrication/learning/corpus"' \
                 '"path": "/fabrication/learning/observe"' \
                 '"path": "/fabrication/learning/outcomes"'
               do
@@ -406,7 +518,7 @@ spec:
               value: sparse
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 2Gi
               ephemeral-storage: 4Gi
             limits:
@@ -570,7 +682,7 @@ spec:
               protocol: TCP
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 512Mi
               ephemeral-storage: 4Gi
             limits:

@@ -63,6 +63,8 @@ spec:
               value: "1.0"
             - name: MESSAGE_ENCODINGS
               value: "json,msgpack,protobuf,flatbuffers"
+            - name: GCS_MESSAGE_ENCODING
+              value: "protobuf"
             - name: LOADTEST_TRANSPORTS
               value: "http,tcp,websocket"
             - name: CONNECT_TIMEOUT_SECONDS
@@ -77,11 +79,11 @@ spec:
               value: "10"
           resources:
             requests:
-              cpu: 100m
+              cpu: 1m
               memory: 512Mi
             limits:
               cpu: "6"
-              memory: 12Gi
+              memory: 8Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1

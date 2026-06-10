@@ -42,10 +42,10 @@
     <h1>economics-server-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>25 routes</span>
+      <span>32 routes</span>
       <span>rust</span>
       <span>7 service</span>
-      <span>15 user-generated</span>
+      <span>22 user-generated</span>
       <span>3 runtime-config</span>
     </div>
   </header>
@@ -76,6 +76,14 @@
   <td data-label="Purpose">Machine-readable generated API route metadata.</td>
   <td data-label="Handlers"><code>api_docs_json</code></td>
   <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/audit/hardening</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>hardening_audit</code></td>
+  <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
@@ -142,6 +150,14 @@
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/integrations/health</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>integrations_health</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
   <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/internal/runtime-config</code></td>
@@ -190,6 +206,38 @@
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/observability</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>observability</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/pipelines/catalog</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>pipeline_catalog</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/pipelines/plan</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>pipeline_plan_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/pipelines/submit</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>pipeline_submit_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/readyz</code></td>
@@ -235,6 +283,14 @@
   <td data-label="Path"><code>/sources</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>sources</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/sources/public</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>public_sources</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>

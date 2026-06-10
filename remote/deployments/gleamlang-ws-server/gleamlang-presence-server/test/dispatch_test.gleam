@@ -22,13 +22,13 @@
 
 import gleam/erlang/process
 import gleam/int
-import gleeunit/should
 import gleamlang_presence_server/fanout
 import gleamlang_presence_server/groups.{
   type ConnGroup, type ConnMsg, ByUser, ByUserConv, ByUserDevice, Kick, Outbound,
 }
 import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/registry.{type Registry}
+import gleeunit/should
 
 pub fn user_broadcast_only_reaches_by_user_subscribers_test() -> Nil {
   let #(reg, fan) = setup()
@@ -80,12 +80,7 @@ pub fn device_kick_reaches_only_that_device_test() -> Nil {
   wait_for_registered(reg, ByUserDevice("alice", "dev1"))
   wait_for_registered(reg, ByUserDevice("bob", "dev1"))
 
-  fanout.broadcast(
-    fan,
-    reg,
-    ByUserDevice("alice", "dev1"),
-    Kick("logout"),
-  )
+  fanout.broadcast(fan, reg, ByUserDevice("alice", "dev1"), Kick("logout"))
 
   process.receive(alice_dev1_user_ws, 500)
   |> should.equal(Ok(Kick("logout")))

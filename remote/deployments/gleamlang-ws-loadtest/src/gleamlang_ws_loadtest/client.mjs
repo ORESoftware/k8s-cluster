@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_WS_URL = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
@@ -11,6 +13,175 @@ const LOAD_MODE_GCS = "gcs";
 const DEFAULT_MESSAGE_ENCODINGS = Object.freeze(["json"]);
 const DEFAULT_LOADTEST_TRANSPORTS = "http,tcp,websocket";
 const SUPPORTED_MESSAGE_ENCODINGS = new Set(["json", "msgpack", "protobuf", "flatbuffers"]);
+const DEFAULT_CLIENT_NAME = "gleamlang-ws-loadtest";
+
+function loadClientName() {
+  return process.env.LOADTEST_CLIENT_NAME || DEFAULT_CLIENT_NAME;
+}
+
+function applyCliFlagsToEnv(argv = process.argv.slice(2), cwd = process.cwd()) {
+  const configPath = process.env.FLAGS2ENV_CONFIG || findCliFlagsConfig(cwd);
+  if (!configPath) return;
+  const flags = parseCliFlagsToml(readFileSync(configPath, "utf8"));
+  const parsed = parseArgvFlags(argv, flags);
+  for (const flag of flags) {
+    if (flag.defaultValue !== undefined && !process.env[flag.env]) {
+      process.env[flag.env] = flag.defaultValue;
+    }
+  }
+  Object.assign(process.env, parsed);
+}
+
+function findCliFlagsConfig(startDir) {
+  let current = startDir;
+  const home = process.env.HOME || "";
+  for (;;) {
+    const candidate = join(current, ".cli-flags.toml");
+    if (current !== home && existsSync(candidate)) return candidate;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function parseCliFlagsToml(text) {
+  const flags = [];
+  let current = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (!line) continue;
+    const table = line.match(/^\[flags\.([^\]]+)\]$/);
+    if (table) {
+      if (current?.env) flags.push(current);
+      current = {
+        id: table[1],
+        env: "",
+        aliases: [],
+        short: "",
+        type: "string",
+        defaultValue: undefined,
+        trueAliases: [],
+        falseAliases: [],
+      };
+      continue;
+    }
+    if (line.startsWith("[")) {
+      if (current?.env) flags.push(current);
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim();
+    if (key === "env") current.env = parseTomlScalar(value);
+    else if (key === "aliases") current.aliases = parseTomlList(value);
+    else if (key === "short") current.short = parseTomlScalar(value);
+    else if (key === "type") current.type = parseTomlScalar(value).toLowerCase();
+    else if (key === "default") current.defaultValue = parseTomlScalar(value);
+    else if (key === "true_aliases") current.trueAliases = parseTomlList(value);
+    else if (key === "false_aliases") current.falseAliases = parseTomlList(value);
+  }
+  if (current?.env) flags.push(current);
+  return flags;
+}
+
+function parseTomlScalar(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+function parseTomlList(value) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [];
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner.split(",").map(parseTomlScalar).map((item) => item.trim());
+}
+
+function parseArgvFlags(argv, flags) {
+  const byLong = new Map();
+  const byShort = new Map();
+  for (const flag of flags) {
+    byLong.set(flag.id, flag);
+    for (const alias of flag.aliases) byLong.set(alias, flag);
+    if (flag.short) byShort.set(flag.short, flag);
+  }
+  const out = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--") break;
+    if (token.startsWith("--no-")) {
+      const flag = byLong.get(token.slice(5));
+      if (flag?.type === "bool") out[flag.env] = "false";
+      continue;
+    }
+    if (token.startsWith("--")) {
+      const [name, inline] = splitInline(token.slice(2));
+      const flag = byLong.get(name);
+      if (!flag) continue;
+      if (flag.type === "bool") {
+        const accepted = validateFlagValue(flag, inline ?? argv[i + 1]);
+        if (accepted !== null) {
+          out[flag.env] = accepted;
+          if (inline === undefined && accepted !== "true") i += 1;
+        } else if (inline === undefined) {
+          out[flag.env] = "true";
+        }
+        continue;
+      }
+      const value = inline ?? argv[i + 1];
+      if (inline === undefined && isOptionToken(value, flag)) continue;
+      const accepted = validateFlagValue(flag, value);
+      if (accepted !== null) {
+        out[flag.env] = accepted;
+        if (inline === undefined) i += 1;
+      }
+      continue;
+    }
+    if (token.startsWith("-") && token.length > 1) {
+      const flag = byShort.get(token.slice(1, 2));
+      if (!flag) continue;
+      const rest = token.slice(2).replace(/^=/, "");
+      if (flag.type === "bool") {
+        out[flag.env] = rest ? (validateFlagValue(flag, rest) ?? "true") : "true";
+      } else {
+        const value = rest || argv[i + 1];
+        const accepted = validateFlagValue(flag, value);
+        if (accepted !== null) {
+          out[flag.env] = accepted;
+          if (!rest) i += 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function splitInline(value) {
+  const eq = value.indexOf("=");
+  return eq < 0 ? [value, undefined] : [value.slice(0, eq), value.slice(eq + 1)];
+}
+
+function isOptionToken(value, flag) {
+  if (!value?.startsWith("-")) return false;
+  return !(flag.type === "integer" && /^-?\d+$/.test(value));
+}
+
+function validateFlagValue(flag, value) {
+  if (value == null) return null;
+  const raw = String(value);
+  if (flag.type === "bool") {
+    const lower = raw.toLowerCase();
+    if (lower === "true" || flag.trueAliases.includes(lower)) return "true";
+    if (lower === "false" || flag.falseAliases.includes(lower)) return "false";
+    return null;
+  }
+  if (flag.type === "integer" && !/^-?\d+$/.test(raw)) return null;
+  return raw;
+}
 
 function parsePositiveInt(name, fallback) {
   const raw = process.env[name];
@@ -49,7 +220,13 @@ function parseMessageEncodings(raw) {
   return unique.length > 0 ? unique : [...DEFAULT_MESSAGE_ENCODINGS];
 }
 
+function parseMessageEncoding(raw) {
+  return parseMessageEncodings(raw)[0] || "json";
+}
+
 export function run() {
+  applyCliFlagsToEnv();
+
   if (process.env.CONTAINER_POOL_URL) {
     runContainerPoolSmoke().catch((error) => {
       console.error(`gleamlang-container-pool-smoke failed: ${error?.stack || error}`);
@@ -71,8 +248,12 @@ export function run() {
   const messageEncodings = parseMessageEncodings(
     process.env.MESSAGE_ENCODINGS || process.env.MESSAGE_ENCODING || DEFAULT_MESSAGE_ENCODINGS[0],
   );
+  const gcsMessageEncoding = parseMessageEncoding(
+    process.env.GCS_MESSAGE_ENCODING || process.env.MESSAGE_ENCODING || "json",
+  );
   const loadtestTransports = process.env.LOADTEST_TRANSPORTS || DEFAULT_LOADTEST_TRANSPORTS;
   const correlationTimeoutMs = parsePositiveInt("CORRELATION_TIMEOUT_MS", 10_000);
+  const clientName = loadClientName();
   // gcs-mode: clients per conversation (fan-out factor + conv-hash grouping)
   // and how many of them send (0/unset => all send).
   const gcsClientsPerConv = parsePositiveInt("GCS_CLIENTS_PER_CONV", 5);
@@ -87,7 +268,7 @@ export function run() {
   let failed = 0;
   let open = 0;
   let messages = 0;
-  // Pipeline-mode counters.
+  // Pipeline/GCS counters.
   let sent = 0;
   let received = 0;
   let receiveErrors = 0;
@@ -98,7 +279,7 @@ export function run() {
 
   console.log(
     [
-      "gleamlang-ws-loadtest starting",
+      `${clientName} starting`,
       `target_ws_url=${targetWsUrl}`,
       `client_count=${clientCount}`,
       `load_mode=${loadMode}`,
@@ -109,6 +290,7 @@ export function run() {
       `report_interval_seconds=${reportIntervalSeconds}`,
       `messages_per_second_per_client=${messagesPerSecondPerClient}`,
       `message_encodings=${messageEncodings.join(",")}`,
+      `gcs_message_encoding=${gcsMessageEncoding}`,
       `loadtest_transports=${loadtestTransports}`,
       `correlation_timeout_ms=${correlationTimeoutMs}`,
     ].join(" "),
@@ -255,7 +437,7 @@ export function run() {
       convMembers[Math.floor(i / gcsClientsPerConv)].push(objectId());
     }
     console.log(
-      `gleamlang-ws-loadtest gcs-setup conversations=${convCount} ` +
+      `${clientName} gcs-setup conversations=${convCount} ` +
         `clients_per_conv=${gcsClientsPerConv} senders_per_conv=${gcsSendersPerConv}`,
     );
   }
@@ -269,7 +451,7 @@ export function run() {
     const deviceId = objectId();
     const members = convMembers[c];
     const isSender = idx < gcsSendersPerConv;
-    const url = gcsConnectUrl(targetWsUrl, userId, deviceId, convId);
+    const url = gcsConnectUrl(targetWsUrl, userId, deviceId, convId, gcsMessageEncoding);
 
     const socket = new WebSocket(url, {
       perMessageDeflate: false,
@@ -288,9 +470,9 @@ export function run() {
         sendTimer = setInterval(() => {
           seq += 1;
           const marker = `gcsrt-${clientId}-${seq}-${Math.round(performance.now() * 1000)}`;
-          const frame = buildGcsFrame(convId, userId, members, marker);
+          const frame = buildGcsFrame(convId, userId, members, marker, gcsMessageEncoding);
           try {
-            socket.send(frame);
+            socket.send(frame, { binary: gcsMessageEncoding === "protobuf" });
             sent += 1;
           } catch (_error) {
             receiveErrors += 1;
@@ -301,7 +483,7 @@ export function run() {
 
     socket.on("message", (data) => {
       messages += 1;
-      const text = typeof data === "string" ? data : data.toString();
+      const text = typeof data === "string" ? data : rawDataToBuffer(data).toString("utf8");
       const now = Math.round(performance.now() * 1000);
       for (const sendUs of parseGcsSendMicros(text)) {
         received += 1;
@@ -331,20 +513,23 @@ export function run() {
   }
 
   setInterval(() => {
-    // pipeline and gcs both produce per-message latency samples; in gcs mode
-    // received/sent approximates conversation fan-out.
+    // Pipeline and GCS both produce per-message latency samples. In GCS mode,
+    // received counts frames while latency_samples counts parsed markers.
     if (loadMode === LOAD_MODE_PIPELINE || loadMode === LOAD_MODE_GCS) {
       const p = percentiles(latenciesUs);
+      const latencySamples = latenciesUs.length;
+      const reportedReceived = loadMode === LOAD_MODE_GCS ? messages : received;
       console.log(
-        `gleamlang-ws-loadtest ${loadMode}-report attempted=${attempted} connected=${connected} ` +
-          `failed=${failed} open=${open} sent=${sent} received=${received} ` +
+        `${clientName} ${loadMode}-report attempted=${attempted} connected=${connected} ` +
+          `failed=${failed} open=${open} messages=${messages} sent=${sent} received=${reportedReceived} ` +
+          `latency_samples=${latencySamples} ` +
           `in_flight_peak=${inFlightTotal} correlation_misses=${correlationMisses} ` +
           `receive_errors=${receiveErrors} p50_us=${p.p50} p95_us=${p.p95} p99_us=${p.p99} ` +
-          `max_us=${p.max} mean_us=${p.mean} sample=${latenciesUs.length}`,
+          `max_us=${p.max} mean_us=${p.mean} sample=${latencySamples}`,
       );
     } else {
       console.log(
-        `gleamlang-ws-loadtest report attempted=${attempted} connected=${connected} failed=${failed} open=${open} messages=${messages}`,
+        `${clientName} report attempted=${attempted} connected=${connected} failed=${failed} open=${open} messages=${messages}`,
       );
     }
   }, reportIntervalSeconds * 1000);
@@ -480,6 +665,19 @@ function encodeProtobufPipelineMessage(id, payload) {
 function encodeProtobufStringField(fieldNumber, value) {
   const body = Buffer.from(value, "utf8");
   return Buffer.concat([encodeVarint((fieldNumber << 3) | 2), encodeVarint(body.length), body]);
+}
+
+function encodeProtobufBytesField(fieldNumber, value) {
+  return Buffer.concat([encodeVarint((fieldNumber << 3) | 2), encodeVarint(value.length), value]);
+}
+
+function encodeProtobufVarintField(fieldNumber, value) {
+  if (!value) return Buffer.alloc(0);
+  return Buffer.concat([encodeVarint(fieldNumber << 3), encodeVarint(value)]);
+}
+
+function encodeProtobufBoolField(fieldNumber, value) {
+  return value ? encodeProtobufVarintField(fieldNumber, 1) : Buffer.alloc(0);
 }
 
 function encodeVarint(value) {
@@ -624,14 +822,19 @@ function objectId() {
 }
 
 /** chat.vibe connect URL: query params carry the subscription (no auth in-cluster). */
-function gcsConnectUrl(base, userId, deviceId, convId) {
+function gcsConnectUrl(base, userId, deviceId, convId, encoding = "json") {
   const b = base.replace(/\/$/, "");
   const convIds = encodeURIComponent(JSON.stringify([convId]));
-  return `${b}/gcs/ws/?userId=${userId}&deviceId=${deviceId}&conversationIds=${convIds}`;
+  const wire = encoding === "protobuf" ? "&wire=protobuf" : "";
+  return `${b}/gcs/ws/?userId=${userId}&deviceId=${deviceId}&conversationIds=${convIds}${wire}`;
 }
 
 /** Outer envelope holding one MongoChatMessage; @vibe-data is a JSON string. */
-function buildGcsFrame(convId, userId, members, marker) {
+function buildGcsFrame(convId, userId, members, marker, encoding = "json") {
+  if (encoding === "protobuf") {
+    return encodeGcsProtobufFrame(convId, userId, members, marker);
+  }
+
   const now = new Date().toISOString();
   const inner = JSON.stringify({
     _id: objectId(),
@@ -649,6 +852,27 @@ function buildGcsFrame(convId, userId, members, marker) {
     Meta: {},
     List: [{ "@vibe-meta": {}, "@vibe-type": "MongoChatMessage", "@vibe-data": inner }],
   });
+}
+
+function encodeGcsProtobufFrame(convId, userId, members, marker) {
+  const nowMs = Date.now();
+  const message = Buffer.concat([
+    encodeProtobufStringField(1, objectId()),
+    encodeProtobufStringField(3, userId),
+    encodeProtobufStringField(4, convId),
+    ...members.map((member) => encodeProtobufStringField(5, member)),
+    encodeProtobufBoolField(7, members.length > 2),
+    encodeProtobufVarintField(9, members.length),
+    encodeProtobufStringField(10, marker),
+    encodeProtobufVarintField(15, nowMs),
+    encodeProtobufVarintField(16, nowMs),
+    encodeProtobufStringField(23, userId),
+    encodeProtobufVarintField(25, nowMs),
+  ]);
+  return Buffer.concat([
+    encodeProtobufStringField(1, "MongoChatMessage"),
+    encodeProtobufBytesField(2, message),
+  ]);
 }
 
 const GCS_MARKER_RE = /gcsrt-\d+-\d+-(\d+)/g;
@@ -697,7 +921,7 @@ async function runContainerPoolSmoke() {
         requestId: echoKey,
         payload: {
           echoKey,
-          client: "gleamlang-ws-loadtest",
+          client: loadClientName(),
         },
       }),
     });

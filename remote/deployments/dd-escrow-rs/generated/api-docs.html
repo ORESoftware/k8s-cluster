@@ -42,10 +42,10 @@
     <h1>dd-escrow-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>16 routes</span>
+      <span>19 routes</span>
       <span>rust</span>
       <span>6 service</span>
-      <span>7 user-generated</span>
+      <span>10 user-generated</span>
       <span>3 runtime-config</span>
     </div>
   </header>
@@ -76,6 +76,22 @@
   <td data-label="Purpose">Machine-readable generated API route metadata.</td>
   <td data-label="Handlers"><code>api_docs_json</code></td>
   <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/audit</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>audit_http</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/capabilities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>capabilities_http</code></td>
+  <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
@@ -132,6 +148,14 @@
   <td data-label="Purpose">Prometheus metrics.</td>
   <td data-label="Handlers"><code>metrics</code></td>
   <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/resolve</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>resolve_http</code></td>
+  <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>

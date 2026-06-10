@@ -116,14 +116,26 @@ preferred operator path is:
   unless a human explicitly grants it.
 - External Secrets reads AWS Secrets Manager and syncs Kubernetes secrets.
 - Agents receive only the strict env allowlist defined in `remote/deployments/dev-server/src/agents`.
-- Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only
-  kubeconfig retrieval.
+- Cluster access (operators and agents) uses the local AWS credentials in `~/.aws/credentials`
+  (profile `dd-codex`, `region = us-east-1`) together with the `dd-ec2-runtime` kubeconfig context,
+  which targets the API endpoint directly. Refresh the profile when needed (its
+  `credential_process` exports short-lived credentials) and verify with
+  `aws sts get-caller-identity --profile dd-codex` before running `kubectl`; if STS returns
+  `InvalidClientTokenId`/expiry, refresh the profile rather than falling back to another auth path.
+  It is **not** a WireGuard-VPN-plus-`dd-bastion` human-only step. (That bastion path still exists as
+  a legacy fallback for private access and read-only kubeconfig retrieval, but is not required.)
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
 - The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
   environment when a human grants it. For local operator checks, use `ALL_DOGS` as the env var
   containing the `Auth` header value. Do not commit the literal value, print it in public docs, or
   echo it into browser-visible pages.
+- The live-mutex broker (`dd-rust-network-mutex-raft`, `dd-rust-network-mutex`, `dd-live-mutex`) is
+  reached through the gateway's `Auth`-header path (value from `ALL_DOGS`), so it intentionally does
+  not set its own `LMX_AUTH_TOKEN` — do not treat that missing app token as an auth gap. The gateway
+  authenticates external callers via `Auth`. In-cluster pod-to-pod traffic to the raft RPC (7980) and
+  HTTP (6971) ports is not gateway-fronted and stays unauthenticated; restrict it with
+  `dd-rust-network-mutex-raft.networkpolicy.yaml` if pod-level isolation is required.
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
 

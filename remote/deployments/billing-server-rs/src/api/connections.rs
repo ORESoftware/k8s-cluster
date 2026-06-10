@@ -8,7 +8,9 @@ use crate::error::{AppError, AppResult};
 use crate::providers::ProviderAuthKind;
 use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
 use crate::providers::{
-    ProviderKind, coinbase::CoinbaseCredential, coinflow::CoinflowCredential, wise::WiseCredential,
+    ProviderKind, coinbase::CoinbaseCredential, coinflow::CoinflowCredential,
+    dwolla::DwollaCredential, ethereum::EthereumWalletCredential,
+    modern_treasury::ModernTreasuryCredential, wise::WiseCredential,
 };
 use crate::scheduler::{CreateScheduledJob, ScheduleKind, ScheduledJob};
 use crate::state::AppState;
@@ -277,9 +279,8 @@ fn validate_api_key_credential(
         }
         ProviderKind::Bridge => {
             let cred: crate::providers::bridge::BridgeCredential =
-                serde_json::from_value(credential.clone()).map_err(|e| {
-                    AppError::BadRequest(format!("invalid bridge credential: {e}"))
-                })?;
+                serde_json::from_value(credential.clone())
+                    .map_err(|e| AppError::BadRequest(format!("invalid bridge credential: {e}")))?;
             require_non_empty("bridge.api_key", &cred.api_key)?;
             validate_environment("bridge.environment", &cred.environment)?;
             Ok(None)
@@ -321,8 +322,7 @@ fn validate_api_key_credential(
                 (None, None) => {}
                 _ => {
                     return Err(AppError::BadRequest(
-                        "remitly.api_key and remitly.api_base_url must be provided together"
-                            .into(),
+                        "remitly.api_key and remitly.api_base_url must be provided together".into(),
                     ));
                 }
             }
@@ -368,6 +368,135 @@ fn validate_api_key_credential(
             }
             Ok(Some(cred.client_id))
         }
+        ProviderKind::UsBankZelle => {
+            let cred: crate::providers::zelle_disbursements::UsBankZelleCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid us_bank_zelle credential: {e}"))
+                })?;
+            require_non_empty("us_bank_zelle.access_token", &cred.access_token)?;
+            require_non_empty("us_bank_zelle.client_id", &cred.client_id)?;
+            require_non_empty("us_bank_zelle.program_id", &cred.program_id)?;
+            validate_environment("us_bank_zelle.environment", &cred.environment)?;
+            crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                "us_bank_zelle.api_base_url",
+                &cred.api_base_url,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "us_bank_zelle.payments_path",
+                &cred.payments_path,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "us_bank_zelle.enrollment_path",
+                &cred.enrollment_path,
+            )?;
+            Ok(Some(cred.program_id))
+        }
+        ProviderKind::JpmorganZelle => {
+            let cred: crate::providers::zelle_disbursements::JpmorganZelleCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid jpmorgan_zelle credential: {e}"))
+                })?;
+            require_non_empty("jpmorgan_zelle.access_token", &cred.access_token)?;
+            require_non_empty("jpmorgan_zelle.debtor_account_id", &cred.debtor_account_id)?;
+            require_non_empty("jpmorgan_zelle.debtor_name", &cred.debtor_name)?;
+            require_non_empty("jpmorgan_zelle.debtor_bic", &cred.debtor_bic)?;
+            validate_environment("jpmorgan_zelle.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                    "jpmorgan_zelle.api_base_url",
+                    api_base_url,
+                )?;
+            }
+            Ok(Some(cred.debtor_account_id))
+        }
+        ProviderKind::BofaCashProGdd => {
+            let cred: crate::providers::zelle_disbursements::BofaCashProGddCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid bofa_cashpro_gdd credential: {e}"))
+                })?;
+            require_non_empty("bofa_cashpro_gdd.client_id", &cred.client_id)?;
+            require_non_empty("bofa_cashpro_gdd.client_secret", &cred.client_secret)?;
+            require_non_empty(
+                "bofa_cashpro_gdd.cashpro_company_id",
+                &cred.cashpro_company_id,
+            )?;
+            if let Some(access_token) = cred.access_token.as_deref() {
+                require_non_empty("bofa_cashpro_gdd.access_token", access_token)?;
+            }
+            validate_environment("bofa_cashpro_gdd.environment", &cred.environment)?;
+            crate::providers::zelle_disbursements::validate_zelle_api_base_url(
+                "bofa_cashpro_gdd.api_base_url",
+                &cred.api_base_url,
+            )?;
+            crate::providers::zelle_disbursements::validate_zelle_path(
+                "bofa_cashpro_gdd.disbursements_path",
+                &cred.disbursements_path,
+            )?;
+            Ok(Some(cred.cashpro_company_id))
+        }
+        ProviderKind::ModernTreasury => {
+            let cred: ModernTreasuryCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| {
+                    AppError::BadRequest(format!("invalid modern_treasury credential: {e}"))
+                })?;
+            require_non_empty("modern_treasury.organization_id", &cred.organization_id)?;
+            require_non_empty("modern_treasury.api_key", &cred.api_key)?;
+            validate_environment("modern_treasury.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::modern_treasury::validate_modern_treasury_api_base_url(
+                    api_base_url,
+                )?;
+            }
+            if let Some(originating_account_id) = cred.default_originating_account_id.as_deref() {
+                require_non_empty(
+                    "modern_treasury.default_originating_account_id",
+                    originating_account_id,
+                )?;
+            }
+            if let Some(webhook_secret) = cred.webhook_secret.as_deref() {
+                require_non_empty("modern_treasury.webhook_secret", webhook_secret)?;
+            }
+            Ok(Some(cred.organization_id))
+        }
+        ProviderKind::Dwolla => {
+            let cred: DwollaCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid dwolla credential: {e}")))?;
+            require_non_empty("dwolla.access_token", &cred.access_token)?;
+            validate_environment("dwolla.environment", &cred.environment)?;
+            if let Some(api_base_url) = cred.api_base_url.as_deref() {
+                crate::providers::dwolla::validate_dwolla_api_base_url(api_base_url)?;
+            }
+            if let Some(account_id) = cred.account_id.as_deref() {
+                require_non_empty("dwolla.account_id", account_id)?;
+            }
+            if let Some(webhook_secret) = cred.webhook_secret.as_deref() {
+                require_non_empty("dwolla.webhook_secret", webhook_secret)?;
+            }
+            Ok(cred.account_id.clone())
+        }
+        ProviderKind::EthereumWallet => {
+            let cred: EthereumWalletCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| {
+                    AppError::BadRequest(format!("invalid ethereum_wallet credential: {e}"))
+                })?;
+            crate::providers::ethereum::validate_ethereum_address(&cred.address)?;
+            crate::providers::ethereum::validate_ethereum_rpc_url(&cred.rpc_url)?;
+            if cred.chain_id == 0 {
+                return Err(AppError::BadRequest(
+                    "ethereum_wallet.chain_id must be non-zero".into(),
+                ));
+            }
+            if let Some(token) = cred.rpc_bearer_token.as_deref() {
+                require_non_empty("ethereum_wallet.rpc_bearer_token", token)?;
+            }
+            for asset in &cred.tracked_assets {
+                require_non_empty("ethereum_wallet.tracked_assets.symbol", &asset.symbol)?;
+                if let Some(contract_address) = asset.contract_address.as_deref() {
+                    crate::providers::ethereum::validate_ethereum_address(contract_address)?;
+                }
+            }
+            Ok(Some(cred.address.to_ascii_lowercase()))
+        }
         ProviderKind::Robinhood => {
             let _cred: crate::providers::robinhood::RobinhoodCredential =
                 serde_json::from_value(credential.clone()).map_err(|e| {
@@ -385,18 +514,20 @@ fn validate_api_key_credential(
             // Sanity-check that the PEM is a real RSA private key
             // before we seal it — catches paste errors at attach time
             // rather than at first signed-request time.
-            jsonwebtoken::EncodingKey::from_rsa_pem(cred.api_secret_pem.as_bytes())
-                .map_err(|e| AppError::BadRequest(
-                    format!("fireblocks.api_secret_pem is not a valid RSA PEM: {e}"),
-                ))?;
+            jsonwebtoken::EncodingKey::from_rsa_pem(cred.api_secret_pem.as_bytes()).map_err(
+                |e| {
+                    AppError::BadRequest(format!(
+                        "fireblocks.api_secret_pem is not a valid RSA PEM: {e}"
+                    ))
+                },
+            )?;
             validate_environment("fireblocks.environment", &cred.environment)?;
             Ok(Some(cred.api_key))
         }
         ProviderKind::Circle => {
             let cred: crate::providers::circle::CircleCredential =
-                serde_json::from_value(credential.clone()).map_err(|e| {
-                    AppError::BadRequest(format!("invalid circle credential: {e}"))
-                })?;
+                serde_json::from_value(credential.clone())
+                    .map_err(|e| AppError::BadRequest(format!("invalid circle credential: {e}")))?;
             require_non_empty("circle.api_key", &cred.api_key)?;
             validate_environment("circle.environment", &cred.environment)?;
             Ok(None)
@@ -616,6 +747,173 @@ mod tests {
         });
 
         let err = validate_api_key_credential(ProviderKind::WesternUnion, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_us_bank_zelle_and_derives_program_id() {
+        let credential = serde_json::json!({
+            "access_token": "usb_access",
+            "client_id": "usb_client",
+            "program_id": "program_123",
+            "api_base_url": "https://api.usbank.example",
+            "payments_path": "/payments",
+            "enrollment_path": "/enrollments",
+            "environment": "sandbox"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::UsBankZelle, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("program_123"));
+    }
+
+    #[test]
+    fn rejects_zelle_http_or_local_runtime_base_url() {
+        for api_base_url in ["http://api.usbank.example", "https://localhost:8443"] {
+            let credential = serde_json::json!({
+                "access_token": "usb_access",
+                "client_id": "usb_client",
+                "program_id": "program_123",
+                "api_base_url": api_base_url,
+                "environment": "sandbox"
+            });
+
+            let err =
+                validate_api_key_credential(ProviderKind::UsBankZelle, &credential).unwrap_err();
+
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+    }
+
+    #[test]
+    fn validates_jpmorgan_zelle_and_derives_debtor_account() {
+        let credential = serde_json::json!({
+            "access_token": "jpm_access",
+            "debtor_account_id": "acct_123",
+            "debtor_name": "Example Corp",
+            "debtor_bic": "CHASUS33",
+            "api_base_url": "https://payments.jpmorgan.example/tsapi/v1",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::JpmorganZelle, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn validates_bofa_cashpro_gdd_and_derives_company_id() {
+        let credential = serde_json::json!({
+            "client_id": "bofa_client",
+            "client_secret": "bofa_secret",
+            "cashpro_company_id": "company_123",
+            "access_token": "bofa_access",
+            "api_base_url": "https://cashpro-api.bankofamerica.example",
+            "disbursements_path": "/gdd/disbursements",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::BofaCashProGdd, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("company_123"));
+    }
+
+    #[test]
+    fn rejects_bofa_cashpro_gdd_non_root_relative_path() {
+        let credential = serde_json::json!({
+            "client_id": "bofa_client",
+            "client_secret": "bofa_secret",
+            "cashpro_company_id": "company_123",
+            "api_base_url": "https://cashpro-api.bankofamerica.example",
+            "disbursements_path": "https://evil.example/gdd",
+            "environment": "production"
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::BofaCashProGdd, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_modern_treasury_and_derives_org_id() {
+        let credential = serde_json::json!({
+            "organization_id": "org_123",
+            "api_key": "mt_key",
+            "default_originating_account_id": "ia_123",
+            "api_base_url": "https://app.moderntreasury.example",
+            "environment": "production"
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::ModernTreasury, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("org_123"));
+    }
+
+    #[test]
+    fn validates_dwolla_and_derives_account_id() {
+        let credential = serde_json::json!({
+            "access_token": "dwolla_access",
+            "account_id": "acct_123",
+            "api_base_url": "https://api.dwolla.example",
+            "environment": "sandbox"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Dwolla, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("acct_123"));
+    }
+
+    #[test]
+    fn rejects_dwolla_local_base_url() {
+        let credential = serde_json::json!({
+            "access_token": "dwolla_access",
+            "api_base_url": "https://127.0.0.1:8080",
+            "environment": "sandbox"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::Dwolla, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_ethereum_wallet_and_derives_address() {
+        let credential = serde_json::json!({
+            "address": "0x1111111111111111111111111111111111111111",
+            "rpc_url": "https://eth-mainnet.example",
+            "chain_id": 1,
+            "rpc_bearer_token": "rpc_token",
+            "tracked_assets": [{
+                "symbol": "USDC",
+                "contract_address": "0x2222222222222222222222222222222222222222",
+                "decimals": 6
+            }]
+        });
+
+        let derived =
+            validate_api_key_credential(ProviderKind::EthereumWallet, &credential).unwrap();
+
+        assert_eq!(
+            derived.as_deref(),
+            Some("0x1111111111111111111111111111111111111111")
+        );
+    }
+
+    #[test]
+    fn rejects_ethereum_wallet_local_rpc_url() {
+        let credential = serde_json::json!({
+            "address": "0x1111111111111111111111111111111111111111",
+            "rpc_url": "https://192.168.1.10",
+            "chain_id": 1
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::EthereumWallet, &credential).unwrap_err();
 
         assert!(matches!(err, AppError::BadRequest(_)));
     }
