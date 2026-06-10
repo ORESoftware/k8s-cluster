@@ -975,7 +975,14 @@ async fn generate_and_publish_songs(
     while published.len() < count as usize && attempts < max_attempts {
         attempts += 1;
         let seed = seed_for_attempt(attempts as u64);
-        let song = generate_candidate(seed, state.config.song_duration_seconds);
+        // WAV synthesis is multi-second CPU work; run it on the blocking pool so
+        // it never stalls the async runtime (health/readyz/votes share the worker).
+        let duration_seconds = state.config.song_duration_seconds;
+        let song = tokio::task::spawn_blocking(move || generate_candidate(seed, duration_seconds))
+            .await
+            .map_err(|error| {
+                ServiceError::Internal(format!("song synthesis task failed: {error}"))
+            })?;
         if song.listenability_score < min_score {
             discarded += 1;
             insert_discarded_song(&client, &song, "listenability_score_below_threshold").await?;
@@ -1345,10 +1352,14 @@ async fn run_generation_request_consumer(state: AppState) {
             }
         };
         let requested = request.count.unwrap_or(1).clamp(1, MAX_NATS_GENERATION_COUNT);
+        // Floor at the configured minimum: a request must not lower the
+        // listenability bar below it (min_score=0 would force the most
+        // expensive path — every candidate published — on every message).
         let min_score = request
             .min_score
             .unwrap_or(state.config.min_listenability_score)
-            .clamp(0.0, 1.0);
+            .clamp(0.0, 1.0)
+            .max(state.config.min_listenability_score);
         if let Err(error) = generate_and_publish_songs(&state, requested, min_score).await {
             eprintln!("dd-music-rs NATS generation request failed: {error:?}");
         }

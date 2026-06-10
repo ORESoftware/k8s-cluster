@@ -66,16 +66,16 @@ pub const CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP: &str = "dd-contract-service";
 pub const CRON_PROMPTS_SUBJECT: &str = "dd.remote.cron.prompts";
 pub const CRON_PROMPTS_STREAM: &str = "DD_REMOTE_CRON";
 
-/// Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.
+/// Fan-out emitted on each evaluation of an enabled alert rule (disabled-rule evaluations are not published). Carries the rule id, title, current state (alerting/normal/no_data/error), and the triggering metric summary (observed value + condition) — never the underlying rows.
 /// Service: dd-data-viz-rs
 pub const DATA_VIZ_ALERTS_EVENTS_SUBJECT: &str = "dd.remote.dataviz.alerts.events";
 
-/// Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.
+/// Outbound notification-dispatch summaries published when an alert dispatch is processed. The dd-data-viz-notifiers queue group is reserved for a future notifier worker (no in-tree consumer yet); when added it will deliver each dispatch once. The payload is the dispatch summary (ids, status, counts) — the per-contact attempt list stays off this subject.
 /// Service: dd-data-viz-rs
 pub const DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT: &str = "dd.remote.dataviz.notifications.dispatch";
 pub const DATA_VIZ_NOTIFICATIONS_DISPATCH_QUEUE_GROUP: &str = "dd-data-viz-notifiers";
 
-/// Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.
+/// Fan-out emitted when a publish request is saved or reviewed. Carries the publish-request summary (request/target ids, target title, requester, reviewer, status) — never the rendered payload or the free-text notes/review comment.
 /// Service: dd-data-viz-rs
 pub const DATA_VIZ_PUBLISH_EVENTS_SUBJECT: &str = "dd.remote.dataviz.publish.events";
 
@@ -267,20 +267,20 @@ pub const ML_DEAD_LETTER_SUBJECT: &str = "dd.remote.ml.deadletter";
 /// Service: dd-ai-ml-pipeline
 pub const ML_FEATURES_SUBJECT: &str = "dd.remote.ml.features";
 
-/// Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. Default for MUSIC_GENERATION_REQUEST_SUBJECT.
+/// Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. The consumer is opt-in (MUSIC_NATS_GENERATION_ENABLED) because each request drives expensive synthesis; publish rights to this subject are a privileged capability.
 /// Service: dd-music-rs
 pub const MUSIC_GENERATION_REQUESTS_SUBJECT: &str = "dd.remote.music.generation.requests";
 pub const MUSIC_GENERATION_REQUESTS_QUEUE_GROUP: &str = "dd-music-rs";
 
-/// Generation outcomes (published / discarded-below-listenability / failed) emitted after a generation sweep. Default for MUSIC_GENERATION_RESULT_SUBJECT.
+/// Generation outcomes (counts of published / discarded-below-listenability, attempts, and published song ids) emitted after a generation pass — whether triggered by the scheduled sweep, the HTTP endpoint, or a NATS request.
 /// Service: dd-music-rs
 pub const MUSIC_GENERATION_RESULTS_SUBJECT: &str = "dd.remote.music.generation.results";
 
-/// Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it. Default for MUSIC_SONGS_PUBLISHED_SUBJECT.
+/// Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it.
 /// Service: dd-music-rs
 pub const MUSIC_SONGS_PUBLISHED_SUBJECT: &str = "dd.remote.music.songs.published";
 
-/// Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). Default for MUSIC_VOTES_EVENT_SUBJECT.
+/// Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes).
 /// Service: dd-music-rs
 pub const MUSIC_VOTES_EVENTS_SUBJECT: &str = "dd.remote.music.votes.events";
 

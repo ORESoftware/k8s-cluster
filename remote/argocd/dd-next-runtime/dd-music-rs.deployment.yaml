@@ -131,6 +131,11 @@ spec:
               value: dd:music
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # Publish fan-out (songs/votes/results) is on with NATS_URL above.
+            # The inbound generation trigger is an expensive, unauthenticated
+            # capability — keep it opt-in until upstream auth/rate-limiting lands.
+            - name: MUSIC_NATS_GENERATION_ENABLED
+              value: 'false'
             - name: MUSIC_STORAGE_PROVIDER
               value: s3
             - name: MUSIC_S3_KEY_PREFIX

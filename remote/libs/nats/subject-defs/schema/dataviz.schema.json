@@ -10,14 +10,14 @@
     "subjects": [
       {
         "name": "DataVizAlertsEvents",
-        "description": "Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.",
+        "description": "Fan-out emitted on each evaluation of an enabled alert rule (disabled-rule evaluations are not published). Carries the rule id, title, current state (alerting/normal/no_data/error), and the triggering metric summary (observed value + condition) — never the underlying rows.",
         "kind": "static",
         "subject": "dd.remote.dataviz.alerts.events",
         "direction": "publish"
       },
       {
         "name": "DataVizNotificationsDispatch",
-        "description": "Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.",
+        "description": "Outbound notification-dispatch summaries published when an alert dispatch is processed. The dd-data-viz-notifiers queue group is reserved for a future notifier worker (no in-tree consumer yet); when added it will deliver each dispatch once. The payload is the dispatch summary (ids, status, counts) — the per-contact attempt list stays off this subject.",
         "kind": "static",
         "subject": "dd.remote.dataviz.notifications.dispatch",
         "queueGroup": "dd-data-viz-notifiers",
@@ -25,7 +25,7 @@
       },
       {
         "name": "DataVizPublishEvents",
-        "description": "Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.",
+        "description": "Fan-out emitted when a publish request is saved or reviewed. Carries the publish-request summary (request/target ids, target title, requester, reviewer, status) — never the rendered payload or the free-text notes/review comment.",
         "kind": "static",
         "subject": "dd.remote.dataviz.publish.events",
         "direction": "publish"
