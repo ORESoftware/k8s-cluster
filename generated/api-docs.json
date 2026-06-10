@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "billing-server-rs",
   "language": "rust",
-  "routeCount": 45,
+  "routeCount": 49,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 39
+    "user-generated": 43
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -597,6 +597,23 @@
       "notes": ""
     },
     {
+      "path": "/v1/webhooks/adyen",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/billing-server-rs/src/api/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/v1/webhooks/bridge",
       "methods": [
         "POST"
@@ -665,6 +682,23 @@
       "notes": ""
     },
     {
+      "path": "/v1/webhooks/dwolla",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/billing-server-rs/src/api/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/v1/webhooks/fireblocks",
       "methods": [
         "POST"
@@ -716,6 +750,23 @@
       "notes": ""
     },
     {
+      "path": "/v1/webhooks/modern_treasury",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/billing-server-rs/src/api/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/v1/webhooks/paypal",
       "methods": [
         "POST"
@@ -751,6 +802,23 @@
     },
     {
       "path": "/v1/webhooks/revolut",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "webhook signature",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhooks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/billing-server-rs/src/api/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/webhooks/square",
       "methods": [
         "POST"
       ],
