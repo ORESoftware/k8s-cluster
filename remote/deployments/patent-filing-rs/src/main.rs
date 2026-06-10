@@ -37,6 +37,17 @@ const MAX_TOKEN_LEN: usize = 160;
 const MAX_CLAIMS: usize = 200;
 const ABSTRACT_WORD_LIMIT: usize = 150;
 const REQUEST_TIMEOUT_SECS: u64 = 15;
+/// AI drafting can take much longer than the deterministic endpoints (model
+/// thinking + generation), so it gets its own request + HTTP timeouts.
+const AI_REQUEST_TIMEOUT_SECS: u64 = 150;
+const AI_HTTP_TIMEOUT_SECS: u64 = 140;
+const AI_MAX_TOKENS: u32 = 12_000;
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+/// Upper bound on the prompt brief sent to the model, so a large intake cannot
+/// amplify into unbounded model cost.
+const AI_BRIEF_MAX_CHARS: usize = 20_000;
+/// Cap on upstream error text echoed back to clients.
+const AI_ERROR_SNIPPET_CHARS: usize = 500;
 /// USPTO fee schedule effective date encoded in [`fee_schedule`].
 const FEE_EFFECTIVE_DATE: &str = "2025-01-19";
 /// Pinned htmx asset + Subresource Integrity hash (supply-chain hardening).
@@ -48,6 +59,8 @@ struct AppState {
     config: Arc<Config>,
     metrics: Arc<Metrics>,
     store: Arc<RwLock<PatentStore>>,
+    http: reqwest::Client,
+    ai_permits: Arc<tokio::sync::Semaphore>,
 }
 
 #[derive(Clone)]
@@ -56,6 +69,10 @@ struct Config {
     allow_unauthenticated: bool,
     patent_center_url: String,
     max_matters: usize,
+    anthropic_api_key: Option<String>,
+    anthropic_base_url: String,
+    ai_model: String,
+    ai_max_concurrency: usize,
 }
 
 #[derive(Default)]
@@ -68,6 +85,9 @@ struct Metrics {
     claim_checks_total: AtomicU64,
     fee_estimates_total: AtomicU64,
     deadline_requests_total: AtomicU64,
+    ai_drafts_total: AtomicU64,
+    ai_draft_errors_total: AtomicU64,
+    ai_throttled_total: AtomicU64,
     auth_failures_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -212,7 +232,7 @@ struct ProvisionalDraft {
     drawing_plan: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DraftSection {
     heading: String,
@@ -330,6 +350,11 @@ fn config_from_env() -> Config {
             "https://patentcenter.uspto.gov/",
         ),
         max_matters: env_usize("PATENT_FILING_MAX_MATTERS", MAX_MATTERS_DEFAULT),
+        anthropic_api_key: optional_env("PATENT_FILING_ANTHROPIC_API_KEY")
+            .or_else(|| optional_env("ANTHROPIC_API_KEY")),
+        anthropic_base_url: env_value("PATENT_FILING_ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+        ai_model: env_value("PATENT_FILING_AI_MODEL", "claude-opus-4-8"),
+        ai_max_concurrency: env_usize("PATENT_FILING_AI_MAX_CONCURRENCY", 4),
     }
 }
 
@@ -558,6 +583,39 @@ fn validate_intake(request: &PatentIntakeRequest) -> Result<(), String> {
         return Err(format!(
             "list fields may contain at most {MAX_LIST_ITEMS} items"
         ));
+    }
+    // Cap individual list-item lengths. The form path already does this via
+    // clean_text; the JSON path must enforce it too so a single oversized item
+    // cannot bloat a stored package or amplify the AI prompt.
+    let short_lists = [
+        ("inventorNames", &request.inventor_names),
+        ("noveltyClaims", &request.novelty_claims),
+        ("embodiments", &request.embodiments),
+        ("alternatives", &request.alternatives),
+        ("advantages", &request.advantages),
+    ];
+    for (label, items) in short_lists {
+        if items.iter().any(|item| item.len() > MAX_SHORT_TEXT_LEN) {
+            return Err(format!(
+                "each {label} item must be at most {MAX_SHORT_TEXT_LEN} bytes"
+            ));
+        }
+    }
+    for art in &request.known_prior_art {
+        if art.title.len() > MAX_SHORT_TEXT_LEN
+            || art.url.as_ref().is_some_and(|v| v.len() > MAX_SHORT_TEXT_LEN)
+            || art.notes.as_ref().is_some_and(|v| v.len() > MAX_TEXT_LEN)
+        {
+            return Err("knownPriorArt entries are too long".to_string());
+        }
+    }
+    for attachment in &request.attachments {
+        if attachment.name.len() > MAX_SHORT_TEXT_LEN
+            || attachment.url.as_ref().is_some_and(|v| v.len() > MAX_SHORT_TEXT_LEN)
+            || attachment.notes.as_ref().is_some_and(|v| v.len() > MAX_TEXT_LEN)
+        {
+            return Err("attachment entries are too long".to_string());
+        }
     }
     Ok(())
 }
@@ -1584,8 +1642,19 @@ fn parse_claim_dependencies(text: &str) -> (Vec<usize>, bool) {
             if let Ok(num) = lower[num_start..cursor].parse::<usize>() {
                 if pending_range {
                     if let Some(start) = last_num {
-                        for n in (start + 1)..=num {
+                        // Clamp the expansion: a referenced claim above MAX_CLAIMS
+                        // is invalid anyway, and an unclamped range parsed from
+                        // untrusted digits (e.g. "claim 1 to 9999999999") would
+                        // be an unbounded-loop / OOM DoS.
+                        let end = num.min(start.saturating_add(MAX_CLAIMS));
+                        for n in (start + 1)..=end {
+                            if local.len() >= MAX_CLAIMS {
+                                break;
+                            }
                             local.push(n);
+                        }
+                        if num > end {
+                            local.push(num); // record the out-of-range ref so it is flagged
                         }
                     }
                     pending_range = false;
@@ -1594,12 +1663,18 @@ fn parse_claim_dependencies(text: &str) -> (Vec<usize>, bool) {
                 }
                 last_num = Some(num);
             }
+            if local.len() >= MAX_CLAIMS {
+                break;
+            }
         }
         if local.len() > 1 {
             multi_phrase = true;
         }
         for n in local {
             refs.insert(n);
+        }
+        if refs.len() >= MAX_CLAIMS {
+            break;
         }
         idx = cursor.max(idx + pos + 1);
     }
@@ -1639,8 +1714,10 @@ fn introduced_and_definite(text: &str) -> (BTreeSet<String>, Vec<(String, String
             if let Some(n) = next.filter(|n| is_noun_token(n)) {
                 introduced.insert(n.to_string());
             }
-        } else if (w == "the" || w == "said") && next.is_some_and(is_noun_token) {
-            definite.push((w.to_string(), next.unwrap().to_string()));
+        } else if w == "the" || w == "said" {
+            if let Some(n) = next.filter(|n| is_noun_token(n)) {
+                definite.push((w.to_string(), n.to_string()));
+            }
         }
     }
     (introduced, definite)
@@ -1811,6 +1888,279 @@ fn audit_claims(claims: &[String], abstract_text: Option<&str>) -> ClaimAudit {
     }
 }
 
+// ---------------------------------------------------------------------------
+// AI-assisted drafting (Claude) with a deterministic self-audit + repair loop
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AiDraft {
+    #[serde(rename = "abstract", alias = "abstractText", default)]
+    abstract_text: String,
+    #[serde(default)]
+    claims: Vec<String>,
+    #[serde(default)]
+    sections: Vec<DraftSection>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiDraftResponse {
+    ok: bool,
+    model: String,
+    repair_applied: bool,
+    draft: AiDraft,
+    claim_audit: ClaimAudit,
+    fee_estimate: FeeEstimate,
+    disclaimer: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicTextBlock {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct AnthropicResponse {
+    #[serde(default)]
+    content: Vec<AnthropicTextBlock>,
+    #[serde(default)]
+    stop_reason: Option<String>,
+}
+
+const AI_SYSTEM_PROMPT: &str = "You are a patent drafting assistant that prepares provisional-application \
+drafting support for review by a registered patent practitioner. You do not give legal advice and you do not \
+file anything. Draft in clear, enabling, US-practice style.\n\n\
+Return ONLY a JSON object (no prose, no markdown fences) with exactly these keys:\n\
+- \"abstract\": a single paragraph of at most 150 words.\n\
+- \"claims\": an array of claim strings. Claim 1 must be independent. Every dependent claim must reference an \
+earlier, lower-numbered claim by number (e.g. \"The system of claim 1, wherein ...\") and must not forward- or \
+self-reference. Maintain proper antecedent basis: introduce each element with \"a\"/\"an\" before later \
+referring to it with \"the\"/\"said\". Include at least one independent apparatus/system claim and one \
+independent method claim when the invention supports both.\n\
+- \"sections\": an array of {\"heading\", \"body\"} objects covering at least Field, Background, Summary, \
+Detailed Description, and Alternative Embodiments.";
+
+/// JSON schema constraining the model output (structured outputs).
+fn ai_output_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "abstract": { "type": "string" },
+            "claims": { "type": "array", "items": { "type": "string" } },
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "heading": { "type": "string" },
+                        "body": { "type": "string" }
+                    },
+                    "required": ["heading", "body"]
+                }
+            }
+        },
+        "required": ["abstract", "claims", "sections"]
+    })
+}
+
+fn intake_brief(request: &PatentIntakeRequest) -> String {
+    let list = |label: &str, items: &[String]| {
+        if items.is_empty() {
+            String::new()
+        } else {
+            format!("\n{label}:\n- {}", items.join("\n- "))
+        }
+    };
+    let brief = format!(
+        "Title: {title}\nTechnical field: {field}\nInventors: {inventors}\n\nProblem:\n{problem}\n\nSolution:\n{solution}\n\nInvention summary:\n{summary}{novelty}{embodiments}{alternatives}{advantages}\n\nDesired claim count (approximate): {claims}",
+        title = request.title,
+        field = if request.technical_field.trim().is_empty() { "(unspecified)" } else { request.technical_field.trim() },
+        inventors = if request.inventor_names.is_empty() { "(unspecified)".to_string() } else { request.inventor_names.join(", ") },
+        problem = request.problem,
+        solution = request.solution,
+        summary = request.invention_summary,
+        novelty = list("Novelty points", &request.novelty_claims),
+        embodiments = list("Embodiments", &request.embodiments),
+        alternatives = list("Alternatives", &request.alternatives),
+        advantages = list("Advantages", &request.advantages),
+        claims = request.desired_claim_count.unwrap_or(10),
+    );
+    // List fields are not individually length-capped by validate_intake, so bound
+    // the whole brief to keep model cost predictable regardless of input size.
+    if brief.chars().count() > AI_BRIEF_MAX_CHARS {
+        brief.chars().take(AI_BRIEF_MAX_CHARS).collect()
+    } else {
+        brief
+    }
+}
+
+/// Strip an optional ```json ... ``` fence and parse the model's JSON output.
+fn parse_ai_draft(text: &str) -> Result<AiDraft, String> {
+    let trimmed = text.trim();
+    let body = if let Some(rest) = trimmed.strip_prefix("```") {
+        let rest = rest.strip_prefix("json").unwrap_or(rest);
+        rest.trim_start_matches('\n')
+            .strip_suffix("```")
+            .unwrap_or(rest)
+            .trim()
+            .trim_end_matches("```")
+            .trim()
+    } else {
+        trimmed
+    };
+    serde_json::from_str::<AiDraft>(body)
+        .map_err(|error| format!("model did not return the expected JSON: {error}"))
+}
+
+async fn anthropic_messages(
+    state: &AppState,
+    api_key: &str,
+    system: &str,
+    user_messages: &[serde_json::Value],
+) -> Result<AiDraft, String> {
+    let body = json!({
+        "model": state.config.ai_model,
+        "max_tokens": AI_MAX_TOKENS,
+        "thinking": { "type": "adaptive" },
+        "output_config": {
+            "effort": "high",
+            "format": { "type": "json_schema", "schema": ai_output_schema() }
+        },
+        "system": system,
+        "messages": user_messages,
+    });
+    let response = state
+        .http
+        .post(format!("{}/v1/messages", state.config.anthropic_base_url))
+        .header("x-api-key", api_key)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("request to model failed: {error}"))?;
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|error| format!("failed to read model response: {error}"))?;
+    if !status.is_success() {
+        let snippet: String = text.chars().take(AI_ERROR_SNIPPET_CHARS).collect();
+        return Err(format!("model returned HTTP {}: {}", status.as_u16(), snippet));
+    }
+    let parsed: AnthropicResponse = serde_json::from_str(&text)
+        .map_err(|error| format!("could not parse model envelope: {error}"))?;
+    if parsed.stop_reason.as_deref() == Some("refusal") {
+        return Err("model declined to produce a draft for this input".to_string());
+    }
+    let json_text = parsed
+        .content
+        .iter()
+        .filter(|block| block.kind == "text")
+        .filter_map(|block| block.text.clone())
+        .collect::<Vec<_>>()
+        .join("");
+    if json_text.trim().is_empty() {
+        return Err("model returned no text content".to_string());
+    }
+    parse_ai_draft(&json_text)
+}
+
+fn user_message(text: String) -> serde_json::Value {
+    json!({ "role": "user", "content": text })
+}
+
+async fn generate_ai_draft(
+    state: &AppState,
+    request: PatentIntakeRequest,
+) -> Result<AiDraftResponse, String> {
+    let api_key = state
+        .config
+        .anthropic_api_key
+        .clone()
+        .ok_or("AI drafting is not configured")?;
+    validate_intake(&request)?;
+    let brief = intake_brief(&request);
+
+    let draft = anthropic_messages(
+        state,
+        &api_key,
+        AI_SYSTEM_PROMPT,
+        &[user_message(format!(
+            "Draft a provisional patent application from this invention disclosure.\n\n{brief}"
+        ))],
+    )
+    .await?;
+
+    let audit = audit_claims(&draft.claims, Some(&draft.abstract_text));
+    let blockers: Vec<String> = audit
+        .findings
+        .iter()
+        .filter(|finding| finding.severity == "blocker")
+        .map(|finding| finding.message.clone())
+        .collect();
+
+    // Self-audit repair pass: feed the deterministic checker's blockers back to
+    // the model exactly once and re-audit the result.
+    let (draft, audit, repair_applied) = if blockers.is_empty() {
+        (draft, audit, false)
+    } else {
+        let prior = serde_json::to_string(&draft).unwrap_or_default();
+        let repair = anthropic_messages(
+            state,
+            &api_key,
+            AI_SYSTEM_PROMPT,
+            &[
+                user_message(format!(
+                    "Draft a provisional patent application from this invention disclosure.\n\n{brief}"
+                )),
+                user_message(format!(
+                    "Your previous draft was:\n{prior}\n\nAn automated formality checker found these blocking issues:\n- {}\n\nReturn a corrected JSON draft that resolves every issue while keeping the same invention scope.",
+                    blockers.join("\n- ")
+                )),
+            ],
+        )
+        .await;
+        match repair {
+            Ok(repaired) => {
+                let repaired_audit = audit_claims(&repaired.claims, Some(&repaired.abstract_text));
+                (repaired, repaired_audit, true)
+            }
+            // If the repair call fails, keep the first draft and its findings.
+            Err(_) => (draft, audit, false),
+        }
+    };
+
+    let entity = Entity::parse(request.entity_status.as_deref());
+    let track = normalize_track(request.target_filing.as_ref());
+    let fee_estimate = estimate_fees(
+        entity,
+        &track,
+        audit.total_claims,
+        audit.independent_claims,
+        audit.has_multiple_dependent_claim,
+    );
+
+    Ok(AiDraftResponse {
+        ok: true,
+        model: state.config.ai_model.clone(),
+        repair_applied,
+        draft,
+        claim_audit: audit,
+        fee_estimate,
+        disclaimer:
+            "AI-generated drafting support only. Not legal advice and not a filing. A registered patent \
+             practitioner must review inventorship, enablement, claim scope, and prior art before any filing."
+                .to_string(),
+    })
+}
+
 fn build_package(
     config: &Config,
     request: PatentIntakeRequest,
@@ -1921,9 +2271,12 @@ async fn descriptor(State(state): State<AppState>) -> impl IntoResponse {
             "claimsCheck": "/claims/check",
             "feesEstimate": "/fees/estimate",
             "deadlines": "/deadlines",
+            "draftAi": "/draft/ai",
             "docs": "/docs/api"
         },
         "feeScheduleEffectiveDate": FEE_EFFECTIVE_DATE,
+        "aiConfigured": state.config.anthropic_api_key.is_some(),
+        "aiModel": state.config.ai_model,
         "stance": "preparation-only"
     }))
 }
@@ -1975,6 +2328,11 @@ async fn schema() -> impl IntoResponse {
                 "publicDisclosureDate": "YYYY-MM-DD?",
                 "foreignPriorityDate": "YYYY-MM-DD?",
                 "today": "YYYY-MM-DD?"
+            },
+            "draftAi": {
+                "request": "same intake contract as /packages/provisional",
+                "response": "abstract, claims, sections generated by Claude, then re-checked by /claims/check and priced; one automatic repair pass if the checker finds blockers",
+                "requires": "ANTHROPIC_API_KEY"
             }
         }
     }))
@@ -2198,6 +2556,69 @@ async fn deadlines_json(
     Json(json!({ "ok": true, "deadlines": report })).into_response()
 }
 
+async fn draft_ai_json(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PatentIntakeRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(&state, failure);
+    }
+    if state.config.anthropic_api_key.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "error": "AI drafting is not configured; set ANTHROPIC_API_KEY (or PATENT_FILING_ANTHROPIC_API_KEY)."
+            })),
+        )
+            .into_response();
+    }
+    // Bound concurrent outbound model calls: caps resource use and Anthropic
+    // spend, and stops a burst of expensive long-lived requests from piling up.
+    let _permit = match state.ai_permits.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            state
+                .metrics
+                .ai_throttled_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [(header::RETRY_AFTER, "30")],
+                Json(json!({
+                    "ok": false,
+                    "error": "AI drafting is at capacity; retry shortly."
+                })),
+            )
+                .into_response();
+        }
+    };
+    match generate_ai_draft(&state, request).await {
+        Ok(response) => {
+            state.metrics.ai_drafts_total.fetch_add(1, Ordering::Relaxed);
+            Json(response).into_response()
+        }
+        Err(error) => {
+            state
+                .metrics
+                .ai_draft_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            // 400 for validation problems, 502 for upstream model failures.
+            let status = if error.contains("model") || error.contains("request to model") {
+                StatusCode::BAD_GATEWAY
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            (status, Json(json!({ "ok": false, "error": error }))).into_response()
+        }
+    }
+}
+
 async fn review_package_json(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2320,7 +2741,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         "service": SERVICE_NAME,
         "authConfigured": state.config.server_auth_secret.is_some(),
         "allowUnauthenticated": state.config.allow_unauthenticated,
-        "patentCenterUrl": state.config.patent_center_url
+        "patentCenterUrl": state.config.patent_center_url,
+        "aiConfigured": state.config.anthropic_api_key.is_some()
     }))
 }
 
@@ -2356,6 +2778,15 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_patent_filing_deadline_requests_total Filing deadline requests accepted.\n\
          # TYPE dd_patent_filing_deadline_requests_total counter\n\
          dd_patent_filing_deadline_requests_total {}\n\
+         # HELP dd_patent_filing_ai_drafts_total AI drafting requests completed.\n\
+         # TYPE dd_patent_filing_ai_drafts_total counter\n\
+         dd_patent_filing_ai_drafts_total {}\n\
+         # HELP dd_patent_filing_ai_draft_errors_total AI drafting requests that failed.\n\
+         # TYPE dd_patent_filing_ai_draft_errors_total counter\n\
+         dd_patent_filing_ai_draft_errors_total {}\n\
+         # HELP dd_patent_filing_ai_throttled_total AI drafting requests rejected at the concurrency limit.\n\
+         # TYPE dd_patent_filing_ai_throttled_total counter\n\
+         dd_patent_filing_ai_throttled_total {}\n\
          # HELP dd_patent_filing_auth_failures_total Rejected requests with missing or invalid auth.\n\
          # TYPE dd_patent_filing_auth_failures_total counter\n\
          dd_patent_filing_auth_failures_total {}\n\
@@ -2373,6 +2804,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.claim_checks_total.load(Ordering::Relaxed),
         state.metrics.fee_estimates_total.load(Ordering::Relaxed),
         state.metrics.deadline_requests_total.load(Ordering::Relaxed),
+        state.metrics.ai_drafts_total.load(Ordering::Relaxed),
+        state.metrics.ai_draft_errors_total.load(Ordering::Relaxed),
+        state.metrics.ai_throttled_total.load(Ordering::Relaxed),
         state.metrics.auth_failures_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
         matter_count,
@@ -2942,14 +3376,34 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     init_tracing();
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8116").parse::<u16>()?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(AI_HTTP_TIMEOUT_SECS))
+        .user_agent(format!("{SERVICE_NAME}/0.2"))
+        // The API client must never follow redirects: reqwest does not strip the
+        // custom `x-api-key` header on cross-host redirects, so a redirecting or
+        // hijacked base URL could leak the key to another host.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let config = config_from_env();
+    let ai_permits = Arc::new(tokio::sync::Semaphore::new(config.ai_max_concurrency));
     let state = AppState {
-        config: Arc::new(config_from_env()),
+        config: Arc::new(config),
         metrics: Arc::new(Metrics::default()),
         store: Arc::new(RwLock::new(PatentStore::default())),
+        http,
+        ai_permits,
     };
 
     let [sec0, sec1, sec2, sec3, sec4] = security_header_layers();
-    let app = Router::new()
+    // AI drafting needs a much longer per-request timeout than the deterministic
+    // endpoints, so it lives on its own sub-router with its own TimeoutLayer.
+    let ai_routes = Router::new()
+        .route("/draft/ai", post(draft_ai_json))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(AI_REQUEST_TIMEOUT_SECS),
+        ));
+    let fast_routes = Router::new()
         .route("/", get(root))
         .route("/descriptor", get(descriptor))
         .route("/schema", get(schema))
@@ -2970,12 +3424,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
-        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .layer(RequestBodyLimitLayer::new(MAX_HTTP_BODY_BYTES))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
-        ))
+        ));
+    let app = fast_routes
+        .merge(ai_routes)
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .layer(RequestBodyLimitLayer::new(MAX_HTTP_BODY_BYTES))
         .layer(sec0)
         .layer(sec1)
         .layer(sec2)
@@ -3005,6 +3461,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_config() -> Config {
+        Config {
+            server_auth_secret: Some("secret".to_string()),
+            allow_unauthenticated: false,
+            patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
+            max_matters: 10,
+            anthropic_api_key: None,
+            anthropic_base_url: "https://api.anthropic.com".to_string(),
+            ai_model: "claude-opus-4-8".to_string(),
+            ai_max_concurrency: 4,
+        }
+    }
 
     #[test]
     fn complete_intake_scores_ready_for_attorney_review() {
@@ -3041,12 +3510,7 @@ mod tests {
 
     #[test]
     fn package_contains_claim_seeds_drawings_and_checklist() {
-        let config = Config {
-            server_auth_secret: Some("secret".to_string()),
-            allow_unauthenticated: false,
-            patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
-            max_matters: 10,
-        };
+        let config = test_config();
         let package = build_package(&config, example_request()).expect("package");
         assert!(!package.draft.claim_seeds.is_empty());
         assert!(package
@@ -3063,14 +3527,11 @@ mod tests {
     #[test]
     fn package_review_blocks_low_readiness() {
         let state = AppState {
-            config: Arc::new(Config {
-                server_auth_secret: Some("secret".to_string()),
-                allow_unauthenticated: false,
-                patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
-                max_matters: 10,
-            }),
+            config: Arc::new(test_config()),
             metrics: Arc::new(Metrics::default()),
             store: Arc::new(RwLock::new(PatentStore::default())),
+            http: reqwest::Client::new(),
+            ai_permits: Arc::new(tokio::sync::Semaphore::new(4)),
         };
         let response = review_package(
             &state,
@@ -3212,6 +3673,55 @@ mod tests {
     }
 
     #[test]
+    fn validate_intake_rejects_oversized_list_items() {
+        let mut request = example_request();
+        request.novelty_claims = vec!["x".repeat(MAX_SHORT_TEXT_LEN + 1)];
+        let err = validate_intake(&request).unwrap_err();
+        assert!(err.contains("noveltyClaims"), "unexpected error: {err}");
+        // A normal-sized item passes.
+        let mut ok = example_request();
+        ok.novelty_claims = vec!["a reasonable novelty point".to_string()];
+        assert!(validate_intake(&ok).is_ok());
+    }
+
+    #[test]
+    fn audit_handles_multibyte_utf8_without_panicking() {
+        // parse_claim_dependencies walks byte offsets over the lowercased text and
+        // slices `lower[cursor..]`; multibyte UTF-8 next to "claim"/numbers is where
+        // a char-boundary panic would surface. This must not panic.
+        let claims = vec![
+            "A café système comprising a naïve wîdget, 日本語.".to_string(),
+            "The système of claim 1, wherein the wîdget café is 設計 — 1 to 3.".to_string(),
+            "Claim™ café of any of claims 1 or 2, naïve 日本.".to_string(),
+        ];
+        let audit = audit_claims(&claims, Some("Abstract with café 日本語 ™ characters."));
+        assert_eq!(audit.total_claims, 3);
+        let (refs, _) = parse_claim_dependencies("The wîdget café of claims 1–2, 日本語.");
+        assert!(refs.len() <= MAX_CLAIMS + 1);
+    }
+
+    #[test]
+    fn claim_range_expansion_is_bounded() {
+        // A huge range parsed from untrusted digits must not blow up.
+        let (refs, _) = parse_claim_dependencies("The system of claims 1 to 9999999999.");
+        assert!(refs.len() <= MAX_CLAIMS + 1, "refs unbounded: {}", refs.len());
+        // The out-of-range endpoint is still recorded so it gets flagged.
+        assert!(refs.iter().any(|&r| r > MAX_CLAIMS));
+        // And auditing such a claim terminates and flags it.
+        let audit = audit_claims(
+            &[
+                "A system comprising a part.".to_string(),
+                "The system of claims 1 to 9999999999.".to_string(),
+            ],
+            None,
+        );
+        assert!(audit
+            .findings
+            .iter()
+            .any(|f| f.code == "invalid-claim-reference"));
+    }
+
+    #[test]
     fn abstract_over_limit_is_flagged() {
         let long_abstract = "word ".repeat(180);
         let audit = audit_claims(&["A device.".to_string()], Some(&long_abstract));
@@ -3229,13 +3739,50 @@ mod tests {
     }
 
     #[test]
-    fn generated_package_includes_fee_deadline_and_claim_audit() {
-        let config = Config {
-            server_auth_secret: Some("secret".to_string()),
-            allow_unauthenticated: false,
-            patent_center_url: "https://patentcenter.uspto.gov/".to_string(),
-            max_matters: 10,
+    fn parse_ai_draft_handles_plain_and_fenced_json() {
+        let plain = r#"{"abstract":"An abstract.","claims":["A device."],"sections":[{"heading":"Field","body":"..."}]}"#;
+        let draft = parse_ai_draft(plain).expect("plain json");
+        assert_eq!(draft.abstract_text, "An abstract.");
+        assert_eq!(draft.claims.len(), 1);
+        assert_eq!(draft.sections.len(), 1);
+
+        let fenced = "```json\n{\"abstract\":\"X\",\"claims\":[\"A method.\"],\"sections\":[]}\n```";
+        let draft = parse_ai_draft(fenced).expect("fenced json");
+        assert_eq!(draft.claims, vec!["A method.".to_string()]);
+
+        assert!(parse_ai_draft("not json at all").is_err());
+    }
+
+    #[test]
+    fn ai_output_schema_is_well_formed() {
+        let schema = ai_output_schema();
+        assert_eq!(schema["additionalProperties"], serde_json::json!(false));
+        assert!(schema["properties"]["claims"]["items"]["type"] == "string");
+        // Generated drafts feed straight back into the deterministic auditor.
+        let draft = AiDraft {
+            abstract_text: "An abstract.".to_string(),
+            claims: vec![
+                "A widget comprising a frame.".to_string(),
+                "The widget of claim 1, wherein the frame is metal.".to_string(),
+            ],
+            sections: vec![],
         };
+        let audit = audit_claims(&draft.claims, Some(&draft.abstract_text));
+        assert_eq!(audit.independent_claims, 1);
+        assert_eq!(audit.dependent_claims, 1);
+    }
+
+    #[test]
+    fn intake_brief_includes_core_fields() {
+        let brief = intake_brief(&example_request());
+        assert!(brief.contains("Adaptive thermal sensor array"));
+        assert!(brief.contains("Novelty points"));
+        assert!(brief.contains("Problem:"));
+    }
+
+    #[test]
+    fn generated_package_includes_fee_deadline_and_claim_audit() {
+        let config = test_config();
         let mut request = example_request();
         request.provisional_filing_date = Some("2025-01-01".to_string());
         let package = build_package(&config, request).expect("package");

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/monte-carlo.schema.json",
+  "title": "MonteCarloNats",
+  "description": "NATS subjects owned by dd-monte-carlo-server (generic Monte Carlo engine: option pricing, pi estimation, queueing, generic integration). The server subscribes to simulate requests under the dd-monte-carlo-server queue group, publishes estimates with confidence intervals plus runtime events. Payloads carry a montecarlo.simulate.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-monte-carlo-server",
+    "summary": "Monte Carlo estimation request/result pipeline (pricing, pi, queueing).",
+    "subjects": [
+      {
+        "name": "MonteCarloSimulateRequests",
+        "description": "Inbound Monte Carlo simulation requests consumed by the monte-carlo server. Subscribed with the dd-monte-carlo-server queue group so requests load-balance across replicas. Default for MONTE_CARLO_SIMULATE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.montecarlo.simulate.requests",
+        "queueGroup": "dd-monte-carlo-server",
+        "direction": "both"
+      },
+      {
+        "name": "MonteCarloSimulateResults",
+        "description": "Monte Carlo estimates (point estimate, standard error, confidence interval, per-experiment summary) emitted by the monte-carlo server. Carries a montecarlo.simulate.v1 envelope. Default for MONTE_CARLO_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.montecarlo.simulate.results",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "MonteCarloServerQueueGroup",
+        "value": "dd-monte-carlo-server",
+        "description": "Shared queue group used by dd-monte-carlo-server replicas consuming simulate requests."
+      }
+    ]
+  }
+}

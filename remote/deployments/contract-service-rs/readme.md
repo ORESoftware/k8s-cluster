@@ -59,9 +59,18 @@ action may enact them.
 - `/settle` and `/resolve` require `SOLANA_SETTLEMENT_ENABLED`/`SOLANA_RESOLUTION_ENABLED` plus
   `CONTRACT_SETTLEMENT_AUTH_SECRET` (a separate secret from the raw-send secret), checked in constant
   time.
+- **Mainnet second gate.** When `SOLANA_CLUSTER=mainnet-beta`, the service refuses to start if any
+  broadcast capability (`SOLANA_SEND_ENABLED`, `SOLANA_SETTLEMENT_ENABLED`, or
+  `SOLANA_RESOLUTION_ENABLED`) is enabled without an explicit `SOLANA_MAINNET_SETTLEMENT_ENABLED=true`,
+  so a single misconfigured flag cannot move real funds. Mirrors the dd-escrow-rs mainnet gate.
 - **NATS-initiated broadcast is off by default.** NATS messages carry no auth header, so the `settle`/
   `resolve` subjects only validate, simulate, and confirm unless `CONTRACT_NATS_SETTLEMENT_ENABLED=true`
   (which additionally requires `SOLANA_SEND_ENABLED=true`).
+- **Unauthenticated-bus acknowledgment.** The shared NATS bus currently has no per-subject
+  authorization, so any pod that can reach it may publish to the `settle`/`resolve` subjects. To
+  prevent NATS-triggered broadcast being enabled by flipping one boolean, the service refuses to
+  start with `CONTRACT_NATS_SETTLEMENT_ENABLED=true` unless `CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS=true`
+  is also set. Lock NATS down (subject authz + a messaging NetworkPolicy) before setting the ack.
 - Settlement/resolution broadcasts are idempotent: an explicit `requestId` is claimed once within a
   bounded TTL window, so retries do not double-broadcast (HTTP returns `409` on replay).
 - Confirmation polling is bounded by a max timeout, min poll interval, and max poll count; `/confirm`

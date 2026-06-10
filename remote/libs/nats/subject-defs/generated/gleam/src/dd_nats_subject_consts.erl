@@ -10,6 +10,10 @@
 -module(dd_nats_subject_consts).
 
 -export([
+    agent_sim_frames_subject/0,
+    agent_sim_simulate_requests_subject/0,
+    agent_sim_simulate_requests_queue_group/0,
+    agent_sim_simulate_results_subject/0,
     billing_anchors_subject/0,
     billing_connection_events_subject/0,
     billing_ledger_postings_subject/0,
@@ -108,6 +112,9 @@
     mip_solver_results_stream/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
+    monte_carlo_simulate_requests_subject/0,
+    monte_carlo_simulate_requests_queue_group/0,
+    monte_carlo_simulate_results_subject/0,
     music_generation_requests_subject/0,
     music_generation_requests_queue_group/0,
     music_generation_results_subject/0,
@@ -121,6 +128,13 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    raft_consensus_events_subject/0,
+    raft_consensus_results_subject/0,
+    raft_propose_requests_subject/0,
+    raft_propose_requests_queue_group/0,
+    route_optimize_requests_subject/0,
+    route_optimize_requests_queue_group/0,
+    route_optimize_results_subject/0,
     routing_events_subject/0,
     routing_events_stream/0,
     routing_jobs_subject/0,
@@ -132,6 +146,12 @@
     runtime_critical_events_queue_group/0,
     runtime_critical_events_stream/0,
     runtime_events_subject/0,
+    sat_solve_requests_subject/0,
+    sat_solve_requests_queue_group/0,
+    sat_solve_results_subject/0,
+    scheduler_schedule_requests_subject/0,
+    scheduler_schedule_requests_queue_group/0,
+    scheduler_schedule_results_subject/0,
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
@@ -172,16 +192,22 @@
     thread_tasks_wildcard/0,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    constraint_scheduler_queue_group/0,
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
+    monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    raft_consensus_queue_group/0,
+    route_optimizer_queue_group/0,
     routing_workers_queue_group/0,
+    sat_smt_server_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     dd_remote_control_stream_name/0,
@@ -194,6 +220,10 @@
     dd_remote_tasks_stream_name/0
 ]).
 
+agent_sim_frames_subject() -> <<"dd.remote.agent_sim.frames"/utf8>>.
+agent_sim_simulate_requests_subject() -> <<"dd.remote.agent_sim.simulate.requests"/utf8>>.
+agent_sim_simulate_requests_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
+agent_sim_simulate_results_subject() -> <<"dd.remote.agent_sim.simulate.results"/utf8>>.
 billing_anchors_subject() -> <<"dd.remote.billing.anchors"/utf8>>.
 billing_connection_events_subject() -> <<"dd.remote.billing.connections.events"/utf8>>.
 billing_ledger_postings_subject() -> <<"dd.remote.billing.ledger.postings"/utf8>>.
@@ -292,6 +322,9 @@ mip_solver_results_subject() -> <<"dd.remote.mip_solver.results"/utf8>>.
 mip_solver_results_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 ml_dead_letter_subject() -> <<"dd.remote.ml.deadletter"/utf8>>.
 ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
+monte_carlo_simulate_requests_subject() -> <<"dd.remote.montecarlo.simulate.requests"/utf8>>.
+monte_carlo_simulate_requests_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
+monte_carlo_simulate_results_subject() -> <<"dd.remote.montecarlo.simulate.results"/utf8>>.
 music_generation_requests_subject() -> <<"dd.remote.music.generation.requests"/utf8>>.
 music_generation_requests_queue_group() -> <<"dd-music-rs"/utf8>>.
 music_generation_results_subject() -> <<"dd.remote.music.generation.results"/utf8>>.
@@ -305,6 +338,13 @@ public_data_ingest_requests_queue_group() -> <<"dd-public-data-server"/utf8>>.
 public_data_ingest_results_subject() -> <<"dd.remote.public_data.ingest.results"/utf8>>.
 public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/utf8>>.
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
+raft_consensus_events_subject() -> <<"dd.remote.raft.consensus.events"/utf8>>.
+raft_consensus_results_subject() -> <<"dd.remote.raft.consensus.results"/utf8>>.
+raft_propose_requests_subject() -> <<"dd.remote.raft.propose.requests"/utf8>>.
+raft_propose_requests_queue_group() -> <<"dd-raft-consensus"/utf8>>.
+route_optimize_requests_subject() -> <<"dd.remote.route.optimize.requests"/utf8>>.
+route_optimize_requests_queue_group() -> <<"dd-route-optimizer"/utf8>>.
+route_optimize_results_subject() -> <<"dd.remote.route.optimize.results"/utf8>>.
 routing_events_subject() -> <<"dd.remote.routing.events"/utf8>>.
 routing_events_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 routing_jobs_subject() -> <<"dd.remote.routing.jobs"/utf8>>.
@@ -316,6 +356,12 @@ runtime_critical_events_subject() -> <<"dd.remote.events.critical"/utf8>>.
 runtime_critical_events_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 runtime_critical_events_stream() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 runtime_events_subject() -> <<"dd.remote.events"/utf8>>.
+sat_solve_requests_subject() -> <<"dd.remote.sat.solve.requests"/utf8>>.
+sat_solve_requests_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
+sat_solve_results_subject() -> <<"dd.remote.sat.solve.results"/utf8>>.
+scheduler_schedule_requests_subject() -> <<"dd.remote.scheduler.schedule.requests"/utf8>>.
+scheduler_schedule_requests_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
+scheduler_schedule_results_subject() -> <<"dd.remote.scheduler.schedule.results"/utf8>>.
 telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
 telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
@@ -356,16 +402,22 @@ thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
 thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
+agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
+constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
+monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
+raft_consensus_queue_group() -> <<"dd-raft-consensus"/utf8>>.
+route_optimizer_queue_group() -> <<"dd-route-optimizer"/utf8>>.
 routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
+sat_smt_server_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.

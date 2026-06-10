@@ -150,9 +150,12 @@ pool_dispatch_target(DefinitionJson) ->
                 false ->
                     {error, iolist_to_binary(["invalid pool language token: ", Language])};
                 true ->
-                    case pool_slug(DefinitionJson) of
-                        {ok, PoolSlug} ->
-                            {ok, pool_subject(DefinitionJson, Language), PoolSlug};
+                    case pool_subject(DefinitionJson, Language) of
+                        {ok, Subject} ->
+                            case pool_slug(DefinitionJson) of
+                                {ok, PoolSlug} -> {ok, Subject, PoolSlug};
+                                {error, Reason} -> {error, Reason}
+                            end;
                         {error, Reason} ->
                             {error, Reason}
                     end
@@ -183,15 +186,23 @@ pool_slug(DefinitionJson) ->
             end
     end.
 
+%% Resolve the request subject and validate it as a publishable NATS subject.
+%% The generated default is always safe; the poolSubject/env overrides are
+%% operator-supplied and must not be able to smuggle whitespace or CRLF into the
+%% NATS PUB line (wire-protocol injection).
 pool_subject(DefinitionJson, Language) ->
-    case json_string_field(DefinitionJson, <<"poolSubject">>) of
+    Subject = case json_string_field(DefinitionJson, <<"poolSubject">>) of
         <<>> ->
             case env_binary("LAMBDA_POOL_SUBJECT", <<>>) of
                 <<>> -> pool_requests_subject(Language);
-                Subject -> Subject
+                EnvSubject -> EnvSubject
             end;
-        Subject ->
-            Subject
+        DefSubject ->
+            DefSubject
+    end,
+    case safe_nats_subject(Subject) of
+        true -> {ok, Subject};
+        false -> {error, <<"pool subject is not a valid NATS subject">>}
     end.
 
 %% Build dd.remote.container_pool.<language>.requests from the generated wildcard
@@ -209,6 +220,11 @@ safe_pool_language(Language) ->
 
 safe_pool_slug(Slug) ->
     re:run(Slug, "^[A-Za-z0-9._:-]{1,119}$", [{capture, none}]) =:= match.
+
+%% Dot-separated tokens of subject-safe characters; no spaces, CRLF, null, or
+%% publish-illegal wildcards (`*`/`>`).
+safe_nats_subject(Subject) ->
+    re:run(Subject, "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*$", [{capture, none}]) =:= match.
 
 env_bool(Name, Default) ->
     case env_binary(Name, <<>>) of

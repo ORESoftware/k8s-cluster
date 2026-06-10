@@ -3,6 +3,10 @@
 -module(dd_nats_subject_defs).
 
 -export([
+    agent_sim_frames_subject/0,
+    agent_sim_simulate_requests_subject/0,
+    agent_sim_simulate_requests_queue_group/0,
+    agent_sim_simulate_results_subject/0,
     billing_anchors_subject/0,
     billing_connection_events_subject/0,
     billing_ledger_postings_subject/0,
@@ -101,6 +105,9 @@
     mip_solver_results_stream/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
+    monte_carlo_simulate_requests_subject/0,
+    monte_carlo_simulate_requests_queue_group/0,
+    monte_carlo_simulate_results_subject/0,
     music_generation_requests_subject/0,
     music_generation_requests_queue_group/0,
     music_generation_results_subject/0,
@@ -114,6 +121,13 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    raft_consensus_events_subject/0,
+    raft_consensus_results_subject/0,
+    raft_propose_requests_subject/0,
+    raft_propose_requests_queue_group/0,
+    route_optimize_requests_subject/0,
+    route_optimize_requests_queue_group/0,
+    route_optimize_results_subject/0,
     routing_events_subject/0,
     routing_events_stream/0,
     routing_jobs_subject/0,
@@ -125,6 +139,12 @@
     runtime_critical_events_queue_group/0,
     runtime_critical_events_stream/0,
     runtime_events_subject/0,
+    sat_solve_requests_subject/0,
+    sat_solve_requests_queue_group/0,
+    sat_solve_results_subject/0,
+    scheduler_schedule_requests_subject/0,
+    scheduler_schedule_requests_queue_group/0,
+    scheduler_schedule_results_subject/0,
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
     telemetry_raw_queue_group/0,
@@ -189,16 +209,22 @@
     parse_thread_tasks_subject/1,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
+    constraint_scheduler_queue_group/0,
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
+    monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    raft_consensus_queue_group/0,
+    route_optimizer_queue_group/0,
     routing_workers_queue_group/0,
+    sat_smt_server_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     cdc_stream_subjects/0,
@@ -246,6 +272,19 @@
     dd_remote_tasks_stream_storage/0,
     dd_remote_tasks_stream_ack/0
 ]).
+
+%% Per-tick simulation frames fanned out for live demos (grid/agent snapshots and aggregate stats). Broadcast with no queue group so every interested consumer (and the websocket bridge) receives each frame. Default for AGENT_SIM_FRAME_SUBJECT.
+%% Service: dd-agent-sim-server
+agent_sim_frames_subject() -> <<"dd.remote.agent_sim.frames"/utf8>>.
+
+%% Inbound agent-based / cellular-automata simulation requests consumed by the agent-sim server. Subscribed with the dd-agent-sim-server queue group so requests load-balance across replicas. Default for AGENT_SIM_SIMULATE_SUBJECT.
+%% Service: dd-agent-sim-server
+agent_sim_simulate_requests_subject() -> <<"dd.remote.agent_sim.simulate.requests"/utf8>>.
+agent_sim_simulate_requests_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
+
+%% Final simulation outcomes (final state summary, time series, convergence/extinction flags) emitted after a run completes. Carries an agent_sim.simulate.v1 envelope. Default for AGENT_SIM_RESULT_SUBJECT.
+%% Service: dd-agent-sim-server
+agent_sim_simulate_results_subject() -> <<"dd.remote.agent_sim.simulate.results"/utf8>>.
 
 %% Emitted when a Merkle root over a posting range is anchored to Solana (tamper-evidence notary). Carries tenant, anchor id, posting range/count, merkle root hex, tx signature, and slot.
 %% Service: dd-billing-server
@@ -543,6 +582,15 @@ ml_dead_letter_subject() -> <<"dd.remote.ml.deadletter"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
 
+%% Inbound Monte Carlo simulation requests consumed by the monte-carlo server. Subscribed with the dd-monte-carlo-server queue group so requests load-balance across replicas. Default for MONTE_CARLO_SIMULATE_SUBJECT.
+%% Service: dd-monte-carlo-server
+monte_carlo_simulate_requests_subject() -> <<"dd.remote.montecarlo.simulate.requests"/utf8>>.
+monte_carlo_simulate_requests_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
+
+%% Monte Carlo estimates (point estimate, standard error, confidence interval, per-experiment summary) emitted by the monte-carlo server. Carries a montecarlo.simulate.v1 envelope. Default for MONTE_CARLO_RESULT_SUBJECT.
+%% Service: dd-monte-carlo-server
+monte_carlo_simulate_results_subject() -> <<"dd.remote.montecarlo.simulate.results"/utf8>>.
+
 %% Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. The consumer is opt-in (MUSIC_NATS_GENERATION_ENABLED) because each request drives expensive synthesis; publish rights to this subject are a privileged capability.
 %% Service: dd-music-rs
 music_generation_requests_subject() -> <<"dd.remote.music.generation.requests"/utf8>>.
@@ -586,6 +634,28 @@ public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/u
 %% Service: dd-public-data-server
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
 
+%% Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.
+%% Service: dd-raft-consensus
+raft_consensus_events_subject() -> <<"dd.remote.raft.consensus.events"/utf8>>.
+
+%% Consensus outcomes (committed log, term/leader history, election counts, divergence detection) emitted after a simulated run. Carries a raft.consensus.v1 envelope. Default for RAFT_RESULT_SUBJECT.
+%% Service: dd-raft-consensus
+raft_consensus_results_subject() -> <<"dd.remote.raft.consensus.results"/utf8>>.
+
+%% Inbound Raft scenario/propose requests (cluster size, command stream, chaos parameters) consumed by the raft-consensus simulator. Subscribed with the dd-raft-consensus queue group so requests load-balance across replicas. Default for RAFT_PROPOSE_SUBJECT.
+%% Service: dd-raft-consensus
+raft_propose_requests_subject() -> <<"dd.remote.raft.propose.requests"/utf8>>.
+raft_propose_requests_queue_group() -> <<"dd-raft-consensus"/utf8>>.
+
+%% Inbound TSP/VRP route-optimization requests consumed by the route optimizer. Subscribed with the dd-route-optimizer queue group so requests load-balance across replicas. Default for ROUTE_OPTIMIZE_SUBJECT.
+%% Service: dd-route-optimizer
+route_optimize_requests_subject() -> <<"dd.remote.route.optimize.requests"/utf8>>.
+route_optimize_requests_queue_group() -> <<"dd-route-optimizer"/utf8>>.
+
+%% Optimized routes (ordered stops per vehicle, total distance, arrival times, time-window violations) emitted by the route optimizer. Carries a route.optimize.v1 envelope. Default for ROUTE_RESULT_SUBJECT.
+%% Service: dd-route-optimizer
+route_optimize_results_subject() -> <<"dd.remote.route.optimize.results"/utf8>>.
+
 %% Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.
 %% Service: dd-routing-server
 routing_events_subject() -> <<"dd.remote.routing.events"/utf8>>.
@@ -611,6 +681,24 @@ runtime_critical_events_stream() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 %% Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
 %% Service: shared
 runtime_events_subject() -> <<"dd.remote.events"/utf8>>.
+
+%% Inbound CNF SAT / SMT solve requests consumed by the sat-smt server. Subscribed with the dd-sat-smt-server queue group so requests load-balance across replicas. Default for SAT_SOLVE_SUBJECT.
+%% Service: dd-sat-smt-server
+sat_solve_requests_subject() -> <<"dd.remote.sat.solve.requests"/utf8>>.
+sat_solve_requests_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
+
+%% Solve outcomes (sat/unsat/unknown with a model when satisfiable) emitted by the sat-smt server. Carries a sat.solve.v1 envelope. Default for SAT_RESULT_SUBJECT.
+%% Service: dd-sat-smt-server
+sat_solve_results_subject() -> <<"dd.remote.sat.solve.results"/utf8>>.
+
+%% Inbound constraint-scheduling requests (job-shop, rostering, timetabling) consumed by the scheduler. Subscribed with the dd-constraint-scheduler queue group so requests load-balance across replicas. Default for SCHEDULER_SCHEDULE_SUBJECT.
+%% Service: dd-constraint-scheduler
+scheduler_schedule_requests_subject() -> <<"dd.remote.scheduler.schedule.requests"/utf8>>.
+scheduler_schedule_requests_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
+
+%% Computed schedules (task start times, makespan, machine assignments, violations) emitted by the scheduler. Carries a scheduler.schedule.v1 envelope. Default for SCHEDULER_RESULT_SUBJECT.
+%% Service: dd-constraint-scheduler
+scheduler_schedule_results_subject() -> <<"dd.remote.scheduler.schedule.results"/utf8>>.
 
 %% MDP telemetry requests emitted by ai-ml-pipeline and consumed by the MDP optimizer. Default for ML_MDP_TELEMETRY_SUBJECT / MDP_TELEMETRY_SUBJECT.
 %% Service: dd-ai-ml-pipeline
@@ -982,9 +1070,17 @@ parse_thread_tasks_subject(Subject) ->
             end
     end.
 
+%% Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
+%% Service: dd-agent-sim-server
+agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
+
 %% Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
 %% Service: dd-billing-server
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
+
+%% Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
+%% Service: dd-constraint-scheduler
+constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
 
 %% Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 %% Service: shared
@@ -1010,6 +1106,10 @@ lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 %% Service: dd-ai-ml-pipeline
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
 
+%% Shared queue group used by dd-monte-carlo-server replicas consuming simulate requests.
+%% Service: dd-monte-carlo-server
+monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
+
 %% Shared queue group used by dd-music-rs replicas consuming generation requests.
 %% Service: dd-music-rs
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
@@ -1018,9 +1118,21 @@ music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 %% Service: dd-public-data-server
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
 
+%% Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests.
+%% Service: dd-raft-consensus
+raft_consensus_queue_group() -> <<"dd-raft-consensus"/utf8>>.
+
+%% Shared queue group used by dd-route-optimizer replicas consuming optimize requests.
+%% Service: dd-route-optimizer
+route_optimizer_queue_group() -> <<"dd-route-optimizer"/utf8>>.
+
 %% Shared queue group used by routing worker pods so each multi-start restart is solved exactly once.
 %% Service: dd-routing-server
 routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
+
+%% Shared queue group used by dd-sat-smt-server replicas consuming solve requests.
+%% Service: dd-sat-smt-server
+sat_smt_server_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
 
 %% Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 %% Service: dd-remote-rest-api

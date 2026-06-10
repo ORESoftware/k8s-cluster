@@ -53,7 +53,11 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
-    # Delegate on-chain simulate/send to the dd-contract-service gateway.
+    # On-chain work is delegated to the dd-contract-service gateway, which is the
+    # sole Solana egress point in the cluster. This pod has NO public-internet
+    # egress: simulate/settle go to dd-contract-service, and /status probes its
+    # health rather than Solana RPC directly. The solana-rpc fallback backend is
+    # therefore inert here unless a public 443 egress rule is re-added.
     - to:
         - podSelector:
             matchLabels:
@@ -61,18 +65,3 @@ spec:
       ports:
         - protocol: TCP
           port: 8101
-    # Public HTTPS Solana RPC egress retained for the solana-rpc fallback backend
-    # and the /status getHealth/getVersion probes.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 100.64.0.0/10
-              - 127.0.0.0/8
-              - 169.254.0.0/16
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-      ports:
-        - protocol: TCP
-          port: 443

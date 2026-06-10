@@ -60,6 +60,13 @@ The following commands are blacklisted for agents in this repo: `git checkout`, 
 `git stash`, `rm`, and `sed`. Do not run them in local operator work or add them to automation
 scripts. Leave untracked runtime files alone unless a human asks for a specific cleanup.
 
+`git stash` is absolutely forbidden — never run `git stash`, `git stash push`, `git stash pop`,
+`git stash apply`, `git stash drop`, or any other `git stash` subcommand under any circumstances,
+even to temporarily set work aside or recover from a conflict. Stashing has repeatedly left
+half-applied, conflicted, and lost work in this repo. To set changes aside, commit them to a branch
+instead; to undo, commit a revert. If you encounter an in-progress stash conflict, resolve it
+forward by pulling the stashed changes in and committing the resolution — do not re-stash.
+
 Default branch posture for agent work is `dev`. Agents should not check out or switch to feature
 branches for local operator work unless a human explicitly changes that posture for a specific task.
 If the workspace is already on a non-`dev` branch, surface that state before doing branch-sensitive
