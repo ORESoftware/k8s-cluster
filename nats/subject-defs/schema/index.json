@@ -4,6 +4,7 @@
     "agent-mcp.schema.json",
     "agent-orchestration.schema.json",
     "ai-ml-platform.schema.json",
+    "billing.schema.json",
     "container-pool.schema.json",
     "contracts.schema.json",
     "escrow.schema.json",
