@@ -37,9 +37,11 @@ This bundle installs the lightweight always-on pieces:
   init path, put storage and snapshots on PVCs, and make the non-root/read-only-root security
   context explicit
 - secret-backed Airbyte, Dagster, and MLflow Postgres StatefulSets with bounded writable socket/temp
-  volumes, digest-pinned Postgres images, read-only roots, and client-scoped NetworkPolicies, plus
-  Airbyte S3 credential secret wiring so the Airbyte chart does not deploy its internal Postgres or
-  MinIO default-credential paths
+  volumes, digest-pinned Postgres images, read-only roots, `enableServiceLinks: false`, and
+  client-scoped NetworkPolicies. Their root `init-postgres-data` init container (needed to chown the
+  hostPath data dir) drops all Linux capabilities except `CHOWN`/`DAC_OVERRIDE`/`FOWNER` and runs
+  under a `RuntimeDefault` seccomp profile. The StatefulSets also carry Airbyte S3 credential secret
+  wiring so the Airbyte chart does not deploy its internal Postgres or MinIO default-credential paths
 - Airbyte chart resource requests/limits for its web, server, worker, launcher, API, Temporal,
   cron, connector-builder, bootloader, and launched job pods
 - Spark Operator chart values that use the chart's `operatorDeployment` path for explicit
@@ -104,7 +106,8 @@ Airbyte/Kafka/NATS/HTTP telemetry
 ```
 
 The pipeline pod does not mount a Kubernetes API token, runs with a read-only root filesystem, runs
-from `docker.io/library/python:3.12-slim` with the EC2 host checkout mounted read-only at
+from the digest-pinned `docker.io/library/python:3.12-slim@sha256:090ba77e…` base image with the
+EC2 host checkout mounted read-only at
 `/opt/dd-next-1`, opens only a bounded writable `/tmp`, and only allows egress to kube-dns plus the
 NATS client port in the `messaging` namespace when a NetworkPolicy-capable CNI is installed.
 First-party platform Dockerfiles remain available for local image testing:
