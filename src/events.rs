@@ -26,6 +26,7 @@
 //! "Sync now" path enqueues, reusing all of its lease / rate-limit / dispatch
 //! logic rather than re-implementing it.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
@@ -43,6 +44,11 @@ use crate::state::AppState;
 /// Logical source stamped on every envelope (matches the deployment / service
 /// name used elsewhere in the registry).
 pub const EVENT_SOURCE: &str = "dd-billing-server";
+
+/// Max concurrent in-flight inbound sync commands per replica. Bounds DB-pool
+/// pressure if the command subject is flooded; excess commands wait (the
+/// subscription applies backpressure) rather than spawning unboundedly.
+const MAX_INFLIGHT_SYNC_COMMANDS: usize = 32;
 
 /// Best-effort publisher + inbound command handle.
 ///
@@ -313,6 +319,8 @@ pub async fn run_sync_command_loop(state: AppState) {
         .clone()
         .unwrap_or_else(|| BILLING_SYNC_COMMANDS_QUEUE_GROUP.to_string());
     let max_bytes = state.cfg.nats_max_payload_bytes;
+    // Created once so the in-flight bound persists across reconnects.
+    let inflight = Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_SYNC_COMMANDS));
 
     loop {
         let mut subscription = match client
@@ -348,10 +356,17 @@ pub async fn run_sync_command_loop(state: AppState) {
                 continue;
             }
         };
+        // Bound concurrency: when all permits are in use, awaiting here applies
+        // backpressure to the subscription instead of spawning unboundedly.
+        let permit = match inflight.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => break, // semaphore closed (never, in practice)
+        };
         let state = state.clone();
         // Each command runs independently; a slow/erroring one must not block
         // the subscription's forward progress.
         tokio::spawn(async move {
+            let _permit = permit; // released when the task finishes
             if let Err(error) = handle_sync_command(&state, command).await {
                 tracing::warn!(error = %error, "billing sync-command failed to enqueue");
             }
