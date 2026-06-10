@@ -32,3 +32,21 @@
 - 2026-06-06 40k-medium one-pod pprof campaign: strict aggregate target 40000, 3 loader replicas per loader, 2.5 msg/(conn*second), 180s.
 - 2026-06-06 50k-light one-pod pprof campaign: strict aggregate target 50000, 3 loader replicas per loader, 1.0 msg/(conn*second), 180s.
 - 2026-06-06 50k-medium one-pod pprof campaign: strict aggregate target 50000, 3 loader replicas per loader, 2.5 msg/(conn*second), 180s.
+
+## 2026-06-10 one-pod campaign results (chat.vibe gcs-hot-path-perf, gcs 6 CPU / 8 Gi, GOMAXPROCS=6)
+
+Build: chat.vibe `feature/gcs-hot-path-perf` (hot-path perf + load shedding +
+`--max-active-conns`), ws-client correctness fix `981b9a8c`. gcs single pod,
+limits 6 CPU / 8 Gi, `GOMAXPROCS=6`, `GOMEMLIMIT=7168MiB`; 3 loaders
+(rust+nodejs+gleam) x 3 replicas. Correctness smoke made non-gating
+(`GCS_LOADTEST_REQUIRE_CORRECTNESS=true` to restore) — the CLI smoke lacks the
+loaders' conv-membership setup; the loaders validate end-to-end delivery.
+
+- 40k-light  - PASS: all loaders open=13335, failed=0, receive_errors=0; aggregate 40005.
+- 40k-medium - PASS: all loaders open=13335, failed=0, receive_errors=0; aggregate 40005;
+  p50 ~0.7-1.1ms after GOMAXPROCS 4->6 (was ~2s at GOMAXPROCS=4, which shed ~300 conns/loader).
+- 50k-light  - PASS: all loaders open=16668, failed=0, receive_errors=0; aggregate 50004.
+- 50k-medium - FAIL (single-pod 6-CPU capacity wall): connections collapse
+  (open ~2.3k-8.2k of 16668), failed=132k-176k, p99 ~40s, heavy load-shedding.
+  ~125k msg/s inbound + fan-out saturates one 6-CPU pod. Needs >6 CPU or a 2nd
+  gcs pod/node; not pursued per the 6-CPU budget.
