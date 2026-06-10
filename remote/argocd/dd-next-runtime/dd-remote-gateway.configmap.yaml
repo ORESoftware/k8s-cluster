@@ -110,6 +110,14 @@ data:
       default 0;
       "~*/dd-next-1" 1;
     }
+    map $api_referer_ddn1 $ddn1_backend {
+      default dd-remote-web-home.default.svc.cluster.local:8080;
+      1       dd-next-1-js.default.svc.cluster.local:3000;
+    }
+    map $api_referer_ddn1 $ddn1_prefix {
+      default "";
+      1       /dd-next-1;
+    }
 
     server {
       listen 80 default_server;
@@ -2330,13 +2338,7 @@ data:
         proxy_buffers 8 32k;
         proxy_busy_buffers_size 64k;
         proxy_read_timeout 120;
-        set $api_up dd-remote-web-home.default.svc.cluster.local:8080;
-        set $api_path $request_uri;
-        if ($api_referer_ddn1) {
-          set $api_up dd-next-1-js.default.svc.cluster.local:3000;
-          set $api_path /dd-next-1$request_uri;
-        }
-        proxy_pass http://$api_up$api_path;
+        proxy_pass http://$ddn1_backend$ddn1_prefix$request_uri;
       }
 
       # Same Referer routing for the app's other root-relative client calls: /pub/* (assignments)
@@ -2351,13 +2353,7 @@ data:
         proxy_buffers 8 32k;
         proxy_busy_buffers_size 64k;
         proxy_read_timeout 120;
-        set $pd_up dd-remote-web-home.default.svc.cluster.local:8080;
-        set $pd_path $request_uri;
-        if ($api_referer_ddn1) {
-          set $pd_up dd-next-1-js.default.svc.cluster.local:3000;
-          set $pd_path /dd-next-1$request_uri;
-        }
-        proxy_pass http://$pd_up$pd_path;
+        proxy_pass http://$ddn1_backend$ddn1_prefix$request_uri;
       }
 
       location / {
