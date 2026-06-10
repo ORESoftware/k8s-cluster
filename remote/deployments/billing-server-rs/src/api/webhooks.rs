@@ -540,26 +540,36 @@ async fn verify_delivery(
             Ok(true)
         }
         WebhookProvider::Adyen => {
-            // Adyen carries the signature inside the payload
-            // (notificationItems[0].NotificationRequestItem.additionalData
-            // .hmacSignature) and signs a `:`-joined field string with the
-            // merchant HMAC key.
+            // Adyen carries the signature inside each notification item
+            // (notificationItems[].NotificationRequestItem.additionalData
+            // .hmacSignature), signing a `:`-joined field string with the
+            // merchant HMAC key. Adyen batches multiple items per delivery, so
+            // we must verify EVERY item — one validly-signed item must not
+            // vouch for unsigned/forged siblings stored in the same row.
             let Some(key_hex) = load_adyen_hmac_key(state, connection).await? else {
                 return Ok(false);
             };
-            let Some(item_val) = payload.pointer("/notificationItems/0/NotificationRequestItem")
-            else {
+            let Some(items) = payload.get("notificationItems").and_then(|v| v.as_array()) else {
                 return Ok(false);
             };
-            let Some(sig) = item_val
-                .pointer("/additionalData/hmacSignature")
-                .and_then(|v| v.as_str())
-            else {
+            if items.is_empty() {
                 return Ok(false);
-            };
-            let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
-                .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
-            adyen::verify_item_signature(&item, sig, &key_hex)?;
+            }
+            for entry in items {
+                let Some(item_val) = entry.pointer("/NotificationRequestItem") else {
+                    return Ok(false);
+                };
+                let Some(sig) = item_val
+                    .pointer("/additionalData/hmacSignature")
+                    .and_then(|v| v.as_str())
+                else {
+                    return Ok(false);
+                };
+                let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
+                    .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
+                // Err (wrong signature) propagates and rejects the whole batch.
+                adyen::verify_item_signature(&item, sig, &key_hex)?;
+            }
             Ok(true)
         }
         WebhookProvider::Square => {
