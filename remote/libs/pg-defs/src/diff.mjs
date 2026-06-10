@@ -92,14 +92,19 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
   ];
   let changeCount = 0;
 
-  // Ensure any non-public schema the contract owns exists before its tables are created. Idempotent
-  // and emitted unconditionally (cheap), so a benefactor table create never fails on a fresh DB.
-  const nonPublicSchemas = [
-    ...new Set(contract.tables.map((table) => table.schema ?? "public").filter((schema) => schema !== "public")),
-  ];
-  for (const schema of nonPublicSchemas) {
+  // Ensure any non-public schema the contract owns exists before its tables are created — but only
+  // when that schema actually has a missing table, so a fully-synced database does not emit
+  // spurious `create schema` lines above a "no differences" footer. Idempotent on a fresh DB.
+  const schemasWithMissingTables = new Set(
+    contract.tables
+      .filter((table) => (table.schema ?? "public") !== "public")
+      .filter((table) => !actualSchema.tables.has(tableKey(table)))
+      .map((table) => table.schema),
+  );
+  for (const schema of schemasWithMissingTables) {
     lines.push(`create schema if not exists ${quoteIdent(schema)};`);
     lines.push("");
+    changeCount += 1;
   }
 
   for (const table of contract.tables) {

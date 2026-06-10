@@ -3141,27 +3141,30 @@ function renderSqlcQuerySql(contract) {
       .map((column, index) => `${column.name} = $${index + 2}`)
       .join(', ');
 
+    // Use the schema-qualified physical name so generated sqlc queries target the correct schema
+    // (e.g. benefactor.benefactor_leads) instead of resolving against the default search_path.
+    const fromName = physicalName(table);
     blocks.push(`-- name: List${baseName} :many`);
-    blocks.push(`select ${columnList} from ${table.name};`);
+    blocks.push(`select ${columnList} from ${fromName};`);
     blocks.push('');
     blocks.push(`-- name: Get${baseName} :one`);
     const idColumn = table.columns.find((column) => column.primaryKey)?.name ?? 'id';
-    blocks.push(`select ${columnList} from ${table.name} where ${idColumn} = $1 limit 1;`);
+    blocks.push(`select ${columnList} from ${fromName} where ${idColumn} = $1 limit 1;`);
     blocks.push('');
     blocks.push(`-- name: Create${baseName} :one`);
     blocks.push(
-      `insert into ${table.name} (${columnList}) values (${placeholders}) returning ${columnList};`,
+      `insert into ${fromName} (${columnList}) values (${placeholders}) returning ${columnList};`,
     );
     blocks.push('');
     if (updatableColumns.length > 0) {
       blocks.push(`-- name: Update${baseName} :one`);
       blocks.push(
-        `update ${table.name} set ${updateAssignments} where ${idColumn} = $1 returning ${columnList};`,
+        `update ${fromName} set ${updateAssignments} where ${idColumn} = $1 returning ${columnList};`,
       );
       blocks.push('');
     }
     blocks.push(`-- name: Delete${baseName} :exec`);
-    blocks.push(`delete from ${table.name} where ${idColumn} = $1;`);
+    blocks.push(`delete from ${fromName} where ${idColumn} = $1;`);
     blocks.push('');
   }
   return `${blocks.join('\n').trimEnd()}\n`;
