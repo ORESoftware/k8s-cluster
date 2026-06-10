@@ -39,6 +39,9 @@ resources:
   - dd-music-rs.deployment.yaml
   - dd-music-rs.networkpolicy.yaml
   - dd-music-rs.service.yaml
+  - dd-data-viz-rs.deployment.yaml
+  - dd-data-viz-rs.networkpolicy.yaml
+  - dd-data-viz-rs.service.yaml
   - dd-sound-recorder-rs.deployment.yaml
   - dd-sound-recorder-rs.networkpolicy.yaml
   - dd-sound-recorder-rs.service.yaml

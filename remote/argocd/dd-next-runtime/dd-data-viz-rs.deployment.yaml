@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-data-viz-rs
+  namespace: default
+  labels:
+    app: dd-data-viz-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-data-viz-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/source-revision: '2026-06-09-data-viz-nats-fanout'
+      labels:
+        app: dd-data-viz-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: data-viz-rs
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              build_root="$(mktemp -d /tmp/dd-data-viz-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"
+                dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target --exclude='*/target' -cf - . | tar -C "${dst}" -xf -
+              }
+
+              source_root="/opt/dd-next-1"
+              if [ -n "${DATA_VIZ_SERVER_GIT_URL:-}" ]; then
+                source_clone="${build_root}/k8s-source"
+                if git clone --depth 1 --branch "${DATA_VIZ_SERVER_GIT_REF:-dev}" "${DATA_VIZ_SERVER_GIT_URL}" "${source_clone}"; then
+                  source_root="${source_clone}"
+                  echo "[dd-data-viz-rs] source: cloned ${DATA_VIZ_SERVER_GIT_URL}@${DATA_VIZ_SERVER_GIT_REF:-dev} ($(git -C "${source_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-data-viz-rs] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+
+              build_source="${build_root}/k8s-cluster"
+              copy_source_tree "${source_root}" "${build_source}"
+
+              cd "${build_source}/remote/deployments/dd-data-viz-rs"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8126'
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-data-viz-rs/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-data-viz-rs/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: DATA_VIZ_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: DATA_VIZ_SERVER_GIT_REF
+              value: dev
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 100m
+              memory: 2Gi
+            limits:
+              cpu: '2'
+              memory: 8Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-data-viz-rs
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
