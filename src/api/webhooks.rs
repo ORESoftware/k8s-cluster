@@ -260,15 +260,18 @@ async fn record_event(
     let connection_id = connection.as_ref().map(|c| c.id);
 
     // Encrypt the raw body at rest with the master sealer (AES-256-GCM). The
-    // AAD binds the blob to its provider (and tenant when known). We store the
-    // sealed envelope in `payload_sealed` and never persist the plaintext
+    // AAD binds the blob to its provider; we deliberately use the nil tenant
+    // (not the resolved `tenant_id`) so the sealing is STABLE across
+    // re-deliveries — a webhook can arrive unbound and later bind to a tenant,
+    // and `ON CONFLICT` overwrites `payload_sealed`, so a tenant-dependent AAD
+    // would make the row undecryptable. Tenant routing lives in the
+    // `tenant_id` column; the at-rest crypto must not depend on it. We store
+    // the sealed envelope in `payload_sealed` and never persist the plaintext
     // `payload` column. The integrity hash (`payload_sha256`) is kept in the
     // clear for dedup / correlation.
-    let sealed = state.sealer.seal(
-        tenant_id.unwrap_or_else(uuid::Uuid::nil),
-        provider.tag(),
-        body.as_ref(),
-    )?;
+    let sealed = state
+        .sealer
+        .seal(uuid::Uuid::nil(), provider.tag(), body.as_ref())?;
     let payload_sealed =
         serde_json::to_value(&sealed).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
 

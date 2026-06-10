@@ -396,17 +396,19 @@ async fn handle_sync_command(state: &AppState, cmd: SyncCommand) -> crate::error
 
 /// Wrap event `fields` in the standard envelope. `emittedAt` is RFC-3339 UTC.
 fn build_envelope(schema_version: &str, fields: Value) -> Value {
-    let mut envelope = json!({
-        "schemaVersion": schema_version,
-        "source": EVENT_SOURCE,
-        "emittedAt": chrono::Utc::now().to_rfc3339(),
-    });
-    if let (Some(obj), Value::Object(extra)) = (envelope.as_object_mut(), fields) {
-        for (k, v) in extra {
-            obj.insert(k, v);
-        }
-    }
-    envelope
+    // Start from the payload, then write the reserved envelope keys LAST so a
+    // payload field can never shadow `schemaVersion` / `source` / `emittedAt`.
+    let mut obj = match fields {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    obj.insert("schemaVersion".to_string(), Value::from(schema_version));
+    obj.insert("source".to_string(), Value::from(EVENT_SOURCE));
+    obj.insert(
+        "emittedAt".to_string(),
+        Value::from(chrono::Utc::now().to_rfc3339()),
+    );
+    Value::Object(obj)
 }
 
 /// Serialize `value`, rejecting (without publishing) anything above `max`
@@ -436,11 +438,16 @@ mod tests {
     }
 
     #[test]
-    fn envelope_payload_does_not_clobber_reserved_keys_silently() {
-        // A field literally named "source" would override; assert our keys
-        // win when fields are empty (the normal case) and document intent.
-        let env = build_envelope("v1", json!({}));
+    fn envelope_payload_does_not_clobber_reserved_keys() {
+        // A hostile/buggy payload field named "source" must NOT override the
+        // envelope's source; reserved keys are written last and always win.
+        let env = build_envelope(
+            "v1",
+            json!({ "source": "spoofed", "schemaVersion": "v999", "tenantId": 1 }),
+        );
         assert_eq!(env["source"], EVENT_SOURCE);
+        assert_eq!(env["schemaVersion"], "v1");
+        assert_eq!(env["tenantId"], 1);
     }
 
     #[test]
