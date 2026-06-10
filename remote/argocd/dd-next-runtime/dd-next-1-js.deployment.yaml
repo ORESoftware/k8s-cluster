@@ -65,19 +65,20 @@ spec:
                 grep -q "basePath:" next.config.ts || sed -i "s|^[[:space:]]*// *output: 'standalone',.*|  basePath: '${DD_BASE_PATH}',|" next.config.ts
                 grep -q "basePath: '${DD_BASE_PATH}'" next.config.ts && echo "[build] basePath ${DD_BASE_PATH} set" || { echo "[build] FATAL basePath not set" >&2; exit 1; }
               fi
-              # --prod=false: NODE_ENV=production would otherwise skip devDeps (glob, tsx, ...) the
-              # prebuild codegen needs. Hoisted layout keeps those resolvable for tsx.
-              pnpm install --frozen-lockfile --node-linker=hoisted --prod=false --store-dir /cache/pnpm-store
-              # Build like Vercel: WEBPACK (`next build`), NOT turbopack, and NOT output:'standalone'.
-              # The package.json `build` adds --turbopack and standalone is disabled in next.config
-              # "to prevent memory issues" — together those drove RSS past 60Gi. Vercel's project
-              # buildCommand is `next build`. Run the prebuild codegen (that `pnpm run build` chains),
-              # then a normal webpack build, then serve as a long-lived server with `next start`.
-              pnpm run prebuild
-              # Next 16 defaults `next build` to TURBOPACK, which is the RAM hog for this 1053-route
-              # app (Vercel just runs it on large build machines). Force WEBPACK — lighter peak RSS —
-              # so the in-cluster build fits a sane ceiling. (Long-term: build the image in CI.)
-              DD_APP_IS_BUILD=yes NEXT_NO_STATIC_GENERATION=1 SKIP_NEXT_SITEMAP=true NODE_OPTIONS="--max-old-space-size=12288" pnpm exec next build --webpack
+              # Reuse the existing build for the current commit so a container restart (liveness/crash)
+              # is a fast `next start`, NOT a 15-min rebuild. Only (re)build when the commit changed.
+              # --prod=false: NODE_ENV=production skips devDeps (glob, tsx) the prebuild codegen needs.
+              # WEBPACK, not turbopack (Next 16 default), and NOT output:'standalone' — both ballooned
+              # RSS past 60Gi; webpack peaks ~22Gi.
+              CUR=$(git -C "$src" rev-parse HEAD)
+              if [ "$(cat /cache/.built_sha 2>/dev/null)" = "$CUR" ] && [ -f "$src/.next/BUILD_ID" ]; then
+                echo "[build] reusing existing build for $CUR — skipping install + build"
+              else
+                pnpm install --frozen-lockfile --node-linker=hoisted --prod=false --store-dir /cache/pnpm-store
+                pnpm run prebuild
+                DD_APP_IS_BUILD=yes NEXT_NO_STATIC_GENERATION=1 SKIP_NEXT_SITEMAP=true NODE_OPTIONS="--max-old-space-size=12288" pnpm exec next build --webpack
+                echo "$CUR" > /cache/.built_sha
+              fi
               exec env DD_APP_IS_RUNNING=yes pnpm exec next start -H 0.0.0.0 -p "${PORT:-3000}"
           env:
             - name: NODE_ENV
@@ -133,15 +134,15 @@ spec:
               path: /dd-next-1
               port: http
             periodSeconds: 10
-            timeoutSeconds: 5
+            timeoutSeconds: 10
             failureThreshold: 3
+          # Liveness is a cheap TCP check — a slow SSR of /dd-next-1 must NOT trigger a kill+rebuild.
           livenessProbe:
-            httpGet:
-              path: /dd-next-1
+            tcpSocket:
               port: http
             periodSeconds: 30
             timeoutSeconds: 5
-            failureThreshold: 4
+            failureThreshold: 6
           volumeMounts:
             - name: tmp
               mountPath: /tmp
