@@ -339,7 +339,11 @@ fn config_from_env() -> Config {
 // in-VPC ingress path without rewriting the NetworkPolicy. Fails closed if
 // required but no secret is configured.
 fn request_authorized(config: &Config, headers: &HeaderMap) -> bool {
-    let Some(secret) = config.auth_secret.as_deref().filter(|value| !value.is_empty()) else {
+    header_secret_ok(config.auth_secret.as_deref(), headers)
+}
+
+fn header_secret_ok(secret: Option<&str>, headers: &HeaderMap) -> bool {
+    let Some(secret) = secret.filter(|value| !value.is_empty()) else {
         return false;
     };
     let bearer = format!("Bearer {secret}");
@@ -2297,5 +2301,36 @@ mod tests {
         assert!(listed.contains(&"kubernetes_inventory"));
         assert!(listed.contains(&"telemetry_summary"));
         assert!(listed.contains(&"trace_backends"));
+    }
+
+    #[test]
+    fn metric_labels_bucket_unknown_to_other() {
+        // Known names pass through; arbitrary caller-supplied names collapse to
+        // "other" so the metric maps can't be grown without bound.
+        assert_eq!(bounded_method_label("tools/call"), "tools/call");
+        assert_eq!(bounded_method_label("initialize"), "initialize");
+        assert_eq!(bounded_method_label("evil/../../etc/passwd"), "other");
+        assert_eq!(bounded_method_label(""), "other");
+        assert_eq!(bounded_tool_label("kubernetes_inventory"), "kubernetes_inventory");
+        assert_eq!(bounded_tool_label("attacker-supplied-name"), "other");
+    }
+
+    #[test]
+    fn header_secret_gate_accepts_only_matching_credentials() {
+        let mut headers = HeaderMap::new();
+        // No secret configured => fail closed even with a header present.
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cret"));
+        assert!(!header_secret_ok(None, &headers));
+        assert!(!header_secret_ok(Some(""), &headers));
+        // Correct bearer.
+        assert!(header_secret_ok(Some("s3cret"), &headers));
+        // Wrong bearer.
+        assert!(!header_secret_ok(Some("nope"), &headers));
+        // X-Server-Auth path.
+        let mut xheaders = HeaderMap::new();
+        xheaders.insert("x-server-auth", HeaderValue::from_static("s3cret"));
+        assert!(header_secret_ok(Some("s3cret"), &xheaders));
+        // Missing entirely.
+        assert!(!header_secret_ok(Some("s3cret"), &HeaderMap::new()));
     }
 }

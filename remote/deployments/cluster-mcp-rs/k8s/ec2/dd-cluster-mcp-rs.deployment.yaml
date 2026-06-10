@@ -116,6 +116,15 @@ spec:
               value: '200'
             - name: MCP_ALLOW_EXTERNAL_URLS
               value: 'false'
+            # Optional in-pod bearer gate on POST /mcp (auth is normally enforced
+            # at the gateway). Off here so the gateway model is unchanged. Set to
+            # 'true' and supply MCP_AUTH_SECRET (e.g. from a Secret) to also
+            # require Authorization: Bearer <secret> / X-Server-Auth on every
+            # JSON-RPC call — this is the only way to close the unauthenticated
+            # in-VPC ingress path (NetworkPolicy 172.31.0.0/16 :8091) without
+            # dropping host-network pool-worker access.
+            - name: MCP_REQUIRE_AUTH
+              value: 'false'
             - name: OTEL_SERVICE_NAME
               value: dd-cluster-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
