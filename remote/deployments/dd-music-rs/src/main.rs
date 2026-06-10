@@ -96,6 +96,7 @@ const DEFAULT_REDIS_URL: &str = "redis://dd-redis-cache.default.svc.cluster.loca
 const SERVICE_NAME: &str = "dd-music-rs";
 const EVENT_SCHEMA_VERSION: &str = "dd.music.v1";
 const MAX_NATS_PAYLOAD_BYTES: usize = 1024 * 1024;
+const MAX_NATS_GENERATION_COUNT: i64 = 5;
 const DEFAULT_DAILY_TARGET_MIN: i64 = 3;
 const DEFAULT_DAILY_TARGET_MAX: i64 = 5;
 const DEFAULT_GENERATOR_INTERVAL_SECONDS: u64 = 3600;
@@ -1326,11 +1327,24 @@ async fn run_generation_request_consumer(state: AppState) {
     };
     println!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
     while let Some(message) = subscription.next().await {
-        let request: GenerateRequest = serde_json::from_slice(&message.payload).unwrap_or(GenerateRequest {
-            count: None,
-            min_score: None,
-        });
-        let requested = request.count.unwrap_or(1).clamp(1, 5);
+        // Song generation is expensive (WAV synthesis + S3 upload + Postgres
+        // writes). Bound the trigger: reject oversize payloads and skip anything
+        // that is not a well-formed request rather than defaulting to a generation.
+        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
+            eprintln!(
+                "dd-music-rs dropping oversize generation request ({} bytes)",
+                message.payload.len()
+            );
+            continue;
+        }
+        let request: GenerateRequest = match serde_json::from_slice(&message.payload) {
+            Ok(request) => request,
+            Err(error) => {
+                eprintln!("dd-music-rs ignoring malformed generation request: {error}");
+                continue;
+            }
+        };
+        let requested = request.count.unwrap_or(1).clamp(1, MAX_NATS_GENERATION_COUNT);
         let min_score = request
             .min_score
             .unwrap_or(state.config.min_listenability_score)

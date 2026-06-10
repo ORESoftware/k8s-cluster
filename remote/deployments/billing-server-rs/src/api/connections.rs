@@ -8,9 +8,9 @@ use crate::error::{AppError, AppResult};
 use crate::providers::ProviderAuthKind;
 use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
 use crate::providers::{
-    ProviderKind, coinbase::CoinbaseCredential, coinflow::CoinflowCredential,
-    dwolla::DwollaCredential, ethereum::EthereumWalletCredential,
-    modern_treasury::ModernTreasuryCredential, wise::WiseCredential,
+    ProviderKind, adyen::AdyenCredential, coinbase::CoinbaseCredential,
+    coinflow::CoinflowCredential, dwolla::DwollaCredential, ethereum::EthereumWalletCredential,
+    modern_treasury::ModernTreasuryCredential, square::SquareCredential, wise::WiseCredential,
 };
 use crate::scheduler::{CreateScheduledJob, ScheduleKind, ScheduledJob};
 use crate::state::AppState;
@@ -531,6 +531,47 @@ fn validate_api_key_credential(
             require_non_empty("circle.api_key", &cred.api_key)?;
             validate_environment("circle.environment", &cred.environment)?;
             Ok(None)
+        }
+        ProviderKind::Adyen => {
+            let cred: AdyenCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid adyen credential: {e}")))?;
+            require_non_empty("adyen.api_key", &cred.api_key)?;
+            require_non_empty("adyen.merchant_account", &cred.merchant_account)?;
+            validate_environment("adyen.environment", &cred.environment)?;
+            // Live traffic needs the per-merchant endpoint prefix; sandbox
+            // uses the shared host so the base is optional there.
+            if cred.is_production() {
+                require_non_empty_opt("adyen.api_base_url", cred.api_base_url.as_deref())?;
+            }
+            if let Some(hmac_key_hex) = cred.hmac_key_hex.as_deref() {
+                require_non_empty("adyen.hmac_key_hex", hmac_key_hex)?;
+                if hex::decode(hmac_key_hex.trim()).is_err() {
+                    return Err(AppError::BadRequest(
+                        "adyen.hmac_key_hex must be hex-encoded".into(),
+                    ));
+                }
+            }
+            // The merchant account is the natural webhook-routing key.
+            Ok(Some(cred.merchant_account))
+        }
+        ProviderKind::Square => {
+            let cred: SquareCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid square credential: {e}")))?;
+            require_non_empty("square.access_token", &cred.access_token)?;
+            validate_environment("square.environment", &cred.environment)?;
+            if let Some(merchant_id) = cred.merchant_id.as_deref() {
+                require_non_empty("square.merchant_id", merchant_id)?;
+            }
+            // Square signs `url + body`; if a signature key is configured the
+            // notification URL must be too, or verification can never succeed.
+            if let Some(key) = cred.webhook_signature_key.as_deref() {
+                require_non_empty("square.webhook_signature_key", key)?;
+                require_non_empty_opt(
+                    "square.webhook_notification_url",
+                    cred.webhook_notification_url.as_deref(),
+                )?;
+            }
+            Ok(cred.merchant_id.clone())
         }
         ProviderKind::Stripe
         | ProviderKind::Paypal

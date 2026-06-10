@@ -14,6 +14,7 @@
 //! in is the bulk of the actual engineering work; the surface around them
 //! (sealing, replay, breaks, anchoring) is already in place.
 
+pub mod adyen;
 pub mod amount;
 pub mod braintree;
 pub mod bridge;
@@ -35,6 +36,7 @@ pub mod remitly;
 pub mod revolut;
 pub mod robinhood;
 pub mod solana;
+pub mod square;
 pub mod stripe;
 pub mod swift;
 pub mod western_union;
@@ -104,6 +106,10 @@ pub enum ProviderKind {
     #[sqlx(rename = "ethereum_wallet")]
     #[serde(rename = "ethereum_wallet")]
     EthereumWallet,
+    // Card acquiring partners (added 2026-06-09): real connection +
+    // webhook-signature verification; programmatic sync stubbed.
+    Adyen,
+    Square,
 }
 
 impl ProviderKind {
@@ -136,6 +142,8 @@ impl ProviderKind {
             Self::ModernTreasury => "modern_treasury",
             Self::Dwolla => "dwolla",
             Self::EthereumWallet => "ethereum_wallet",
+            Self::Adyen => "adyen",
+            Self::Square => "square",
         }
     }
 
@@ -168,7 +176,9 @@ impl ProviderKind {
             | Self::BofaCashProGdd
             | Self::ModernTreasury
             | Self::Dwolla
-            | Self::EthereumWallet => ProviderAuthKind::ApiKey,
+            | Self::EthereumWallet
+            | Self::Adyen
+            | Self::Square => ProviderAuthKind::ApiKey,
 
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
@@ -187,6 +197,9 @@ impl ProviderKind {
             Self::Paypal | Self::Braintree | Self::PlaidBank | Self::CoinbasePrime => Full,
             Self::Fireblocks | Self::Circle => Full,
             Self::SwiftWire | Self::AchDirect => Stub,
+            // Real connection + webhook-signature verification; programmatic
+            // settlement/payout sync not wired yet.
+            Self::Adyen | Self::Square => Stub,
             Self::ModernTreasury | Self::Dwolla => LimitedFit,
             Self::EthereumWallet => LimitedFit,
             Self::Remitly

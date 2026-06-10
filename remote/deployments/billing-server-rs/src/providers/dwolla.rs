@@ -452,3 +452,71 @@ fn provider_err(provider: &str, message: String) -> AppError {
         message,
     }
 }
+
+// =========================================================================
+// Webhook signature verification (HMAC-SHA256, hex digest, raw body)
+// =========================================================================
+
+/// Verify a Dwolla webhook signature. Dwolla signs the raw request body with
+/// HMAC-SHA256 keyed by the webhook subscription secret and delivers the hex
+/// digest in the `X-Request-Signature-SHA-256` header. Constant-time compare;
+/// tolerant of a `sha256=` prefix.
+pub fn verify_webhook_signature(body: &[u8], signature_header: &str, secret: &str) -> AppResult<()> {
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+
+    let provided = signature_header
+        .trim()
+        .strip_prefix("sha256=")
+        .unwrap_or_else(|| signature_header.trim());
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .map_err(|e| AppError::Crypto(format!("hmac init: {e}")))?;
+    Mac::update(&mut mac, body);
+    let expected = hex::encode(Mac::finalize(mac).into_bytes());
+    if crate::providers::amount::constant_time_eq_str(provided, &expected) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+#[cfg(test)]
+mod webhook_tests {
+    use super::*;
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+
+    fn sign(body: &[u8], secret: &str) -> String {
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        Mac::update(&mut mac, body);
+        hex::encode(Mac::finalize(mac).into_bytes())
+    }
+
+    #[test]
+    fn verifies_dwolla_hmac_roundtrip() {
+        let body = br#"{"topic":"customer_transfer_created"}"#;
+        let sig = sign(body, "dwolla-secret");
+        verify_webhook_signature(body, &sig, "dwolla-secret").unwrap();
+    }
+
+    #[test]
+    fn rejects_bad_dwolla_hmac() {
+        let err = verify_webhook_signature(b"{}", "deadbeef", "dwolla-secret").unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn redacted_debug_hides_access_token() {
+        let cred = DwollaCredential {
+            access_token: "dwolla-token-secret".into(),
+            environment: "sandbox".into(),
+            api_base_url: None,
+            account_id: Some("acct-1".into()),
+            webhook_secret: Some("wh-secret".into()),
+        };
+        let dbg = format!("{cred:?}");
+        assert!(!dbg.contains("dwolla-token-secret"));
+        assert!(!dbg.contains("wh-secret"));
+        assert!(dbg.contains("acct-1"));
+    }
+}
