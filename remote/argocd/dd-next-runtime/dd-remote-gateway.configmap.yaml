@@ -90,6 +90,13 @@ data:
     limit_req_zone $dd_auth_write_limit_key zone=dd_auth_write:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
     limit_req_zone $binary_remote_addr zone=dd_sound_recorder_mobile_write:10m rate=120r/m;
+    # Read-only MCP endpoints (/mcp, /cluster-mcp): each tools/call fans out to
+    # the Kubernetes API (~20 list calls) or 12 observability backends, so a
+    # compromised or buggy read-only token could amplify load. Cap external
+    # gateway traffic per client IP; in-cluster callers reach the Services
+    # directly and are unaffected. 300r/m + burst 60 is far above interactive
+    # IDE use but bounds a runaway to ~5 req/s sustained.
+    limit_req_zone $binary_remote_addr zone=dd_mcp:10m rate=300r/m;
 
     # Redacted path-only access logs make gateway guardrails observable without
     # writing Auth headers, cookies, or query strings into Loki.
@@ -863,6 +870,8 @@ data:
         if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -881,6 +890,8 @@ data:
         if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -899,6 +910,8 @@ data:
         if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -916,6 +929,8 @@ data:
         if ($dd_mcp_auth_ok = 0) {
           return 401;
         }
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
