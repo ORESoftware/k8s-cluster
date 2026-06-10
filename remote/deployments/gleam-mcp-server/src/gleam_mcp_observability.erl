@@ -188,7 +188,9 @@ http_result(UrlBin, Limit) ->
     Timeout = timeout_ms(),
     Url = binary_to_list(UrlBin),
     Headers = [{"accept", "application/json,text/plain,*/*"}],
-    HttpOptions = [{timeout, Timeout}, {connect_timeout, Timeout}],
+    %% No autoredirect: a compromised in-cluster backend must not be able to
+    %% bounce a read to an arbitrary host (SSRF amplifier).
+    HttpOptions = [{timeout, Timeout}, {connect_timeout, Timeout}, {autoredirect, false}],
     Options = [{body_format, binary}],
     Started = erlang:monotonic_time(millisecond),
     case catch httpc:request(get, {Url, Headers}, HttpOptions, Options) of

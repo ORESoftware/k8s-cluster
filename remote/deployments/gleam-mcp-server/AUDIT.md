@@ -185,3 +185,25 @@ KUBECTL_NO_CONFIRM=1 kubectl kustomize .   # 7 resources render
 The RBAC ClusterRole was reviewed: it grants `list` only, on metadata-level
 resources, with no `secrets`/`pods/log`/`pods/exec`/mutation verbs — matching
 the inventory the tools actually read. No change needed.
+
+## Pass 2 (2026-06-09)
+
+Re-audit alongside the new Rust sibling `../cluster-mcp-rs` (see its `AUDIT.md`).
+The follow-up redaction + URL-allowlist work landed in the interim
+(`gleam_mcp_redact.erl`, `safe_base_url` gating `MCP_KUBERNETES_API_URL` so the
+SA token destination is constrained, clamped `bounded_int` knobs, per-response
+`sample` redaction). Those were reviewed and are sound. The `cacertfile` ssl
+option already pins the k8s trust store to the cluster CA only (no public-root
+equivalent of the Rust R3 finding), and metrics are fixed counters (no
+cardinality DoS). One new fix:
+
+- **httpc followed redirects (fixed).** Both `gleam_mcp_k8s.erl` and
+  `gleam_mcp_observability.erl` called `httpc:request` without `{autoredirect,
+  false}`, so the default (follow) applied. Erlang `httpc` re-sends request
+  headers on a 3xx and does **not** strip them cross-host — so unlike reqwest,
+  the k8s **SA bearer token could follow a redirect** off-host. Added
+  `{autoredirect, false}` to both call sites (defense-in-depth; the k8s API is
+  TLS-pinned and does not redirect in practice, but a token-bearing call must
+  not be retargetable). Mirrors the Rust `.redirect(Policy::none())` fix.
+
+Build + 14 tests still green.

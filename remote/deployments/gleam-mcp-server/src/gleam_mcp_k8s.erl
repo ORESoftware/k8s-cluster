@@ -135,6 +135,10 @@ kubernetes_get(UrlBin, Limit) ->
             HttpOptions = [
                 {timeout, Timeout},
                 {connect_timeout, Timeout},
+                %% Never follow redirects: httpc re-sends headers (including this
+                %% Bearer token) on a 3xx and does not strip them cross-host, so
+                %% a redirect must not be able to retarget a token-bearing call.
+                {autoredirect, false},
                 {ssl, [{verify, verify_peer}, {cacertfile, CaPath}]}
             ],
             Options = [{body_format, binary}],
