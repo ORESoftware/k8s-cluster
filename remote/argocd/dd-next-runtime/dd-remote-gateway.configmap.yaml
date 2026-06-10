@@ -110,14 +110,6 @@ data:
       default 0;
       "~*/dd-next-1" 1;
     }
-    map $api_referer_ddn1 $ddn1_backend {
-      default dd-remote-web-home.default.svc.cluster.local:8080;
-      1       dd-next-1-js.default.svc.cluster.local:3000;
-    }
-    map $api_referer_ddn1 $ddn1_prefix {
-      default "";
-      1       /dd-next-1;
-    }
 
     server {
       listen 80 default_server;
@@ -2338,7 +2330,15 @@ data:
         proxy_buffers 8 32k;
         proxy_busy_buffers_size 64k;
         proxy_read_timeout 120;
-        proxy_pass http://$ddn1_backend$ddn1_prefix$request_uri;
+        # add the /dd-next-1 prefix (or nothing) to the URI, then proxy to the host-only variable —
+        # same pattern as the working /dd-next-1 location (variable host + implicit URI).
+        # From a /dd-next-1 page -> internal redirect to /dd-next-1/<path>, which the proven
+        # /dd-next-1 location then proxies to the app. (rewrite-in-if is the safe use of if.)
+        if ($api_referer_ddn1) {
+          rewrite ^ /dd-next-1$uri last;
+        }
+        set $dd_up_apipd dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_apipd;
       }
 
       # Same Referer routing for the app's other root-relative client calls: /pub/* (assignments)
@@ -2353,7 +2353,15 @@ data:
         proxy_buffers 8 32k;
         proxy_busy_buffers_size 64k;
         proxy_read_timeout 120;
-        proxy_pass http://$ddn1_backend$ddn1_prefix$request_uri;
+        # add the /dd-next-1 prefix (or nothing) to the URI, then proxy to the host-only variable —
+        # same pattern as the working /dd-next-1 location (variable host + implicit URI).
+        # From a /dd-next-1 page -> internal redirect to /dd-next-1/<path>, which the proven
+        # /dd-next-1 location then proxies to the app. (rewrite-in-if is the safe use of if.)
+        if ($api_referer_ddn1) {
+          rewrite ^ /dd-next-1$uri last;
+        }
+        set $dd_up_apipd dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_apipd;
       }
 
       location / {
