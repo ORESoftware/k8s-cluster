@@ -1321,6 +1321,47 @@ async fn confirm_signature(
     }
 }
 
+/// Synthetic outcome returned when the service-wide confirmation-poller cap is
+/// reached. No RPC is performed; the caller can re-check via `/confirm`.
+fn deferred_confirm_outcome(signature: &str, target_commitment: &str) -> ConfirmOutcome {
+    ConfirmOutcome {
+        signature: signature.to_string(),
+        status: "deferred",
+        target_commitment: target_commitment.to_string(),
+        reached: false,
+        polls: 0,
+        elapsed_ms: 0,
+        slot: None,
+        confirmation_status: None,
+        error: Some(json!(
+            "confirmation deferred: service confirmation capacity reached; re-check via POST /confirm"
+        )),
+    }
+}
+
+/// Runs `confirm_signature` under a service-wide poller slot. When the cap is
+/// reached it sheds gracefully (no RPC) rather than amplifying upstream load.
+async fn bounded_confirm(
+    state: &AppState,
+    signature: &str,
+    target_commitment: &str,
+    timeout_ms: u64,
+    poll_interval_ms: u64,
+) -> ConfirmOutcome {
+    match ConfirmSlot::try_acquire(&state.confirm_in_flight) {
+        Some(_slot) => {
+            confirm_signature(state, signature, target_commitment, timeout_ms, poll_interval_ms).await
+        }
+        None => {
+            state
+                .metrics
+                .confirmations_deferred_total
+                .fetch_add(1, Ordering::Relaxed);
+            deferred_confirm_outcome(signature, target_commitment)
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Settlement and resolution vocabulary (shared with dd-escrow-rs)
 // ---------------------------------------------------------------------------
@@ -2495,7 +2536,7 @@ async fn confirm_http(
     let outcomes = futures_util::future::join_all(
         signatures
             .iter()
-            .map(|signature| confirm_signature(&state, signature, &target, timeout_ms, poll_interval_ms)),
+            .map(|signature| bounded_confirm(&state, signature, &target, timeout_ms, poll_interval_ms)),
     )
     .await;
     let all_reached = outcomes.iter().all(|outcome| outcome.reached);
@@ -2730,7 +2771,7 @@ async fn settle_http(
             json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
         );
     }
-    let confirmation = confirm_signature(
+    let confirmation = bounded_confirm(
         &state,
         &signature,
         &confirm_target,
@@ -2939,7 +2980,7 @@ async fn resolve_http(
             json!({ "ok": false, "requestId": req_id, "error": "sendTransaction did not return a signature" }),
         );
     }
-    let confirmation = confirm_signature(
+    let confirmation = bounded_confirm(
         &state,
         &signature,
         &confirm_target,
@@ -3102,6 +3143,7 @@ fn metrics_body(state: &AppState) -> String {
         ("finalized", load(&m.confirmations_finalized_total)),
         ("failed", load(&m.confirmations_failed_total)),
         ("pending", load(&m.confirmations_pending_total)),
+        ("deferred", load(&m.confirmations_deferred_total)),
     ] {
         out.push_str(&format!(
             "dd_contract_service_confirmations_total{{outcome=\"{outcome}\"}} {value}\n"
@@ -4255,7 +4297,7 @@ async fn nats_settlement_flow(
                     )
                 });
             let confirmation =
-                confirm_signature(state, &signature, &target, timeout_ms, poll_ms).await;
+                bounded_confirm(state, &signature, &target, timeout_ms, poll_ms).await;
             let reached = confirmation.reached;
             outcome.insert("ok".to_string(), json!(reached));
             outcome.insert("status".to_string(), json!("broadcast"));
