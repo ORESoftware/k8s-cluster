@@ -29,6 +29,10 @@
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
     cron_prompts_stream/0,
+    data_viz_alerts_events_subject/0,
+    data_viz_notifications_dispatch_subject/0,
+    data_viz_notifications_dispatch_queue_group/0,
+    data_viz_publish_events_subject/0,
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
@@ -91,6 +95,11 @@
     mip_solver_results_stream/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
+    music_generation_requests_subject/0,
+    music_generation_requests_queue_group/0,
+    music_generation_results_subject/0,
+    music_songs_published_subject/0,
+    music_votes_events_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
     public_data_analysis_results_subject/0,
@@ -145,9 +154,11 @@
     thread_tasks_stream/0,
     billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
+    data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
+    music_generation_queue_group/0,
     public_data_workers_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
@@ -178,6 +189,10 @@ contracts_solana_validate_subject() -> <<"dd.remote.contracts.solana.validate"/u
 contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 cron_prompts_subject() -> <<"dd.remote.cron.prompts"/utf8>>.
 cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
+data_viz_alerts_events_subject() -> <<"dd.remote.dataviz.alerts.events"/utf8>>.
+data_viz_notifications_dispatch_subject() -> <<"dd.remote.dataviz.notifications.dispatch"/utf8>>.
+data_viz_notifications_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
+data_viz_publish_events_subject() -> <<"dd.remote.dataviz.publish.events"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
@@ -240,6 +255,11 @@ mip_solver_results_subject() -> <<"dd.remote.mip_solver.results"/utf8>>.
 mip_solver_results_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 ml_dead_letter_subject() -> <<"dd.remote.ml.deadletter"/utf8>>.
 ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
+music_generation_requests_subject() -> <<"dd.remote.music.generation.requests"/utf8>>.
+music_generation_requests_queue_group() -> <<"dd-music-rs"/utf8>>.
+music_generation_results_subject() -> <<"dd.remote.music.generation.results"/utf8>>.
+music_songs_published_subject() -> <<"dd.remote.music.songs.published"/utf8>>.
+music_votes_events_subject() -> <<"dd.remote.music.votes.events"/utf8>>.
 orchestrator_wakeup_subject() -> <<"dd.remote.orchestrator.wakeup"/utf8>>.
 orchestrator_wakeup_stream() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 public_data_analysis_results_subject() -> <<"dd.remote.public_data.analysis.results"/utf8>>.
@@ -294,9 +314,11 @@ thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
+music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.

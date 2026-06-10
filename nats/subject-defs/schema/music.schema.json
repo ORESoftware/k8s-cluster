@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/music.schema.json",
+  "title": "MusicNats",
+  "description": "NATS subjects owned by dd-music-rs (generated-track server). The server fans out a best-effort event when a new song is published and when anonymous votes are cast, and exposes a generation request/result lane so song generation can be driven over NATS instead of only the in-process background generator. Payloads carry a dd.music.v1 envelope and must not contain audio bytes (only metadata + storage URLs) or secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-music-rs",
+    "summary": "Generated-song publish/vote fan-out plus generation request/result lane.",
+    "subjects": [
+      {
+        "name": "MusicSongsPublished",
+        "description": "Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it. Default for MUSIC_SONGS_PUBLISHED_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.music.songs.published",
+        "direction": "publish"
+      },
+      {
+        "name": "MusicGenerationRequests",
+        "description": "Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. Default for MUSIC_GENERATION_REQUEST_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.music.generation.requests",
+        "queueGroup": "dd-music-rs",
+        "direction": "both"
+      },
+      {
+        "name": "MusicGenerationResults",
+        "description": "Generation outcomes (published / discarded-below-listenability / failed) emitted after a generation sweep. Default for MUSIC_GENERATION_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.music.generation.results",
+        "direction": "both"
+      },
+      {
+        "name": "MusicVotesEvents",
+        "description": "Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). Default for MUSIC_VOTES_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.music.votes.events",
+        "direction": "publish"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "MusicGenerationQueueGroup",
+        "value": "dd-music-rs",
+        "description": "Shared queue group used by dd-music-rs replicas consuming generation requests."
+      }
+    ]
+  }
+}

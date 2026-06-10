@@ -51,10 +51,15 @@ if (args.includes("--parse-only")) {
   process.exit(0);
 }
 
+// Schemas the contract owns. `public` is always included (routines/triggers live there); any
+// non-public schema (e.g. `benefactor`) is discovered from the parsed tables so introspection and
+// the emitted diff cover it.
+const contractSchemas = [...new Set(["public", ...contract.tables.map((table) => table.schema ?? "public")])];
+
 const catalogJsonPath = argValue("--catalog-json");
 const actualSchema = catalogJsonPath
   ? hydrateActualSchema(JSON.parse(await readFile(path.resolve(process.cwd(), catalogJsonPath), "utf8")))
-  : await introspectDatabase(await resolveDatabaseUrl());
+  : await introspectDatabase(await resolveDatabaseUrl(), contractSchemas);
 const diffSql = generateDiffSql({
   contract,
   actualSchema,

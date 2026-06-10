@@ -71,6 +71,19 @@ CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP = "dd-contract-service"
 CRON_PROMPTS_SUBJECT = "dd.remote.cron.prompts"
 CRON_PROMPTS_STREAM = "DD_REMOTE_CRON"
 
+# Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.
+# Service: dd-data-viz-rs
+DATA_VIZ_ALERTS_EVENTS_SUBJECT = "dd.remote.dataviz.alerts.events"
+
+# Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.
+# Service: dd-data-viz-rs
+DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT = "dd.remote.dataviz.notifications.dispatch"
+DATA_VIZ_NOTIFICATIONS_DISPATCH_QUEUE_GROUP = "dd-data-viz-notifiers"
+
+# Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.
+# Service: dd-data-viz-rs
+DATA_VIZ_PUBLISH_EVENTS_SUBJECT = "dd.remote.dataviz.publish.events"
+
 # Discrete-event simulation results. Default for DES_RESULT_SUBJECT.
 # Service: dd-ai-ml-pipeline
 DES_RESULTS_SUBJECT = "dd.remote.des.results"
@@ -258,6 +271,23 @@ ML_DEAD_LETTER_SUBJECT = "dd.remote.ml.deadletter"
 # Derived ML features (z-scores, EWMA baselines) published by ai-ml-pipeline. Default for ML_FEATURE_SUBJECT.
 # Service: dd-ai-ml-pipeline
 ML_FEATURES_SUBJECT = "dd.remote.ml.features"
+
+# Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. Default for MUSIC_GENERATION_REQUEST_SUBJECT.
+# Service: dd-music-rs
+MUSIC_GENERATION_REQUESTS_SUBJECT = "dd.remote.music.generation.requests"
+MUSIC_GENERATION_REQUESTS_QUEUE_GROUP = "dd-music-rs"
+
+# Generation outcomes (published / discarded-below-listenability / failed) emitted after a generation sweep. Default for MUSIC_GENERATION_RESULT_SUBJECT.
+# Service: dd-music-rs
+MUSIC_GENERATION_RESULTS_SUBJECT = "dd.remote.music.generation.results"
+
+# Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it. Default for MUSIC_SONGS_PUBLISHED_SUBJECT.
+# Service: dd-music-rs
+MUSIC_SONGS_PUBLISHED_SUBJECT = "dd.remote.music.songs.published"
+
+# Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). Default for MUSIC_VOTES_EVENT_SUBJECT.
+# Service: dd-music-rs
+MUSIC_VOTES_EVENTS_SUBJECT = "dd.remote.music.votes.events"
 
 # Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 # Service: dd-remote-rest-api
@@ -730,6 +760,10 @@ BILLING_SERVER_QUEUE_GROUP = "dd-billing-server"
 # Service: shared
 CRITICAL_EVENTS_LOGGER_QUEUE_GROUP = "dd-runtime-critical-events"
 
+# Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
+# Service: dd-data-viz-rs
+DATA_VIZ_NOTIFICATION_DISPATCH_QUEUE_GROUP = "dd-data-viz-notifiers"
+
 # Shared queue group used by dd-economics-server replicas consuming forecast requests.
 # Service: dd-economics-server
 ECONOMICS_SERVER_QUEUE_GROUP = "dd-economics-server"
@@ -741,6 +775,10 @@ LAMBDA_RUNNER_QUEUE_GROUP = "dd-gleam-lambda-runner"
 # Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
 # Service: dd-ai-ml-pipeline
 MIP_SOLVER_WORKERS_QUEUE_GROUP = "dd-in-house-mip-solver-node-workers"
+
+# Shared queue group used by dd-music-rs replicas consuming generation requests.
+# Service: dd-music-rs
+MUSIC_GENERATION_QUEUE_GROUP = "dd-music-rs"
 
 # Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 # Service: dd-public-data-server

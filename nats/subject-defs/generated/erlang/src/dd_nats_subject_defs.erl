@@ -22,6 +22,10 @@
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
     cron_prompts_stream/0,
+    data_viz_alerts_events_subject/0,
+    data_viz_notifications_dispatch_subject/0,
+    data_viz_notifications_dispatch_queue_group/0,
+    data_viz_publish_events_subject/0,
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
@@ -84,6 +88,11 @@
     mip_solver_results_stream/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
+    music_generation_requests_subject/0,
+    music_generation_requests_queue_group/0,
+    music_generation_results_subject/0,
+    music_songs_published_subject/0,
+    music_votes_events_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
     public_data_analysis_results_subject/0,
@@ -162,9 +171,11 @@
     thread_tasks_stream/0,
     billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
+    data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
+    music_generation_queue_group/0,
     public_data_workers_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
@@ -264,6 +275,19 @@ contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 %% Service: dd-remote-rest-api
 cron_prompts_subject() -> <<"dd.remote.cron.prompts"/utf8>>.
 cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
+
+%% Fan-out emitted when a dashboard alert rule fires or resolves. Carries alert id, rule, severity, and the triggering metric summary (not the underlying rows). Default for DATAVIZ_ALERTS_EVENT_SUBJECT.
+%% Service: dd-data-viz-rs
+data_viz_alerts_events_subject() -> <<"dd.remote.dataviz.alerts.events"/utf8>>.
+
+%% Outbound notification-dispatch requests (email/webhook/in-app) consumed by notifier workers. Subscribed with the dd-data-viz-notifiers queue group so each notification is delivered once. Default for DATAVIZ_NOTIFICATIONS_DISPATCH_SUBJECT.
+%% Service: dd-data-viz-rs
+data_viz_notifications_dispatch_subject() -> <<"dd.remote.dataviz.notifications.dispatch"/utf8>>.
+data_viz_notifications_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
+
+%% Fan-out emitted when a workbook or dashboard is published or republished. Carries workbook/dashboard id, owner, and version (not the rendered payload). Default for DATAVIZ_PUBLISH_EVENT_SUBJECT.
+%% Service: dd-data-viz-rs
+data_viz_publish_events_subject() -> <<"dd.remote.dataviz.publish.events"/utf8>>.
 
 %% Discrete-event simulation results. Default for DES_RESULT_SUBJECT.
 %% Service: dd-ai-ml-pipeline
@@ -452,6 +476,23 @@ ml_dead_letter_subject() -> <<"dd.remote.ml.deadletter"/utf8>>.
 %% Derived ML features (z-scores, EWMA baselines) published by ai-ml-pipeline. Default for ML_FEATURE_SUBJECT.
 %% Service: dd-ai-ml-pipeline
 ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
+
+%% Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. Default for MUSIC_GENERATION_REQUEST_SUBJECT.
+%% Service: dd-music-rs
+music_generation_requests_subject() -> <<"dd.remote.music.generation.requests"/utf8>>.
+music_generation_requests_queue_group() -> <<"dd-music-rs"/utf8>>.
+
+%% Generation outcomes (published / discarded-below-listenability / failed) emitted after a generation sweep. Default for MUSIC_GENERATION_RESULT_SUBJECT.
+%% Service: dd-music-rs
+music_generation_results_subject() -> <<"dd.remote.music.generation.results"/utf8>>.
+
+%% Fan-out event emitted after a newly generated song is published to storage. Carries song metadata and the public audio URL (never audio bytes). Broadcast with no queue group so every interested consumer receives it. Default for MUSIC_SONGS_PUBLISHED_SUBJECT.
+%% Service: dd-music-rs
+music_songs_published_subject() -> <<"dd.remote.music.songs.published"/utf8>>.
+
+%% Fan-out of anonymous up/down votes for downstream analytics. Carries song id, direction, and the resulting tallies (no visitor hashes). Default for MUSIC_VOTES_EVENT_SUBJECT.
+%% Service: dd-music-rs
+music_votes_events_subject() -> <<"dd.remote.music.votes.events"/utf8>>.
 
 %% Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.
 %% Service: dd-remote-rest-api
@@ -867,6 +908,10 @@ billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 %% Service: shared
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 
+%% Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
+%% Service: dd-data-viz-rs
+data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
+
 %% Shared queue group used by dd-economics-server replicas consuming forecast requests.
 %% Service: dd-economics-server
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
@@ -878,6 +923,10 @@ lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 %% Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
 %% Service: dd-ai-ml-pipeline
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
+
+%% Shared queue group used by dd-music-rs replicas consuming generation requests.
+%% Service: dd-music-rs
+music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 
 %% Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 %% Service: dd-public-data-server
