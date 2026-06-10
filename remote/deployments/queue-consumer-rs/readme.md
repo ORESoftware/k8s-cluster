@@ -50,6 +50,24 @@ path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_D
 | `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH` | `true` | When true, failed pool handoff falls back to `/prepare` plus direct REST dispatch. |
 | `REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET` | `dd-k8s-home` | Shared internal auth header for prepare calls. |
 | `QUEUE_CONSUMER_RECEIPTS_DIR` | `/tmp/dd-remote-queue-consumer/tasks` | JSON task receipts used to skip duplicate NATS deliveries. |
+| `NATS_REQUIRE_TLS` | `false` | Require TLS to the NATS broker. |
+| `NATS_CREDENTIALS_FILE` / `NATS_TOKEN` / `NATS_NKEY` | _(unset)_ | Optional NATS auth (precedence in that order). |
+
+## Hardening
+
+- **Identifier validation** — `threadId`/`taskId` are validated on ingest (non-empty, ≤200 bytes, no
+  control chars, `/`, `\`, or `..`). They flow into REST paths (`/api/agents/threads/{threadId}/prepare`)
+  and the receipt filename, so a crafted id can't steer the request path or escape the receipts dir.
+  Invalid messages are logged as a critical event and acked (dropped) rather than retried.
+- **Collision-resistant receipts** — the receipt filename combines the sanitized id with a hash of the
+  raw id, so two distinct ids can never alias the same receipt file (which would silently drop a task).
+- **NATS connection** — sets a stable client name, ping interval, and connect timeout, retries the
+  initial connect, and supports optional auth/TLS via the env above (previously a bare connect).
+- **Graceful shutdown** — SIGTERM/SIGINT stops the loop between messages so an in-flight handoff
+  finishes before exit, avoiding a redelivery storm on rolling restarts.
+- **Bounded duplicate cache** — the in-memory taskId set is capped (the on-disk receipts stay the
+  durable check), so a long-lived pod can't grow it without bound.
+- A `WARN` is logged if the internal auth secret falls back to the built-in default.
 
 ## Scaling
 

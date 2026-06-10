@@ -1304,6 +1304,43 @@ async fn throttle_vote(
     Ok(())
 }
 
+/// Consume song-generation requests over NATS (queue group dd-music-rs so
+/// requests load-balance across replicas). Each request runs a generation pass
+/// which itself fans out `songs.published` and `generation.results`.
+async fn run_generation_request_consumer(state: AppState) {
+    let Some(nats) = state.nats.clone() else {
+        return;
+    };
+    let mut subscription = match nats
+        .queue_subscribe(
+            MUSIC_GENERATION_REQUESTS_SUBJECT,
+            MUSIC_GENERATION_REQUESTS_QUEUE_GROUP.to_string(),
+        )
+        .await
+    {
+        Ok(subscription) => subscription,
+        Err(error) => {
+            eprintln!("dd-music-rs failed to subscribe to generation requests: {error}");
+            return;
+        }
+    };
+    println!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
+    while let Some(message) = subscription.next().await {
+        let request: GenerateRequest = serde_json::from_slice(&message.payload).unwrap_or(GenerateRequest {
+            count: None,
+            min_score: None,
+        });
+        let requested = request.count.unwrap_or(1).clamp(1, 5);
+        let min_score = request
+            .min_score
+            .unwrap_or(state.config.min_listenability_score)
+            .clamp(0.0, 1.0);
+        if let Err(error) = generate_and_publish_songs(&state, requested, min_score).await {
+            eprintln!("dd-music-rs NATS generation request failed: {error:?}");
+        }
+    }
+}
+
 async fn run_generator_loop(state: AppState) {
     tokio::time::sleep(state.config.generator_initial_delay).await;
     loop {
@@ -1907,6 +1944,13 @@ async fn main() {
         tokio::spawn(run_generator_loop(state.clone()));
     } else if state.config.generator_enabled {
         eprintln!("dd-music-rs generator disabled until postgres and storage are configured");
+    }
+
+    if state.nats.is_some()
+        && state.config.database_url.is_some()
+        && storage_ready(&state.config.storage, state.s3.is_some())
+    {
+        tokio::spawn(run_generation_request_consumer(state.clone()));
     }
 
     let addr: SocketAddr = format!("{host}:{port}")
