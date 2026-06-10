@@ -48,6 +48,16 @@ spec:
         - protocol: TCP
           port: 6379
     - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
       ports:

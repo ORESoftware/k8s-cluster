@@ -21,6 +21,21 @@ spec:
     spec:
       serviceAccountName: dd-gleam-mcp-server
       automountServiceAccountToken: true
+      # Run as a non-root uid (matches the dd-cluster-mcp-rs sibling, which uses
+      # the same hostPath + emptyDir pattern as 1000). fsGroup makes the `work`
+      # and `tmp` emptyDirs group-writable so the BEAM can write its scratch
+      # build tree + crash dumps without root; the read-only repo hostPath is
+      # already read as 1000 by the Rust pod. This brings the pod up to the
+      # "restricted" Pod Security Standard baseline alongside the caps drop,
+      # no-privilege-escalation, read-only rootfs, and seccomp already set.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 20
       initContainers:
         # Build in init with a larger memory budget, then keep the
