@@ -125,17 +125,23 @@ extern "C" int dd_magick_transform(const uint8_t* in, size_t in_len,
     set_error(err, "invalid arguments to dd_magick_transform");
     return 1;
   }
-  ensure_initialized();
+  // ensure_initialized() is inside the try: a C++ exception must never unwind
+  // across this extern "C" boundary (that would be UB in the Rust caller).
   try {
+    ensure_initialized();
     Magick::Image image;
     Magick::Blob in_blob(in, in_len);
-    image.read(in_blob);
 
+    // Identify the coder from the header BEFORE fully decoding, so a disallowed
+    // coder (MVG/MSL/SVG/...) is never executed — defense-in-depth alongside the
+    // shipped policy.xml.
+    image.ping(in_blob);
     const std::string detected = upper(image.magick());
     if (input_allowlist().find(detected) == input_allowlist().end()) {
       set_error(err, "input coder '" + detected + "' is not permitted");
       return 2;
     }
+    image.read(in_blob);
 
     // EXIF auto-orient first so subsequent geometry ops act on upright pixels.
     if (op->auto_orient) {
@@ -202,11 +208,13 @@ extern "C" int dd_magick_identify(const uint8_t* in, size_t in_len,
     set_error(err, "invalid arguments to dd_magick_identify");
     return 1;
   }
-  ensure_initialized();
   try {
+    ensure_initialized();
     Magick::Image image;
     Magick::Blob in_blob(in, in_len);
-    image.read(in_blob);
+    // ping() reads only the header (format + geometry) — no pixel decode, so
+    // identify never runs a full (possibly hostile/bomb) decode.
+    image.ping(in_blob);
 
     const std::string format = upper(image.magick());
     if (input_allowlist().find(format) == input_allowlist().end()) {
@@ -246,9 +254,14 @@ extern "C" int dd_magick_identify(const uint8_t* in, size_t in_len,
 }
 
 extern "C" char* dd_magick_version() {
-  ensure_initialized();
-  // MagickLibVersionText is a global macro string literal (e.g. "7.1.2").
-  return dup_cstr(std::string(MagickLibVersionText));
+  // No exception may cross this extern "C" boundary.
+  try {
+    ensure_initialized();
+    // MagickLibVersionText is a global macro string literal (e.g. "7.1.2").
+    return dup_cstr(std::string(MagickLibVersionText));
+  } catch (...) {
+    return dup_cstr(std::string("unknown"));
+  }
 }
 
 extern "C" void dd_magick_free_blob(uint8_t* p) { std::free(p); }

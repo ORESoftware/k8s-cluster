@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-sat-smt-server
+  namespace: default
+  labels:
+    app: dd-sat-smt-server
+spec:
+  selector:
+    app: dd-sat-smt-server
+  ports:
+    - name: http
+      port: 8130
+      targetPort: http

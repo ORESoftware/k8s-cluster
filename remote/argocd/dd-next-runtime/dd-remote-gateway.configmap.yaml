@@ -76,7 +76,18 @@ data:
       POST $binary_remote_addr;
     }
 
+    # Throttle POST /auth (operator PIN + TOTP submission) per client IP. The
+    # PIN is the entire trust boundary for the gateway, so the login endpoint
+    # must not be brute-forceable at line speed. Keyed only on POST so the GET
+    # login form and /auth/status reads are never rate-limited; an empty key
+    # makes nginx skip the limit for those.
+    map $request_method $dd_auth_write_limit_key {
+      default "";
+      POST $binary_remote_addr;
+    }
+
     limit_req_zone $dd_fabrication_write_limit_key zone=dd_fabrication_write:10m rate=12r/m;
+    limit_req_zone $dd_auth_write_limit_key zone=dd_auth_write:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
     limit_req_zone $binary_remote_addr zone=dd_sound_recorder_mobile_write:10m rate=120r/m;
 
@@ -150,10 +161,22 @@ data:
       }
 
       location = /auth {
+        # GET renders the login form; POST submits the PIN + optional TOTP.
+        # Nothing else is valid, so reject other methods before they reach the
+        # upstream.
+        if ($request_method !~ ^(GET|HEAD|POST)$) {
+          return 405;
+        }
+        # Per-IP brute-force throttle on the PIN submission. The empty key for
+        # non-POST methods means the GET form is never rate-limited; burst=3
+        # absorbs an operator fat-fingering the code a couple times.
+        limit_req zone=dd_auth_write burst=3 nodelay;
+        limit_req_status 429;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
+        set $dd_up_1 dd-remote-auth.default.svc.cluster.local:8083;
+        proxy_pass http://$dd_up_1;
       }
 
       location = /auth/login {
@@ -164,18 +187,28 @@ data:
         return 302 /auth?return=/home;
       }
 
-      location /auth/ {
+      # Only /auth/status is exposed under /auth/, replacing the previous broad
+      # `location /auth/` prefix proxy. That prefix auto-published every current
+      # and future route the auth server mounts; this exact-match limits the
+      # public surface to the one documented read endpoint (cookie-state probe).
+      # GET/HEAD only — it is a metadata read, never a mutation.
+      location = /auth/status {
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-auth.default.svc.cluster.local:8083;
+        set $dd_up_2 dd-remote-auth.default.svc.cluster.local:8083;
+        proxy_pass http://$dd_up_2;
       }
 
       location = /jello {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_3 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_3;
       }
 
       location = /jello/ {
@@ -186,7 +219,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_4 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_4;
       }
 
       location = /jello/sample/ {
@@ -197,14 +231,16 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_5 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_5;
       }
 
       location /home {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_6 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_6;
       }
 
       # Operator-only HTML pages backed by /api/agents/* (which IS auth-gated
@@ -224,7 +260,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_7 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_7;
       }
 
       location /agents/threads {
@@ -234,7 +271,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_8 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_8;
       }
 
       location /lambdas/functions {
@@ -244,7 +282,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_9 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_9;
       }
 
       location /lambdas/invoke/ {
@@ -305,7 +344,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+        set $dd_up_10 dd-remote-rest-api.default.svc.cluster.local:8082;
+        proxy_pass http://$dd_up_10;
       }
 
       # /container-pool/config — operator UI for viewing and editing pool image
@@ -318,7 +358,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_11 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_11;
       }
 
       # /api/container-pool/* — CRUD + build/test API backing the page above.
@@ -342,7 +383,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+        set $dd_up_12 dd-remote-rest-api.default.svc.cluster.local:8082;
+        proxy_pass http://$dd_up_12;
       }
 
       location /api/db/ {
@@ -364,7 +406,8 @@ data:
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header X-Agent-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+        set $dd_up_13 dd-remote-rest-api.default.svc.cluster.local:8082;
+        proxy_pass http://$dd_up_13;
       }
 
       # /api/runtime-config/snapshot/{stage|prod} — proxied through the rest-api
@@ -382,7 +425,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+        set $dd_up_14 dd-remote-rest-api.default.svc.cluster.local:8082;
+        proxy_pass http://$dd_up_14;
       }
 
       # /runtime-config/admin — operator-cookie-gated HTML admin UI.
@@ -428,7 +472,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-agent-worker-broker.default.svc.cluster.local:8098;
+        set $dd_up_15 dd-agent-worker-broker.default.svc.cluster.local:8098;
+        proxy_pass http://$dd_up_15;
       }
 
       location = /container-pools {
@@ -471,7 +516,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-container-pool.default.svc.cluster.local:8102;
+        set $dd_up_16 dd-container-pool.default.svc.cluster.local:8102;
+        proxy_pass http://$dd_up_16;
       }
 
       location /api/agents/ {
@@ -489,7 +535,8 @@ data:
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header X-Agent-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+        set $dd_up_17 dd-remote-rest-api.default.svc.cluster.local:8082;
+        proxy_pass http://$dd_up_17;
       }
 
       location = /bastion {
@@ -541,7 +588,8 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://headlamp.headlamp.svc.cluster.local:80;
+        set $dd_up_18 headlamp.headlamp.svc.cluster.local:80;
+        proxy_pass http://$dd_up_18;
       }
 
       location = /telemetry {
@@ -567,7 +615,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_set_header X-Forwarded-Prefix /telemetry;
-        proxy_pass http://dd-grafana.observability.svc.cluster.local:3000;
+        set $dd_up_19 dd-grafana.observability.svc.cluster.local:3000;
+        proxy_pass http://$dd_up_19;
       }
 
       location ~ "^/grafana/depl/(?<dd_grafana_deployment>[A-Za-z0-9][A-Za-z0-9._-]{0,126})/?$" {
@@ -770,7 +819,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-dart-server.default.svc.cluster.local:8089;
+        set $dd_up_20 dd-dart-server.default.svc.cluster.local:8089;
+        proxy_pass http://$dd_up_20;
       }
 
       # Admin endpoints (hot-reload status, /dart/admin/db, etc.) live
@@ -787,7 +837,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-dart-server.default.svc.cluster.local:8088;
+        set $dd_up_21 dd-dart-server.default.svc.cluster.local:8088;
+        proxy_pass http://$dd_up_21;
       }
 
       # Everything else under /dart/ → dedicated HTTP isolate (port
@@ -804,7 +855,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-dart-server.default.svc.cluster.local:8090;
+        set $dd_up_22 dd-dart-server.default.svc.cluster.local:8090;
+        proxy_pass http://$dd_up_22;
       }
 
       location = /cluster-mcp {
@@ -926,7 +978,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://gcs.default.svc.cluster.local:3000;
+        set $dd_up_23 gcs.default.svc.cluster.local:3000;
+        proxy_pass http://$dd_up_23;
       }
 
       # /gcs/ws/* — WebSocket traffic to chat.vibe. Routed through the
@@ -962,7 +1015,8 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         rewrite ^/gcs/ws/?(.*)$ /$1 break;
-        proxy_pass http://gcs-router.default.svc.cluster.local:3001;
+        set $dd_up_24 gcs-router.default.svc.cluster.local:3001;
+        proxy_pass http://$dd_up_24;
       }
 
       location = /webrtc {
@@ -984,7 +1038,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-webrtc-signaling.default.svc.cluster.local:8095;
+        set $dd_up_25 dd-webrtc-signaling.default.svc.cluster.local:8095;
+        proxy_pass http://$dd_up_25;
       }
 
       location /admin/webrtc/ {
@@ -1002,7 +1057,8 @@ data:
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_set_header X-DD-Admin "1";
         rewrite ^/admin/webrtc/?(.*)$ /webrtc/$1 break;
-        proxy_pass http://dd-webrtc-signaling.default.svc.cluster.local:8095;
+        set $dd_up_26 dd-webrtc-signaling.default.svc.cluster.local:8095;
+        proxy_pass http://$dd_up_26;
       }
 
       location = /webrtc-media {
@@ -1022,7 +1078,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-webrtc-media.default.svc.cluster.local:8125;
+        set $dd_up_27 dd-webrtc-media.default.svc.cluster.local:8125;
+        proxy_pass http://$dd_up_27;
       }
 
       location = /mdp {
@@ -1256,7 +1313,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-music-rs.default.svc.cluster.local:8115;
+        set $dd_up_28 dd-music-rs.default.svc.cluster.local:8115;
+        proxy_pass http://$dd_up_28;
       }
 
       location ~ "^/music/songs/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/votes$" {
@@ -1276,7 +1334,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth "";
         proxy_set_header Cookie "";
-        proxy_pass http://dd-music-rs.default.svc.cluster.local:8115;
+        set $dd_up_29 dd-music-rs.default.svc.cluster.local:8115;
+        proxy_pass http://$dd_up_29;
       }
 
       location /music/ {
@@ -1327,7 +1386,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        set $dd_up_30 dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        proxy_pass http://$dd_up_30;
       }
 
       location ~ ^/sound-recorder/(healthz|readyz|metrics|docs/api|api/docs|api/docs\.json)$ {
@@ -1348,7 +1408,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        set $dd_up_31 dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        proxy_pass http://$dd_up_31;
       }
 
       location /sound-recorder/api/mobile/ {
@@ -1368,7 +1429,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth "";
         proxy_set_header Cookie "";
-        proxy_pass http://dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        set $dd_up_32 dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        proxy_pass http://$dd_up_32;
       }
 
       location /sound-recorder/ {
@@ -1450,6 +1512,15 @@ data:
         return 302 /contracts/;
       }
 
+      # The runtime-config /internal/* push endpoints are driven in-cluster by
+      # dd-runtime-config, never through the public gateway. Block them so a
+      # gateway-authed caller cannot reach dd-contract-service's internal
+      # config-mutation surface (the gateway injects X-Server-Auth on proxied
+      # requests). 404 hides their existence.
+      location ^~ /contracts/internal/ {
+        return 404;
+      }
+
       location /contracts/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -1504,7 +1575,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        set $dd_up_33 usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        proxy_pass http://$dd_up_33;
       }
 
       location = /usacc {
@@ -1532,7 +1604,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        set $dd_up_34 usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        proxy_pass http://$dd_up_34;
       }
 
       location ~ ^/usacc/(healthz|metrics|docs/api|api/docs|api/docs\.json)$ {
@@ -1553,7 +1626,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        set $dd_up_35 usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        proxy_pass http://$dd_up_35;
       }
 
       # HTMX operator console. The backend serves it under /app and builds
@@ -1580,7 +1654,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        set $dd_up_36 usacc-rest-api-backend-rs.default.svc.cluster.local:8121;
+        proxy_pass http://$dd_up_36;
       }
 
       location = /escrow {
@@ -1588,6 +1663,15 @@ data:
           return 401;
         }
         return 302 /escrow/;
+      }
+
+      # The runtime-config /internal/* push endpoints are driven in-cluster by
+      # dd-runtime-config, never through the public gateway. Block them so a
+      # gateway-authed caller cannot reach dd-escrow-rs's internal config-mutation
+      # surface (the gateway injects X-Server-Auth on proxied requests). 404 hides
+      # their existence.
+      location ^~ /escrow/internal/ {
+        return 404;
       }
 
       location /escrow/ {
@@ -1828,7 +1912,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-web-scraper.default.svc.cluster.local:8097;
+        set $dd_up_37 dd-web-scraper.default.svc.cluster.local:8097;
+        proxy_pass http://$dd_up_37;
       }
 
       location /scrape/ {
@@ -1844,7 +1929,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-web-scraper.default.svc.cluster.local:8097;
+        set $dd_up_38 dd-web-scraper.default.svc.cluster.local:8097;
+        proxy_pass http://$dd_up_38;
       }
 
       location = /browser-test {
@@ -1860,7 +1946,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-browser-test-server.default.svc.cluster.local:8104;
+        set $dd_up_39 dd-browser-test-server.default.svc.cluster.local:8104;
+        proxy_pass http://$dd_up_39;
       }
 
       location /browser-test/ {
@@ -1876,7 +1963,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-browser-test-server.default.svc.cluster.local:8104;
+        set $dd_up_40 dd-browser-test-server.default.svc.cluster.local:8104;
+        proxy_pass http://$dd_up_40;
       }
 
       location = /selenium {
@@ -1892,7 +1980,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-selenium-server.default.svc.cluster.local:8105;
+        set $dd_up_41 dd-selenium-server.default.svc.cluster.local:8105;
+        proxy_pass http://$dd_up_41;
       }
 
       location /selenium/ {
@@ -1908,7 +1997,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-selenium-server.default.svc.cluster.local:8105;
+        set $dd_up_42 dd-selenium-server.default.svc.cluster.local:8105;
+        proxy_pass http://$dd_up_42;
       }
 
       location = /browser-jobs {
@@ -1924,7 +2014,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-browser-job-runner.default.svc.cluster.local:8106;
+        set $dd_up_43 dd-browser-job-runner.default.svc.cluster.local:8106;
+        proxy_pass http://$dd_up_43;
       }
 
       location /browser-jobs/ {
@@ -1940,7 +2031,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-browser-job-runner.default.svc.cluster.local:8106;
+        set $dd_up_44 dd-browser-job-runner.default.svc.cluster.local:8106;
+        proxy_pass http://$dd_up_44;
       }
 
       location = /builds {
@@ -1956,7 +2048,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-build-server.default.svc.cluster.local:8100;
+        set $dd_up_45 dd-build-server.default.svc.cluster.local:8100;
+        proxy_pass http://$dd_up_45;
       }
 
       location /builds/ {
@@ -1972,7 +2065,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-build-server.default.svc.cluster.local:8100;
+        set $dd_up_46 dd-build-server.default.svc.cluster.local:8100;
+        proxy_pass http://$dd_up_46;
       }
 
       # /lmx-rs/ — operator HTML status page for the Rust live-mutex
@@ -2017,7 +2111,8 @@ data:
         sub_filter 'href="/v1/stats"' 'href="/lmx-rs/v1/stats"';
         sub_filter 'href="/status"' 'href="/lmx-rs/status"';
         rewrite ^/lmx-rs/?(.*)$ /$1 break;
-        proxy_pass http://dd-rust-network-mutex.default.svc.cluster.local:6971;
+        set $dd_up_47 dd-rust-network-mutex.default.svc.cluster.local:6971;
+        proxy_pass http://$dd_up_47;
       }
 
       # /lmx-node/ — operator HTML status page for the patched Node.js
@@ -2055,7 +2150,8 @@ data:
         sub_filter 'href="/v1/stats"' 'href="/lmx-node/v1/stats"';
         sub_filter 'href="/status"' 'href="/lmx-node/status"';
         rewrite ^/lmx-node/?(.*)$ /$1 break;
-        proxy_pass http://dd-live-mutex-submodule.default.svc.cluster.local:6971;
+        set $dd_up_48 dd-live-mutex-submodule.default.svc.cluster.local:6971;
+        proxy_pass http://$dd_up_48;
       }
 
       location = /reaper {
@@ -2094,7 +2190,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-dev-server-api.default.svc.cluster.local:8080;
+        set $dd_up_49 dd-dev-server-api.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_49;
       }
 
       location /status {
@@ -2103,7 +2200,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-dev-server-api.default.svc.cluster.local:8080;
+        set $dd_up_50 dd-dev-server-api.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_50;
       }
 
       location /agents {
@@ -2112,7 +2210,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-dev-server-api.default.svc.cluster.local:8080;
+        set $dd_up_51 dd-dev-server-api.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_51;
       }
 
       location /healthz {
@@ -2121,7 +2220,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-dev-server-api.default.svc.cluster.local:8080;
+        set $dd_up_52 dd-dev-server-api.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_52;
       }
 
       location /stream/ {
@@ -2134,7 +2234,8 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-dev-server-api.default.svc.cluster.local:8080;
+        set $dd_up_53 dd-dev-server-api.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_53;
       }
 
       location ~ "^/dd-thread/(?<thread_short>[a-z0-9]{12})/ws$" {
@@ -2183,7 +2284,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
+        set $dd_up_54 dd-remote-web-home.default.svc.cluster.local:8080;
+        proxy_pass http://$dd_up_54;
       }
 
       location @auth_required {

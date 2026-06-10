@@ -2884,19 +2884,36 @@ async fn contract_service_health(state: &AppState) -> Result<Value, String> {
 }
 
 async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
-    let health = rpc_json(&state, "getHealth", json!([]), "escrow-status-health").await;
-    let version = rpc_json(&state, "getVersion", json!([]), "escrow-status-version").await;
+    // The direct Solana RPC probe requires public-internet egress, which is only
+    // provisioned for the solana-rpc backend. When delegating to the contract
+    // service, readiness is gated on its reachability and the Solana probe is
+    // skipped entirely so /status never depends on egress the pod does not have.
+    let (health, version) = match state.settlement_backend {
+        SettlementBackend::SolanaRpc => (
+            Some(rpc_json(&state, "getHealth", json!([]), "escrow-status-health").await),
+            Some(rpc_json(&state, "getVersion", json!([]), "escrow-status-version").await),
+        ),
+        SettlementBackend::ContractService => (None, None),
+    };
     let contract_service = match state.settlement_backend {
         SettlementBackend::ContractService => Some(contract_service_health(&state).await),
         SettlementBackend::SolanaRpc => None,
     };
-    // When delegating to the contract service, its reachability gates readiness; the direct
-    // Solana RPC probe is informational only.
     let ok = match state.settlement_backend {
-        SettlementBackend::SolanaRpc => health.is_ok() && version.is_ok(),
+        SettlementBackend::SolanaRpc => {
+            health.as_ref().map(Result::is_ok).unwrap_or(false)
+                && version.as_ref().map(Result::is_ok).unwrap_or(false)
+        }
         SettlementBackend::ContractService => {
             contract_service.as_ref().map(Result::is_ok).unwrap_or(false)
         }
+    };
+    let solana = match (health, version) {
+        (Some(health), Some(version)) => json!({
+            "health": health.unwrap_or_else(|error| json!({ "error": error })),
+            "version": version.unwrap_or_else(|error| json!({ "error": error })),
+        }),
+        _ => json!({ "probe": "skipped", "reason": "delegated to dd-contract-service" }),
     };
     Json(json!({
         "ok": ok,
@@ -2914,10 +2931,7 @@ async fn status_http(State(state): State<AppState>) -> impl IntoResponse {
         "resultSubject": state.result_subject,
         "contractService": contract_service
             .map(|result| result.unwrap_or_else(|error| json!({ "error": error }))),
-        "solana": {
-            "health": health.unwrap_or_else(|error| json!({ "error": error })),
-            "version": version.unwrap_or_else(|error| json!({ "error": error }))
-        },
+        "solana": solana,
         "generatedAtMs": now_ms(),
     }))
 }

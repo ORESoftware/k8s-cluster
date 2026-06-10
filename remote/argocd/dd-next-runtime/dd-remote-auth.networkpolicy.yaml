@@ -1,0 +1,62 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-remote-auth
+  namespace: default
+  labels:
+    app: dd-remote-auth
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-remote-auth
+  policyTypes:
+    - Ingress
+    - Egress
+  # Ingress to :8083 is restricted to the three callers that legitimately reach
+  # this pod. Without this policy any pod in the cluster could POST /auth and
+  # brute-force the operator PIN against the service directly, bypassing the
+  # gateway's edge rate limit. The PIN is the whole trust boundary, so the
+  # auth server must only be reachable by:
+  #   - dd-remote-gateway   — proxies GET/POST /auth (the login flow).
+  #   - dd-runtime-config   — pushes /internal/update-runtime-config.
+  #   - observability       — Prometheus / OTel collector scraping /metrics.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8083
+  # Egress is DNS + self-registration with the runtime-config control plane
+  # only. This service talks to no database, cache, NATS, or public internet.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
