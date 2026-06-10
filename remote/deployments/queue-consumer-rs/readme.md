@@ -49,16 +49,22 @@ path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_D
 | `CONTAINER_POOL_BASE_URL` | `http://dd-container-pool.default.svc.cluster.local:8102` | Internal warm worker pool URL used for real queued dispatches. |
 | `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH` | `true` | When true, failed pool handoff falls back to `/prepare` plus direct REST dispatch. |
 | `REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET` | `dd-k8s-home` | Shared internal auth header for prepare calls. |
+| `QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET` | `false` | When true, refuse to start if the auth secret is still the built-in default (fail closed instead of warning). |
 | `QUEUE_CONSUMER_RECEIPTS_DIR` | `/tmp/dd-remote-queue-consumer/tasks` | JSON task receipts used to skip duplicate NATS deliveries. |
 | `NATS_REQUIRE_TLS` | `false` | Require TLS to the NATS broker. |
 | `NATS_CREDENTIALS_FILE` / `NATS_TOKEN` / `NATS_NKEY` | _(unset)_ | Optional NATS auth (precedence in that order). |
 
 ## Hardening
 
-- **Identifier validation** — `threadId`/`taskId` are validated on ingest (non-empty, ≤200 bytes, no
-  control chars, `/`, `\`, or `..`). They flow into REST paths (`/api/agents/threads/{threadId}/prepare`)
-  and the receipt filename, so a crafted id can't steer the request path or escape the receipts dir.
-  Invalid messages are logged as a critical event and acked (dropped) rather than retried.
+- **Identifier validation** — `threadId`/`taskId` are validated on ingest against a strict allowlist
+  (non-empty, ≤200 bytes, no `..`, and only ASCII alphanumerics plus `-`, `_`, `.`). They flow raw into
+  REST paths (`/api/agents/threads/{threadId}/prepare`) and the receipt filename, so the allowlist blocks
+  not just `/`, `\`, and control bytes but also URL-significant characters (`?`, `#`, `%`, spaces) that
+  could otherwise steer the request's query/fragment. Invalid messages are logged as a critical event and
+  acked (dropped) rather than retried.
+- **Fail-closed auth secret** — the built-in default secret is compiled into the image, so
+  `QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET=true` makes the consumer refuse to start when no real secret
+  is configured, instead of silently authenticating with a known-public credential.
 - **Collision-resistant receipts** — the receipt filename combines the sanitized id with a hash of the
   raw id, so two distinct ids can never alias the same receipt file (which would silently drop a task).
 - **NATS connection** — sets a stable client name, ping interval, and connect timeout, retries the

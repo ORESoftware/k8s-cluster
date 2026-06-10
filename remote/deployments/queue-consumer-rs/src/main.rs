@@ -36,6 +36,13 @@ const MAX_RECEIPT_CACHE: usize = 50_000;
 /// prepare`) or escape the receipts directory. Thread/task ids are UUIDs in
 /// the producer, so this never rejects legitimate traffic; it only blocks
 /// crafted values like `../../admin` or ids with embedded slashes/NULs.
+///
+/// The id is interpolated raw into REST URLs, so the check is a strict
+/// allowlist rather than a denylist: only ASCII alphanumerics plus `-`, `_`,
+/// and `.` are permitted. A denylist of just `/`, `\`, and control characters
+/// would still let URL-significant bytes through — `?`/`#` open a query string
+/// or fragment and `%` begins a percent-escape, any of which can redirect the
+/// request — so those are rejected here too.
 fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
     if value.is_empty() {
         return Err(format!("{label} must not be empty"));
@@ -46,12 +53,12 @@ fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
     if value.contains("..") {
         return Err(format!("{label} must not contain '..'"));
     }
-    if value
+    if let Some(bad) = value
         .chars()
-        .any(|ch| ch.is_control() || matches!(ch, '/' | '\\'))
+        .find(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
     {
         return Err(format!(
-            "{label} must not contain control characters, '/', or '\\'"
+            "{label} must contain only ASCII alphanumerics, '-', '_', or '.' (found {bad:?})"
         ));
     }
     Ok(())
@@ -114,7 +121,7 @@ fn server_auth_secret() -> String {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "dd-k8s-home".to_string())
+        .unwrap_or_else(|| DEFAULT_SERVER_SECRET.to_string())
 }
 
 fn receipt_path(base_dir: &str, task_id: &str) -> PathBuf {
@@ -892,6 +899,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     );
     let secret = server_auth_secret();
     if secret == DEFAULT_SERVER_SECRET {
+        // The default secret is compiled into this binary, so anyone with the
+        // image knows it. Let a hardened deploy fail closed rather than run
+        // with a known-public credential on the X-Agent-Auth/X-Server-Auth
+        // headers; the default stays a warning so existing dev pods are
+        // unaffected.
+        if env_bool("QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET", false) {
+            log_error(
+                "server-auth-secret-default-refused",
+                "Refusing to start: QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET is set but the internal auth secret is the built-in default. Set REMOTE_DEV_SERVER_SECRET or SERVER_AUTH_SECRET.",
+                json!({}),
+            );
+            return Err(
+                "refusing to start with the built-in default internal auth secret while QUEUE_CONSUMER_REQUIRE_NONDEFAULT_SECRET is set"
+                    .into(),
+            );
+        }
         log_warn(
             "server-auth-secret-default",
             "Using the built-in default internal auth secret; set REMOTE_DEV_SERVER_SECRET or SERVER_AUTH_SECRET.",
@@ -1544,6 +1567,15 @@ mod tests {
         assert!(validate_identifier("a\nb", "id").is_err());
         assert!(validate_identifier("x..y", "id").is_err());
         assert!(validate_identifier(&"z".repeat(MAX_IDENTIFIER_LEN + 1), "id").is_err());
+
+        // URL-significant characters must be rejected: they would steer the
+        // REST path's query string, fragment, or percent-escaping even though
+        // they are neither '/', '\\', nor control characters.
+        assert!(validate_identifier("id?admin=1", "id").is_err());
+        assert!(validate_identifier("id#frag", "id").is_err());
+        assert!(validate_identifier("id%2e%2e", "id").is_err());
+        assert!(validate_identifier("id with space", "id").is_err());
+        assert!(validate_identifier("id&x=1", "id").is_err());
     }
 
     #[test]
