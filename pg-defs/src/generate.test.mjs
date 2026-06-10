@@ -205,6 +205,21 @@ test("parser flows a schema-qualified foreign key with bare reference table", ()
   assert.equal(column.foreignKey?.constraint, "benefactor_scrape_queries_location_fk");
 });
 
+test("parser throws on a bare-name collision across schemas", () => {
+  // Index/FK association is keyed by bare table name, so a duplicate bare name across schemas must
+  // fail loudly rather than silently mis-associate.
+  const sql = `
+    create table public.widgets (
+      id uuid primary key default gen_random_uuid()
+    );
+
+    create table benefactor.widgets (
+      id uuid primary key default gen_random_uuid()
+    );
+  `;
+  assert.throws(() => parseSchemaSql(sql), /Duplicate table name "widgets"/);
+});
+
 test("parser detects enum + jsonb_typeof shapes inside compound checks", () => {
   const sql = `
     create table example (
