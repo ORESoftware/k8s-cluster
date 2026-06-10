@@ -8,6 +8,7 @@
     "billing.schema.json",
     "chaos.schema.json",
     "constraint-scheduler.schema.json",
+    "contact.schema.json",
     "container-pool.schema.json",
     "contracts.schema.json",
     "dataviz.schema.json",

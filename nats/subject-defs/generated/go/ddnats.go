@@ -65,6 +65,20 @@ const ChaosExperimentsSubject = "dd.remote.chaos.experiments"
 const ChaosProbeSubject = "dd.remote.chaos.probe"
 const ChaosProbeQueueGroup = "dd-chaos-probe"
 
+// Send-an-email requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group (each request handled once across replicas). Payload: { to, subject, html, [text], [from] }.
+// Service: dd-email-sms-contact-rs
+const ContactEmailSendSubject = "dd.remote.contact.email.send"
+const ContactEmailSendQueueGroup = "dd-email-sms-contact"
+
+// Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+// Service: dd-email-sms-contact-rs
+const ContactSendResultsSubject = "dd.remote.contact.results"
+
+// Send-an-SMS requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { to, body }.
+// Service: dd-email-sms-contact-rs
+const ContactSmsSendSubject = "dd.remote.contact.sms.send"
+const ContactSmsSendQueueGroup = "dd-email-sms-contact"
+
 // Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 // Service: dd-container-pool
 const ContainerPoolRequestsSubject = "dd.remote.container_pool.requests"
@@ -961,6 +975,10 @@ const BillingServerQueueGroup = "dd-billing-server"
 // Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 // Service: dd-constraint-scheduler
 const ConstraintSchedulerQueueGroup = "dd-constraint-scheduler"
+
+// Shared queue group for dd-email-sms-contact-rs workers consuming the email/sms send lanes (once-only delivery across replicas).
+// Service: dd-email-sms-contact-rs
+const ContactSendQueueGroup = "dd-email-sms-contact"
 
 // Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 // Service: shared
