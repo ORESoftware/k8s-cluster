@@ -273,7 +273,11 @@ function renderTypeOrmTypeScript(contract) {
       lines.push(`@Index(${JSON.stringify(tableIndex.name)}, [${properties}]${optionsSql})`);
     }
 
-    lines.push(`@Entity({ name: ${JSON.stringify(table.name)} })`);
+    const entityOptions =
+      table.schema && table.schema !== 'public'
+        ? `{ schema: ${JSON.stringify(table.schema)}, name: ${JSON.stringify(table.name)} }`
+        : `{ name: ${JSON.stringify(table.name)} }`;
+    lines.push(`@Entity(${entityOptions})`);
     lines.push(`export class ${entityName} {`);
     for (const column of table.columns) {
       lines.push(`  ${typeOrmDecorator(column)}`);
