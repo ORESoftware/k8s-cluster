@@ -356,9 +356,11 @@ pub async fn run_sync_command_loop(state: AppState) {
                 tracing::warn!(error = %error, "billing sync-command failed to enqueue");
             }
         });
-    }
+        }
 
-    tracing::info!("billing sync-command loop ended (subscription closed)");
+        tracing::info!("billing sync-command subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
 }
 
 async fn handle_sync_command(state: &AppState, cmd: SyncCommand) -> crate::error::AppResult<()> {
