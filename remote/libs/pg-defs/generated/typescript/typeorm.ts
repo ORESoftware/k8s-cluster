@@ -4512,7 +4512,7 @@ export class UsaccAuditEventsEntity {
 
 }
 
-@Index("benefactor_leads_email_uq", ["primaryEmail"], { unique: true })
+@Index("benefactor_leads_email_uq", ["primaryEmail"], { unique: true, where: "primary_email <> ''" })
 @Index("benefactor_leads_business_name_idx", ["businessName"])
 @Index("benefactor_leads_category_idx", ["serviceCategory"])
 @Index("benefactor_leads_city_idx", ["city"])

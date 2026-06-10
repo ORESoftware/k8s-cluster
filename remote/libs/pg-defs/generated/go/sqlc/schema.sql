@@ -4730,8 +4730,12 @@ create table if not exists benefactor.benefactor_leads (
     check (jsonb_typeof(meta_data) = 'object')
 );
 
+-- Partial: dedupe real emails but allow many no-email leads. primary_email defaults to '' and
+-- many scraped businesses have no discoverable email, so a full unique index would cap the table
+-- at a single empty-email row.
 create unique index if not exists benefactor_leads_email_uq
-  on benefactor.benefactor_leads (primary_email);
+  on benefactor.benefactor_leads (primary_email)
+  where primary_email <> '';
 
 create index if not exists benefactor_leads_business_name_idx
   on benefactor.benefactor_leads (business_name);

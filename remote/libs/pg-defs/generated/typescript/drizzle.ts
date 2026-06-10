@@ -7284,7 +7284,7 @@ export const benefactorLeads = benefactorSchema.table(
     benefactorLeadsContactAttemptsArrayChk: check("benefactor_leads_contact_attempts_array_chk", sql.raw("jsonb_typeof(contact_attempts) = 'array'")),
     benefactorLeadsTagsArrayChk: check("benefactor_leads_tags_array_chk", sql.raw("jsonb_typeof(tags) = 'array'")),
     benefactorLeadsMetaObjectChk: check("benefactor_leads_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
-    benefactorLeadsEmailUq: uniqueIndex("benefactor_leads_email_uq").on(table.primaryEmail),
+    benefactorLeadsEmailUq: uniqueIndex("benefactor_leads_email_uq").on(table.primaryEmail).where(sql.raw("primary_email <> ''")),
     benefactorLeadsBusinessNameIdx: index("benefactor_leads_business_name_idx").on(table.businessName),
     benefactorLeadsCategoryIdx: index("benefactor_leads_category_idx").on(table.serviceCategory),
     benefactorLeadsCityIdx: index("benefactor_leads_city_idx").on(table.city),

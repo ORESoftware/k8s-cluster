@@ -2031,7 +2031,7 @@ model BenefactorLeads {
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
   createdBy String? @map("created_by") @db.Uuid
   updatedBy String? @map("updated_by") @db.Uuid
-  @@unique([primaryEmail], map: "benefactor_leads_email_uq")
+  // benefactor_leads_email_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   @@index([businessName], map: "benefactor_leads_business_name_idx")
   @@index([serviceCategory], map: "benefactor_leads_category_idx")
   @@index([city], map: "benefactor_leads_city_idx")

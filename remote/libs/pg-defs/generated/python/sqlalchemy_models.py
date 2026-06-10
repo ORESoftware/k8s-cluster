@@ -8847,7 +8847,7 @@ class BenefactorLeads(Base):
         CheckConstraint("jsonb_typeof(contact_attempts) = 'array'", name="benefactor_leads_contact_attempts_array_chk"),
         CheckConstraint("jsonb_typeof(tags) = 'array'", name="benefactor_leads_tags_array_chk"),
         CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_leads_meta_object_chk"),
-        Index("benefactor_leads_email_uq", "primary_email", unique=True),
+        Index("benefactor_leads_email_uq", "primary_email", unique=True, postgresql_where=text("primary_email <> ''")),
         Index("benefactor_leads_business_name_idx", "business_name"),
         Index("benefactor_leads_category_idx", "service_category"),
         Index("benefactor_leads_city_idx", "city"),
