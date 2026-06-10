@@ -376,3 +376,74 @@ fn provider_err(provider: &str, message: String) -> AppError {
         message,
     }
 }
+
+// =========================================================================
+// Webhook signature verification (HMAC-SHA256, hex digest, raw body)
+// =========================================================================
+
+/// Verify a Modern Treasury webhook signature. MT signs the raw request body
+/// with HMAC-SHA256 keyed by the webhook secret and delivers the hex digest
+/// in the `X-Signature` header. Constant-time compare; tolerant of a
+/// `sha256=` prefix some proxies add.
+pub fn verify_webhook_signature(body: &[u8], signature_header: &str, secret: &str) -> AppResult<()> {
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+
+    let provided = signature_header
+        .trim()
+        .strip_prefix("sha256=")
+        .unwrap_or_else(|| signature_header.trim());
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .map_err(|e| AppError::Crypto(format!("hmac init: {e}")))?;
+    Mac::update(&mut mac, body);
+    let expected = hex::encode(Mac::finalize(mac).into_bytes());
+    if crate::providers::amount::constant_time_eq_str(provided, &expected) {
+        Ok(())
+    } else {
+        Err(AppError::Unauthorized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
+
+    fn sign(body: &[u8], secret: &str) -> String {
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        Mac::update(&mut mac, body);
+        hex::encode(Mac::finalize(mac).into_bytes())
+    }
+
+    #[test]
+    fn verifies_modern_treasury_hmac_roundtrip() {
+        let body = br#"{"id":"po_1","object":"payment_order"}"#;
+        let sig = sign(body, "mt-secret");
+        verify_webhook_signature(body, &sig, "mt-secret").unwrap();
+        // sha256= prefix tolerated.
+        verify_webhook_signature(body, &format!("sha256={sig}"), "mt-secret").unwrap();
+    }
+
+    #[test]
+    fn rejects_bad_modern_treasury_hmac() {
+        let err = verify_webhook_signature(b"{}", "deadbeef", "mt-secret").unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn redacted_debug_hides_api_key() {
+        let cred = ModernTreasuryCredential {
+            organization_id: "org_1".into(),
+            api_key: "mt-key-secret".into(),
+            environment: "sandbox".into(),
+            api_base_url: None,
+            default_originating_account_id: None,
+            webhook_secret: Some("wh-secret".into()),
+        };
+        let dbg = format!("{cred:?}");
+        assert!(!dbg.contains("mt-key-secret"));
+        assert!(!dbg.contains("wh-secret"));
+        assert!(dbg.contains("org_1"));
+    }
+}

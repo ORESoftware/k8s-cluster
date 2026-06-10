@@ -200,6 +200,8 @@ validates the known API-key providers before sealing credentials:
 - `modern_treasury`: `{ "organization_id", "api_key", "default_originating_account_id", "api_base_url", "environment", "webhook_secret" }`
 - `dwolla`: `{ "access_token", "account_id", "api_base_url", "environment", "webhook_secret" }`
 - `ethereum_wallet`: `{ "address", "rpc_url", "chain_id", "rpc_bearer_token", "tracked_assets" }`
+- `adyen`: `{ "api_key", "merchant_account", "environment", "api_base_url", "hmac_key_hex" }`
+- `square`: `{ "access_token", "environment", "merchant_id", "webhook_signature_key", "webhook_notification_url" }`
 
 `environment` is `production` or `sandbox`. For Coinflow, Wise, Remitly,
 MoneyGram, Western Union, bank-sponsored Zelle providers, Modern Treasury, and
@@ -252,6 +254,20 @@ Implemented verification:
   sealed credential.
 - Revolut, GoCardless, Mercury, Circle: HMAC-SHA256 with per-connection
   secret (falls back to env secret only in non-strict mode).
+- Modern Treasury (`X-Signature`) and Dwolla (`X-Request-Signature-SHA-256`):
+  HMAC-SHA256 (hex) over the raw body with the per-connection webhook secret.
+- Square `x-square-hmacsha256-signature`: HMAC-SHA256 over
+  `notification_url + body` (base64), keyed by the per-connection signature
+  key — the registered notification URL is stored alongside the credential
+  because it participates in the signature.
+- Adyen: HMAC-SHA256 (base64) over the `:`-joined NotificationRequestItem
+  field string, keyed by the merchant HMAC key (hex). The signature travels
+  inside the payload (`additionalData.hmacSignature`), not a header.
+
+**Payloads are encrypted at rest.** Inbound bodies are sealed with the master
+AES-256-GCM key (`src/crypto.rs`) into `webhook_events.payload_sealed`; the
+plaintext `payload` column is no longer written. The clear-text
+`payload_sha256` is retained for dedup/correlation.
 
 ## Auth posture (2026-05-23 hardening)
 
@@ -321,8 +337,6 @@ via SealedSecrets / ExternalSecrets.
   exists at the slot without comparing roots).
 - Scheduler exactly-once via `(job_id, scheduled_for)` dedup index; the
   runner is at-least-once today.
-- Webhook payloads stored unencrypted at rest in
-  `webhook_events.payload`.
 
 ## Admin UI
 

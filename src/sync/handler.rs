@@ -176,6 +176,8 @@ impl JobHandler for ConnectionSyncJob {
                 ProviderKind::PlaidBank => plaid_sync::sync_plaid(&sctx, &conn, cursor).await,
                 ProviderKind::SwiftWire => not_implemented(&conn).await,
                 ProviderKind::AchDirect => not_implemented(&conn).await,
+                ProviderKind::Adyen => not_implemented(&conn).await,
+                ProviderKind::Square => not_implemented(&conn).await,
                 ProviderKind::Wise => wise_sync::sync_wise(&sctx, &conn, cursor).await,
                 ProviderKind::SolanaWallet => sync_solana(&self.solana, &conn, cursor).await,
                 ProviderKind::Mercury => mercury_sync::sync_mercury(&sctx, &conn, cursor).await,
