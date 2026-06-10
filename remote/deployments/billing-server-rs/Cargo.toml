@@ -27,6 +27,9 @@ chrono-tz = "0.10.4"
 cron = "0.16.0"
 dotenvy = "0.15.7"
 ed25519-dalek = "2.2.0"
+# StreamExt for the inbound NATS sync-command subscription (src/events.rs),
+# matching the sibling trading-server-rs consumer.
+futures-util = "0.3"
 hex = "0.4.3"
 hmac = "0.13.0"
 rand = "0.10.1"

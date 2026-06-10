@@ -17,10 +17,15 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use dd_nats_subject_defs::{
+    MUSIC_GENERATION_REQUESTS_QUEUE_GROUP, MUSIC_GENERATION_REQUESTS_SUBJECT,
+    MUSIC_GENERATION_RESULTS_SUBJECT, MUSIC_SONGS_PUBLISHED_SUBJECT, MUSIC_VOTES_EVENTS_SUBJECT,
+};
 use des_engine::des::general::music_production::{
     generate_microtonal_song, generate_track_structure_plan, ArrangementSummary, AudioBuffer,
     MusicGenre, SongSpec, StylePalette, DEFAULT_SAMPLE_RATE,
 };
+use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use redis::AsyncCommands;
@@ -88,6 +93,9 @@ static SONG_VOTES: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 const DEFAULT_REDIS_URL: &str = "redis://dd-redis-cache.default.svc.cluster.local:6379/0";
+const SERVICE_NAME: &str = "dd-music-rs";
+const EVENT_SCHEMA_VERSION: &str = "dd.music.v1";
+const MAX_NATS_PAYLOAD_BYTES: usize = 1024 * 1024;
 const DEFAULT_DAILY_TARGET_MIN: i64 = 3;
 const DEFAULT_DAILY_TARGET_MAX: i64 = 5;
 const DEFAULT_GENERATOR_INTERVAL_SECONDS: u64 = 3600;
@@ -106,6 +114,7 @@ struct AppState {
     redis: Option<redis::Client>,
     redis_connection: Arc<Mutex<Option<redis::aio::MultiplexedConnection>>>,
     s3: Option<aws_sdk_s3::Client>,
+    nats: Option<async_nats::Client>,
 }
 
 #[derive(Clone)]
@@ -430,11 +439,23 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
         _ => None,
     };
 
+    let nats = match first_env(&["MUSIC_NATS_URL", "NATS_URL"]) {
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("dd-music-rs NATS connect failed ({url}): {error}");
+                None
+            }
+        },
+        None => None,
+    };
+
     Ok(AppState {
         config: Arc::new(config),
         redis,
         redis_connection: Arc::new(Mutex::new(None)),
         s3,
+        nats,
     })
 }
 

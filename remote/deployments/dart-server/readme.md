@@ -875,11 +875,42 @@ so every accepted peer is treated as hostile input and bounded:
   and a request with *no* `Origin` (non-browser clients, load testers) is
   always allowed — so enabling it is safe for server-to-server traffic.
 
-Not yet covered (operator-owned): per-IP connection-rate limiting and authn
-belong at the ingress / reverse proxy; the admin port (`8088`) is unauthenticated
-and relies on not being routed publicly (see the access posture in `AGENTS.md`).
+Not yet covered (operator-owned): per-IP connection-rate limiting and end-user
+authn belong at the ingress / reverse proxy. The admin port (`8088`) can now
+carry a shared secret (`ADMIN_AUTH_TOKEN`) but still relies on not being routed
+publicly as its primary control (see the access posture in `AGENTS.md`).
 `Identify` trusts the client-supplied user id — fine for the anon demo, but
 attribution is forgeable until a real auth token gates it.
+
+### Perf A/B: shared clock render (`WS_CLOCK_SHARED_RENDER`)
+
+The 1 Hz `Clock` OOB fragment is the only steady-state emitter, and its HTML is
+a pure function of the second-granularity UTC timestamp — **identical for every
+connected session**. The original path re-ran a full Jaspr render per session
+per tick, so steady-state idle CPU scaled as `live_sessions ÷
+WS_CLOCK_INTERVAL_SECONDS` renders/s (the readme's "~20 cores at 1 Hz, 20K
+conns"). At a 30K-connection, 5 s-clock operating point that is ~6K Jaspr
+renders/s doing identical work.
+
+The tweak: a per-host-isolate cache keyed by the iso-second. The first session
+on a host to want a given second kicks off **one** render Future; every other
+session ticking in that second `await`s the same Future. Net effect:
+≈ `hosts × distinct_seconds` renders instead of `sessions × ticks` — at 1000
+sessions/host that's ~1 render replacing ~1000.
+
+* **Flag** — `WS_CLOCK_SHARED_RENDER` (default `true`). Set `false` to restore
+  per-session rendering for the control arm.
+* **Measure** — compare `rate(dart_clock_renders_total)` (actual renders) vs
+  `rate(dart_clock_render_cache_hits_total)` (shared) and the pod CPU. With the
+  cache on, the hit ratio should approach `1 − hosts/sessions`; with it off,
+  `dart_clock_render_cache_hits_total` stays flat and renders track session
+  count. Output bytes on the wire are identical in both arms, so any CPU /
+  p99-adopt delta is attributable to the render sharing.
+
+Run it as a two-config A/B: one pod (or rollout) with the flag on, one off, same
+offered load, and diff the two counters + `container_cpu_usage`. Because the
+fragment is session-independent the cache is always safe; the flag exists purely
+to quantify the win.
 
 ---
 

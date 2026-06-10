@@ -122,7 +122,15 @@ fn receipt_path(base_dir: &str, task_id: &str) -> PathBuf {
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
         .collect::<String>();
-    PathBuf::from(base_dir).join(format!("{safe_task_id}.json"))
+    // The sanitized id alone is lossy: two distinct ids can collapse to the
+    // same string (e.g. `a/b` and `ab`, or any id made only of stripped
+    // characters), which would make one task silently suppress the other.
+    // Append a hash of the *raw* id so the filename is unique per real id
+    // while staying filesystem-safe and human-greppable.
+    let mut hasher = DefaultHasher::new();
+    task_id.hash(&mut hasher);
+    let digest = hasher.finish();
+    PathBuf::from(base_dir).join(format!("{safe_task_id}-{digest:016x}.json"))
 }
 
 fn has_task_receipt(receipts: &mut HashSet<String>, base_dir: &str, task_id: &str) -> bool {
@@ -130,7 +138,7 @@ fn has_task_receipt(receipts: &mut HashSet<String>, base_dir: &str, task_id: &st
         return true;
     }
     if receipt_path(base_dir, task_id).exists() {
-        receipts.insert(task_id.to_string());
+        record_receipt(receipts, task_id);
         return true;
     }
     false
@@ -780,6 +788,72 @@ async fn run_critical_event_logger(
     Ok(())
 }
 
+fn optional_env(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Build a hardened NATS client from `nats_url` plus optional auth/TLS env.
+///
+/// Replaces a bare `async_nats::connect(url)` (no client name, no auth, no
+/// retry) with a connection that carries a stable name for server-side
+/// observability, pings, a connect timeout, retries the initial connect, and
+/// supports optional auth via `NATS_CREDENTIALS_FILE`/`NATS_TOKEN`/`NATS_NKEY`
+/// plus `NATS_REQUIRE_TLS=true`.
+async fn connect_nats(nats_url: &str) -> Result<async_nats::Client, Box<dyn Error + Send + Sync>> {
+    let mut options = async_nats::ConnectOptions::new()
+        .name(SERVICE_NAME)
+        .retry_on_initial_connect()
+        .ping_interval(Duration::from_secs(15))
+        .connection_timeout(Duration::from_secs(10));
+
+    if env_bool("NATS_REQUIRE_TLS", false) {
+        options = options.require_tls(true);
+    }
+
+    // Auth precedence: credentials file (JWT+nkey) > token > nkey seed.
+    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
+        options = options
+            .credentials_file(&path)
+            .await
+            .map_err(|error| format!("failed to read NATS_CREDENTIALS_FILE {path}: {error}"))?;
+    } else if let Some(token) = optional_env("NATS_TOKEN") {
+        options = options.token(token);
+    } else if let Some(seed) = optional_env("NATS_NKEY") {
+        options = options.nkey(seed);
+    }
+
+    Ok(options.connect(nats_url).await?)
+}
+
+/// Resolves when the process receives SIGTERM (Kubernetes rolling restart) or
+/// SIGINT, so the message loop can stop pulling new work and exit cleanly
+/// instead of being killed mid-handoff (which forces a JetStream redelivery).
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut terminate = match signal(SignalKind::terminate()) {
+            Ok(stream) => stream,
+            Err(_) => return std::future::pending().await,
+        };
+        let mut interrupt = match signal(SignalKind::interrupt()) {
+            Ok(stream) => stream,
+            Err(_) => return std::future::pending().await,
+        };
+        tokio::select! {
+            _ = terminate.recv() => {}
+            _ = interrupt.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let nats_url = env_value(
@@ -817,6 +891,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "/tmp/dd-remote-queue-consumer/tasks",
     );
     let secret = server_auth_secret();
+    if secret == DEFAULT_SERVER_SECRET {
+        log_warn(
+            "server-auth-secret-default",
+            "Using the built-in default internal auth secret; set REMOTE_DEV_SERVER_SECRET or SERVER_AUTH_SECRET.",
+            json!({}),
+        );
+    }
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(http_timeout_seconds))
         .build()?;
@@ -841,7 +922,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "receiptsDir": &receipts_dir,
         }),
     );
-    let nats_client = async_nats::connect(nats_url.clone()).await?;
+    let nats_client = connect_nats(&nats_url).await?;
     if critical_logger_enabled {
         let critical_client = nats_client.clone();
         let critical_stream_for_task = critical_stream_name.clone();
@@ -895,8 +976,27 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     .await?;
     let mut messages = consumer.messages().await?;
     let mut receipts = HashSet::new();
+    let mut shutdown = std::pin::pin!(shutdown_signal());
 
-    while let Some(message) = messages.next().await {
+    loop {
+        // Race the next JetStream message against a shutdown signal. A signal
+        // only wins while we are idle waiting for work, so an in-flight handoff
+        // (in the loop body) always runs to completion before we exit.
+        let message = tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                log_info(
+                    "queue-consumer-shutdown",
+                    "Received shutdown signal; stopping the queue consumer message loop.",
+                    json!({ "consumer": &consumer_name }),
+                );
+                break;
+            }
+            next = messages.next() => match next {
+                Some(message) => message,
+                None => break,
+            },
+        };
         let message = match message {
             Ok(message) => message,
             Err(error) => {
@@ -949,6 +1049,37 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 continue;
             }
         };
+        if let Err(validation_error) = validate_task_identifiers(&task) {
+            emit_runtime_critical_event(
+                &nats_client,
+                &critical_subject,
+                "invalid-queue-task-identifiers",
+                "Queue consumer received a task with an unsafe threadId or taskId.",
+                json!({
+                    "stream": &stream_name,
+                    "subject": message.subject.to_string(),
+                    "error": &validation_error,
+                }),
+            )
+            .await;
+            // Drop the poison message: a bad id can't become valid on retry,
+            // and we must not let it steer the REST path or alias a receipt.
+            if let Err(ack_error) = message.ack().await {
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "invalid-queue-task-identifiers-ack-failed",
+                    "Queue consumer could not acknowledge a task with unsafe identifiers.",
+                    json!({
+                        "stream": &stream_name,
+                        "subject": message.subject.to_string(),
+                        "error": ack_error.to_string(),
+                    }),
+                )
+                .await;
+            }
+            continue;
+        }
         if has_task_receipt(&mut receipts, &receipts_dir, &task.task_id) {
             log_info(
                 "queue-task-skipped-duplicate",
@@ -1239,7 +1370,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     json!({ "error": &error_text, "shadow": true, "directDispatch": false }),
                 )
                 .await;
-                receipts.insert(task.task_id.clone());
+                record_receipt(&mut receipts, &task.task_id);
                 if let Err(error) = write_task_receipt(&receipts_dir, &task) {
                     emit_runtime_critical_event(
                         &nats_client,
@@ -1348,7 +1479,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             json!({ "directDispatch": direct_dispatch }),
         )
         .await;
-        receipts.insert(task.task_id.clone());
+        record_receipt(&mut receipts, &task.task_id);
         if let Err(error) = write_task_receipt(&receipts_dir, &task) {
             emit_runtime_critical_event(
                 &nats_client,
@@ -1395,4 +1526,50 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_identifier_accepts_uuids_and_rejects_path_injection() {
+        assert!(validate_identifier("018f6b1e-4c2a-7b9d-9f3a-2b1c0d4e5f6a", "id").is_ok());
+        assert!(validate_identifier("trading-1700000000000", "id").is_ok());
+
+        assert!(validate_identifier("", "id").is_err());
+        assert!(validate_identifier("../../admin", "id").is_err());
+        assert!(validate_identifier("a/b", "id").is_err());
+        assert!(validate_identifier("a\\b", "id").is_err());
+        assert!(validate_identifier("a\nb", "id").is_err());
+        assert!(validate_identifier("x..y", "id").is_err());
+        assert!(validate_identifier(&"z".repeat(MAX_IDENTIFIER_LEN + 1), "id").is_err());
+    }
+
+    #[test]
+    fn receipt_path_is_collision_resistant_for_distinct_ids() {
+        // Two ids that sanitize to the same lossy stem must not share a file.
+        let a = receipt_path("/tmp/x", "ab");
+        let b = receipt_path("/tmp/x", "a/b");
+        assert_ne!(a, b);
+        // Same id is stable.
+        assert_eq!(receipt_path("/tmp/x", "ab"), receipt_path("/tmp/x", "ab"));
+        // Filenames stay filesystem-safe (sanitized stem + hex hash + .json).
+        let name = receipt_path("/tmp/x", "weird/../id").file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.ends_with(".json"));
+        assert!(!name.contains('/'));
+    }
+
+    #[test]
+    fn record_receipt_trims_when_capped() {
+        let mut receipts = HashSet::new();
+        for i in 0..MAX_RECEIPT_CACHE {
+            receipts.insert(format!("seed-{i}"));
+        }
+        assert_eq!(receipts.len(), MAX_RECEIPT_CACHE);
+        // Next insert via the capped helper trims the set instead of growing it.
+        record_receipt(&mut receipts, "fresh");
+        assert!(receipts.len() <= MAX_RECEIPT_CACHE);
+        assert!(receipts.contains("fresh"));
+    }
 }

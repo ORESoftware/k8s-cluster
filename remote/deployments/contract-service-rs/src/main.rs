@@ -3595,6 +3595,16 @@ mod tests {
     }
 
     #[test]
+    fn idempotency_key_released_allows_retry() {
+        let state = sample_state();
+        assert!(state.claim_idempotency_key("settle:retry"));
+        // A failed broadcast releases the key so the same request id can retry
+        // (Solana dedupes resubmissions of the same signed tx by signature).
+        state.release_idempotency_key("settle:retry");
+        assert!(state.claim_idempotency_key("settle:retry"));
+    }
+
+    #[test]
     fn settlement_core_rejects_cluster_drift_and_bad_tx() {
         let core = SettlementCore {
             request_id: Some("settle-demo".to_string()),

@@ -158,6 +158,22 @@ spec:
             # 'https://dd.example.com'.
             - name: WS_ALLOWED_ORIGINS
               value: ''
+            # Defense-in-depth shared secret for the admin surface
+            # (`/dart/admin/*`, incl. the crash-host hook). Empty/unset = open
+            # (relies on the admin port not being routed publicly). When set,
+            # callers must send `Authorization: Bearer <token>` or
+            # `X-Admin-Token: <token>`; probes + /metrics stay open for the
+            # kubelet and Prometheus. Source from a Secret in real deployments.
+            - name: ADMIN_AUTH_TOKEN
+              value: ''
+            # Perf A/B (see readme "Perf A/B: shared clock render"). When true
+            # (default) every session on a host shares ONE Jaspr render of the
+            # per-second clock fragment instead of rendering it per session —
+            # the dominant steady-state idle-CPU cost at 20–30K conns. Flip to
+            # 'false' for the control arm; compare dart_clock_renders_total vs
+            # dart_clock_render_cache_hits_total.
+            - name: WS_CLOCK_SHARED_RENDER
+              value: 'true'
             # How often each shard pushes a gauge snapshot to the
             # coordinator for /metrics aggregation. 1 s is plenty fresh
             # and the inter-isolate traffic stays trivial.

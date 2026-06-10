@@ -92,10 +92,20 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
   ];
   let changeCount = 0;
 
+  // Ensure any non-public schema the contract owns exists before its tables are created. Idempotent
+  // and emitted unconditionally (cheap), so a benefactor table create never fails on a fresh DB.
+  const nonPublicSchemas = [
+    ...new Set(contract.tables.map((table) => table.schema ?? "public").filter((schema) => schema !== "public")),
+  ];
+  for (const schema of nonPublicSchemas) {
+    lines.push(`create schema if not exists ${quoteIdent(schema)};`);
+    lines.push("");
+  }
+
   for (const table of contract.tables) {
-    const actualTable = actualSchema.tables.get(table.name);
+    const actualTable = actualSchema.tables.get(tableKey(table));
     if (!actualTable) {
-      lines.push(`-- Create missing table: ${table.name}`);
+      lines.push(`-- Create missing table: ${qualifiedTableLabel(table)}`);
       lines.push(ensureSemicolon(table.createStatement));
       lines.push("");
       for (const tableIndex of table.indexes ?? []) {
@@ -118,7 +128,7 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
         }
 
         lines.push(`-- Add missing column: ${table.name}.${column.name}`);
-        lines.push(`alter table ${quoteIdent(table.name)} add column if not exists ${column.definitionSql};`);
+        lines.push(`alter table ${qualifiedTable(table)} add column if not exists ${column.definitionSql};`);
         lines.push("");
         changeCount += 1;
         continue;
@@ -160,9 +170,9 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
       if (!actualCheck) {
         lines.push(`-- Add missing check constraint: ${checkConstraint.name}`);
         lines.push(
-          `alter table ${quoteIdent(table.name)} add constraint ${quoteIdent(checkConstraint.name)} check (${checkConstraint.sql}) not valid;`,
+          `alter table ${qualifiedTable(table)} add constraint ${quoteIdent(checkConstraint.name)} check (${checkConstraint.sql}) not valid;`,
         );
-        lines.push(`alter table ${quoteIdent(table.name)} validate constraint ${quoteIdent(checkConstraint.name)};`);
+        lines.push(`alter table ${qualifiedTable(table)} validate constraint ${quoteIdent(checkConstraint.name)};`);
         lines.push("");
         changeCount += 1;
         continue;
@@ -199,8 +209,8 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
 
   if (includeExtraTables) {
     for (const actualTable of actualSchema.tables.values()) {
-      if (!contract.tables.some((table) => table.name === actualTable.name)) {
-        lines.push(`-- MANUAL REVIEW: database has extra table ${actualTable.name}.`);
+      if (!contract.tables.some((table) => tableKey(table) === tableKey(actualTable))) {
+        lines.push(`-- MANUAL REVIEW: database has extra table ${qualifiedTableLabel(actualTable)}.`);
         lines.push("-- No DROP TABLE generated automatically.");
         lines.push("");
         changeCount += 1;
@@ -257,22 +267,27 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
   return `${lines.join("\n")}\n`;
 }
 
-async function introspectDatabase(databaseUrl) {
+async function introspectDatabase(databaseUrl, schemas = ["public"]) {
+  // Build a SQL string list from the contract's schemas. Names originate from the trusted
+  // schema.sql source, so single-quoting them is sufficient. Tables/columns/checks/indexes are
+  // introspected across all owned schemas; routines and triggers remain public-only.
+  const schemaList = schemas.map((schema) => `'${String(schema).replace(/'/g, "''")}'`).join(", ");
   const rows = await queryJson(databaseUrl, `
     select json_build_object(
       'tables', coalesce((
-        select json_agg(row_to_json(t) order by t.table_name)
+        select json_agg(row_to_json(t) order by t.table_schema, t.table_name)
         from (
-          select table_name
+          select table_schema, table_name
           from information_schema.tables
-          where table_schema = 'public'
+          where table_schema in (${schemaList})
             and table_type = 'BASE TABLE'
         ) t
       ), '[]'::json),
       'columns', coalesce((
-        select json_agg(row_to_json(c) order by c.table_name, c.ordinal_position)
+        select json_agg(row_to_json(c) order by c.table_schema, c.table_name, c.ordinal_position)
         from (
           select
+            table_schema,
             table_name,
             column_name,
             ordinal_position,
@@ -282,27 +297,29 @@ async function introspectDatabase(databaseUrl) {
             column_default,
             character_maximum_length
           from information_schema.columns
-          where table_schema = 'public'
+          where table_schema in (${schemaList})
         ) c
       ), '[]'::json),
       'checks', coalesce((
-        select json_agg(row_to_json(ch) order by ch.table_name, ch.constraint_name)
+        select json_agg(row_to_json(ch) order by ch.table_schema, ch.table_name, ch.constraint_name)
         from (
           select
+            nsp.nspname as table_schema,
             rel.relname as table_name,
             con.conname as constraint_name,
             pg_get_constraintdef(con.oid) as definition
           from pg_constraint con
           join pg_class rel on rel.oid = con.conrelid
           join pg_namespace nsp on nsp.oid = rel.relnamespace
-          where nsp.nspname = 'public'
+          where nsp.nspname in (${schemaList})
             and con.contype = 'c'
         ) ch
       ), '[]'::json),
       'indexes', coalesce((
-        select json_agg(row_to_json(i) order by i.table_name, i.index_name)
+        select json_agg(row_to_json(i) order by i.table_schema, i.table_name, i.index_name)
         from (
           select
+            nsp.nspname as table_schema,
             tab.relname as table_name,
             idx.relname as index_name,
             pg_get_indexdef(idx.oid) as definition
@@ -310,7 +327,7 @@ async function introspectDatabase(databaseUrl) {
           join pg_class idx on idx.oid = ind.indexrelid
           join pg_class tab on tab.oid = ind.indrelid
           join pg_namespace nsp on nsp.oid = tab.relnamespace
-          where nsp.nspname = 'public'
+          where nsp.nspname in (${schemaList})
             and not ind.indisprimary
         ) i
       ), '[]'::json),
@@ -359,8 +376,12 @@ function hydrateActualSchema(rows) {
   const tables = new Map();
   const routines = new Map();
   const triggers = new Map();
+  // Tables are keyed by `schema.table` so a non-public table cannot collide with a public table of
+  // the same bare name. `table_schema` defaults to `public` for older catalog-json fixtures.
   for (const table of rows.tables ?? []) {
-    tables.set(table.table_name, {
+    const schema = table.table_schema ?? "public";
+    tables.set(actualTableKey(schema, table.table_name), {
+      schema,
       name: table.table_name,
       columns: new Map(),
       checks: new Map(),
@@ -369,7 +390,7 @@ function hydrateActualSchema(rows) {
   }
 
   for (const column of rows.columns ?? []) {
-    const table = tables.get(column.table_name);
+    const table = tables.get(actualTableKey(column.table_schema ?? "public", column.table_name));
     if (!table) {
       continue;
     }
@@ -384,17 +405,21 @@ function hydrateActualSchema(rows) {
   }
 
   for (const check of rows.checks ?? []) {
-    tables.get(check.table_name)?.checks.set(check.constraint_name, {
-      name: check.constraint_name,
-      definition: check.definition,
-    });
+    tables
+      .get(actualTableKey(check.table_schema ?? "public", check.table_name))
+      ?.checks.set(check.constraint_name, {
+        name: check.constraint_name,
+        definition: check.definition,
+      });
   }
 
   for (const index of rows.indexes ?? []) {
-    tables.get(index.table_name)?.indexes.set(index.index_name, {
-      name: index.index_name,
-      definition: index.definition,
-    });
+    tables
+      .get(actualTableKey(index.table_schema ?? "public", index.table_name))
+      ?.indexes.set(index.index_name, {
+        name: index.index_name,
+        definition: index.definition,
+      });
   }
 
   for (const routine of rows.routines ?? []) {
@@ -852,6 +877,28 @@ function enclosesWholeExpression(value) {
 
 function quoteIdent(value) {
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+// Composite key for matching a desired contract table against an introspected one. Keying by
+// `schema.table` keeps a non-public table distinct from a public table of the same bare name.
+function tableKey(table) {
+  return `${table.schema ?? "public"}.${table.name}`;
+}
+
+function actualTableKey(schema, name) {
+  return `${schema ?? "public"}.${name}`;
+}
+
+// Quoted, schema-qualified table reference for emitted DDL (bare for the default public schema).
+function qualifiedTable(table) {
+  return table.schema && table.schema !== "public"
+    ? `${quoteIdent(table.schema)}.${quoteIdent(table.name)}`
+    : quoteIdent(table.name);
+}
+
+// Human-readable schema.table label for diff comments (bare for the default public schema).
+function qualifiedTableLabel(table) {
+  return table.schema && table.schema !== "public" ? `${table.schema}.${table.name}` : table.name;
 }
 
 function ensureSemicolon(value) {
