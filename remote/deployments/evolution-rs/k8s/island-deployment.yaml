@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-evolution-optimizer-island
+  namespace: ai-ml
+  labels:
+    app: dd-evolution-optimizer-island
+    app.kubernetes.io/component: island
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: dd-evolution-optimizer-island
+  template:
+    metadata:
+      labels:
+        app: dd-evolution-optimizer-island
+        app.kubernetes.io/component: island
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: optimizer
+          image: REPLACE_ME_ECR_URI/dd-evolution-optimizer:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8131'
+            - name: EVOLUTION_NODE_ROLE
+              value: island
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: EVOLUTION_ACK_WAIT_SECONDS
+              value: '600'
+            - name: EVOLUTION_MAX_ACK_PENDING
+              value: '16'
+          ports:
+            - name: http
+              containerPort: 8131
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

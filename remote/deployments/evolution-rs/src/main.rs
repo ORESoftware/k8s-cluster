@@ -14,7 +14,6 @@
 
 mod ga;
 
-use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::net::SocketAddr;
@@ -160,7 +159,6 @@ struct OptimizeResponse {
 struct SolveConfig {
     problem: ProblemSpec,
     islands: usize,
-    population_per_island: usize,
     epochs: usize,
     migration_size: usize,
     params: GaParams,
@@ -213,7 +211,6 @@ fn normalize(request: OptimizeRequest) -> Result<SolveConfig, String> {
             upper_bound: upper,
         },
         islands,
-        population_per_island,
         epochs,
         migration_size,
         params: GaParams {

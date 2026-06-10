@@ -1,0 +1,44 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dd-evolution-optimizer-island-nats-jetstream
+  namespace: ai-ml
+  labels:
+    app: dd-evolution-optimizer-island
+    app.kubernetes.io/component: island
+spec:
+  pollingInterval: 5
+  cooldownPeriod: 180
+  minReplicaCount: 1
+  maxReplicaCount: 32
+  scaleTargetRef:
+    name: dd-evolution-optimizer-island
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 200
+              periodSeconds: 30
+            - type: Pods
+              value: 8
+              periodSeconds: 30
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  triggers:
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: dd-nats.messaging.svc.cluster.local:8222
+        account: $G
+        stream: DD_REMOTE_EVOLUTION
+        consumer: dd-evolution-optimizer-islands
+        lagThreshold: '4'
+        activationLagThreshold: '1'
+        useHttps: 'false'
