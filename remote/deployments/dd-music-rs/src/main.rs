@@ -733,6 +733,7 @@ async fn vote_song(
     SONG_VOTES
         .with_label_values(&[if request.value > 0 { "up" } else { "down" }])
         .inc();
+    publish_music_event(&state, MUSIC_VOTES_EVENTS_SUBJECT, vote_event(&song, request.value)).await;
     record_request("POST", "/songs/:song_id/votes", StatusCode::OK);
     if is_htmx_request(&headers) {
         Ok(Html(render_song_card(&song)).into_response())
@@ -887,6 +888,78 @@ async fn upsert_vote(
     Ok(song_from_row(&row))
 }
 
+/// Best-effort fan-out of a `dd.music.v1` envelope onto NATS. No-ops when
+/// NATS is not configured; never fails the caller. Subjects come from the
+/// shared @dd/nats-subject-defs lib (schema/music.schema.json).
+async fn publish_music_event(state: &AppState, subject: &str, payload: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let bytes = match serde_json::to_vec(&payload) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("dd-music-rs failed to encode {subject} event: {error}");
+            return;
+        }
+    };
+    if bytes.len() > MAX_NATS_PAYLOAD_BYTES {
+        eprintln!(
+            "dd-music-rs dropping oversize {subject} event ({} bytes)",
+            bytes.len()
+        );
+        return;
+    }
+    if let Err(error) = nats.publish(subject.to_string(), bytes.into()).await {
+        eprintln!("dd-music-rs failed to publish {subject} event: {error}");
+    }
+}
+
+fn song_published_event(song: &SongRow) -> Value {
+    json!({
+        "schema": EVENT_SCHEMA_VERSION,
+        "event": "song.published",
+        "source": SERVICE_NAME,
+        "song": {
+            "id": song.id,
+            "title": song.title,
+            "slug": song.slug,
+            "genre": song.genre,
+            "status": song.status,
+            "audioUrl": song.audio_url,
+            "durationSeconds": song.duration_seconds,
+            "bpm": song.bpm,
+            "listenabilityScore": song.listenability_score,
+            "publishedAt": song.published_at,
+        }
+    })
+}
+
+fn generation_result_event(response: &GenerateResponse) -> Value {
+    json!({
+        "schema": EVENT_SCHEMA_VERSION,
+        "event": "generation.result",
+        "source": SERVICE_NAME,
+        "requested": response.requested,
+        "published": response.published,
+        "discarded": response.discarded,
+        "attempts": response.attempts,
+        "songIds": response.songs.iter().map(|song| song.id.clone()).collect::<Vec<_>>(),
+    })
+}
+
+fn vote_event(song: &SongRow, direction: i32) -> Value {
+    json!({
+        "schema": EVENT_SCHEMA_VERSION,
+        "event": "vote.cast",
+        "source": SERVICE_NAME,
+        "songId": song.id,
+        "direction": if direction > 0 { "up" } else { "down" },
+        "voteScore": song.vote_score,
+        "upVotes": song.up_votes,
+        "downVotes": song.down_votes,
+    })
+}
+
 async fn generate_and_publish_songs(
     state: &AppState,
     count: i64,
@@ -910,18 +983,26 @@ async fn generate_and_publish_songs(
         }
         let stored = store_audio(state, &song).await?;
         let row = insert_published_song(&client, &song, &stored).await?;
+        publish_music_event(state, MUSIC_SONGS_PUBLISHED_SUBJECT, song_published_event(&row)).await;
         published.push(row);
         SONG_GENERATIONS.with_label_values(&["published"]).inc();
     }
 
-    Ok(GenerateResponse {
+    let response = GenerateResponse {
         ok: true,
         requested: count,
         published: published.len(),
         discarded,
         attempts,
         songs: published,
-    })
+    };
+    publish_music_event(
+        state,
+        MUSIC_GENERATION_RESULTS_SUBJECT,
+        generation_result_event(&response),
+    )
+    .await;
+    Ok(response)
 }
 
 fn generate_candidate(seed: u32, duration_seconds: f64) -> GeneratedSong {
