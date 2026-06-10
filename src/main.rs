@@ -62641,14 +62641,16 @@ async fn run_nats_loop(state: AppState) {
         "{SERVICE_NAME} nats loop starting: subject={} queueGroup={} resultSubject={}",
         state.request_subject, state.queue_group, state.result_subject
     );
+    loop {
     let mut subscription = match nats
         .queue_subscribe(state.request_subject.clone(), state.queue_group.clone())
         .await
     {
         Ok(subscription) => subscription,
         Err(error) => {
-            eprintln!("{SERVICE_NAME} nats subscribe failed: {error}");
-            return;
+            eprintln!("{SERVICE_NAME} nats subscribe failed: {error}; retrying in 5s");
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
         }
     };
 
@@ -62816,6 +62818,9 @@ async fn run_nats_loop(state: AppState) {
                 }
             }
         });
+    }
+    eprintln!("{SERVICE_NAME} nats subscription ended; re-subscribing in 5s");
+    tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
