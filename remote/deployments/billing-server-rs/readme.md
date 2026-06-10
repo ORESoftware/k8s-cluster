@@ -54,6 +54,43 @@ leave a given jurisdiction. The first physical shard is single-region; the
 sharding abstraction is in place from day 1 so adding additional database
 clusters per region requires no schema change.
 
+## Event bus (NATS)
+
+The server publishes **redacted** domain events and listens for inbound sync
+commands over NATS, using the shared cross-language subject registry at
+`remote/libs/nats/subject-defs` (crate `dd-nats-subject-defs`). It is **off by
+default** — set `BILLING_NATS_PUBLISH_ENABLED=true` and a URL
+(`BILLING_NATS_URL`, falling back to `NATS_URL`) to turn it on. A broker outage
+at boot degrades to a silent no-op rather than blocking the ledger; publishing
+is always best-effort and never on a transaction's critical path. See
+`src/events.rs`.
+
+Published (`dd.remote.billing.*`):
+
+| subject | when |
+|---------|------|
+| `…ledger.postings` | a double-entry transaction commits (per-currency totals, no posting detail) |
+| `…reconciliation.breaks` | a reconciliation break opens during provider sync |
+| `…anchors` | a Merkle root is anchored to Solana |
+| `…webhooks.receipts` | a provider webhook is recorded — **hash only, never the body** |
+| `…connections.events` | a provider connection is created / attached |
+
+Subscribed: `dd.remote.billing.commands.sync` (queue group `dd-billing-server`)
+— a `{tenantId, connectionId}` command is turned into the same one-shot
+`sync.connection` job the HTTP "Sync now" path enqueues, so one replica handles
+each command and all the lease / rate-limit / dispatch logic is reused.
+
+Envelopes are `{schemaVersion, source, emittedAt, …fields}`; payloads carry no
+secrets, raw bodies, or sealed credentials. Publish counters are exposed on
+`/metrics` (`dd_billing_server_nats_*`). Tune the size ceiling with
+`BILLING_NATS_MAX_PAYLOAD_BYTES` (default 1 MiB) and the inbound queue group
+with `BILLING_NATS_QUEUE_GROUP`.
+
+Editing the subject set means editing
+`remote/libs/nats/subject-defs/schema/billing.schema.json` and regenerating
+(`node src/generate.mjs` in that package); a staleness test guards the
+committed outputs.
+
 ## Layout
 
 ```
