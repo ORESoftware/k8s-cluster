@@ -293,6 +293,11 @@ Implemented verification:
   secret (falls back to env secret only in non-strict mode).
 - Modern Treasury (`X-Signature`) and Dwolla (`X-Request-Signature-SHA-256`):
   HMAC-SHA256 (hex) over the raw body with the per-connection webhook secret.
+  Dwolla deliveries bind to their connection via the account/customer id in
+  `_links`. Modern Treasury event bodies carry no stable routing key, so in
+  strict mode MT webhooks cannot bind to a connection and are recorded but
+  rejected (a dedicated per-connection webhook path/secret-id is the
+  follow-up); the verifier is reachable once a routing key is wired.
 - Square `x-square-hmacsha256-signature`: HMAC-SHA256 over
   `notification_url + body` (base64), keyed by the per-connection signature
   key — the registered notification URL is stored alongside the credential
