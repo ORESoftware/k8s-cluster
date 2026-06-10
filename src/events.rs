@@ -314,23 +314,25 @@ pub async fn run_sync_command_loop(state: AppState) {
         .unwrap_or_else(|| BILLING_SYNC_COMMANDS_QUEUE_GROUP.to_string());
     let max_bytes = state.cfg.nats_max_payload_bytes;
 
-    let mut subscription = match client
-        .queue_subscribe(BILLING_SYNC_COMMANDS_SUBJECT, queue_group.clone())
-        .await
-    {
-        Ok(sub) => sub,
-        Err(error) => {
-            tracing::warn!(error = %error, "billing sync-command subscribe failed");
-            return;
-        }
-    };
-    tracing::info!(
-        subject = BILLING_SYNC_COMMANDS_SUBJECT,
-        queue_group = %queue_group,
-        "billing sync-command loop started"
-    );
+    loop {
+        let mut subscription = match client
+            .queue_subscribe(BILLING_SYNC_COMMANDS_SUBJECT, queue_group.clone())
+            .await
+        {
+            Ok(sub) => sub,
+            Err(error) => {
+                tracing::warn!(error = %error, "billing sync-command subscribe failed; retrying in 5s");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        tracing::info!(
+            subject = BILLING_SYNC_COMMANDS_SUBJECT,
+            queue_group = %queue_group,
+            "billing sync-command loop started"
+        );
 
-    while let Some(message) = subscription.next().await {
+        while let Some(message) = subscription.next().await {
         if message.payload.len() > max_bytes {
             tracing::warn!(
                 bytes = message.payload.len(),
