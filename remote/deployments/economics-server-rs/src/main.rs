@@ -17,7 +17,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use dd_nats_subject_defs::{PUBLIC_DATA_PIPELINE_JOBS_SUBJECT, RUNTIME_EVENTS_SUBJECT};
+use dd_nats_subject_defs::{
+    ECONOMICS_FORECAST_REQUESTS_SUBJECT, ECONOMICS_FORECAST_RESULTS_SUBJECT,
+    ECONOMICS_MARKET_EVENTS_SUBJECT, ECONOMICS_SERVER_QUEUE_GROUP,
+    PUBLIC_DATA_PIPELINE_JOBS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+};
 use des_engine::service::{EndpointKind, ServiceBuilder, ServiceInfo};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -41,15 +45,17 @@ const MAX_SENTIMENT_CONTEXT_SCORES: usize = 512;
 const MAX_VC_DEALS: usize = 256;
 const MAX_VC_SECTOR_FLOWS: usize = 128;
 const MAX_PIPELINE_JOB_INTENTS: usize = 12;
-const ECONOMICS_FORECAST_REQUEST_SUBJECT: &str = "dd.remote.economics.forecast.requests";
-const ECONOMICS_FORECAST_RESULT_SUBJECT: &str = "dd.remote.economics.forecast.results";
-const ECONOMICS_MARKET_EVENT_SUBJECT: &str = "dd.remote.economics.market.events";
+// Subject + queue-group names come from the shared @dd/nats-subject-defs lib
+// (schema/economics.schema.json) so producers/consumers across languages cannot drift.
+const ECONOMICS_FORECAST_REQUEST_SUBJECT: &str = ECONOMICS_FORECAST_REQUESTS_SUBJECT;
+const ECONOMICS_FORECAST_RESULT_SUBJECT: &str = ECONOMICS_FORECAST_RESULTS_SUBJECT;
+const ECONOMICS_MARKET_EVENT_SUBJECT: &str = ECONOMICS_MARKET_EVENTS_SUBJECT;
 const DEFAULT_SPARK_PIPELINE_URL: &str =
     "http://dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085";
 const DEFAULT_SPARK_MASTER_URL: &str = "spark://spark-master.big-data.svc.cluster.local:7077";
 const DEFAULT_AIRFLOW_API_URL: &str = "http://airflow.big-data.svc.cluster.local:8080";
 const DEFAULT_DATA_LAKE_URI: &str = "s3a://dd-economics/market-signals";
-const ECONOMICS_QUEUE_GROUP: &str = "dd-economics-server";
+const ECONOMICS_QUEUE_GROUP: &str = ECONOMICS_SERVER_QUEUE_GROUP;
 
 #[derive(Clone)]
 struct AppState {

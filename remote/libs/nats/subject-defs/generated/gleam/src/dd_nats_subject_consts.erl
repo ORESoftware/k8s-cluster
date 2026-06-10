@@ -32,6 +32,10 @@
     des_results_subject/0,
     des_simulate_subject/0,
     des_simulate_queue_group/0,
+    economics_forecast_requests_subject/0,
+    economics_forecast_requests_queue_group/0,
+    economics_forecast_results_subject/0,
+    economics_market_events_subject/0,
     escrow_solana_results_subject/0,
     escrow_solana_validate_subject/0,
     escrow_solana_validate_queue_group/0,
@@ -141,6 +145,7 @@
     thread_tasks_stream/0,
     billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
+    economics_server_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     public_data_workers_queue_group/0,
@@ -176,6 +181,10 @@ cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
 des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
 des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+economics_forecast_requests_subject() -> <<"dd.remote.economics.forecast.requests"/utf8>>.
+economics_forecast_requests_queue_group() -> <<"dd-economics-server"/utf8>>.
+economics_forecast_results_subject() -> <<"dd.remote.economics.forecast.results"/utf8>>.
+economics_market_events_subject() -> <<"dd.remote.economics.market.events"/utf8>>.
 escrow_solana_results_subject() -> <<"dd.remote.escrow.solana.results"/utf8>>.
 escrow_solana_validate_subject() -> <<"dd.remote.escrow.solana.validate"/utf8>>.
 escrow_solana_validate_queue_group() -> <<"dd-escrow-rs"/utf8>>.
@@ -285,6 +294,7 @@ thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.

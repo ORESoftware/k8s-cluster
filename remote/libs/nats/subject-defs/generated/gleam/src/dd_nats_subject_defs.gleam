@@ -75,6 +75,19 @@ pub const des_results_subject = "dd.remote.des.results"
 pub const des_simulate_subject = "dd.remote.des.simulate"
 pub const des_simulate_queue_group = "dd-des-simulator"
 
+/// Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.
+/// Service: dd-economics-server
+pub const economics_forecast_requests_subject = "dd.remote.economics.forecast.requests"
+pub const economics_forecast_requests_queue_group = "dd-economics-server"
+
+/// Forecast and recommendation results emitted by the economics server. Carries an economics.forecast.v1 envelope. Default for ECONOMICS_FORECAST_RESULT_SUBJECT.
+/// Service: dd-economics-server
+pub const economics_forecast_results_subject = "dd.remote.economics.forecast.results"
+
+/// Market-event fan-out (narrative, event, and entity-level signals) published by the economics server for downstream consumers. Default for ECONOMICS_MARKET_EVENT_SUBJECT.
+/// Service: dd-economics-server
+pub const economics_market_events_subject = "dd.remote.economics.market.events"
+
 /// Published escrow validation results. Default for ESCROW_RESULT_SUBJECT.
 /// Service: dd-escrow-rs
 pub const escrow_solana_results_subject = "dd.remote.escrow.solana.results"
@@ -801,6 +814,10 @@ pub const billing_server_queue_group = "dd-billing-server"
 /// Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 /// Service: shared
 pub const critical_events_logger_queue_group = "dd-runtime-critical-events"
+
+/// Shared queue group used by dd-economics-server replicas consuming forecast requests.
+/// Service: dd-economics-server
+pub const economics_server_queue_group = "dd-economics-server"
 
 /// Shared queue group used by lambda-runner replicas.
 /// Service: dd-gleam-lambda-runner

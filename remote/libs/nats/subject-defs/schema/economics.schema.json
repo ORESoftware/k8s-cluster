@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/economics.schema.json",
+  "title": "EconomicsNats",
+  "description": "NATS subjects owned by dd-economics-server-rs (forecast request/result pipeline plus market-event fan-out). The server subscribes to forecast requests under the dd-economics-server queue group, publishes forecast results and market events, and additionally reuses PublicDataPipelineJobs and RuntimeEvents from their owning schemas. Payloads carry an economics.forecast.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-economics-server",
+    "summary": "Economics forecast request/result pipeline and market-event fan-out.",
+    "subjects": [
+      {
+        "name": "EconomicsForecastRequests",
+        "description": "Inbound forecast/recommendation requests consumed by the economics server. Subscribed with the dd-economics-server queue group so requests load-balance across replicas. Default for ECONOMICS_FORECAST_REQUEST_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.economics.forecast.requests",
+        "queueGroup": "dd-economics-server",
+        "direction": "both"
+      },
+      {
+        "name": "EconomicsForecastResults",
+        "description": "Forecast and recommendation results emitted by the economics server. Carries an economics.forecast.v1 envelope. Default for ECONOMICS_FORECAST_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.economics.forecast.results",
+        "direction": "both"
+      },
+      {
+        "name": "EconomicsMarketEvents",
+        "description": "Market-event fan-out (narrative, event, and entity-level signals) published by the economics server for downstream consumers. Default for ECONOMICS_MARKET_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.economics.market.events",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "EconomicsServerQueueGroup",
+        "value": "dd-economics-server",
+        "description": "Shared queue group used by dd-economics-server replicas consuming forecast requests."
+      }
+    ]
+  }
+}

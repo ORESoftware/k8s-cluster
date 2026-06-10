@@ -7,6 +7,7 @@
     "billing.schema.json",
     "container-pool.schema.json",
     "contracts.schema.json",
+    "economics.schema.json",
     "escrow.schema.json",
     "fabrication.schema.json",
     "lambdas.schema.json",
