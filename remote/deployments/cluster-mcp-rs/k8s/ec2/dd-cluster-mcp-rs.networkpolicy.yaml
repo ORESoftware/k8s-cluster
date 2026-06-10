@@ -37,16 +37,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8091
-    # Warm workers spawned through dd-container-pool often run on the host
-    # network and reach cluster services from the EC2 node's RFC1918 address.
-    # The MCP surface stays read-only; gateway/public paths remain auth-gated.
+    # Warm workers spawned through dd-container-pool run on the host network
+    # and reach cluster services from the EC2 node's VPC address, so they need
+    # an ipBlock (the podSelector clauses above never match a host-network
+    # source). Scoped to the cluster VPC CIDR (172.31.0.0/16): the old
+    # 10.0.0.0/8 also matched the 10.244.0.0/16 pod network, letting ANY pod
+    # reach this unauthenticated read-only surface and bypass the podSelector
+    # allowlist. The MCP surface stays read-only; gateway/public paths remain
+    # auth-gated.
     - from:
         - ipBlock:
-            cidr: 10.0.0.0/8
-        - ipBlock:
-            cidr: 172.16.0.0/12
-        - ipBlock:
-            cidr: 192.168.0.0/16
+            cidr: 172.31.0.0/16
       ports:
         - protocol: TCP
           port: 8091
