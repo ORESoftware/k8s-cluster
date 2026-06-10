@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/raft-consensus.schema.json",
+  "title": "RaftConsensusNats",
+  "description": "NATS subjects owned by dd-raft-consensus (in-process Raft consensus simulator that drives leader election and log replication across a virtual cluster under configurable chaos: drops, partitions, restarts). The server subscribes to propose/scenario requests under the dd-raft-consensus queue group, publishes committed-log results plus a fan-out of state-transition events for chaos-testing with loadtest harnesses. Payloads carry a raft.consensus.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-raft-consensus",
+    "summary": "Raft consensus simulation request/result pipeline with state-transition event fan-out.",
+    "subjects": [
+      {
+        "name": "RaftProposeRequests",
+        "description": "Inbound Raft scenario/propose requests (cluster size, command stream, chaos parameters) consumed by the raft-consensus simulator. Subscribed with the dd-raft-consensus queue group so requests load-balance across replicas. Default for RAFT_PROPOSE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.raft.propose.requests",
+        "queueGroup": "dd-raft-consensus",
+        "direction": "both"
+      },
+      {
+        "name": "RaftConsensusResults",
+        "description": "Consensus outcomes (committed log, term/leader history, election counts, divergence detection) emitted after a simulated run. Carries a raft.consensus.v1 envelope. Default for RAFT_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.raft.consensus.results",
+        "direction": "both"
+      },
+      {
+        "name": "RaftConsensusEvents",
+        "description": "Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.raft.consensus.events",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "RaftConsensusQueueGroup",
+        "value": "dd-raft-consensus",
+        "description": "Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests."
+      }
+    ]
+  }
+}

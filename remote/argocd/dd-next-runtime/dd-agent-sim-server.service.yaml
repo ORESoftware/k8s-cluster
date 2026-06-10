@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-agent-sim-server
+  namespace: default
+  labels:
+    app: dd-agent-sim-server
+spec:
+  selector:
+    app: dd-agent-sim-server
+  ports:
+    - name: http
+      port: 8133
+      targetPort: http

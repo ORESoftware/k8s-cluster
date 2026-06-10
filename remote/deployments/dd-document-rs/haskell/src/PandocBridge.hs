@@ -54,6 +54,7 @@ import           Text.Pandoc.Builder    (setMeta)
 import           Text.Pandoc.Format     (parseFlavoredFormat)
 import           Text.Pandoc.PDF        (makePDF)
 import           Text.Pandoc.Templates  (compileDefaultTemplate)
+import           Text.Pandoc.Walk       (walk)
 
 foreign export ccall dd_pandoc_convert :: Ptr CChar -> IO (Ptr CChar)
 foreign export ccall dd_pandoc_make_pdf :: Ptr CChar -> IO (Ptr CChar)
@@ -94,30 +95,43 @@ applyMeta obj doc = foldr step doc (KM.toList obj)
     toMeta (A.Array a)  = Just (MetaList [MetaString s | A.String s <- toList a])
     toMeta _            = Nothing
 
--- | Read 'reqFrom', write 'reqTo', returning the raw output bytes. Pure +
--- sandboxed via 'runPure'.
-runConvert :: ConvReq -> Either PandocError BS.ByteString
-runConvert req = runPure $ do
+-- | Parse 'reqFrom' input into a Pandoc AST. Pure: it does the *untrusted*
+-- parsing inside the 'runPure' sandbox (no filesystem/network/env/clock), used
+-- by both the convert and PDF paths.
+parseDoc :: ConvReq -> PandocPure Pandoc
+parseDoc req = do
   inBytes <- case B64.decode (TE.encodeUtf8 (reqContentB64 req)) of
     Right bytes -> pure bytes
     Left err    -> throwError (PandocSomeError ("invalid base64 input: " <> T.pack err))
-
   (reader, readerExts) <- getReader =<< parseFlavoredFormat (reqFrom req)
-  (writer, writerExts) <- getWriter =<< parseFlavoredFormat (reqTo req)
-
   doc0 <- case reader of
     TextReader f -> case TE.decodeUtf8' inBytes of
       Right text -> f def { readerExtensions = readerExts, readerStandalone = True } text
       Left err   -> throwError (PandocSomeError ("input is not valid UTF-8: " <> T.pack (show err)))
     ByteStringReader f -> f def { readerExtensions = readerExts } (BL.fromStrict inBytes)
+  pure (applyMeta (reqMetadata req) doc0)
 
-  let doc = applyMeta (reqMetadata req) doc0
+-- | Drop raw passthrough nodes. Used before PDF rendering so a hostile document
+-- can't smuggle engine code (e.g. raw Typst calling @read()@ / includes) past
+-- the writer and into the @typst@ process.
+stripRaw :: Pandoc -> Pandoc
+stripRaw = walk noRawInlines . walk noRawBlocks
+  where
+    noRawBlocks :: [Block] -> [Block]
+    noRawBlocks = filter (\b -> case b of RawBlock {} -> False; _ -> True)
+    noRawInlines :: [Inline] -> [Inline]
+    noRawInlines = filter (\i -> case i of RawInline {} -> False; _ -> True)
 
+-- | Read 'reqFrom', write 'reqTo', returning the raw output bytes. Pure +
+-- sandboxed via 'runPure'.
+runConvert :: ConvReq -> Either PandocError BS.ByteString
+runConvert req = runPure $ do
+  doc <- parseDoc req
+  (writer, writerExts) <- getWriter =<< parseFlavoredFormat (reqTo req)
   template <- if reqStandalone req
     then Just <$> compileDefaultTemplate (baseFormat (reqTo req))
     else pure Nothing
   let wopts = def { writerExtensions = writerExts, writerTemplate = template }
-
   case writer of
     TextWriter f       -> TE.encodeUtf8 <$> f wopts doc
     ByteStringWriter f -> BL.toStrict <$> f wopts doc
@@ -160,21 +174,16 @@ dd_pandoc_convert reqPtr = do
 -- to the @typst@ binary and uses temp files, so it runs in 'runIO'. This path is
 -- therefore NOT sandboxed and requires @typst@ on PATH (opt-in in the image).
 runPdf :: ConvReq -> IO (Either PandocError (Either BL.ByteString BL.ByteString))
-runPdf req = runIO $ do
-  inBytes <- case B64.decode (TE.encodeUtf8 (reqContentB64 req)) of
-    Right bytes -> pure bytes
-    Left err    -> throwError (PandocSomeError ("invalid base64 input: " <> T.pack err))
-  (reader, readerExts) <- getReader =<< parseFlavoredFormat (reqFrom req)
-  doc0 <- case reader of
-    TextReader f -> case TE.decodeUtf8' inBytes of
-      Right text -> f def { readerExtensions = readerExts, readerStandalone = True } text
-      Left err   -> throwError (PandocSomeError ("input is not valid UTF-8: " <> T.pack (show err)))
-    ByteStringReader f -> f def { readerExtensions = readerExts } (BL.fromStrict inBytes)
-  let doc = applyMeta (reqMetadata req) doc0
-  -- PDF output is inherently standalone; the engine compiles a full document.
-  template <- compileDefaultTemplate "typst"
-  let wopts = def { writerTemplate = Just template }
-  makePDF "typst" [] writeTypst wopts doc
+runPdf req =
+  -- Parse the untrusted input in the pure sandbox FIRST; only the trusted
+  -- rendering of our own AST touches IO (temp files + the typst process).
+  case runPure (parseDoc req) of
+    Left err  -> pure (Left err)
+    Right doc -> runIO $ do
+      -- PDF output is inherently standalone; the engine compiles a full document.
+      template <- compileDefaultTemplate "typst"
+      let wopts = def { writerTemplate = Just template }
+      makePDF "typst" [] writeTypst wopts (stripRaw doc)
 
 dd_pandoc_make_pdf :: Ptr CChar -> IO (Ptr CChar)
 dd_pandoc_make_pdf reqPtr = do

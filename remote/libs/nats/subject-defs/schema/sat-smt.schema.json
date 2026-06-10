@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/sat-smt.schema.json",
+  "title": "SatSmtNats",
+  "description": "NATS subjects owned by dd-sat-smt-server (CNF SAT / lightweight SMT solving over HTTP and NATS). The server subscribes to solve requests under the dd-sat-smt-server queue group so requests load-balance across replicas, and publishes solve results plus runtime events. Payloads carry a sat.solve.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-sat-smt-server",
+    "summary": "CNF SAT / lightweight SMT solve request/result pipeline.",
+    "subjects": [
+      {
+        "name": "SatSolveRequests",
+        "description": "Inbound CNF SAT / SMT solve requests consumed by the sat-smt server. Subscribed with the dd-sat-smt-server queue group so requests load-balance across replicas. Default for SAT_SOLVE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.sat.solve.requests",
+        "queueGroup": "dd-sat-smt-server",
+        "direction": "both"
+      },
+      {
+        "name": "SatSolveResults",
+        "description": "Solve outcomes (sat/unsat/unknown with a model when satisfiable) emitted by the sat-smt server. Carries a sat.solve.v1 envelope. Default for SAT_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.sat.solve.results",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "SatSmtServerQueueGroup",
+        "value": "dd-sat-smt-server",
+        "description": "Shared queue group used by dd-sat-smt-server replicas consuming solve requests."
+      }
+    ]
+  }
+}

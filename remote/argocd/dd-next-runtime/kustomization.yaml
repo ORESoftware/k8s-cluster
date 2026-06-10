@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - availability-pdbs.yaml
   - dd-remote-auth.deployment.yaml
+  - dd-remote-auth.networkpolicy.yaml
   - dd-remote-auth.service.yaml
   - dd-dev-server-home.deployment.yaml
   - dd-dev-server-api.service.yaml
@@ -26,6 +27,20 @@ resources:
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
+  # Fun compute servers (scaled to 0 by default): SAT/SMT, constraint scheduling,
+  # routing, agent/CA simulation, Monte Carlo, and Raft consensus simulation.
+  - dd-sat-smt-server.deployment.yaml
+  - dd-sat-smt-server.service.yaml
+  - dd-constraint-scheduler.deployment.yaml
+  - dd-constraint-scheduler.service.yaml
+  - dd-route-optimizer.deployment.yaml
+  - dd-route-optimizer.service.yaml
+  - dd-agent-sim-server.deployment.yaml
+  - dd-agent-sim-server.service.yaml
+  - dd-monte-carlo-server.deployment.yaml
+  - dd-monte-carlo-server.service.yaml
+  - dd-raft-consensus.deployment.yaml
+  - dd-raft-consensus.service.yaml
   - dd-fabrication-server.serviceaccount.yaml
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/route-optimizer.schema.json",
+  "title": "RouteOptimizerNats",
+  "description": "NATS subjects owned by dd-route-optimizer (TSP / VRP with time windows over HTTP and NATS). The server subscribes to optimize requests under the dd-route-optimizer queue group, publishes optimized routes plus runtime events. Payloads carry a route.optimize.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-route-optimizer",
+    "summary": "TSP/VRP-with-time-windows route optimization request/result pipeline.",
+    "subjects": [
+      {
+        "name": "RouteOptimizeRequests",
+        "description": "Inbound TSP/VRP route-optimization requests consumed by the route optimizer. Subscribed with the dd-route-optimizer queue group so requests load-balance across replicas. Default for ROUTE_OPTIMIZE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.route.optimize.requests",
+        "queueGroup": "dd-route-optimizer",
+        "direction": "both"
+      },
+      {
+        "name": "RouteOptimizeResults",
+        "description": "Optimized routes (ordered stops per vehicle, total distance, arrival times, time-window violations) emitted by the route optimizer. Carries a route.optimize.v1 envelope. Default for ROUTE_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.route.optimize.results",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "RouteOptimizerQueueGroup",
+        "value": "dd-route-optimizer",
+        "description": "Shared queue group used by dd-route-optimizer replicas consuming optimize requests."
+      }
+    ]
+  }
+}

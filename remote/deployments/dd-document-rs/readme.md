@@ -175,7 +175,9 @@ events to `dd.remote.events`, and failures to `dd.remote.events.critical`.
 | `DOCUMENT_MAX_IMAGE_BYTES` | `16777216` | Max input/output image size. |
 | `DOCUMENT_MAX_STREAM_BYTES` | `67108864` | Max body for `/convert-binary` + streaming routes. |
 | `DOCUMENT_CACHE_CAPACITY` | `256` | Conversion cache entries (0 disables). |
+| `DOCUMENT_CACHE_MAX_ENTRY_BYTES` | `1048576` | Per-entry cache cap (bounds cache memory). |
 | `DOCUMENT_IMAGE_CONCURRENCY` | `4` | Max concurrent image ops. |
+| `DOCUMENT_CONVERT_CONCURRENCY` | `min(cpus,16)` | Max concurrent doc/PDF conversions. |
 | `DOCUMENT_PDF_ENGINE` | `typst` | PDF engine binary to detect/use. |
 | `DOCUMENT_CONVERT_SUBJECT` | `dd.remote.document.convert` | NATS request subject. |
 | `DOCUMENT_RESULT_SUBJECT` | `dd.remote.document.results` | NATS result subject. |
@@ -208,8 +210,19 @@ Document conversions:
 - Run in Pandoc's **`runPure` sandbox** (the `PandocPure` monad) — no filesystem,
   network, environment, or clock access — so a hostile document can't read files
   or reach internal hosts (SSRF), regardless of reader/writer.
-- Binary readers/writers are rejected (text bridge only); input and output sizes
-  are capped; caller `request_id`s are length-bounded and control-char stripped.
+- **PDF** can't use `runPure` (the engine shells out), so the untrusted input is
+  still **parsed in `runPure`**; only the rendering of our own AST runs in `runIO`.
+  Raw passthrough nodes (raw typst/latex/html) are **stripped before PDF
+  rendering** so a document can't smuggle engine code (e.g. typst `read()` /
+  includes) into the `typst` process.
+- Input/output sizes are capped; caller `request_id`s are length-bounded and
+  control-char stripped.
+- The conversion **cache key is SHA-256** over the length-prefixed request, so an
+  attacker can't craft a colliding request to be served the wrong document; the
+  cache is bounded by entry count **and** per-entry size.
+- Concurrent conversions are bounded (`DOCUMENT_CONVERT_CONCURRENCY`) and image
+  ops too (`DOCUMENT_IMAGE_CONCURRENCY`) to cap CPU/memory under load.
+- The opt-in PDF engine download can be pinned with `--build-arg TYPST_SHA256=…`.
 
 Image processing (defence in depth):
 

@@ -556,6 +556,8 @@ struct SignedHeader {
 struct RetentionSweepResponse {
     ok: bool,
     expired_segments: u64,
+    deleted_objects: u64,
+    delete_failures: u64,
 }
 
 #[derive(Deserialize)]
@@ -1597,11 +1599,10 @@ fn validate_redirect_uri(
         ServiceError::BadRequest("redirectUri is required for OAuth cloud links".to_string())
     })?;
     let uri = validate_nonempty(&value, "redirectUri", 512)?;
-    let lower = uri.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://localhost")
-        || lower.starts_with("http://127.0.0.1")
-    {
+    // Parse the host rather than prefix-match: `starts_with("http://localhost")`
+    // also accepted `http://localhost.evil.example`. is_safe_public_url enforces
+    // scheme https (any host) or http only for a real loopback host.
+    if is_safe_public_url(&uri) {
         Ok(uri)
     } else {
         Err(ServiceError::BadRequest(
@@ -4291,29 +4292,82 @@ async fn retention_sweep(
 ) -> Result<Json<RetentionSweepResponse>, ServiceError> {
     require_internal_auth(&state.config, &headers)?;
     let client = connect_postgres(&state.config).await?;
-    let expired = client
-        .execute(
-            "update sound_recorder_segments
-             set status = 'expired', updated_at = now()
+    // Bound work per call so a large backlog is drained across cron runs instead
+    // of one unbounded transaction. The cron re-invokes until nothing is left.
+    const SWEEP_BATCH: i64 = 1000;
+    let rows = client
+        .query(
+            "select id::text, storage_bucket, storage_key
+             from sound_recorder_segments
              where status in ('pending', 'uploaded')
                and pinned_at is null
-               and expires_at < now()",
-            &[],
+               and expires_at < now()
+             order by expires_at asc
+             limit $1",
+            &[&SWEEP_BATCH],
         )
         .await
         .map_err(db_error)?;
+
+    // Physically delete the rolling-window objects from S3 before expiring the
+    // row. Pinned (permanent-save) segments are excluded by the query above, so
+    // they are never deleted. Deletion is best-effort: a transient S3 failure is
+    // logged and the row is still expired (the logical retention window must
+    // hold); a bucket lifecycle rule is the backstop for any leaked object.
+    let mut deleted_objects: u64 = 0;
+    let mut delete_failures: u64 = 0;
+    let mut expired_ids: Vec<String> = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let id: String = row.get("id");
+        let bucket: String = row.get("storage_bucket");
+        let key: String = row.get("storage_key");
+        if let Some(s3) = state.s3.as_ref() {
+            if !bucket.is_empty() && !key.is_empty() {
+                match s3.delete_object().bucket(&bucket).key(&key).send().await {
+                    Ok(_) => deleted_objects += 1,
+                    Err(err) => {
+                        delete_failures += 1;
+                        warn!(error = %err, segment_id = id, "retention S3 object delete failed");
+                    }
+                }
+            }
+        }
+        expired_ids.push(id);
+    }
+
+    let expired = if expired_ids.is_empty() {
+        0
+    } else {
+        client
+            .execute(
+                "update sound_recorder_segments
+                 set status = 'expired', updated_at = now()
+                 where id = any($1::uuid[])
+                   and status in ('pending', 'uploaded')
+                   and pinned_at is null",
+                &[&expired_ids],
+            )
+            .await
+            .map_err(db_error)?
+    };
     audit_event(
         &client,
         None,
         None,
         "sound_recorder.retention.swept",
-        json!({ "expiredSegments": expired }),
+        json!({
+            "expiredSegments": expired,
+            "deletedObjects": deleted_objects,
+            "deleteFailures": delete_failures,
+        }),
     )
     .await;
     record_request("POST", "/internal/retention/sweep", StatusCode::OK);
     Ok(Json(RetentionSweepResponse {
         ok: true,
         expired_segments: expired,
+        deleted_objects,
+        delete_failures,
     }))
 }
 
@@ -5642,6 +5696,37 @@ mod tests {
         ));
         assert!(!is_safe_public_url("http://sound.example/listen/abc"));
         assert!(!is_safe_public_url("javascript:alert(1)"));
+    }
+
+    #[test]
+    fn redirect_uri_rejects_lookalike_loopback() {
+        let provider = CloudProvider::GoogleDrive;
+        assert!(validate_redirect_uri(
+            provider,
+            Some("https://app.example/oauth".to_string())
+        )
+        .is_ok());
+        assert!(validate_redirect_uri(
+            provider,
+            Some("http://localhost:8080/cb".to_string())
+        )
+        .is_ok());
+        // The pre-fix prefix match accepted these lookalike hosts.
+        assert!(validate_redirect_uri(
+            provider,
+            Some("http://localhost.evil.example/cb".to_string())
+        )
+        .is_err());
+        assert!(validate_redirect_uri(
+            provider,
+            Some("http://127.0.0.1.evil.example/cb".to_string())
+        )
+        .is_err());
+        assert!(validate_redirect_uri(
+            provider,
+            Some("http://example.com/cb".to_string())
+        )
+        .is_err());
     }
 
     #[test]

@@ -56,14 +56,16 @@ const MAX_CONFIRM_SIGNATURES: usize = 8;
 const DEFAULT_CONFIRM_TIMEOUT_MS: u64 = 30_000;
 const MAX_CONFIRM_TIMEOUT_MS: u64 = 120_000;
 const MIN_CONFIRM_POLL_INTERVAL_MS: u64 = 250;
+const MAX_CONFIRM_POLL_INTERVAL_MS: u64 = 10_000;
 const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
 const MAX_CONFIRM_POLLS: u32 = 240;
 const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
 const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
-// Service-wide cap on concurrent confirmation pollers across /confirm, /settle,
-// /resolve, and the escrow-results verifier. Bounds sustained outbound Solana
-// RPC fan-out so no set of requests can amplify load on the upstream endpoint.
-const MAX_CONFIRM_POLLERS_IN_FLIGHT: u64 = 64;
+// Cap on concurrent background confirmation pollers spawned by the escrow-results
+// verifier. Bounds sustained outbound Solana RPC fan-out so a flood of escrow
+// result messages on the (currently unauthenticated) NATS bus cannot amplify load
+// on the upstream RPC endpoint; excess confirmations are shed.
+const MAX_VERIFIER_CONFIRMS_IN_FLIGHT: u64 = 64;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
@@ -80,6 +82,7 @@ struct AppState {
     settlement_enabled: bool,
     resolution_enabled: bool,
     nats_settlement_enabled: bool,
+    mainnet_settlement_enabled: bool,
     settlement_auth_secret: Option<String>,
     nats: Option<async_nats::Client>,
     result_subject: String,
@@ -684,6 +687,46 @@ fn config_error(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, message.into())
 }
 
+/// NATS-initiated settlement messages carry no auth header, and the NATS bus has
+/// no per-subject authorization, so enabling NATS-triggered broadcast lets any
+/// publisher to the settle/resolve subjects trigger an on-chain send. Require an
+/// explicit acknowledgment so this cannot be turned on by flipping a single
+/// boolean; lock down NATS (authz / NetworkPolicy) before setting the ack.
+fn enforce_nats_broadcast_ack(
+    nats_settlement_enabled: bool,
+    ack_unauthenticated_bus: bool,
+) -> Result<(), String> {
+    if nats_settlement_enabled && !ack_unauthenticated_bus {
+        return Err(
+            "CONTRACT_NATS_SETTLEMENT_ENABLED=true requires CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS=true because the NATS bus has no per-subject auth: any publisher to the settle/resolve subjects could trigger an on-chain broadcast"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Second gate for mainnet-beta: any capability that can broadcast a transaction
+/// on-chain (`/send`, `/settle`, `/resolve`, or NATS-initiated settlement) must
+/// not be enabled against mainnet without an explicit
+/// `SOLANA_MAINNET_SETTLEMENT_ENABLED=true`. Mirrors the dd-escrow-rs mainnet
+/// gate so a single misconfigured flag cannot move real funds.
+fn enforce_mainnet_settlement_gate(
+    cluster: &str,
+    send_enabled: bool,
+    settlement_enabled: bool,
+    resolution_enabled: bool,
+    mainnet_settlement_enabled: bool,
+) -> Result<(), String> {
+    let broadcast_capable = send_enabled || settlement_enabled || resolution_enabled;
+    if cluster == "mainnet-beta" && broadcast_capable && !mainnet_settlement_enabled {
+        return Err(
+            "mainnet broadcast (SOLANA_SEND_ENABLED/SOLANA_SETTLEMENT_ENABLED/SOLANA_RESOLUTION_ENABLED) requires SOLANA_MAINNET_SETTLEMENT_ENABLED=true"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn validate_solana_rpc_url(raw: &str, allow_private_rpc: bool) -> Result<String, String> {
     let parsed = reqwest::Url::parse(raw)
         .map_err(|error| format!("SOLANA_RPC_URL must be an absolute URL: {error}"))?;
@@ -1187,7 +1230,7 @@ async fn confirm_signature(
     poll_interval_ms: u64,
 ) -> ConfirmOutcome {
     let interval = poll_interval_ms
-        .clamp(MIN_CONFIRM_POLL_INTERVAL_MS, MAX_CONFIRM_TIMEOUT_MS)
+        .clamp(MIN_CONFIRM_POLL_INTERVAL_MS, MAX_CONFIRM_POLL_INTERVAL_MS)
         .max(1);
     let timeout = timeout_ms.clamp(interval, MAX_CONFIRM_TIMEOUT_MS);
     let max_polls = ((timeout / interval) as u32 + 1).min(MAX_CONFIRM_POLLS);
@@ -1656,6 +1699,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
         "settlementEnabled": state.settlement_enabled,
         "resolutionEnabled": state.resolution_enabled,
         "natsSettlementEnabled": state.nats_settlement_enabled,
+        "mainnetSettlementEnabled": state.mainnet_settlement_enabled,
         "routes": {
             "health": "/healthz",
             "metrics": "/metrics",
@@ -1680,7 +1724,6 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
             "resolve": "POST /resolve"
         },
         "nats": {
-            "validateSubject": state.result_subject,
             "resultSubject": state.result_subject,
             "settlementResultSubject": state.settlement_result_subject,
             "eventSubject": state.event_subject
@@ -1728,6 +1771,12 @@ async fn status_http(State(state): State<AppState>) -> Response {
             "ok": ok,
             "service": "dd-contract-service",
             "cluster": state.default_cluster,
+            "sendEnabled": state.send_enabled,
+            "settlementEnabled": state.settlement_enabled,
+            "resolutionEnabled": state.resolution_enabled,
+            "natsSettlementEnabled": state.nats_settlement_enabled,
+            "mainnetSettlementEnabled": state.mainnet_settlement_enabled,
+            "skipPreflightAllowed": state.allow_skip_preflight,
             "rpcHealth": health.map_err(|error| error.to_string()),
             "rpcVersion": version.map_err(|error| error.to_string()),
             "generatedAtMs": now_ms()
@@ -3112,12 +3161,13 @@ fn metrics_body(state: &AppState) -> String {
     format!(
         "# HELP dd_contract_service_info Static service configuration labels for the Solana contract service.\n\
 # TYPE dd_contract_service_info gauge\n\
-dd_contract_service_info{{cluster=\"{}\",send_enabled=\"{}\",skip_preflight_allowed=\"{}\",settlement_enabled=\"{}\",resolution_enabled=\"{}\"}} 1\n{out}",
+dd_contract_service_info{{cluster=\"{}\",send_enabled=\"{}\",skip_preflight_allowed=\"{}\",settlement_enabled=\"{}\",resolution_enabled=\"{}\",mainnet_settlement_enabled=\"{}\"}} 1\n{out}",
         state.default_cluster,
         bool_label(state.send_enabled),
         bool_label(state.allow_skip_preflight),
         bool_label(state.settlement_enabled),
         bool_label(state.resolution_enabled),
+        bool_label(state.mainnet_settlement_enabled),
     )
 }
 
@@ -3340,6 +3390,7 @@ mod tests {
             settlement_enabled: true,
             resolution_enabled: true,
             nats_settlement_enabled: false,
+            mainnet_settlement_enabled: false,
             settlement_auth_secret: Some("settlement-secret".to_string()),
             nats: None,
             result_subject: "results".to_string(),
@@ -3577,6 +3628,30 @@ mod tests {
         assert!(authorize_settlement(&headers, &state).is_ok());
         headers.insert(SETTLEMENT_AUTH_HEADER, "nope".parse().unwrap());
         assert!(authorize_settlement(&headers, &state).is_err());
+    }
+
+    #[test]
+    fn mainnet_gate_blocks_broadcast_without_explicit_flag() {
+        // Devnet never requires the gate.
+        assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
+        // Mainnet with any broadcast capability and no gate is refused.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
+        // Mainnet with the explicit gate is allowed.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
+        // Mainnet with nothing broadcast-capable needs no gate.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn nats_broadcast_requires_explicit_unauthenticated_bus_ack() {
+        // Off: no ack needed.
+        assert!(enforce_nats_broadcast_ack(false, false).is_ok());
+        // Enabling NATS broadcast without acknowledging the unauthenticated bus is refused.
+        assert!(enforce_nats_broadcast_ack(true, false).is_err());
+        // With the explicit acknowledgment it is allowed.
+        assert!(enforce_nats_broadcast_ack(true, true).is_ok());
     }
 
     #[test]
@@ -4447,6 +4522,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
+    enforce_nats_broadcast_ack(
+        nats_settlement_enabled,
+        env_bool("CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS", false),
+    )
+    .map_err(config_error)?;
+    let mainnet_settlement_enabled = env_bool("SOLANA_MAINNET_SETTLEMENT_ENABLED", false);
+    enforce_mainnet_settlement_gate(
+        &default_cluster,
+        send_enabled,
+        settlement_enabled,
+        resolution_enabled,
+        mainnet_settlement_enabled,
+    )
+    .map_err(config_error)?;
     let escrow_confirm_enabled = env_bool("CONTRACT_ESCROW_CONFIRM_ENABLED", false);
 
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
@@ -4521,6 +4610,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         settlement_enabled,
         resolution_enabled,
         nats_settlement_enabled,
+        mainnet_settlement_enabled,
         settlement_auth_secret,
         nats,
         result_subject,
@@ -4542,6 +4632,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "settlementEnabled": state.settlement_enabled,
             "resolutionEnabled": state.resolution_enabled,
             "natsSettlementEnabled": state.nats_settlement_enabled,
+            "mainnetSettlementEnabled": state.mainnet_settlement_enabled,
             "escrowConfirmEnabled": escrow_confirm_enabled,
             "resultSubject": &state.result_subject,
             "settlementResultSubject": &state.settlement_result_subject,

@@ -14,6 +14,25 @@ public final class DdNatsSubjects {
     private DdNatsSubjects() {}
 
     /**
+     * Per-tick simulation frames fanned out for live demos (grid/agent snapshots and aggregate stats). Broadcast with no queue group so every interested consumer (and the websocket bridge) receives each frame. Default for AGENT_SIM_FRAME_SUBJECT.
+     * Service: dd-agent-sim-server
+     */
+    public static final String AGENT_SIM_FRAMES_SUBJECT = "dd.remote.agent_sim.frames";
+
+    /**
+     * Inbound agent-based / cellular-automata simulation requests consumed by the agent-sim server. Subscribed with the dd-agent-sim-server queue group so requests load-balance across replicas. Default for AGENT_SIM_SIMULATE_SUBJECT.
+     * Service: dd-agent-sim-server
+     */
+    public static final String AGENT_SIM_SIMULATE_REQUESTS_SUBJECT = "dd.remote.agent_sim.simulate.requests";
+    public static final String AGENT_SIM_SIMULATE_REQUESTS_QUEUE_GROUP = "dd-agent-sim-server";
+
+    /**
+     * Final simulation outcomes (final state summary, time series, convergence/extinction flags) emitted after a run completes. Carries an agent_sim.simulate.v1 envelope. Default for AGENT_SIM_RESULT_SUBJECT.
+     * Service: dd-agent-sim-server
+     */
+    public static final String AGENT_SIM_SIMULATE_RESULTS_SUBJECT = "dd.remote.agent_sim.simulate.results";
+
+    /**
      * Emitted when a Merkle root over a posting range is anchored to Solana (tamper-evidence notary). Carries tenant, anchor id, posting range/count, merkle root hex, tx signature, and slot.
      * Service: dd-billing-server
      */
@@ -442,6 +461,19 @@ public final class DdNatsSubjects {
     public static final String ML_FEATURES_SUBJECT = "dd.remote.ml.features";
 
     /**
+     * Inbound Monte Carlo simulation requests consumed by the monte-carlo server. Subscribed with the dd-monte-carlo-server queue group so requests load-balance across replicas. Default for MONTE_CARLO_SIMULATE_SUBJECT.
+     * Service: dd-monte-carlo-server
+     */
+    public static final String MONTE_CARLO_SIMULATE_REQUESTS_SUBJECT = "dd.remote.montecarlo.simulate.requests";
+    public static final String MONTE_CARLO_SIMULATE_REQUESTS_QUEUE_GROUP = "dd-monte-carlo-server";
+
+    /**
+     * Monte Carlo estimates (point estimate, standard error, confidence interval, per-experiment summary) emitted by the monte-carlo server. Carries a montecarlo.simulate.v1 envelope. Default for MONTE_CARLO_RESULT_SUBJECT.
+     * Service: dd-monte-carlo-server
+     */
+    public static final String MONTE_CARLO_SIMULATE_RESULTS_SUBJECT = "dd.remote.montecarlo.simulate.results";
+
+    /**
      * Song-generation requests consumed by the music server. Subscribed with the dd-music-rs queue group so requests load-balance across replicas. The consumer is opt-in (MUSIC_NATS_GENERATION_ENABLED) because each request drives expensive synthesis; publish rights to this subject are a privileged capability.
      * Service: dd-music-rs
      */
@@ -505,6 +537,38 @@ public final class DdNatsSubjects {
     public static final String PUBLIC_DATA_WEBHOOK_EVENTS_SUBJECT = "dd.remote.public_data.webhooks.events";
 
     /**
+     * Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.
+     * Service: dd-raft-consensus
+     */
+    public static final String RAFT_CONSENSUS_EVENTS_SUBJECT = "dd.remote.raft.consensus.events";
+
+    /**
+     * Consensus outcomes (committed log, term/leader history, election counts, divergence detection) emitted after a simulated run. Carries a raft.consensus.v1 envelope. Default for RAFT_RESULT_SUBJECT.
+     * Service: dd-raft-consensus
+     */
+    public static final String RAFT_CONSENSUS_RESULTS_SUBJECT = "dd.remote.raft.consensus.results";
+
+    /**
+     * Inbound Raft scenario/propose requests (cluster size, command stream, chaos parameters) consumed by the raft-consensus simulator. Subscribed with the dd-raft-consensus queue group so requests load-balance across replicas. Default for RAFT_PROPOSE_SUBJECT.
+     * Service: dd-raft-consensus
+     */
+    public static final String RAFT_PROPOSE_REQUESTS_SUBJECT = "dd.remote.raft.propose.requests";
+    public static final String RAFT_PROPOSE_REQUESTS_QUEUE_GROUP = "dd-raft-consensus";
+
+    /**
+     * Inbound TSP/VRP route-optimization requests consumed by the route optimizer. Subscribed with the dd-route-optimizer queue group so requests load-balance across replicas. Default for ROUTE_OPTIMIZE_SUBJECT.
+     * Service: dd-route-optimizer
+     */
+    public static final String ROUTE_OPTIMIZE_REQUESTS_SUBJECT = "dd.remote.route.optimize.requests";
+    public static final String ROUTE_OPTIMIZE_REQUESTS_QUEUE_GROUP = "dd-route-optimizer";
+
+    /**
+     * Optimized routes (ordered stops per vehicle, total distance, arrival times, time-window violations) emitted by the route optimizer. Carries a route.optimize.v1 envelope. Default for ROUTE_RESULT_SUBJECT.
+     * Service: dd-route-optimizer
+     */
+    public static final String ROUTE_OPTIMIZE_RESULTS_SUBJECT = "dd.remote.route.optimize.results";
+
+    /**
      * Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.
      * Service: dd-routing-server
      */
@@ -539,6 +603,32 @@ public final class DdNatsSubjects {
      * Service: shared
      */
     public static final String RUNTIME_EVENTS_SUBJECT = "dd.remote.events";
+
+    /**
+     * Inbound CNF SAT / SMT solve requests consumed by the sat-smt server. Subscribed with the dd-sat-smt-server queue group so requests load-balance across replicas. Default for SAT_SOLVE_SUBJECT.
+     * Service: dd-sat-smt-server
+     */
+    public static final String SAT_SOLVE_REQUESTS_SUBJECT = "dd.remote.sat.solve.requests";
+    public static final String SAT_SOLVE_REQUESTS_QUEUE_GROUP = "dd-sat-smt-server";
+
+    /**
+     * Solve outcomes (sat/unsat/unknown with a model when satisfiable) emitted by the sat-smt server. Carries a sat.solve.v1 envelope. Default for SAT_RESULT_SUBJECT.
+     * Service: dd-sat-smt-server
+     */
+    public static final String SAT_SOLVE_RESULTS_SUBJECT = "dd.remote.sat.solve.results";
+
+    /**
+     * Inbound constraint-scheduling requests (job-shop, rostering, timetabling) consumed by the scheduler. Subscribed with the dd-constraint-scheduler queue group so requests load-balance across replicas. Default for SCHEDULER_SCHEDULE_SUBJECT.
+     * Service: dd-constraint-scheduler
+     */
+    public static final String SCHEDULER_SCHEDULE_REQUESTS_SUBJECT = "dd.remote.scheduler.schedule.requests";
+    public static final String SCHEDULER_SCHEDULE_REQUESTS_QUEUE_GROUP = "dd-constraint-scheduler";
+
+    /**
+     * Computed schedules (task start times, makespan, machine assignments, violations) emitted by the scheduler. Carries a scheduler.schedule.v1 envelope. Default for SCHEDULER_RESULT_SUBJECT.
+     * Service: dd-constraint-scheduler
+     */
+    public static final String SCHEDULER_SCHEDULE_RESULTS_SUBJECT = "dd.remote.scheduler.schedule.results";
 
     /**
      * MDP telemetry requests emitted by ai-ml-pipeline and consumed by the MDP optimizer. Default for ML_MDP_TELEMETRY_SUBJECT / MDP_TELEMETRY_SUBJECT.
@@ -993,10 +1083,22 @@ public final class DdNatsSubjects {
     }
 
     /**
+     * Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
+     * Service: dd-agent-sim-server
+     */
+    public static final String AGENT_SIM_SERVER_QUEUE_GROUP = "dd-agent-sim-server";
+
+    /**
      * Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
      * Service: dd-billing-server
      */
     public static final String BILLING_SERVER_QUEUE_GROUP = "dd-billing-server";
+
+    /**
+     * Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
+     * Service: dd-constraint-scheduler
+     */
+    public static final String CONSTRAINT_SCHEDULER_QUEUE_GROUP = "dd-constraint-scheduler";
 
     /**
      * Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
@@ -1035,6 +1137,12 @@ public final class DdNatsSubjects {
     public static final String MIP_SOLVER_WORKERS_QUEUE_GROUP = "dd-in-house-mip-solver-node-workers";
 
     /**
+     * Shared queue group used by dd-monte-carlo-server replicas consuming simulate requests.
+     * Service: dd-monte-carlo-server
+     */
+    public static final String MONTE_CARLO_SERVER_QUEUE_GROUP = "dd-monte-carlo-server";
+
+    /**
      * Shared queue group used by dd-music-rs replicas consuming generation requests.
      * Service: dd-music-rs
      */
@@ -1047,10 +1155,28 @@ public final class DdNatsSubjects {
     public static final String PUBLIC_DATA_WORKERS_QUEUE_GROUP = "dd-public-data-server";
 
     /**
+     * Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests.
+     * Service: dd-raft-consensus
+     */
+    public static final String RAFT_CONSENSUS_QUEUE_GROUP = "dd-raft-consensus";
+
+    /**
+     * Shared queue group used by dd-route-optimizer replicas consuming optimize requests.
+     * Service: dd-route-optimizer
+     */
+    public static final String ROUTE_OPTIMIZER_QUEUE_GROUP = "dd-route-optimizer";
+
+    /**
      * Shared queue group used by routing worker pods so each multi-start restart is solved exactly once.
      * Service: dd-routing-server
      */
     public static final String ROUTING_WORKERS_QUEUE_GROUP = "dd-routing-server-workers";
+
+    /**
+     * Shared queue group used by dd-sat-smt-server replicas consuming solve requests.
+     * Service: dd-sat-smt-server
+     */
+    public static final String SAT_SMT_SERVER_QUEUE_GROUP = "dd-sat-smt-server";
 
     /**
      * Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
