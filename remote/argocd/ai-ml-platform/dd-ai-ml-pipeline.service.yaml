@@ -10,5 +10,6 @@ spec:
     app: dd-ai-ml-pipeline
   ports:
     - name: http
+      appProtocol: http
       port: 8099
       targetPort: http

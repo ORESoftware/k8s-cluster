@@ -7,10 +7,15 @@ This bundle installs the lightweight always-on pieces:
 - `ai-ml` namespace
 - `dd-ai-ml-tool-catalog` ConfigMap describing the selected open-source stack
 - `dd-ai-ml-data-contracts` ConfigMap with raw telemetry, MDP telemetry, and subject-map contracts
-- `airbyte`, `kafka`, and `spark` namespaces with baseline Pod Security enforcement plus
-  restricted Pod Security audit/warn labels
+- `ai-ml`, `airbyte`, `kafka`, and `spark` namespaces with baseline Pod Security enforcement plus
+  restricted Pod Security audit/warn labels; all four pin the `enforce`/`audit`/`warn` versions to
+  `latest`. `ai-ml` enforces `baseline` rather than `restricted` because the first-party Dagster and
+  MLflow Postgres StatefulSets use a root init container to chown their hostPath data directories.
 - per-namespace `ResourceQuota` and `LimitRange` controls for `ai-ml`, `airbyte`, `kafka`, and
-  `spark` so optional data tools have explicit dev-cluster budgets and default pod limits
+  `spark` so optional data tools have explicit dev-cluster budgets and default pod limits. The
+  quotas and LimitRanges also govern `ephemeral-storage` (default per-container request/limit plus a
+  hard namespace cap) so a runaway pod cannot exhaust the single EC2 node's disk; the LimitRange
+  supplies an `ephemeral-storage` default so chart pods that omit it are not rejected by the quota.
 - `dd-ai-ml-pipeline`, a Python3 online feature pipeline that bridges telemetry into the existing
   Rust MDP/POMDP/RL optimizer
 - narrow `ExternalSecret` projections that mirror only `SERVER_AUTH_SECRET` and `RDS_DATABASE_URL`
