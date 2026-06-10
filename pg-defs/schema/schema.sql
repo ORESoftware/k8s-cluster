@@ -1998,7 +1998,7 @@ create unique index if not exists des_soccer_learning_policy_versions_single_act
 
 create table if not exists des_soccer_learning_policy_entries (
   id uuid primary key default gen_random_uuid(),
-  policy_version_id uuid not null references des_soccer_learning_policy_versions(id),
+  policy_version_id uuid not null references des_soccer_learning_policy_versions(id) on delete cascade,
   team varchar(8) not null,
   entry_kind varchar(16) not null,
   state_hash varchar(32) not null,
@@ -2163,7 +2163,7 @@ create index if not exists des_soccer_learning_runs_policy_fitness_idx
 
 create table if not exists des_soccer_learning_run_deltas (
   id uuid primary key default gen_random_uuid(),
-  run_id uuid not null references des_soccer_learning_runs(id),
+  run_id uuid not null references des_soccer_learning_runs(id) on delete cascade,
   team varchar(8) not null,
   entry_kind varchar(16) not null,
   state_hash varchar(32) not null,
