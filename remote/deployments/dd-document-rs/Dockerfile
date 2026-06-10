@@ -71,12 +71,20 @@ RUN apt-get update \
 # engine and /convert-pdf returns 503.
 ARG PDF_ENGINE=none
 ARG TYPST_VERSION=0.12.0
+# Optional supply-chain pin: pass --build-arg TYPST_SHA256=<sha256 of the
+# downloaded tar.xz for the target arch> to verify the download.
+ARG TYPST_SHA256=
 RUN if [ "$PDF_ENGINE" = "typst" ]; then \
       set -eux; \
       apt-get update && apt-get install -y --no-install-recommends curl xz-utils; \
       arch="$(uname -m)"; \
       url="https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${arch}-unknown-linux-musl.tar.xz"; \
       curl -fsSL "$url" -o /tmp/typst.tar.xz; \
+      if [ -n "$TYPST_SHA256" ]; then \
+        echo "${TYPST_SHA256}  /tmp/typst.tar.xz" | sha256sum -c -; \
+      else \
+        echo "WARNING: TYPST_SHA256 not set; skipping typst checksum verification"; \
+      fi; \
       tar -xJf /tmp/typst.tar.xz -C /tmp; \
       install -m 0755 "/tmp/typst-${arch}-unknown-linux-musl/typst" /usr/local/bin/typst; \
       apt-get purge -y curl xz-utils && apt-get autoremove -y; \

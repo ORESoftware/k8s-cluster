@@ -3,13 +3,24 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::timeout::TimeoutLayer;
+
+/// Maximum time a single request handler is allowed to run before the server
+/// returns 408, bounding slow-client / resource-exhaustion exposure.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+/// Hard cap on request body size. All routes are GET today, so this is purely
+/// defense-in-depth against unexpected large payloads.
+const MAX_BODY_BYTES: usize = 64 * 1024;
 
 const DEFAULT_PORT: u16 = 8125;
 const SERVICE_NAME: &str = "dd-webrtc-media";
@@ -366,6 +377,23 @@ async fn ice(State(state): State<AppState>) -> impl IntoResponse {
     Json(ice_response(&state.config))
 }
 
+/// Escape a string for safe use as a Prometheus exposition label value.
+/// Per the text exposition format, backslash, double-quote, and newline must be
+/// escaped; otherwise an operator-supplied `mode` containing these characters
+/// would produce malformed (or injectable) metrics output.
+fn escape_metric_label(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     record_request(&state);
     let ready = u8::from(is_ready(&state.config));
@@ -397,7 +425,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         state.metrics.config_requests_total.load(Ordering::Relaxed),
         state.metrics.ice_requests_total.load(Ordering::Relaxed),
         state.metrics.errors_total.load(Ordering::Relaxed),
-        state.config.mode.replace('"', ""),
+        escape_metric_label(&state.config.mode),
         ready,
         turn,
         sfu,
@@ -448,7 +476,28 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
         .with_state(state)
-        .merge(dd_runtime_config_client::router());
+        .merge(dd_runtime_config_client::router())
+        // Hardening middleware applied to every route, including the merged
+        // runtime-config endpoints.
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+        ))
+        .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
+        // Credential/topology-bearing responses (e.g. /ice, /config) must not be
+        // cached by browsers or intermediaries.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ));
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
