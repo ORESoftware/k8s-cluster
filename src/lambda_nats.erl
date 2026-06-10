@@ -1,6 +1,6 @@
 -module(lambda_nats).
 
--export([start/0, publish/2]).
+-export([start/0, publish/2, request/3, pool_dispatch/5]).
 
 -define(SERVER, lambda_nats_singleton).
 -define(DEFAULT_COMMAND, <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net child-runtimes/js-function-runner.mjs">>).
@@ -25,6 +25,90 @@ publish(Subject0, Payload0) ->
         Pid ->
             Pid ! {publish, Subject, Payload},
             {ok, nil}
+    end.
+
+%% NATS request/reply: publish to Subject with a private `_INBOX` reply and
+%% block the calling process until a single reply arrives or TimeoutMs elapses.
+%% The socket-owning singleton routes the inbox reply back to the caller.
+request(Subject0, Payload0, TimeoutMs) ->
+    Subject = to_binary(Subject0),
+    Payload = to_binary(Payload0),
+    Timeout = max_int(TimeoutMs, 1),
+    case whereis(?SERVER) of
+        undefined ->
+            {error, <<"lambda nats is not configured (NATS_URL unset)">>};
+        Pid ->
+            Ref = make_ref(),
+            Pid ! {request, self(), Ref, Subject, Payload, Timeout},
+            receive
+                {Ref, Result} -> Result
+            after Timeout + 2000 ->
+                %% Belt-and-suspenders: the singleton also arms its own timer,
+                %% but never block the caller longer than the agreed budget.
+                {error, <<"container pool request timed out">>}
+            end
+    end.
+
+%% Dispatch one lambda invocation to dd-container-pool over NATS request/reply.
+%% Builds the DispatchRequest envelope the pool expects, then unwraps the
+%% DispatchResponse `body` (success) or `error` (failure).
+pool_dispatch(Subject0, PoolSlug0, RequestId0, PayloadJson0, TimeoutMs) ->
+    Subject = to_binary(Subject0),
+    PoolSlug = to_binary(PoolSlug0),
+    RequestId = to_binary(RequestId0),
+    PayloadJson = to_binary(PayloadJson0),
+    case request(Subject, pool_request_envelope(PoolSlug, RequestId, PayloadJson), TimeoutMs) of
+        {ok, ResponseJson} -> parse_pool_response(ResponseJson);
+        {error, Reason} -> {error, Reason}
+    end.
+
+pool_request_envelope(PoolSlug, RequestId, PayloadJson) ->
+    SlugField = case PoolSlug of
+        <<>> -> [];
+        _ -> ["\"poolSlug\":\"", json_escape(PoolSlug), "\","]
+    end,
+    iolist_to_binary([
+        "{",
+        SlugField,
+        "\"requestId\":\"", json_escape(RequestId), "\",",
+        "\"source\":\"dd-gleam-lambda-runner\",",
+        "\"payload\":", pool_payload_value(PayloadJson),
+        "}"
+    ]).
+
+%% The lambda request payload is already a normalized JSON value; embed it raw.
+pool_payload_value(<<>>) -> <<"null">>;
+pool_payload_value(Payload) -> Payload.
+
+parse_pool_response(ResponseJson) ->
+    case pool_response_ok(ResponseJson) of
+        true ->
+            case json_field_slice(ResponseJson, <<"body">>) of
+                {ok, Body} -> {ok, Body};
+                error -> {ok, ResponseJson}
+            end;
+        false ->
+            case json_field_slice(ResponseJson, <<"error">>) of
+                {ok, Error} -> {error, unwrap_json_string(Error)};
+                error -> {error, ResponseJson}
+            end
+    end.
+
+pool_response_ok(ResponseJson) ->
+    case re:run(ResponseJson, "\"ok\"[[:space:]]*:[[:space:]]*true", [{capture, none}]) of
+        match -> true;
+        nomatch -> false
+    end.
+
+unwrap_json_string(Value) ->
+    case Value of
+        <<$", Rest/binary>> ->
+            case byte_size(Rest) >= 1 andalso binary:last(Rest) =:= $" of
+                true -> json_unescape_string(binary:part(Rest, 0, byte_size(Rest) - 1));
+                false -> Value
+            end;
+        _ ->
+            Value
     end.
 
 ensure_started() ->
@@ -56,7 +140,11 @@ init() ->
         nats_token => env_binary("NATS_TOKEN", <<>>),
         reconnect_ms => env_int("NATS_LAMBDA_RECONNECT_MS", 1000),
         max_payload_bytes => env_int("NATS_LAMBDA_MAX_PAYLOAD_BYTES", 5242880),
-        buffer => <<>>
+        buffer => <<>>,
+        %% Outstanding request/reply correlations: InboxSubject => {From, Ref, Sid, TimerRef}.
+        %% Sids 1 (invoke) and 2 (functions) are reserved by connect/1.
+        inboxes => #{},
+        next_sid => 3
     },
     connect(State).
 
@@ -115,6 +203,10 @@ loop(State = #{socket := Socket, buffer := Buffer}) ->
         {publish, Subject, Payload} ->
             send_pub(Socket, Subject, Payload),
             loop(State);
+        {request, From, Ref, Subject, Payload, TimeoutMs} ->
+            loop(start_request(State, From, Ref, Subject, Payload, TimeoutMs));
+        {request_timeout, Inbox} ->
+            loop(expire_request(State, Inbox));
         stop ->
             catch gen_tcp:close(Socket),
             ok;
@@ -172,8 +264,7 @@ drain_message(State = #{buffer := Buffer}) ->
                                 true ->
                                     Payload = binary:part(Buffer, PayloadStart, ByteCount),
                                     Rest = binary:part(Buffer, FrameEnd, byte_size(Buffer) - FrameEnd),
-                                    spawn(fun() -> handle_message(State, Subject, ReplyTo, Payload) end),
-                                    {continue, State#{buffer => Rest}};
+                                    {continue, route_message(State#{buffer => Rest}, Subject, ReplyTo, Payload)};
                                 false ->
                                     wait
                             end
@@ -195,6 +286,49 @@ parse_msg_header(Subject, ReplyTo, Bytes) ->
     case safe_binary_to_integer(Bytes) of
         {ok, Count} when Count >= 0 -> {ok, Subject, ReplyTo, Count};
         _ -> error
+    end.
+
+%% Runs in the socket-owning process so it can read/update the inbox registry.
+%% A message on a registered inbox is a request/reply response: hand it to the
+%% waiting caller and tear the subscription down. Everything else is a normal
+%% invoke/functions message handled in a spawned process as before.
+route_message(State = #{socket := Socket}, Subject, ReplyTo, Payload) ->
+    Inboxes = maps:get(inboxes, State, #{}),
+    case maps:take(Subject, Inboxes) of
+        {{From, Ref, Sid, TimerRef}, Remaining} ->
+            cancel_timer(TimerRef),
+            send_unsub(Socket, Sid),
+            From ! {Ref, {ok, Payload}},
+            State#{inboxes => Remaining};
+        error ->
+            spawn(fun() -> handle_message(State, Subject, ReplyTo, Payload) end),
+            State
+    end.
+
+start_request(State = #{socket := Socket}, From, Ref, Subject, Payload, TimeoutMs) ->
+    Inbox = new_inbox(),
+    Sid = maps:get(next_sid, State, 3),
+    subscribe(Socket, Inbox, <<>>, Sid),
+    send_request(Socket, Subject, Inbox, Payload),
+    TimerRef = erlang:send_after(TimeoutMs, self(), {request_timeout, Inbox}),
+    Inboxes = maps:get(inboxes, State, #{}),
+    State#{
+        inboxes => Inboxes#{Inbox => {From, Ref, Sid, TimerRef}},
+        next_sid => Sid + 1
+    }.
+
+expire_request(State, Inbox) ->
+    Inboxes = maps:get(inboxes, State, #{}),
+    case maps:take(Inbox, Inboxes) of
+        {{From, Ref, Sid, _TimerRef}, Remaining} ->
+            case maps:get(socket, State, undefined) of
+                undefined -> ok;
+                Socket -> send_unsub(Socket, Sid)
+            end,
+            From ! {Ref, {error, <<"container pool request timed out">>}},
+            State#{inboxes => Remaining};
+        error ->
+            State
     end.
 
 handle_message(State, Subject, ReplyTo, Payload) ->
@@ -398,6 +532,32 @@ send_pub(Socket, Subject, Payload) ->
         "\r\n"
     ]).
 
+send_request(Socket, Subject, ReplyTo, Payload) ->
+    gen_tcp:send(Socket, [
+        "PUB ",
+        Subject,
+        " ",
+        ReplyTo,
+        " ",
+        integer_to_binary(byte_size(Payload)),
+        "\r\n",
+        Payload,
+        "\r\n"
+    ]).
+
+send_unsub(Socket, Sid) ->
+    gen_tcp:send(Socket, ["UNSUB ", integer_to_binary(Sid), "\r\n"]).
+
+new_inbox() ->
+    iolist_to_binary(["_INBOX.", binary:encode_hex(crypto:strong_rand_bytes(12))]).
+
+cancel_timer(TimerRef) ->
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    ok.
+
+max_int(Value, Min) when is_integer(Value), Value >= Min -> Value;
+max_int(_Value, Min) -> Min.
+
 connect_payload(Auth) ->
     iolist_to_binary([
         "CONNECT {\"verbose\":false,\"pedantic\":false,\"lang\":\"erlang\",\"version\":\"dd-gleam-lambda-runner\"",
@@ -491,6 +651,10 @@ json_escape(Value0) ->
     Newline = binary:replace(Quote, <<"\n">>, <<"\\n">>, [global]),
     Return = binary:replace(Newline, <<"\r">>, <<"\\r">>, [global]),
     binary:replace(Return, <<"\t">>, <<"\\t">>, [global]).
+
+json_unescape_string(Value0) ->
+    Value1 = binary:replace(Value0, <<"\\\"">>, <<"\"">>, [global]),
+    binary:replace(Value1, <<"\\\\">>, <<"\\">>, [global]).
 
 to_binary(Value) when is_binary(Value) ->
     Value;
