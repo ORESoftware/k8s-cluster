@@ -871,7 +871,7 @@ async fn schema(State(state): State<AppState>) -> Json<Value> {
             "limit": "bounded result rows"
         },
         "visualizationSpec": {
-            "mark": "bar, line, scatter, stem, histogram, box, violin, ecdf, map, choropleth, surface, parallel-coordinates, radial-density, hyper-slice-matrix, volume-cloud",
+            "mark": "bar, line, scatter, stem, histogram, box, violin, ecdf, map, choropleth, funnel, waterfall, treemap, sunburst, sankey, surface, parallel-coordinates, radial-density, hyper-slice-matrix, volume-cloud",
             "layout": "2d-cartesian, 3d-scene, 4d-encoded-scene, 5d-faceted-hypercube, xd-projection-atlas",
             "encodings": ["channel to field bindings"],
             "fitness": "informationDensity + legibility + novelty + taskFit + optional aiEvaluator"
@@ -6289,6 +6289,7 @@ mod tests {
                 allow_unauthenticated: false,
             }),
             metrics: Arc::new(Metrics::default()),
+            nats: None,
             datasets: Arc::new(RwLock::new(BTreeMap::new())),
             connections: Arc::new(RwLock::new(BTreeMap::new())),
             sql_lab_history: Arc::new(RwLock::new(BTreeMap::new())),
