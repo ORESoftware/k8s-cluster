@@ -2508,7 +2508,7 @@ async fn save_publish_request(
         &state,
         DATA_VIZ_PUBLISH_EVENTS_SUBJECT,
         "publish.requested",
-        serde_json::to_value(&publish_request).unwrap_or(Value::Null),
+        serde_json::to_value(publish_request.summary()).unwrap_or(Value::Null),
     )
     .await;
     Ok(Json(publishing::save_response(publish_request, warnings)))
@@ -3002,11 +3002,17 @@ async fn evaluate_alert_rule(
         .alert_evaluations_total
         .fetch_add(1, Ordering::Relaxed);
     let evaluation = alerts::evaluate_rule(&rule, &response.rows);
+    // Redact `evidence` before fan-out: it can contain sampled row values, and
+    // the alerts subject must not carry underlying rows (only the metric summary).
+    let mut alert_body = serde_json::to_value(&evaluation).unwrap_or(Value::Null);
+    if let Some(object) = alert_body.as_object_mut() {
+        object.remove("evidence");
+    }
     publish_dataviz_event(
         &state,
         DATA_VIZ_ALERTS_EVENTS_SUBJECT,
         "alert.evaluated",
-        serde_json::to_value(&evaluation).unwrap_or(Value::Null),
+        alert_body,
     )
     .await;
     Ok(Json(evaluation))
@@ -3253,11 +3259,13 @@ async fn dispatch_alert_notifications(
         .metrics
         .notification_delivery_attempts_total
         .fetch_add(attempt_count as u64, Ordering::Relaxed);
+    // Publish the summary projection, not the full record: the per-contact
+    // attempt list (contact ids/names) stays off the fan-out subject.
     publish_dataviz_event(
         &state,
         DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT,
         "notification.dispatch",
-        serde_json::to_value(&record).unwrap_or(Value::Null),
+        serde_json::to_value(record.summary()).unwrap_or(Value::Null),
     )
     .await;
     Ok(Json(record))
