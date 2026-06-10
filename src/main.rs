@@ -14,6 +14,7 @@ mod customer_locks;
 mod customers;
 mod db;
 mod error;
+mod events;
 mod jobs;
 mod ledger;
 mod locks;
@@ -53,7 +54,13 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&cfg).await?;
     let sealer = Arc::new(Sealer::from_b64_key(&cfg.master_seal_key_b64)?);
 
-    let state = AppState::new(cfg.clone(), pool, sealer);
+    // Optional NATS event bus (publish redacted domain events + listen for
+    // inbound sync commands). Disabled unless BILLING_NATS_PUBLISH_ENABLED is
+    // set and a URL resolves; a broker outage at boot degrades to a no-op
+    // rather than blocking startup. See src/events.rs.
+    let events = Arc::new(build_event_bus(&cfg).await);
+
+    let state = AppState::new(cfg.clone(), pool, sealer, events);
 
     // Seed the built-in system jobs (idempotent) and start the scheduler.
     if let Err(e) = jobs::seed_system_jobs(&state.scheduler).await {
