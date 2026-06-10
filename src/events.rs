@@ -151,6 +151,10 @@ impl EventBus {
     /// A committed double-entry transaction. `totals` is a map of
     /// `currency -> signed minor-unit string` (strings so large `i128`
     /// values never lose precision through JSON numbers).
+    ///
+    /// Redaction contract: `kind` and `idempotency_key` are forwarded
+    /// verbatim onto the bus — callers MUST keep idempotency keys opaque
+    /// (no email / PAN / raw PII). The ledger's own keys are synthetic.
     pub async fn publish_ledger_posting(
         &self,
         tenant_id: Uuid,
@@ -178,6 +182,10 @@ impl EventBus {
     }
 
     /// A reconciliation break opened during provider sync.
+    ///
+    /// Redaction contract: `external_ref` is an opaque provider transaction /
+    /// event id (Stripe balance-txn id, Plaid transaction_id, …), forwarded
+    /// verbatim as a correlation handle. Callers MUST NOT pass PII here.
     #[allow(clippy::too_many_arguments)]
     pub async fn publish_reconciliation_break(
         &self,
@@ -431,10 +439,12 @@ fn build_envelope(schema_version: &str, fields: Value) -> Value {
 }
 
 /// Serialize `value`, rejecting (without publishing) anything above `max`
-/// bytes. `Err(len)` carries the offending size for logging.
+/// bytes. `Err(len)` carries the offending size for logging. An empty result
+/// (only possible if serialization fails — unreachable for a `json!`-built
+/// `Value`) is also rejected so a malformed 0-byte event is never published.
 fn encode_capped(value: &Value, max: usize) -> Result<Vec<u8>, usize> {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
-    if bytes.len() > max {
+    if bytes.is_empty() || bytes.len() > max {
         Err(bytes.len())
     } else {
         Ok(bytes)

@@ -1238,6 +1238,45 @@ mod tests {
     }
 
     #[test]
+    fn external_account_id_dwolla_extracts_id_from_links() {
+        let payload = json!({
+            "topic": "customer_transfer_created",
+            "_links": {
+                "account": { "href": "https://api.dwolla.com/accounts/acct-uuid-123" },
+                "customer": { "href": "https://api.dwolla.com/customers/cust-uuid-999" }
+            }
+        });
+        // Account link wins; only the trailing path segment (the id) is used.
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &payload),
+            Some("acct-uuid-123".into())
+        );
+        // Falls back to the customer link when no account link is present.
+        let cust_only = json!({
+            "_links": { "customer": { "href": "https://api.dwolla.com/customers/cust-1/" } }
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Dwolla, &cust_only),
+            Some("cust-1".into())
+        );
+        // No links → None (records but, in strict mode, cannot bind).
+        assert!(external_account_id(WebhookProvider::Dwolla, &json!({})).is_none());
+    }
+
+    #[test]
+    fn external_account_id_adyen_reads_merchant_account_code() {
+        let payload = json!({
+            "notificationItems": [
+                { "NotificationRequestItem": { "merchantAccountCode": "AcmeCorpECOM" } }
+            ]
+        });
+        assert_eq!(
+            external_account_id(WebhookProvider::Adyen, &payload),
+            Some("AcmeCorpECOM".into())
+        );
+    }
+
+    #[test]
     fn payload_sha_is_deterministic_and_truncated() {
         let p = json!({"foo": "bar"});
         let a = payload_sha_payload(&p);
