@@ -60,9 +60,10 @@ const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
 const MAX_CONFIRM_POLLS: u32 = 240;
 const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
 const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
-// Bounds concurrent background confirmations spawned by the escrow-results
-// verifier so a burst of escrow results can't fan out unbounded confirm work.
-const MAX_VERIFIER_CONFIRMS_IN_FLIGHT: u64 = 32;
+// Service-wide cap on concurrent confirmation pollers across /confirm, /settle,
+// /resolve, and the escrow-results verifier. Bounds sustained outbound Solana
+// RPC fan-out so no set of requests can amplify load on the upstream endpoint.
+const MAX_CONFIRM_POLLERS_IN_FLIGHT: u64 = 64;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";

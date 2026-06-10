@@ -79,6 +79,19 @@ fn record_receipt(receipts: &mut HashSet<String>, task_id: &str) {
     receipts.insert(task_id.to_string());
 }
 
+/// Capped exponential backoff for a run of consecutive JetStream fetch errors.
+///
+/// On a persistent failure (broker down, consumer deleted) the message loops
+/// would otherwise `continue` instantly, spinning the CPU, hammering NATS, and
+/// flooding critical events. This spaces retries out — 250ms, 500ms, 1s, 2s,
+/// 4s, then capped at 5s — while async-nats reconnects underneath. The counter
+/// resets to zero on the next successful fetch.
+fn fetch_error_backoff(consecutive_errors: u32) -> Duration {
+    let exponent = consecutive_errors.saturating_sub(1).min(5);
+    let millis = (250u64 << exponent).min(5_000);
+    Duration::from_millis(millis)
+}
+
 fn env_value(key: &str, fallback: &str) -> String {
     env::var(key)
         .ok()
