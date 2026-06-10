@@ -115,3 +115,48 @@ impl Sealer {
             .map_err(|e| AppError::Crypto(format!("unseal failed: {e}")))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 32 zero bytes, base64 — a deterministic test key (never used in prod).
+    const TEST_KEY_B64: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    #[test]
+    fn webhook_payload_seals_and_unseals_round_trip() {
+        let sealer = Sealer::from_b64_key(TEST_KEY_B64).unwrap();
+        let tenant = Uuid::nil(); // webhooks may arrive before tenant binding
+        let body = br#"{"id":"evt_1","type":"payment.updated","amount":1999}"#;
+
+        let env = sealer.seal(tenant, "stripe", body).unwrap();
+        // The ciphertext must not contain the plaintext.
+        assert!(!env.ciphertext_b64.contains("payment.updated"));
+
+        let recovered = sealer.unseal(tenant, "stripe", &env).unwrap();
+        assert_eq!(recovered, body);
+    }
+
+    #[test]
+    fn unseal_rejects_wrong_provider_aad() {
+        let sealer = Sealer::from_b64_key(TEST_KEY_B64).unwrap();
+        let tenant = Uuid::nil();
+        let env = sealer.seal(tenant, "stripe", b"{}").unwrap();
+        // Sealed for `stripe`; unseal as `adyen` must fail on the AAD check.
+        let err = sealer.unseal(tenant, "adyen", &env).unwrap_err();
+        assert!(matches!(err, AppError::Crypto(_)));
+    }
+
+    #[test]
+    fn unseal_rejects_tampered_ciphertext() {
+        let sealer = Sealer::from_b64_key(TEST_KEY_B64).unwrap();
+        let tenant = Uuid::nil();
+        let mut env = sealer.seal(tenant, "stripe", b"hello world").unwrap();
+        // Flip the last base64 char — GCM auth tag must reject it.
+        let mut ct = env.ciphertext_b64.clone();
+        let last = ct.pop().unwrap();
+        ct.push(if last == 'A' { 'B' } else { 'A' });
+        env.ciphertext_b64 = ct;
+        assert!(sealer.unseal(tenant, "stripe", &env).is_err());
+    }
+}

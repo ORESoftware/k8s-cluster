@@ -923,6 +923,63 @@ mod tests {
     }
 
     #[test]
+    fn validates_adyen_and_derives_merchant_account() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "sandbox",
+            "hmac_key_hex": "deadbeefcafe"
+        });
+        let derived = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap();
+        assert_eq!(derived.as_deref(), Some("AcmeCorpECOM"));
+    }
+
+    #[test]
+    fn rejects_adyen_production_without_base_url() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "production"
+        });
+        let err = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_adyen_non_hex_hmac_key() {
+        let credential = serde_json::json!({
+            "api_key": "AQEyhmfx...",
+            "merchant_account": "AcmeCorpECOM",
+            "environment": "sandbox",
+            "hmac_key_hex": "nothex!!"
+        });
+        let err = validate_api_key_credential(ProviderKind::Adyen, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validates_square_and_derives_merchant_id() {
+        let credential = serde_json::json!({
+            "access_token": "EAAA...",
+            "environment": "production",
+            "merchant_id": "ML123"
+        });
+        let derived = validate_api_key_credential(ProviderKind::Square, &credential).unwrap();
+        assert_eq!(derived.as_deref(), Some("ML123"));
+    }
+
+    #[test]
+    fn rejects_square_signature_key_without_notification_url() {
+        let credential = serde_json::json!({
+            "access_token": "EAAA...",
+            "environment": "sandbox",
+            "webhook_signature_key": "sig_key"
+        });
+        let err = validate_api_key_credential(ProviderKind::Square, &credential).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
     fn validates_ethereum_wallet_and_derives_address() {
         let credential = serde_json::json!({
             "address": "0x1111111111111111111111111111111111111111",
