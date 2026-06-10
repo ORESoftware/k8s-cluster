@@ -156,6 +156,14 @@ pub const LAMBDAS_FUNCTIONS_SUBJECT: &str = "dd.remote.lambdas.functions";
 /// Service: dd-gleam-lambda-runner
 pub const LAMBDAS_RESULTS_SUBJECT: &str = "dd.remote.lambdas.results";
 
+/// Read-only operational control commands addressed to MCP servers, e.g. {"command":"ping"} for a liveness echo onto McpToolEvents. Broadcast with no queue group so every MCP replica receives each command. Commands must never mutate cluster state; the MCP service account only has list/read RBAC.
+/// Service: dd-gleam-mcp-server
+pub const MCP_CONTROL_SUBJECT: &str = "dd.remote.mcp.control";
+
+/// Tool-call audit and lifecycle telemetry emitted by MCP servers: one event per tools/call (tool name, ok/error flag, duration) plus a lifecycle event on boot. Fan-out telemetry consumed by observability/log shippers. Payloads carry a dd.mcp_event.v1 envelope and must not contain secrets or raw cluster data.
+/// Service: dd-gleam-mcp-server
+pub const MCP_TOOL_EVENTS_SUBJECT: &str = "dd.remote.mcp.tool.events";
+
 /// MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 pub const MDP_OPTIMIZE_SUBJECT: &str = "dd.remote.mdp.optimize";

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/agent-mcp.schema.json",
+  "title": "AgentMcpNats",
+  "description": "NATS subjects for the dd MCP servers (dd-gleam-mcp-server today). MCP servers publish tool-call audit + lifecycle telemetry to McpToolEvents and subscribe to McpControl for read-only operational commands. The MCP surface and its Kubernetes service account are read-only, so control commands must never mutate cluster state and payloads must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-gleam-mcp-server",
+    "summary": "MCP server tool-call audit telemetry (publish) and operational control commands (subscribe).",
+    "subjects": [
+      {
+        "name": "McpToolEvents",
+        "description": "Tool-call audit and lifecycle telemetry emitted by MCP servers: one event per tools/call (tool name, ok/error flag, duration) plus a lifecycle event on boot. Fan-out telemetry consumed by observability/log shippers. Payloads carry a dd.mcp_event.v1 envelope and must not contain secrets or raw cluster data.",
+        "kind": "static",
+        "subject": "dd.remote.mcp.tool.events",
+        "direction": "publish"
+      },
+      {
+        "name": "McpControl",
+        "description": "Read-only operational control commands addressed to MCP servers, e.g. {\"command\":\"ping\"} for a liveness echo onto McpToolEvents. Broadcast with no queue group so every MCP replica receives each command. Commands must never mutate cluster state; the MCP service account only has list/read RBAC.",
+        "kind": "static",
+        "subject": "dd.remote.mcp.control",
+        "direction": "subscribe"
+      }
+    ]
+  }
+}
