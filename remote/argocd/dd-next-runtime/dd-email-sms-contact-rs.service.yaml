@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-email-sms-contact-rs
+  namespace: default
+  labels:
+    app: dd-email-sms-contact-rs
+spec:
+  selector:
+    app: dd-email-sms-contact-rs
+  ports:
+    - name: http
+      port: 8120
+      targetPort: http

@@ -56,6 +56,20 @@ pub const chaos_experiments_subject = "dd.remote.chaos.experiments"
 pub const chaos_probe_subject = "dd.remote.chaos.probe"
 pub const chaos_probe_queue_group = "dd-chaos-probe"
 
+/// Send-an-email requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group (each request handled once across replicas). Payload: { to, subject, html, [text], [from] }.
+/// Service: dd-email-sms-contact-rs
+pub const contact_email_send_subject = "dd.remote.contact.email.send"
+pub const contact_email_send_queue_group = "dd-email-sms-contact"
+
+/// Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+/// Service: dd-email-sms-contact-rs
+pub const contact_send_results_subject = "dd.remote.contact.results"
+
+/// Send-an-SMS requests consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { to, body }.
+/// Service: dd-email-sms-contact-rs
+pub const contact_sms_send_subject = "dd.remote.contact.sms.send"
+pub const contact_sms_send_queue_group = "dd-email-sms-contact"
+
 /// Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 /// Service: dd-container-pool
 pub const container_pool_requests_subject = "dd.remote.container_pool.requests"
@@ -960,6 +974,10 @@ pub const billing_server_queue_group = "dd-billing-server"
 /// Shared queue group used by dd-constraint-scheduler replicas consuming schedule requests.
 /// Service: dd-constraint-scheduler
 pub const constraint_scheduler_queue_group = "dd-constraint-scheduler"
+
+/// Shared queue group for dd-email-sms-contact-rs workers consuming the email/sms send lanes (once-only delivery across replicas).
+/// Service: dd-email-sms-contact-rs
+pub const contact_send_queue_group = "dd-email-sms-contact"
 
 /// Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 /// Service: shared
