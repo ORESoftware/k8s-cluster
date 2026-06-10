@@ -63,7 +63,7 @@ func (BenefactorLeads) Fields() []ent.Field {
 
 func (BenefactorLeads) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("primary_email").Unique(),
+		// benefactor_leads_email_uq lives in schema.sql because ent cannot model partial indexes.
 		index.Fields("business_name"),
 		index.Fields("service_category"),
 		index.Fields("city"),
