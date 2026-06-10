@@ -216,6 +216,16 @@ Future<void> main(List<String> args) async {
       25;
   final wsBenchmarkMode =
       Platform.environment['WS_BENCHMARK_MODE']?.toLowerCase() == 'true';
+  // Optional WebSocket Origin allowlist (CSWSH defence). Comma-separated
+  // exact scheme+host[:port] values; empty/unset accepts any origin (current
+  // behaviour, so load tests / same-origin demos are unaffected). A request
+  // with no Origin header (non-browser clients) is always allowed; the check
+  // only rejects a *present, non-matching* browser Origin.
+  final wsAllowedOrigins = (Platform.environment['WS_ALLOWED_ORIGINS'] ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList(growable: false);
   // Chaos / fault-injection switch. OFF by default. When enabled, the
   // admin port exposes `POST /dart/admin/debug/crash-host`, which forces a
   // shard to hard-kill one session-host isolate so the supervisor teardown
@@ -410,6 +420,7 @@ Future<void> main(List<String> args) async {
           clockIntervalSeconds: wsClockIntervalSeconds,
           benchmarkMode: wsBenchmarkMode,
           gaugeReportIntervalMs: gaugeReportIntervalMs,
+          allowedOrigins: wsAllowedOrigins,
           poolControllerEnabled: mdpEnabled,
           poolMinWarmHosts: poolMinWarmHosts,
           poolMaxHosts: poolMaxHostsPerShard,
@@ -499,6 +510,8 @@ Future<void> main(List<String> args) async {
     'ws_age_based_idle_seconds': wsAgeBasedIdleSeconds,
     'ws_clock_interval_seconds': wsClockIntervalSeconds,
     'ws_benchmark_mode': wsBenchmarkMode,
+    'ws_allowed_origins':
+        wsAllowedOrigins.isEmpty ? 'any' : wsAllowedOrigins,
   }));
 
   // ---- Coordinator gauges ------------------------------------------------

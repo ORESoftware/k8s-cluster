@@ -10,8 +10,8 @@ values (
   'default',
   'trading.platforms.v1',
   '{
-    "version": 1,
-    "description": "Trading platform definitions consumed by dd-trading-server. Credentials are Kubernetes secret key references, not raw secrets.",
+    "version": 2,
+    "description": "Trading platform definitions consumed by dd-trading-server. v2 adds commodity/futures venues (TradeStation, Tradovate, Ironbeam, OANDA, Saxo, IG, CQG, AMP Futures) for 15+ active platforms. Credentials are Kubernetes secret key references, not raw secrets.",
     "defaultPlatform": "interactive-brokers",
     "platforms": [
       {
@@ -152,6 +152,176 @@ values (
         "labels": ["crypto"],
         "metaData": {
           "notes": "Exchange API trading config. No paper endpoint is enabled by default; live mode still emits intents only."
+        }
+      },
+      {
+        "slug": "tradestation",
+        "displayName": "TradeStation",
+        "provider": "tradestation",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["equities", "options", "futures", "commodities"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://sim-api.tradestation.com/v3",
+          "live": "https://api.tradestation.com/v3"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["TRADESTATION_API_KEY", "TRADESTATION_API_SECRET"],
+        "accountRefKey": "TRADESTATION_ACCOUNT_ID",
+        "labels": ["brokerage", "futures", "commodities"],
+        "metaData": {
+          "notes": "Equities/options/futures broker with a documented HTTPS order API and a sim environment for paper validation."
+        }
+      },
+      {
+        "slug": "tradovate",
+        "displayName": "Tradovate",
+        "provider": "tradovate",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["futures", "commodities"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://demo.tradovateapi.com/v1",
+          "live": "https://live.tradovateapi.com/v1"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["TRADOVATE_API_KEY", "TRADOVATE_API_SECRET"],
+        "accountRefKey": "TRADOVATE_ACCOUNT_ID",
+        "labels": ["futures", "commodities", "paper-first"],
+        "metaData": {
+          "notes": "Futures-first broker (energy, metals, ags, index) with demo and live REST hosts."
+        }
+      },
+      {
+        "slug": "ironbeam",
+        "displayName": "Ironbeam",
+        "provider": "ironbeam",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["futures", "commodities"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://demo.ironbeamapi.com/v2",
+          "live": "https://live.ironbeamapi.com/v2"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["IRONBEAM_API_KEY", "IRONBEAM_API_SECRET"],
+        "accountRefKey": "IRONBEAM_ACCOUNT_ID",
+        "labels": ["futures", "commodities"],
+        "metaData": {
+          "notes": "CME-group commodity futures broker with a REST API and demo host."
+        }
+      },
+      {
+        "slug": "oanda",
+        "displayName": "OANDA",
+        "provider": "oanda",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["forex", "commodities", "metals", "indices"],
+        "orderTypes": ["market", "limit", "stop", "trailing_stop"],
+        "baseUrls": {
+          "paper": "https://api-fxpractice.oanda.com/v3",
+          "live": "https://api-fxtrade.oanda.com/v3"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["OANDA_API_TOKEN"],
+        "accountRefKey": "OANDA_ACCOUNT_ID",
+        "labels": ["forex", "commodities", "metals", "paper-first"],
+        "metaData": {
+          "notes": "v20 REST API covers spot metals (XAU/XAG) and commodity CFDs alongside FX; practice host is first-class."
+        }
+      },
+      {
+        "slug": "saxo",
+        "displayName": "Saxo Bank",
+        "provider": "saxo",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["futures", "commodities", "forex", "equities", "options"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://gateway.saxobank.com/sim/openapi",
+          "live": "https://gateway.saxobank.com/openapi"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["SAXO_APP_KEY", "SAXO_APP_SECRET"],
+        "accountRefKey": "SAXO_ACCOUNT_KEY",
+        "labels": ["brokerage", "multi-asset", "commodities"],
+        "metaData": {
+          "notes": "OpenAPI multi-asset access including commodity futures and CFDs; SIM gateway is used for paper."
+        }
+      },
+      {
+        "slug": "ig",
+        "displayName": "IG",
+        "provider": "ig",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["commodities", "indices", "forex", "metals"],
+        "orderTypes": ["market", "limit", "stop"],
+        "baseUrls": {
+          "paper": "https://demo-api.ig.com/gateway/deal",
+          "live": "https://api.ig.com/gateway/deal"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["IG_API_KEY", "IG_API_SECRET"],
+        "accountRefKey": "IG_ACCOUNT_ID",
+        "labels": ["cfd", "commodities", "paper-first"],
+        "metaData": {
+          "notes": "REST dealing API for commodity/index/FX CFDs; demo gateway supports paper validation."
+        }
+      },
+      {
+        "slug": "cqg",
+        "displayName": "CQG",
+        "provider": "cqg",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["futures", "commodities", "metals", "energy", "agriculture"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://localhost:2845",
+          "live": "https://localhost:2845"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["CQG_API_KEY", "CQG_API_SECRET"],
+        "accountRefKey": "CQG_ACCOUNT_ID",
+        "labels": ["futures", "commodities", "gateway"],
+        "metaData": {
+          "connector": "cqg-webapi-gateway",
+          "notes": "CQG WebAPI is reached through an in-cluster gateway, so the base URL is the loopback gateway rather than a public host. The executor must terminate the gateway and supply CQG auth."
+        }
+      },
+      {
+        "slug": "amp-futures",
+        "displayName": "AMP Futures",
+        "provider": "amp-futures",
+        "status": "active",
+        "supportsPaper": true,
+        "supportsLive": true,
+        "assetClasses": ["futures", "commodities", "energy", "metals", "agriculture"],
+        "orderTypes": ["market", "limit", "stop", "stop_limit"],
+        "baseUrls": {
+          "paper": "https://localhost:2846",
+          "live": "https://localhost:2846"
+        },
+        "credentialSecret": "dd-trading-broker-secrets",
+        "credentialKeys": ["AMP_FUTURES_API_KEY", "AMP_FUTURES_API_SECRET"],
+        "accountRefKey": "AMP_FUTURES_ACCOUNT_ID",
+        "labels": ["futures", "commodities", "gateway"],
+        "metaData": {
+          "connector": "cqg-or-rithmic-gateway",
+          "notes": "AMP routes through CQG/Rithmic; orders flow via an in-cluster loopback gateway that the executor must bridge to the chosen routing network."
         }
       },
       {

@@ -683,6 +683,8 @@ prefixed `dart_*`:
 | `dart_mobile_requests_total`                | counter | `/dart/mobile/*` requests                  |
 | `dart_assets_requests_total`                | counter | `/dart/assets/*` requests                  |
 | `dart_wss_upgrade_total`                    | counter | WS upgrade requests                        |
+| `dart_wss_upgrade_rejected_origin_total`    | counter | WS upgrades refused by the `WS_ALLOWED_ORIGINS` allowlist (CSWSH) |
+| `dart_conv_create_refused_total`            | counter | conversation creation refused at `kMaxConversationsPerShard` |
 | `dart_sessions_spawned_total`               | counter | isolates ever spawned                      |
 | `dart_sessions_opened_total`                | counter | isolates that completed boot               |
 | `dart_sessions_closed_total`                | counter | clean session shutdown                     |
@@ -830,6 +832,42 @@ to contain errors instead of propagating them to the VM:
 its session-host isolates. Use it under load to confirm empirically that only
 that host's ≤ `sessionsPerHost` sockets close (cleanly, 1000) and reconnect,
 while the shard, its sibling hosts, and the pod keep running. Off by default.
+
+### Abuse-resistance posture
+
+The `/dart/wss` endpoint is unauthenticated by design (anon-by-default demo),
+so every accepted peer is treated as hostile input and bounded:
+
+* **Frame size** — inbound frames over `WS_MAX_INBOUND_BYTES` (64 KiB) get a
+  1009 close.
+* **Per-field length** — every client-supplied text field (user id, display
+  name, conversation id/title, chat text) is truncated before it enters shard
+  state or fans out: identifiers to 128 chars, free-text to 2000
+  (`_maxIdentLen` / `_maxTextLen` in `isolate_session.dart`). Without this a
+  single 64 KiB display name would be stored verbatim and broadcast to every
+  joined session — a cheap amplification vector.
+* **Outbound rate** — a session emitting over `WS_MAX_OUTBOUND_RATE_PER_SECOND`
+  frames for `WS_SLOW_CLIENT_WINDOWS` consecutive seconds is force-closed.
+* **Bounded server state** — the conversation registry caps distinct
+  conversations per shard (`kMaxConversationsPerShard`, 100K →
+  `dart_conv_create_refused_total`) and members per conversation
+  (`maxMembersPerConversation`, 10K); `Presence` releases a user's
+  display-name entry once their last session disconnects so `_displayNames`
+  can't leak one row per connection.
+* **Origin allowlist (CSWSH)** — the same-origin policy does *not* block
+  cross-origin WebSocket handshakes, so a browser page on any site could
+  otherwise open `/dart/wss` and drive the protocol as the victim. Set
+  `WS_ALLOWED_ORIGINS` (comma-separated, exact scheme+host[:port]) to reject a
+  present-but-unlisted browser `Origin` with a 403
+  (`dart_wss_upgrade_rejected_origin_total`). Empty/unset accepts any origin,
+  and a request with *no* `Origin` (non-browser clients, load testers) is
+  always allowed — so enabling it is safe for server-to-server traffic.
+
+Not yet covered (operator-owned): per-IP connection-rate limiting and authn
+belong at the ingress / reverse proxy; the admin port (`8088`) is unauthenticated
+and relies on not being routed publicly (see the access posture in `AGENTS.md`).
+`Identify` trusts the client-supplied user id — fine for the anon demo, but
+attribution is forgeable until a real auth token gates it.
 
 ---
 

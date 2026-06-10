@@ -3,9 +3,21 @@
 -module(dd_nats_subject_defs).
 
 -export([
+    billing_anchors_subject/0,
+    billing_connection_events_subject/0,
+    billing_ledger_postings_subject/0,
+    billing_reconciliation_breaks_subject/0,
+    billing_sync_commands_subject/0,
+    billing_sync_commands_queue_group/0,
+    billing_webhook_receipts_subject/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
+    contracts_solana_resolve_subject/0,
+    contracts_solana_resolve_queue_group/0,
     contracts_solana_results_subject/0,
+    contracts_solana_settle_subject/0,
+    contracts_solana_settle_queue_group/0,
+    contracts_solana_settlement_results_subject/0,
     contracts_solana_validate_subject/0,
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
@@ -52,6 +64,8 @@
     git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
+    mcp_control_subject/0,
+    mcp_tool_events_subject/0,
     mdp_optimize_subject/0,
     mdp_optimize_queue_group/0,
     mdp_results_subject/0,
@@ -142,6 +156,7 @@
     parse_thread_tasks_subject/1,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
@@ -184,6 +199,31 @@
     dd_remote_tasks_stream_ack/0
 ]).
 
+%% Emitted when a Merkle root over a posting range is anchored to Solana (tamper-evidence notary). Carries tenant, anchor id, posting range/count, merkle root hex, tx signature, and slot.
+%% Service: dd-billing-server
+billing_anchors_subject() -> <<"dd.remote.billing.anchors"/utf8>>.
+
+%% Provider-connection lifecycle feed (created, attached/activated, synced, failed). Carries tenant, connection id, provider tag, and the lifecycle transition. No credentials.
+%% Service: dd-billing-server
+billing_connection_events_subject() -> <<"dd.remote.billing.connections.events"/utf8>>.
+
+%% Emitted after a double-entry transaction is committed to the Postgres ledger. Carries a redacted summary (tenant, transaction id, kind, per-currency totals, posting count) so downstream services can react to ledger movement without reading the database. Default for BILLING_NATS_SUBJECT_LEDGER.
+%% Service: dd-billing-server
+billing_ledger_postings_subject() -> <<"dd.remote.billing.ledger.postings"/utf8>>.
+
+%% Emitted when a reconciliation break is opened during provider sync (drift between provider-reported state and the ledger). Carries tenant, provider, break type, currency, external ref, and expected/actual minor amounts. Alert-worthy.
+%% Service: dd-billing-server
+billing_reconciliation_breaks_subject() -> <<"dd.remote.billing.reconciliation.breaks"/utf8>>.
+
+%% Inbound command requesting a provider-connection sync. Payload is {tenantId, connectionId}. Queue-grouped so billing-server replicas load-balance and a given command runs on exactly one pod. Default for BILLING_NATS_SUBJECT_SYNC_COMMANDS.
+%% Service: dd-billing-server
+billing_sync_commands_subject() -> <<"dd.remote.billing.commands.sync"/utf8>>.
+billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
+
+%% Redacted provider webhook receipt audit feed. Carries provider, external event id, event type, signature_ok, tenant/connection ids, and the payload sha256 prefix only. The raw webhook body and verification error detail are deliberately NOT published. Mirrors dd.remote.public_data.webhooks.events as an audit source, not a canonical store.
+%% Service: dd-billing-server
+billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
+
 %% Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 %% Service: dd-container-pool
 container_pool_requests_subject() -> <<"dd.remote.container_pool.requests"/utf8>>.
@@ -192,9 +232,23 @@ container_pool_requests_subject() -> <<"dd.remote.container_pool.requests"/utf8>
 %% Service: dd-container-pool
 container_pool_results_subject() -> <<"dd.remote.container_pool.results"/utf8>>.
 
+%% Dispute resolution requests for solana.resolution.v1 envelopes (release-to-payee/refund-to-payer/split/award-to-claimant/uphold/overturn). Default for CONTRACT_RESOLVE_SUBJECT. Same NATS broadcast gating as ContractsSolanaSettle.
+%% Service: dd-contract-service
+contracts_solana_resolve_subject() -> <<"dd.remote.contracts.solana.resolve"/utf8>>.
+contracts_solana_resolve_queue_group() -> <<"dd-contract-service"/utf8>>.
+
 %% Published validation/simulation results. Default for CONTRACT_RESULT_SUBJECT.
 %% Service: dd-contract-service
 contracts_solana_results_subject() -> <<"dd.remote.contracts.solana.results"/utf8>>.
+
+%% Settlement requests for solana.settlement.v1 envelopes (fund/release/refund/partial-release/split-release/dispute-award/expire/cancel). Default for CONTRACT_SETTLE_SUBJECT. NATS-initiated broadcast is off unless CONTRACT_NATS_SETTLEMENT_ENABLED=true; otherwise the service only validates, simulates, and confirms.
+%% Service: dd-contract-service
+contracts_solana_settle_subject() -> <<"dd.remote.contracts.solana.settle"/utf8>>.
+contracts_solana_settle_queue_group() -> <<"dd-contract-service"/utf8>>.
+
+%% Published settlement and dispute-resolution outcomes, including on-chain confirmation status. Default for CONTRACT_SETTLEMENT_RESULT_SUBJECT.
+%% Service: dd-contract-service
+contracts_solana_settlement_results_subject() -> <<"dd.remote.contracts.solana.settlement.results"/utf8>>.
 
 %% Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 %% Service: dd-contract-service
@@ -334,6 +388,14 @@ lambdas_functions_subject() -> <<"dd.remote.lambdas.functions"/utf8>>.
 %% Results fan-out from lambda runs. Default for NATS_LAMBDA_RESULT_SUBJECT.
 %% Service: dd-gleam-lambda-runner
 lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.
+
+%% Read-only operational control commands addressed to MCP servers, e.g. {"command":"ping"} for a liveness echo onto McpToolEvents. Broadcast with no queue group so every MCP replica receives each command. Commands must never mutate cluster state; the MCP service account only has list/read RBAC.
+%% Service: dd-gleam-mcp-server
+mcp_control_subject() -> <<"dd.remote.mcp.control"/utf8>>.
+
+%% Tool-call audit and lifecycle telemetry emitted by MCP servers: one event per tools/call (tool name, ok/error flag, duration) plus a lifecycle event on boot. Fan-out telemetry consumed by observability/log shippers. Payloads carry a dd.mcp_event.v1 envelope and must not contain secrets or raw cluster data.
+%% Service: dd-gleam-mcp-server
+mcp_tool_events_subject() -> <<"dd.remote.mcp.tool.events"/utf8>>.
 
 %% MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 %% Service: dd-ai-ml-pipeline
@@ -778,6 +840,10 @@ parse_thread_tasks_subject(Subject) ->
                     {ok, #{thread_id => extract_param(Pairs, <<"{thread_id}"/utf8>>)}}
             end
     end.
+
+%% Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
+%% Service: dd-billing-server
+billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 
 %% Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 %% Service: shared

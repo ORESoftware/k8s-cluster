@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "contract-service-rs",
   "language": "rust",
-  "routeCount": 15,
+  "routeCount": 28,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 6,
+    "user-generated": 19,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -26,6 +26,23 @@
       "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
       "handlers": [
         "home"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/account",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "account_http"
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/main.rs"
@@ -67,6 +84,57 @@
       "notes": ""
     },
     {
+      "path": "/balance",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "balance_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/blockhash",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "blockhash_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/confirm",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "confirm_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/docs/api",
       "methods": [
         "GET"
@@ -94,6 +162,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/example/settlement",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settlement_example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fee",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fee_http"
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/main.rs"
@@ -186,6 +288,40 @@
       "notes": ""
     },
     {
+      "path": "/rent-exemption",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "rent_exemption_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/resolve",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolve_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/schema",
       "methods": [
         "GET"
@@ -196,6 +332,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema/resolution",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolution_schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema/settlement",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settlement_schema_http"
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/main.rs"
@@ -220,6 +390,23 @@
       "notes": ""
     },
     {
+      "path": "/settle",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settle_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/simulate",
       "methods": [
         "POST"
@@ -237,6 +424,23 @@
       "notes": ""
     },
     {
+      "path": "/simulate-settlement",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "simulate_settlement_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/status",
       "methods": [
         "GET"
@@ -247,6 +451,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/transaction",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "transaction_http"
       ],
       "sourceFiles": [
         "remote/deployments/contract-service-rs/src/main.rs"

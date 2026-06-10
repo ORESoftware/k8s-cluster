@@ -7,25 +7,25 @@ import gleam/http/request
 import gleam/http/response
 import gleam/int
 import gleam/io
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import gleam_mcp_server/api_docs
 import gleam_mcp_server/k8s
 import gleam_mcp_server/metrics
+import gleam_mcp_server/nats
 import gleam_mcp_server/observability
 import mist
 
 @external(erlang, "gleam_mcp_runtime_env", "getenv")
 fn env_get(name: String) -> String
 
-@external(erlang, "gleam_mcp_json", "request_id")
-fn json_request_id(body: String) -> String
-
-@external(erlang, "gleam_mcp_json", "method")
-fn json_method(body: String) -> String
-
-@external(erlang, "gleam_mcp_json", "tool_name")
-fn json_tool_name(body: String) -> String
+// Parse a JSON-RPC request body into {status, method, id_json, tool}.
+// status is one of "request" | "notification" | "invalid_request" |
+// "parse_error". See gleam_mcp_json.erl for the full contract — crucially
+// this is a real JSON parse, not the old substring/regex routing.
+@external(erlang, "gleam_mcp_json", "parse_request")
+fn parse_request(body: String) -> #(String, String, String, String)
 
 const default_host = "0.0.0.0"
 
@@ -33,8 +33,11 @@ const default_port = 8090
 
 const protocol_version = "2025-11-25"
 
-pub fn supervised(metrics_name: process.Name(metrics.Message)) {
-  mist.new(fn(req) { route(req, metrics_name) })
+pub fn supervised(
+  metrics_name: process.Name(metrics.Message),
+  nats_name: Option(nats.Name),
+) {
+  mist.new(fn(req) { route(req, metrics_name, nats_name) })
   |> mist.bind(bind_host())
   |> mist.port(bind_port())
   |> mist.supervised
@@ -62,6 +65,7 @@ pub fn bind_port() -> Int {
 fn route(
   req: request.Request(mist.Connection),
   metrics_name: process.Name(metrics.Message),
+  nats_name: Option(nats.Name),
 ) -> response.Response(mist.ResponseData) {
   record_http(metrics_name)
 
@@ -75,8 +79,8 @@ fn route(
     Get, ["metrics"] -> metrics_response(metrics_name)
     Get, ["observability"] -> observability_response()
     Get, ["mcp"] -> mcp_get(req)
-    Post, ["mcp"] -> rpc(req, metrics_name)
-    Post, [] -> rpc(req, metrics_name)
+    Post, ["mcp"] -> rpc(req, metrics_name, nats_name)
+    Post, [] -> rpc(req, metrics_name, nats_name)
     Get, ["internal", "runtime-config"] ->
       dd_runtime_config_client.handle_snapshot(req)
     Post, ["internal", "update-runtime-config"] ->
@@ -90,45 +94,170 @@ fn route(
 fn rpc(
   req: request.Request(mist.Connection),
   metrics_name: process.Name(metrics.Message),
+  nats_name: Option(nats.Name),
 ) -> response.Response(mist.ResponseData) {
-  req
-  |> mist.read_body(max_body_limit: 1_000_000)
-  |> result.map(fn(req_with_body) {
-    let body =
-      req_with_body.body
-      |> bit_array.to_string
-      |> result.unwrap("")
-    let method = json_method(body)
-    let request_id = json_request_id(body)
-    record_rpc(metrics_name, method)
-    io.println("dd-gleam-mcp-server rpc method=" <> method)
-
-    case method {
-      "parse_error" ->
-        json_response(
-          400,
-          json_rpc_error_with_id("parse error", -32_700, "null"),
-        )
-      "invalid_request" ->
-        json_response(
-          400,
-          json_rpc_error_with_id("invalid request", -32_600, request_id),
-        )
-      "notifications/initialized" -> empty_response(202)
-      _ -> json_response(200, rpc_payload(method, body, request_id))
-    }
-  })
-  |> result.unwrap(json_response(400, json_rpc_error("parse error", -32_700)))
+  case authorized(req) {
+    False -> unauthorized_response()
+    True ->
+      req
+      |> mist.read_body(max_body_limit: 1_000_000)
+      |> result.map(fn(req_with_body) {
+        let body =
+          req_with_body.body
+          |> bit_array.to_string
+          |> result.unwrap("")
+        handle_rpc(body, metrics_name, nats_name)
+      })
+      |> result.unwrap(json_response(
+        400,
+        json_rpc_error_with_id("parse error", -32_700, "null"),
+      ))
+  }
 }
 
-fn rpc_payload(method: String, body: String, request_id: String) -> String {
-  case method {
-    "initialize" -> initialize_result(request_id)
-    "tools/list" -> tools_list_result(request_id)
-    "tools/call" -> tools_call_result(json_tool_name(body), request_id)
-    "ping" -> "{\"jsonrpc\":\"2.0\",\"id\":" <> request_id <> ",\"result\":{}}"
-    _ -> json_rpc_error_with_id("method not found", -32_601, request_id)
+fn handle_rpc(
+  body: String,
+  metrics_name: process.Name(metrics.Message),
+  nats_name: Option(nats.Name),
+) -> response.Response(mist.ResponseData) {
+  let #(status, method, id_json, tool) = parse_request(body)
+
+  case status {
+    "request" -> {
+      record_rpc(metrics_name, method)
+      io.println("dd-gleam-mcp-server rpc method=" <> method)
+      dispatch_request(method, tool, id_json, nats_name)
+    }
+    "notification" -> {
+      record_rpc(metrics_name, method)
+      io.println("dd-gleam-mcp-server rpc notification=" <> method)
+      // JSON-RPC notifications take no response body.
+      empty_response(202)
+    }
+    "invalid_request" ->
+      json_response(
+        400,
+        json_rpc_error_with_id("invalid request", -32_600, "null"),
+      )
+    _ ->
+      json_response(400, json_rpc_error_with_id("parse error", -32_700, "null"))
   }
+}
+
+fn dispatch_request(
+  method: String,
+  tool: String,
+  id_json: String,
+  nats_name: Option(nats.Name),
+) -> response.Response(mist.ResponseData) {
+  case method {
+    "initialize" -> json_response(200, initialize_result(id_json))
+    "tools/list" -> json_response(200, tools_list_result(id_json))
+    "tools/call" -> {
+      let known = is_known_tool(tool)
+      publish_audit(nats_name, tool, known, id_json)
+      json_response(200, tools_call_result(tool, id_json))
+    }
+    "ping" ->
+      json_response(
+        200,
+        "{\"jsonrpc\":\"2.0\",\"id\":" <> id_json <> ",\"result\":{}}",
+      )
+    _ -> json_response(200, json_rpc_error_with_id("method not found", -32_601, id_json))
+  }
+}
+
+fn is_known_tool(tool: String) -> Bool {
+  case tool {
+    "kubernetes_inventory"
+    | "kubernetes_deployments"
+    | "human_access_policy"
+    | "telemetry_targets"
+    | "telemetry_summary"
+    | "observability_health"
+    | "prometheus_up"
+    | "loki_labels"
+    | "grafana_inventory"
+    | "nats_metrics"
+    | "trace_backends"
+    | "service_directory"
+    | "cluster_status" -> True
+    _ -> False
+  }
+}
+
+fn publish_audit(
+  nats_name: Option(nats.Name),
+  tool: String,
+  ok: Bool,
+  id_json: String,
+) -> Nil {
+  case nats_name {
+    Some(name) -> nats.audit_tool_call(name, tool, ok, id_json)
+    None -> Nil
+  }
+}
+
+// ── Optional bearer auth gate ───────────────────────────────────────────────
+//
+// Off by default so existing unauthenticated callers (host-network pool
+// workers, the gateway) are unaffected. When `MCP_REQUIRE_AUTH` is truthy,
+// every POST /mcp request must present `Authorization: Bearer <secret>` or
+// `X-Server-Auth: <secret>` equal to `MCP_AUTH_SECRET`. If require-auth is on
+// but no secret is configured we fail closed (deny). This lets an operator
+// lock down the cluster-recon tools (kubernetes_inventory, etc.) without
+// rewriting the NetworkPolicy — matching the human-auth posture the
+// human_access_policy tool already advertises.
+
+fn authorized(req: request.Request(mist.Connection)) -> Bool {
+  case is_truthy(env_get("MCP_REQUIRE_AUTH")) {
+    False -> True
+    True -> check_secret(req)
+  }
+}
+
+fn is_truthy(raw: String) -> Bool {
+  case string.lowercase(string.trim(raw)) {
+    "true" -> True
+    "1" -> True
+    "yes" -> True
+    "on" -> True
+    _ -> False
+  }
+}
+
+fn check_secret(req: request.Request(mist.Connection)) -> Bool {
+  case env_get("MCP_AUTH_SECRET") {
+    "" -> False
+    secret -> {
+      let via_bearer = case request.get_header(req, "authorization") {
+        Ok(value) -> value == "Bearer " <> secret
+        Error(_) -> False
+      }
+      let via_header = case request.get_header(req, "x-server-auth") {
+        Ok(value) -> value == secret
+        Error(_) -> False
+      }
+      via_bearer || via_header
+    }
+  }
+}
+
+fn unauthorized_response() -> response.Response(mist.ResponseData) {
+  response.new(401)
+  |> response.set_header("content-type", "application/json")
+  |> response.set_header("mcp-protocol-version", protocol_version)
+  |> response.set_header(
+    "www-authenticate",
+    "Bearer realm=\"dd-gleam-mcp-server\"",
+  )
+  |> response.set_body(
+    mist.Bytes(bytes_tree.from_string(json_rpc_error_with_id(
+      "unauthorized",
+      -32_001,
+      "null",
+    ))),
+  )
 }
 
 fn initialize_result(request_id: String) -> String {
@@ -277,10 +406,6 @@ fn service_directory_result(request_id: String) -> String {
     "Gateway and observability service directory.",
     "{\"public\":[\"/mcp\",\"/mcp/home\",\"/mcp/healthz\",\"/mcp/metrics\",\"/telemetry/\",\"/prometheus/\",\"/nats/\",\"/nats-metrics/metrics\"],\"internal\":[\"dd-prometheus.observability.svc.cluster.local:9090\",\"dd-loki.observability.svc.cluster.local:3100\",\"dd-grafana.observability.svc.cluster.local:3000\",\"dd-tempo.observability.svc.cluster.local:3200\",\"dd-jaeger.observability.svc.cluster.local:16686\",\"dd-otel-collector.observability.svc.cluster.local:4317\",\"dd-otel-collector.observability.svc.cluster.local:4318\",\"dd-otel-collector.observability.svc.cluster.local:8889\",\"dd-nats.messaging.svc.cluster.local:8222\",\"dd-nats.messaging.svc.cluster.local:7777\"]}",
   )
-}
-
-fn json_rpc_error(message: String, code: Int) -> String {
-  json_rpc_error_with_id(message, code, "null")
 }
 
 fn json_rpc_error_with_id(

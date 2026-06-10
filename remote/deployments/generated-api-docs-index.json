@@ -151,10 +151,10 @@
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 28,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 6,
+        "user-generated": 19,
         "runtime-config": 3
       },
       "generated": [
