@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::crypto::Sealer;
 use crate::customer_locks::CustomerLockBroker;
 use crate::customers::CustomerService;
+use crate::events::EventBus;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
 use crate::providers::connection::ConnectionService;
