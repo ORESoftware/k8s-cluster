@@ -61,11 +61,12 @@ const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
 const MAX_CONFIRM_POLLS: u32 = 240;
 const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
 const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
-// Cap on concurrent background confirmation pollers spawned by the escrow-results
-// verifier. Bounds sustained outbound Solana RPC fan-out so a flood of escrow
-// result messages on the (currently unauthenticated) NATS bus cannot amplify load
-// on the upstream RPC endpoint; excess confirmations are shed.
-const MAX_VERIFIER_CONFIRMS_IN_FLIGHT: u64 = 64;
+// Service-wide cap on concurrent confirmation pollers across /confirm, /settle,
+// /resolve, and the escrow-results verifier. Bounds sustained outbound Solana
+// RPC fan-out so no set of requests (nor a flood of escrow result messages on
+// the currently unauthenticated NATS bus) can amplify load on the upstream RPC
+// endpoint; excess confirmations are shed and reported as "deferred".
+const MAX_CONFIRM_POLLERS_IN_FLIGHT: u64 = 64;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
@@ -3742,7 +3743,7 @@ mod tests {
     }
 
     #[test]
-    fn verifier_slot_bounds_in_flight_and_releases_on_drop() {
+    fn confirm_slot_bounds_in_flight_and_releases_on_drop() {
         let counter = Arc::new(AtomicU64::new(0));
         let mut slots = Vec::new();
         for _ in 0..MAX_CONFIRM_POLLERS_IN_FLIGHT {
@@ -3754,6 +3755,39 @@ mod tests {
         // Dropping a slot frees capacity again.
         slots.pop();
         assert!(ConfirmSlot::try_acquire(&counter).is_some());
+    }
+
+    #[test]
+    fn deferred_confirm_outcome_is_not_reached() {
+        let outcome = deferred_confirm_outcome("sig", "finalized");
+        assert_eq!(outcome.status, "deferred");
+        assert!(!outcome.reached);
+        assert_eq!(outcome.polls, 0);
+        assert!(outcome.error.is_some());
+    }
+
+    #[test]
+    fn mainnet_gate_blocks_unflagged_broadcast() {
+        // Devnet is unaffected regardless of broadcast flags.
+        assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
+        // Mainnet with any broadcast capability needs the explicit second flag.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
+        // With the second flag, mainnet broadcast is permitted.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
+        // Mainnet with no broadcast capability is always fine.
+        assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn nats_broadcast_requires_unauthenticated_bus_ack() {
+        // NATS broadcast off: ack irrelevant.
+        assert!(enforce_nats_broadcast_ack(false, false).is_ok());
+        // NATS broadcast on without ack is refused.
+        assert!(enforce_nats_broadcast_ack(true, false).is_err());
+        // NATS broadcast on with explicit ack is permitted.
+        assert!(enforce_nats_broadcast_ack(true, true).is_ok());
     }
 
     #[test]

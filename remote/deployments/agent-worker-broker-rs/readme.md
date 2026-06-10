@@ -50,4 +50,8 @@ target for moving worker lifecycle and dispatch out of the REST data API.
   every dispatch.
 - **Request limits** — a 4 MiB body limit and a non-empty, ≤1 MiB `prompt` check bound dispatch input
   below the 8 MiB JetStream message ceiling.
+- **Bounded publish** — the NATS publish path is wrapped in a timeout (`NATS_PUBLISH_TIMEOUT_MS`,
+  default 10s) so a half-dead broker returns `504` instead of hanging the dispatch handler.
+- **Ensure-once stream** — the WorkQueue stream is ensured once at startup (not per request); a
+  publish failure or timeout clears the flag so the next request re-ensures (covers runtime deletion).
 - A startup warning is logged if no auth secret is configured (dispatch fails closed regardless).

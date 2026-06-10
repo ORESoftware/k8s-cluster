@@ -710,10 +710,11 @@ async fn dispatch_task(
             .into_response();
     }
 
-    let nats = match publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch).await
-    {
-        Ok(value) => value,
-        Err(error) => {
+    // Bound the whole NATS path so a half-dead broker can't hang the request.
+    let publish = publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch);
+    let nats = match tokio::time::timeout(state.config.nats_publish_timeout, publish).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
             state
                 .metrics
                 .dispatch_failures_total
@@ -725,6 +726,24 @@ async fn dispatch_task(
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": "failed to publish agent task", "detail": error })),
+            )
+                .into_response();
+        }
+        Err(_elapsed) => {
+            // Timed out: re-ensure the stream next time and report a gateway
+            // timeout rather than blocking the caller indefinitely.
+            state.stream_ensured.store(false, Ordering::Release);
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .nats_publish_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({ "error": "timed out publishing agent task" })),
             )
                 .into_response();
         }
@@ -787,14 +806,19 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(error) = ensure_task_stream(&config, nats.clone()).await {
-        eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}");
+    let stream_ensured = Arc::new(AtomicBool::new(false));
+    match ensure_task_stream(&config, nats.clone()).await {
+        Ok(()) => stream_ensured.store(true, Ordering::Release),
+        Err(error) => {
+            eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}")
+        }
     }
 
     let state = AppState {
         config,
         http: reqwest::Client::new(),
         nats,
+        stream_ensured,
         metrics: Arc::new(Metrics::default()),
     };
 
