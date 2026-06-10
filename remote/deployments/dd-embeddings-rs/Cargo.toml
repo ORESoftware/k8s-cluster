@@ -1,0 +1,36 @@
+[package]
+name = "dd-embeddings-rs"
+version = "0.1.0"
+edition = "2021"
+
+# Multi-provider embedding gateway + RAG indexing service.
+#
+# One HTTP surface in front of every embedding API we use (OpenAI, Voyage,
+# Google Gemini, Cohere, Mistral, Jina, Together, Fireworks, DeepInfra,
+# Nomic, HF TEI, Azure OpenAI, Ollama). Callers pick a provider + model and
+# get back vectors in a single normalized shape; the RAG side wraps that to
+# embed-and-upsert into Qdrant and to embed-and-search.
+#
+# NOTE: Anthropic does not ship a first-party embeddings endpoint — they
+# recommend Voyage AI. The `anthropic` provider id here is an alias that
+# routes to Voyage, so callers can ask for "anthropic" and get a sane vector.
+# See readme.md and src/providers/voyage.rs.
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+futures = "0.3"
+# Outbound TLS to every provider API + Qdrant. rustls so we don't depend on a
+# system OpenSSL in the slim runtime image.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "limit", "normalize-path"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }

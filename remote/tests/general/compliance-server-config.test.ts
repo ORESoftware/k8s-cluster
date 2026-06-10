@@ -28,6 +28,8 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   const diagrams = await readRepoFile('remote/deployments/dd-compliance-rs/src/diagrams.rs');
   const jobs = await readRepoFile('remote/deployments/dd-compliance-rs/src/jobs.rs');
   const reports = await readRepoFile('remote/deployments/dd-compliance-rs/src/reports.rs');
+  const scanners = await readRepoFile('remote/deployments/dd-compliance-rs/src/scanners.rs');
+  const behavior = await readRepoFile('remote/deployments/dd-compliance-rs/src/behavior.rs');
   const standards = await readRepoFile('remote/deployments/dd-compliance-rs/src/standards.rs');
   const readme = await readRepoFile('remote/deployments/dd-compliance-rs/readme.md');
   const deployment = await readRepoFile(
@@ -62,6 +64,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   for (const moduleName of [
     'audit',
     'auth',
+    'behavior',
     'config',
     'diagrams',
     'jobs',
@@ -70,6 +73,7 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
     'observability',
     'reports',
     'routes',
+    'scanners',
     'standards',
     'util',
   ]) {
@@ -83,6 +87,24 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(routes, /\.route\("\/diagrams\/infrastructure", post\(diagram_infrastructure\)\)/);
   assert.match(routes, /\.route\("\/reports\/system", post\(system_report\)\)/);
   assert.match(routes, /\.route\("\/vulnerability-scan", post\(vulnerability_scan\)\)/);
+  assert.match(routes, /\.route\("\/malware-scan", post\(malware_scan_route\)\)/);
+  assert.match(routes, /\.route\("\/dependency-audit", post\(dependency_audit_route\)\)/);
+  assert.match(routes, /\.route\("\/secret-scan", post\(secret_scan_route\)\)/);
+  assert.match(routes, /\.route\("\/fraud-detection", post\(fraud_detection_route\)\)/);
+  assert.match(routes, /\.route\("\/bot-detection", post\(bot_detection_route\)\)/);
+  assert.match(routes, /\.route\("\/login-anomaly", post\(login_anomaly_route\)\)/);
+  assert.match(scanners, /pub fn scan_malware/);
+  assert.match(scanners, /pub fn audit_dependencies/);
+  assert.match(scanners, /pub fn scan_secrets/);
+  assert.match(scanners, /eicar-test-signature/);
+  assert.match(scanners, /url-embedded-credential/);
+  assert.match(scanners, /redacted/);
+  assert.match(behavior, /pub fn detect_fraud/);
+  assert.match(behavior, /pub fn detect_bots/);
+  assert.match(behavior, /pub fn detect_login_anomalies/);
+  assert.match(behavior, /haversine_km/);
+  assert.match(behavior, /impossible travel/);
+  assert.match(behavior, /DISPOSABLE_EMAIL_DOMAINS/);
   assert.match(routes, /include_str!\("\.\.\/generated\/api-docs\.json"\)/);
   assert.match(routes, /jobStoreWritable/);
   assert.match(audit, /COMPLIANCE_ALLOW_EXTERNAL_FETCH=false/);
@@ -165,6 +187,13 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(readme, /POST \/diagrams\/infrastructure/);
   assert.match(readme, /POST \/reports\/system/);
   assert.match(readme, /POST \/vulnerability-scan/);
+  assert.match(readme, /POST \/malware-scan/);
+  assert.match(readme, /POST \/dependency-audit/);
+  assert.match(readme, /POST \/secret-scan/);
+  assert.match(readme, /POST \/fraud-detection/);
+  assert.match(readme, /POST \/bot-detection/);
+  assert.match(readme, /POST \/login-anomaly/);
+  assert.match(readme, /Detection & Scanning/);
   assert.match(readme, /durable JSON job records/);
   assert.match(readme, /base64-encoded PDF/);
   assert.doesNotMatch(readme, /dd-data-viz-rs/);
@@ -220,6 +249,12 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(home, /\/compliance\/diagrams\/example/);
   assert.match(home, /POST \/compliance\/reports\/system/);
   assert.match(home, /POST \/compliance\/vulnerability-scan/);
+  assert.match(home, /POST \/compliance\/malware-scan/);
+  assert.match(home, /POST \/compliance\/dependency-audit/);
+  assert.match(home, /POST \/compliance\/secret-scan/);
+  assert.match(home, /POST \/compliance\/fraud-detection/);
+  assert.match(home, /POST \/compliance\/bot-detection/);
+  assert.match(home, /POST \/compliance\/login-anomaly/);
   assert.match(home, /Rust compliance readiness server/);
   assert.match(apiDocsGenerator, /\['dd-compliance-rs', 'src\/routes\.rs'\]/);
   assert.match(apiDocs, /"routeCount":\s*(1[0-9]|[2-9][0-9])/);
@@ -228,6 +263,12 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(apiDocs, /"path":\s*"\/diagrams\/infrastructure"/);
   assert.match(apiDocs, /"path":\s*"\/reports\/system"/);
   assert.match(apiDocs, /"path":\s*"\/vulnerability-scan"/);
+  assert.match(apiDocs, /"path":\s*"\/malware-scan"/);
+  assert.match(apiDocs, /"path":\s*"\/dependency-audit"/);
+  assert.match(apiDocs, /"path":\s*"\/secret-scan"/);
+  assert.match(apiDocs, /"path":\s*"\/fraud-detection"/);
+  assert.match(apiDocs, /"path":\s*"\/bot-detection"/);
+  assert.match(apiDocs, /"path":\s*"\/login-anomaly"/);
   assert.match(runtimeReadme, /`dd-compliance-rs`/);
   assert.match(runtimeReadme, /durable hostPath-backed job\s+records/);
   assert.doesNotMatch(runtimeReadme, /COMPLIANCE_DATA_VIZ_URL/);

@@ -2273,3 +2273,67 @@ model BenefactorIcps {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("benefactor_icps")
 }
+
+model VcsRepositories {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  displayName String @map("display_name") @db.VarChar(200)
+  vcsKind String @map("vcs_kind") @default("git") @db.VarChar(20)
+  remoteUrl String @map("remote_url") @db.Text
+  defaultBranch String @map("default_branch") @default("main") @db.VarChar(160)
+  mirrorPath String? @map("mirror_path") @db.Text
+  mirrorStatus String @map("mirror_status") @default("pending") @db.VarChar(32)
+  visibility String @default("private") @db.VarChar(20)
+  lastSyncedAt DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  lastError String? @map("last_error") @db.Text
+  sizeBytes BigInt @map("size_bytes") @default(0) @db.BigInt
+  refCount Int @map("ref_count") @default(0)
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // vcs_repositories_slug_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // vcs_repositories_vcs_kind_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // vcs_repositories_mirror_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // vcs_repositories_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vcs_repositories")
+}
+
+model VcsRefs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  repositoryId String @map("repository_id") @db.Uuid
+  refName String @map("ref_name") @db.VarChar(255)
+  refType String @map("ref_type") @default("branch") @db.VarChar(20)
+  targetRevision String @map("target_revision") @db.VarChar(120)
+  isDefault Boolean @map("is_default") @default(false)
+  metaData Json @map("meta_data") @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([repositoryId, refName], map: "vcs_refs_repo_name_uq")
+  @@index([repositoryId], map: "vcs_refs_repository_id_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vcs_refs")
+}
+
+model VcsOperations {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  repositoryId String? @map("repository_id") @db.Uuid
+  vcsKind String @map("vcs_kind") @default("git") @db.VarChar(20)
+  opType String @map("op_type") @db.VarChar(32)
+  status String @default("pending") @db.VarChar(20)
+  params Json @default("{}")
+  resultSummary Json @map("result_summary") @default("{}")
+  error String? @db.Text
+  durationMs Int? @map("duration_ms")
+  requestedBy String? @map("requested_by") @db.VarChar(200)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([repositoryId], map: "vcs_operations_repository_id_idx")
+  @@index([opType], map: "vcs_operations_op_type_idx")
+  @@index([createdAt], map: "vcs_operations_created_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("vcs_operations")
+}

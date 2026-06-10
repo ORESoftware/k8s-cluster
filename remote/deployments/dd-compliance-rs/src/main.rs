@@ -8,6 +8,7 @@ use routes::{router, AppState};
 
 mod audit;
 mod auth;
+mod behavior;
 mod config;
 mod diagrams;
 mod jobs;
@@ -16,6 +17,7 @@ mod models;
 mod observability;
 mod reports;
 mod routes;
+mod scanners;
 mod standards;
 mod util;
 

@@ -494,6 +494,7 @@ dependencies = [
 name = "des_engine"
 version = "0.0.2"
 dependencies = [
+ "linked-queue",
  "native-tls",
  "num-rational",
  "num-traits",
@@ -1086,6 +1087,11 @@ checksum = "f02ab6bace2054fb888a3c16f990117b579d14a3088e472d63c6011fa185c9d3"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "linked-queue"
+version = "0.1.0"
+source = "git+https://github.com/ORESoftware/linked-queue.rs?rev=edb6138101bd579d848f0fe58bd4d77e1a1d6094#edb6138101bd579d848f0fe58bd4d77e1a1d6094"
 
 [[package]]
 name = "linux-raw-sys"

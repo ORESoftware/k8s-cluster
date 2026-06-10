@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "patent-filing-rs",
   "language": "rust",
-  "routeCount": 20,
+  "routeCount": 24,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 10,
+    "user-generated": 14,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -67,6 +67,40 @@
       "notes": ""
     },
     {
+      "path": "/claims/check",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "claims_check_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/deadlines",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "deadlines_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/descriptor",
       "methods": [
         "GET"
@@ -101,6 +135,23 @@
       "notes": ""
     },
     {
+      "path": "/draft/ai",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "draft_ai_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/example",
       "methods": [
         "GET"
@@ -111,6 +162,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/patent-filing-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fees/estimate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fees_estimate_json"
       ],
       "sourceFiles": [
         "remote/deployments/patent-filing-rs/src/main.rs"

@@ -1,0 +1,52 @@
+//! Process configuration, read once at boot from the environment.
+//!
+//! Provider API keys are *not* enumerated here — they're read on demand by
+//! [`Config::provider_key`] so adding a new provider never requires touching
+//! this struct, and an unset key simply means "don't register that provider".
+
+use std::net::SocketAddr;
+
+pub struct Config {
+    pub addr: SocketAddr,
+    pub log_format_json: bool,
+    /// Optional bearer token gating the JSON API. When unset, the API is open
+    /// to anything that can reach the listener (an upstream gateway may still
+    /// authenticate). When set, callers must send `Authorization: Bearer ...`.
+    pub api_auth_bearer: Option<String>,
+    pub qdrant_url: String,
+    pub qdrant_api_key: Option<String>,
+    /// Outbound request timeout to provider APIs and Qdrant.
+    pub request_timeout_secs: u64,
+}
+
+impl Config {
+    pub fn from_env() -> anyhow::Result<Self> {
+        let host = env_or("EMBEDDINGS_HOST", "0.0.0.0");
+        let port: u16 = env_or("EMBEDDINGS_PORT", "8090").parse()?;
+        let addr: SocketAddr = format!("{host}:{port}").parse()?;
+
+        Ok(Self {
+            addr,
+            log_format_json: env_or("EMBEDDINGS_LOG_FORMAT", "json") == "json",
+            api_auth_bearer: non_empty(std::env::var("EMBEDDINGS_API_AUTH_BEARER").ok()),
+            qdrant_url: env_or("QDRANT_URL", "http://dd-qdrant.ai-ml.svc.cluster.local:6333"),
+            qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),
+            request_timeout_secs: env_or("EMBEDDINGS_REQUEST_TIMEOUT_SECS", "30").parse()?,
+        })
+    }
+
+    /// Read a provider API key by env var name, treating blank as absent. This
+    /// is what makes the roster opt-in: only providers whose key is populated
+    /// in the secret get registered.
+    pub fn provider_key(&self, env: &str) -> Option<String> {
+        non_empty(std::env::var(env).ok())
+    }
+}
+
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn non_empty(v: Option<String>) -> Option<String> {
+    v.filter(|s| !s.trim().is_empty())
+}

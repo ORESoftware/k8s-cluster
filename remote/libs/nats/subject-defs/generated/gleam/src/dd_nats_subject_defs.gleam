@@ -61,7 +61,12 @@ pub const chaos_probe_queue_group = "dd-chaos-probe"
 pub const contact_email_send_subject = "dd.remote.contact.email.send"
 pub const contact_email_send_queue_group = "dd-email-sms-contact"
 
-/// Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+/// Send-a-push-notification request consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { transport: webpush|fcm|expo|apns, [title], [body], [data], [token] (fcm/expo/apns device token), [subscription] (webpush { endpoint, keys: { p256dh, auth } }) }.
+/// Service: dd-email-sms-contact-rs
+pub const contact_push_send_subject = "dd.remote.contact.push.send"
+pub const contact_push_send_queue_group = "dd-email-sms-contact"
+
+/// Per-send result summaries published after each email/sms/push attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
 /// Service: dd-email-sms-contact-rs
 pub const contact_send_results_subject = "dd.remote.contact.results"
 
@@ -105,6 +110,23 @@ pub const contracts_solana_validate_queue_group = "dd-contract-service"
 /// Service: dd-remote-rest-api
 pub const cron_prompts_subject = "dd.remote.cron.prompts"
 pub const cron_prompts_stream = "DD_REMOTE_CRON"
+
+/// Per-label annotation events emitted when a human annotator, model, or labeling function submits a label for a task item.
+/// Service: dd-dataset-labeling
+pub const dataset_labeling_label_events_subject = "dd.remote.dataset_labeling.label.events"
+
+/// Spark/Airflow pipeline job intents that materialize aggregated gold labels into training datasets for downstream model training.
+/// Service: dd-dataset-labeling
+pub const dataset_labeling_pipeline_jobs_subject = "dd.remote.dataset_labeling.pipeline.jobs"
+
+/// Aggregation, inter-annotator agreement, and gold-label export results from labeling runs.
+/// Service: dd-dataset-labeling
+pub const dataset_labeling_results_subject = "dd.remote.dataset_labeling.results"
+
+/// Inbound labeling task/annotation requests accepted over NATS. Payloads mirror the HTTP /tasks, /labels, and /functions/apply contracts.
+/// Service: dd-dataset-labeling
+pub const dataset_labeling_task_requests_subject = "dd.remote.dataset_labeling.task.requests"
+pub const dataset_labeling_task_requests_queue_group = "dd-dataset-labeling"
 
 /// Fan-out emitted on each evaluation of an enabled alert rule (disabled-rule evaluations are not published). Carries the rule id, title, current state (alerting/normal/no_data/error), and the triggering metric summary (observed value + condition) — never the underlying rows.
 /// Service: dd-data-viz-rs
@@ -273,6 +295,32 @@ pub const fabrication_results_subject = "dd.remote.fabrication.results"
 /// Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 /// Service: shared
 pub const git_repos_changes_subject = "dd.remote.git-repos.changes"
+
+/// Inbound GPU job-scheduling requests (a fleet of GPUs plus jobs needing VRAM and an estimated duration) consumed by the scheduler. Subscribed with the dd-gpu-rs queue group so requests load-balance across replicas. Default for GPU_JOB_SUBJECT.
+/// Service: dd-gpu-rs
+pub const gpu_job_requests_subject = "dd.remote.gpu.jobs.requests"
+pub const gpu_job_requests_queue_group = "dd-gpu-rs"
+
+/// Computed GPU placements (per-job gpu assignment, start/finish times, makespan, per-GPU memory utilisation, rejected jobs) emitted by the scheduler. Carries a gpu.schedule.v1 envelope. Default for GPU_RESULT_SUBJECT.
+/// Service: dd-gpu-rs
+pub const gpu_job_results_subject = "dd.remote.gpu.jobs.results"
+
+/// Inbound knowledge-graph build requests accepted over NATS. Payloads mirror the HTTP /graph/upsert and /graph/extract contracts.
+/// Service: dd-knowledge-graph-builder
+pub const knowledge_graph_build_requests_subject = "dd.remote.knowledge_graph.build.requests"
+pub const knowledge_graph_build_requests_queue_group = "dd-knowledge-graph-builder"
+
+/// Spark/Airflow graph-analytics pipeline job intents (PageRank, community detection, embeddings) generated from the constructed knowledge graph.
+/// Service: dd-knowledge-graph-builder
+pub const knowledge_graph_pipeline_jobs_subject = "dd.remote.knowledge_graph.pipeline.jobs"
+
+/// Query, path, and centrality/analysis results from knowledge-graph runs.
+/// Service: dd-knowledge-graph-builder
+pub const knowledge_graph_results_subject = "dd.remote.knowledge_graph.results"
+
+/// Graph mutation events emitted after nodes and edges are upserted or extracted into the graph store. Consumers should treat this as an incremental change feed.
+/// Service: dd-knowledge-graph-builder
+pub const knowledge_graph_updates_subject = "dd.remote.knowledge_graph.updates"
 
 /// Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 /// Service: dd-gleam-lambda-runner
@@ -983,6 +1031,10 @@ pub const contact_send_queue_group = "dd-email-sms-contact"
 /// Service: shared
 pub const critical_events_logger_queue_group = "dd-runtime-critical-events"
 
+/// Shared queue group used by dd-dataset-labeling replicas so each queued labeling task/annotation request is processed once.
+/// Service: dd-dataset-labeling
+pub const dataset_labeling_workers_queue_group = "dd-dataset-labeling"
+
 /// Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
 /// Service: dd-data-viz-rs
 pub const data_viz_notification_dispatch_queue_group = "dd-data-viz-notifiers"
@@ -994,6 +1046,14 @@ pub const economics_server_queue_group = "dd-economics-server"
 /// Shared queue group used by island worker pods so each per-epoch subpopulation is evolved exactly once.
 /// Service: dd-evolution-optimizer
 pub const evolution_islands_queue_group = "dd-evolution-optimizer-islands"
+
+/// Shared queue group used by dd-gpu-rs replicas consuming GPU job requests.
+/// Service: dd-gpu-rs
+pub const gpu_scheduler_queue_group = "dd-gpu-rs"
+
+/// Shared queue group used by dd-knowledge-graph-builder replicas so each queued build request is processed once.
+/// Service: dd-knowledge-graph-builder
+pub const knowledge_graph_workers_queue_group = "dd-knowledge-graph-builder"
 
 /// Shared queue group used by lambda-runner replicas.
 /// Service: dd-gleam-lambda-runner

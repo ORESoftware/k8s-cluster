@@ -8,8 +8,28 @@ import { isIP } from 'node:net';
 import { Worker } from 'node:worker_threads';
 import { z } from 'zod';
 
+import { ProxyAgent, type Dispatcher } from 'undici';
+
 import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
 import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
+
+import {
+  ProxyPool,
+  parseProxyEntry,
+  parseProxyList,
+  PROXY_ROTATIONS,
+  type ProxyEntry,
+  type ProxyRotation,
+} from './proxy-pool.js';
+import {
+  CaptchaSolveError,
+  buildInjectionScript,
+  detectCaptcha,
+  solveCaptcha,
+  SOLVABLE_CAPTCHA_TYPES,
+  type CaptchaDetection,
+  type CaptchaType,
+} from './captcha.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -91,7 +111,20 @@ const config = {
   browserlessEndpoint: process.env.BROWSERLESS_ENDPOINT ?? 'https://production-sfo.browserless.io',
   browserlessContentUrl: process.env.BROWSERLESS_CONTENT_URL ?? null,
   browserlessToken: process.env.BROWSERLESS_TOKEN ?? null,
+  proxies: parseProxyList(process.env.SCRAPER_PROXIES),
+  proxyRotation: normalizeProxyRotation(process.env.SCRAPER_PROXY_ROTATION ?? 'sticky'),
+  proxyCooldownMs: readNumberEnv('SCRAPER_PROXY_COOLDOWN_MS', 60_000),
+  allowRequestProxy: readBooleanEnv('SCRAPER_ALLOW_REQUEST_PROXY', true),
+  detectCaptchas: readBooleanEnv('SCRAPER_DETECT_CAPTCHAS', true),
+  captchaAutoSolve: readBooleanEnv('SCRAPER_CAPTCHA_AUTOSOLVE', false),
+  captchaProviderUrl: process.env.SCRAPER_CAPTCHA_PROVIDER_URL ?? 'https://2captcha.com',
+  captchaApiKey: process.env.SCRAPER_CAPTCHA_API_KEY ?? null,
+  captchaPollIntervalMs: readNumberEnv('SCRAPER_CAPTCHA_POLL_INTERVAL_MS', 5_000),
+  captchaTimeoutMs: readNumberEnv('SCRAPER_CAPTCHA_TIMEOUT_MS', 120_000),
+  captchaMaxAttempts: readNumberEnv('SCRAPER_CAPTCHA_MAX_ATTEMPTS', 2),
 };
+
+const proxyPool = new ProxyPool(config.proxies, config.proxyRotation, config.proxyCooldownMs);
 
 const ScrapeRequestSchema = z.object({
   requestId: z.string().min(1).max(120).optional(),
@@ -110,6 +143,10 @@ const ScrapeRequestSchema = z.object({
   waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
   headers: z.record(z.string().min(1).max(120), z.string().max(2_000)).optional(),
   userAgent: z.string().min(1).max(500).optional(),
+  proxy: z.string().min(3).max(500).optional(),
+  useProxy: z.boolean().optional(),
+  detectCaptcha: z.boolean().optional(),
+  solveCaptcha: z.boolean().optional(),
 });
 
 type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
@@ -121,6 +158,32 @@ type FetchedDocument = {
   contentType?: string;
   truncated: boolean;
   failureScreenshot?: FailureScreenshot;
+};
+
+type ProxyInfo = {
+  label: string;
+  protocol: string;
+  rotation: ProxyRotation;
+  fromPool: boolean;
+};
+
+type CaptchaOutcome = {
+  detected: boolean;
+  type: CaptchaType | null;
+  sitekey: string | null;
+  solved: boolean;
+  attempts: number;
+  provider?: string;
+  solveMs?: number;
+  signals?: string[];
+  error?: string;
+};
+
+/** Per-request mutable state for proxy selection and captcha orchestration. */
+type ScrapeContext = {
+  proxy: ProxyEntry | null;
+  proxyFromPool: boolean;
+  captcha?: CaptchaOutcome;
 };
 
 type ParserName = 'native-fetch' | 'cheerio' | 'jsdom' | 'linkedom';
@@ -169,6 +232,8 @@ type ScrapeResponse = {
   durationMs: number;
   truncated: boolean;
   extraction: ExtractionResult;
+  proxy?: ProxyInfo;
+  captcha?: CaptchaOutcome;
 };
 
 type ServiceDescriptor = {
@@ -213,6 +278,12 @@ type StatusDescriptor = {
   captureFailureScreenshots: boolean;
   failureScreenshotQuality: number;
   failureScreenshotMaxBytes: number;
+  proxyPoolSize: number;
+  proxyRotation: ProxyRotation;
+  allowRequestProxy: boolean;
+  captchaDetection: boolean;
+  captchaAutoSolve: boolean;
+  captchaSolverConfigured: boolean;
 };
 
 type HealthDescriptor = {
@@ -274,7 +345,19 @@ const metrics = {
   total: new Map<string, number>(),
   durationSumMs: new Map<StrategyName, number>(),
   durationCount: new Map<StrategyName, number>(),
+  captcha: new Map<string, number>(),
 };
+
+type CaptchaMetricEvent = 'detected' | 'solved' | 'failed';
+
+const CAPTCHA_METRIC_TYPES = [
+  'recaptcha-v2',
+  'recaptcha-v3',
+  'hcaptcha',
+  'turnstile',
+  'cloudflare-challenge',
+  'unknown',
+] as const;
 
 let playwrightBrowser: PlaywrightBrowser | null = null;
 let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
@@ -386,12 +469,29 @@ async function runScrape(
   strategy: StrategyName,
 ): Promise<Omit<ScrapeResponse, 'durationMs'>> {
   const targetUrl = await validateTargetUrl(input.url);
-  const fetched = await fetchByStrategy(input, targetUrl, strategy);
+  const ctx = await createScrapeContext(input, targetUrl);
+  let fetched: FetchedDocument;
+  try {
+    fetched = await fetchByStrategy(input, targetUrl, strategy, ctx);
+    reportProxyOutcome(ctx, true);
+  } catch (error) {
+    reportProxyOutcome(ctx, false);
+    throw error;
+  }
   let extraction: ExtractionResult;
   try {
     extraction = await extractDocument(fetched.html, fetched.finalUrl, input, strategy);
   } catch (error) {
     throw attachFailureScreenshot(error, fetched.failureScreenshot);
+  }
+
+  // Non-browser strategies can detect a challenge but cannot solve it (no page
+  // to inject into); surface the detection so callers can retry via a browser.
+  if (!ctx.captcha && shouldDetectCaptcha(input)) {
+    ctx.captcha = detectionToOutcome(detectCaptcha(fetched.html));
+    if (ctx.captcha.detected) {
+      recordCaptchaMetric('detected', ctx.captcha.type);
+    }
   }
 
   return {
@@ -405,6 +505,8 @@ async function runScrape(
     contentType: fetched.contentType,
     truncated: fetched.truncated,
     extraction,
+    ...(ctx.proxy ? { proxy: proxyInfo(ctx) } : {}),
+    ...(ctx.captcha?.detected ? { captcha: ctx.captcha } : {}),
   };
 }
 
@@ -412,17 +514,18 @@ async function fetchByStrategy(
   input: ScrapeRequest,
   targetUrl: URL,
   strategy: StrategyName,
+  ctx: ScrapeContext,
 ): Promise<FetchedDocument> {
   switch (strategy) {
     case 'native-fetch':
     case 'cheerio':
     case 'jsdom':
     case 'linkedom':
-      return fetchStaticDocument(input, targetUrl);
+      return fetchStaticDocument(input, targetUrl, ctx);
     case 'playwright':
-      return fetchWithPlaywright(input, targetUrl);
+      return fetchWithPlaywright(input, targetUrl, ctx);
     case 'puppeteer':
-      return fetchWithPuppeteer(input, targetUrl);
+      return fetchWithPuppeteer(input, targetUrl, ctx);
     case 'browserless':
       return fetchWithBrowserless(input, targetUrl);
   }
@@ -431,20 +534,26 @@ async function fetchByStrategy(
 async function fetchStaticDocument(
   input: ScrapeRequest,
   targetUrl: URL,
+  ctx: ScrapeContext,
 ): Promise<FetchedDocument> {
   const timeoutMs = getTimeoutMs(input);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const dispatcher = buildFetchDispatcher(ctx.proxy);
   try {
     let currentUrl = targetUrl;
     for (let redirectCount = 0; redirectCount <= config.maxRedirects; redirectCount += 1) {
       currentUrl = await validateTargetUrl(currentUrl.toString());
-      const response = await fetch(currentUrl, {
+      const init: RequestInit & { dispatcher?: Dispatcher } = {
         method: 'GET',
         redirect: 'manual',
         headers: buildHeaders(input, currentUrl, targetUrl),
         signal: controller.signal,
-      });
+      };
+      if (dispatcher) {
+        init.dispatcher = dispatcher;
+      }
+      const response = await fetch(currentUrl, init);
 
       const location = response.headers.get('location');
       if (isRedirectStatus(response.status) && location) {
@@ -468,17 +577,22 @@ async function fetchStaticDocument(
     throw new Error(`maximum redirect count exceeded (${config.maxRedirects})`);
   } finally {
     clearTimeout(timeout);
+    if (dispatcher) {
+      await dispatcher.close().catch(() => undefined);
+    }
   }
 }
 
 async function fetchWithPlaywright(
   input: ScrapeRequest,
   targetUrl: URL,
+  ctx: ScrapeContext,
 ): Promise<FetchedDocument> {
   const browser = await getPlaywrightBrowser();
   const context = await browser.newContext({
     userAgent: input.userAgent,
     extraHTTPHeaders: buildHeaders(input, targetUrl, targetUrl),
+    ...(ctx.proxy ? { proxy: playwrightProxy(ctx.proxy) } : {}),
   });
   const page = await context.newPage();
   let blockedRequestError: Error | null = null;
@@ -509,6 +623,15 @@ async function fetchWithPlaywright(
         .waitForSelector(input.selector, { timeout: Math.min(getTimeoutMs(input), 5_000) })
         .catch(() => undefined);
     }
+    await orchestrateCaptcha(
+      {
+        content: () => page.content(),
+        url: () => page.url(),
+        evaluate: (script) => page.evaluate(script),
+      },
+      input,
+      ctx,
+    );
     if (shouldCaptureFailureScreenshot(input, 'playwright')) {
       failureScreenshot = await capturePlaywrightFailureScreenshot(page, 'playwright');
     }
@@ -531,13 +654,22 @@ async function fetchWithPlaywright(
   }
 }
 
-async function fetchWithPuppeteer(input: ScrapeRequest, targetUrl: URL): Promise<FetchedDocument> {
+async function fetchWithPuppeteer(
+  input: ScrapeRequest,
+  targetUrl: URL,
+  ctx: ScrapeContext,
+): Promise<FetchedDocument> {
   const browser = await getPuppeteerBrowser();
-  const context = await browser.createBrowserContext();
+  const context = await browser.createBrowserContext(
+    ctx.proxy ? { proxyServer: ctx.proxy.label } : {},
+  );
   const page = await context.newPage();
   let blockedRequestError: Error | null = null;
   let failureScreenshot: FailureScreenshot | undefined;
   try {
+    if (ctx.proxy && (ctx.proxy.username || ctx.proxy.password)) {
+      await page.authenticate({ username: ctx.proxy.username, password: ctx.proxy.password });
+    }
     if (input.userAgent) {
       await page.setUserAgent(input.userAgent);
     }
@@ -572,6 +704,15 @@ async function fetchWithPuppeteer(input: ScrapeRequest, targetUrl: URL): Promise
         .waitForSelector(input.selector, { timeout: Math.min(getTimeoutMs(input), 5_000) })
         .catch(() => undefined);
     }
+    await orchestrateCaptcha(
+      {
+        content: () => page.content(),
+        url: () => page.url(),
+        evaluate: (script) => page.evaluate(script) as Promise<unknown>,
+      },
+      input,
+      ctx,
+    );
     if (shouldCaptureFailureScreenshot(input, 'puppeteer')) {
       failureScreenshot = await capturePuppeteerFailureScreenshot(page, 'puppeteer');
     }
@@ -630,6 +771,228 @@ async function fetchWithBrowserless(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// --- Proxy rotation ---------------------------------------------------------
+
+async function createScrapeContext(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<ScrapeContext> {
+  const resolved = await resolveProxy(input, targetUrl);
+  return {
+    proxy: resolved?.entry ?? null,
+    proxyFromPool: resolved?.fromPool ?? false,
+  };
+}
+
+async function resolveProxy(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<{ entry: ProxyEntry; fromPool: boolean } | null> {
+  if (input.useProxy === false) {
+    return null;
+  }
+  if (input.proxy) {
+    if (!config.allowRequestProxy) {
+      throw new Error('per-request proxy is disabled by scraper policy');
+    }
+    const entry = parseRequestProxy(input.proxy);
+    await validateProxyEntry(entry);
+    return { entry, fromPool: false };
+  }
+  const entry = proxyPool.select(targetUrl.hostname);
+  return entry ? { entry, fromPool: true } : null;
+}
+
+function parseRequestProxy(raw: string): ProxyEntry {
+  try {
+    return parseProxyEntry(raw);
+  } catch (error) {
+    // Surface as a client policy error (400) rather than a 500.
+    throw new Error(error instanceof Error ? error.message : `invalid proxy URL: ${raw}`);
+  }
+}
+
+/** SSRF guard for caller-supplied proxies; pooled proxies are operator-trusted. */
+async function validateProxyEntry(entry: ProxyEntry): Promise<void> {
+  if (config.allowPrivateNetworks) {
+    return;
+  }
+  const hostname = normalizeHostname(entry.hostname);
+  if (isBlockedHostname(hostname)) {
+    throw new Error(`proxy host ${hostname} is blocked by scraper network policy`);
+  }
+  if (isIP(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`proxy address ${hostname} is blocked by scraper network policy`);
+    }
+    return;
+  }
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  const blocked = addresses.find((address) => isPrivateIp(address.address));
+  if (blocked) {
+    throw new Error(
+      `proxy host ${hostname} resolved to ${blocked.address}, blocked by scraper network policy`,
+    );
+  }
+}
+
+function buildFetchDispatcher(proxy: ProxyEntry | null): Dispatcher | null {
+  if (!proxy) {
+    return null;
+  }
+  if (proxy.isSocks) {
+    throw new Error(
+      'SOCKS proxies are only supported by the playwright and puppeteer strategies, not native fetch',
+    );
+  }
+  if (proxy.username || proxy.password) {
+    const token = `Basic ${Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64')}`;
+    return new ProxyAgent({ uri: proxy.label, token });
+  }
+  return new ProxyAgent(proxy.label);
+}
+
+function playwrightProxy(proxy: ProxyEntry): {
+  server: string;
+  username?: string;
+  password?: string;
+} {
+  return {
+    server: proxy.label,
+    ...(proxy.username ? { username: proxy.username } : {}),
+    ...(proxy.password ? { password: proxy.password } : {}),
+  };
+}
+
+function reportProxyOutcome(ctx: ScrapeContext, ok: boolean): void {
+  if (!ctx.proxy || !ctx.proxyFromPool) {
+    return;
+  }
+  if (ok) {
+    proxyPool.reportSuccess(ctx.proxy);
+  } else {
+    proxyPool.reportFailure(ctx.proxy);
+  }
+}
+
+function proxyInfo(ctx: ScrapeContext): ProxyInfo {
+  return {
+    label: ctx.proxy!.label,
+    protocol: ctx.proxy!.protocol,
+    rotation: config.proxyRotation,
+    fromPool: ctx.proxyFromPool,
+  };
+}
+
+// --- CAPTCHA orchestration --------------------------------------------------
+
+type PageOps = {
+  content: () => Promise<string>;
+  url: () => string;
+  evaluate: (script: string) => Promise<unknown>;
+};
+
+function shouldDetectCaptcha(input: ScrapeRequest): boolean {
+  return input.detectCaptcha ?? config.detectCaptchas;
+}
+
+function detectionToOutcome(detection: CaptchaDetection): CaptchaOutcome {
+  return {
+    detected: detection.detected,
+    type: detection.type,
+    sitekey: detection.sitekey,
+    solved: false,
+    attempts: 0,
+    ...(detection.signals.length > 0 ? { signals: detection.signals } : {}),
+  };
+}
+
+function isCaptchaSolverConfigured(): boolean {
+  return Boolean(config.captchaApiKey);
+}
+
+/**
+ * Detect a challenge on a live page and, when auto-solve is enabled and a solver
+ * is configured, fetch a token from the provider and inject it. "solved" means a
+ * token was obtained and applied; the caller still extracts whatever the page
+ * then renders.
+ */
+async function orchestrateCaptcha(
+  ops: PageOps,
+  input: ScrapeRequest,
+  ctx: ScrapeContext,
+): Promise<void> {
+  if (!shouldDetectCaptcha(input)) {
+    return;
+  }
+  const detection = detectCaptcha(await ops.content());
+  const outcome = detectionToOutcome(detection);
+  ctx.captcha = outcome;
+  if (!detection.detected || !detection.type) {
+    return;
+  }
+  recordCaptchaMetric('detected', detection.type);
+
+  const autoSolve = input.solveCaptcha ?? config.captchaAutoSolve;
+  const solvable = SOLVABLE_CAPTCHA_TYPES.has(detection.type) && Boolean(detection.sitekey);
+  if (!autoSolve || !solvable) {
+    return;
+  }
+  if (!isCaptchaSolverConfigured()) {
+    outcome.error = 'captcha solver not configured (set SCRAPER_CAPTCHA_API_KEY)';
+    return;
+  }
+
+  const maxAttempts = Math.max(1, Math.floor(config.captchaMaxAttempts));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    outcome.attempts = attempt;
+    try {
+      const result = await solveCaptcha({
+        config: {
+          providerUrl: config.captchaProviderUrl,
+          apiKey: config.captchaApiKey!,
+          pollIntervalMs: config.captchaPollIntervalMs,
+          timeoutMs: config.captchaTimeoutMs,
+        },
+        detection,
+        pageUrl: ops.url(),
+        userAgent: input.userAgent,
+      });
+      await ops.evaluate(buildInjectionScript(detection.type, result.token));
+      await sleep(1_500);
+      outcome.solved = true;
+      outcome.provider = result.provider;
+      outcome.solveMs = result.solveMs;
+      delete outcome.error;
+      recordCaptchaMetric('solved', detection.type);
+      return;
+    } catch (error) {
+      outcome.error =
+        error instanceof CaptchaSolveError || error instanceof Error
+          ? error.message
+          : String(error);
+      if (attempt >= maxAttempts) {
+        recordCaptchaMetric('failed', detection.type);
+        return;
+      }
+    }
+  }
+}
+
+function recordCaptchaMetric(event: CaptchaMetricEvent, type: CaptchaType | null): void {
+  const key = `${event}:${type ?? 'unknown'}`;
+  metrics.captcha.set(key, (metrics.captcha.get(key) ?? 0) + 1);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeProxyRotation(value: string): ProxyRotation {
+  const normalized = value.trim().toLowerCase() as ProxyRotation;
+  return PROXY_ROTATIONS.includes(normalized) ? normalized : 'sticky';
 }
 
 async function extractDocument(
@@ -1204,7 +1567,12 @@ function isClientPolicyError(message: string): boolean {
     message.includes('maximum redirect count exceeded') ||
     message.includes('only http and https URLs are supported') ||
     message.includes('unsupported scrape strategy') ||
-    message.includes('does not support CSS selectors')
+    message.includes('does not support CSS selectors') ||
+    message.includes('per-request proxy is disabled') ||
+    message.includes('invalid proxy URL') ||
+    message.includes('unsupported proxy protocol') ||
+    message.includes('proxy URL is missing a host') ||
+    message.includes('SOCKS proxies are only supported')
   );
 }
 
@@ -1287,6 +1655,31 @@ function renderMetrics(): string {
     `dd_web_scraper_parser_worker_memory_mb ${config.parserWorkerMemoryMb}`,
   );
 
+  const proxyStats = proxyPool.stats();
+  lines.push(
+    '# HELP dd_web_scraper_proxy_pool_size Configured proxies in the rotation pool.',
+    '# TYPE dd_web_scraper_proxy_pool_size gauge',
+    `dd_web_scraper_proxy_pool_size ${proxyStats.size}`,
+    '# HELP dd_web_scraper_proxy_pool_available Proxies not currently on failure cooldown.',
+    '# TYPE dd_web_scraper_proxy_pool_available gauge',
+    `dd_web_scraper_proxy_pool_available ${proxyStats.available}`,
+    '# HELP dd_web_scraper_proxy_selections_total Proxy selections handed out from the pool.',
+    '# TYPE dd_web_scraper_proxy_selections_total counter',
+    `dd_web_scraper_proxy_selections_total ${proxyStats.selections}`,
+    '# HELP dd_web_scraper_proxy_failures_total Proxy failures reported back to the pool.',
+    '# TYPE dd_web_scraper_proxy_failures_total counter',
+    `dd_web_scraper_proxy_failures_total ${proxyStats.failures}`,
+    '# HELP dd_web_scraper_captcha_total CAPTCHA orchestration events by outcome and type.',
+    '# TYPE dd_web_scraper_captcha_total counter',
+  );
+  for (const event of ['detected', 'solved', 'failed'] as const) {
+    for (const type of CAPTCHA_METRIC_TYPES) {
+      lines.push(
+        `dd_web_scraper_captcha_total{event="${event}",type="${type}"} ${metrics.captcha.get(`${event}:${type}`) ?? 0}`,
+      );
+    }
+  }
+
   return `${lines.join('\n')}\n`;
 }
 
@@ -1346,6 +1739,12 @@ function statusDescriptor(): StatusDescriptor {
     captureFailureScreenshots: config.captureFailureScreenshots,
     failureScreenshotQuality: config.failureScreenshotQuality,
     failureScreenshotMaxBytes: config.failureScreenshotMaxBytes,
+    proxyPoolSize: proxyPool.size,
+    proxyRotation: config.proxyRotation,
+    allowRequestProxy: config.allowRequestProxy,
+    captchaDetection: config.detectCaptchas,
+    captchaAutoSolve: config.captchaAutoSolve,
+    captchaSolverConfigured: isCaptchaSolverConfigured(),
   };
 }
 

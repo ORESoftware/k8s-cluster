@@ -5148,3 +5148,144 @@ export class BenefactorIcpsEntity {
   updatedBy!: string | null;
 
 }
+
+@Index("vcs_repositories_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
+@Index("vcs_repositories_vcs_kind_idx", ["vcsKind"], { where: "is_soft_deleted = false" })
+@Index("vcs_repositories_mirror_status_idx", ["mirrorStatus"], { where: "is_soft_deleted = false" })
+// vcs_repositories_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "vcs_repositories" })
+export class VcsRepositoriesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 200 })
+  displayName!: string;
+
+  @Column({ name: "vcs_kind", type: "varchar", length: 20, default: () => "'git'" })
+  vcsKind!: string;
+
+  @Column({ name: "remote_url", type: "text" })
+  remoteUrl!: string;
+
+  @Column({ name: "default_branch", type: "varchar", length: 160, default: () => "'main'" })
+  defaultBranch!: string;
+
+  @Column({ name: "mirror_path", type: "text", nullable: true })
+  mirrorPath!: string | null;
+
+  @Column({ name: "mirror_status", type: "varchar", length: 32, default: () => "'pending'" })
+  mirrorStatus!: string;
+
+  @Column({ name: "visibility", type: "varchar", length: 20, default: () => "'private'" })
+  visibility!: string;
+
+  @Column({ name: "last_synced_at", type: "timestamptz", nullable: true })
+  lastSyncedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "size_bytes", type: "bigint", default: () => "0" })
+  sizeBytes!: number;
+
+  @Column({ name: "ref_count", type: "integer", default: () => "0" })
+  refCount!: number;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("vcs_refs_repo_name_uq", ["repositoryId", "refName"], { unique: true })
+@Index("vcs_refs_repository_id_idx", ["repositoryId"])
+@Entity({ name: "vcs_refs" })
+export class VcsRefsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "repository_id", type: "uuid" })
+  repositoryId!: string;
+
+  @Column({ name: "ref_name", type: "varchar", length: 255 })
+  refName!: string;
+
+  @Column({ name: "ref_type", type: "varchar", length: 20, default: () => "'branch'" })
+  refType!: string;
+
+  @Column({ name: "target_revision", type: "varchar", length: 120 })
+  targetRevision!: string;
+
+  @Column({ name: "is_default", type: "boolean", default: () => "false" })
+  isDefault!: boolean;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("vcs_operations_repository_id_idx", ["repositoryId"])
+@Index("vcs_operations_op_type_idx", ["opType"])
+// vcs_operations_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "vcs_operations" })
+export class VcsOperationsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "repository_id", type: "uuid", nullable: true })
+  repositoryId!: string | null;
+
+  @Column({ name: "vcs_kind", type: "varchar", length: 20, default: () => "'git'" })
+  vcsKind!: string;
+
+  @Column({ name: "op_type", type: "varchar", length: 32 })
+  opType!: string;
+
+  @Column({ name: "status", type: "varchar", length: 20, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "params", type: "jsonb", default: () => "'{}'::jsonb" })
+  params!: Record<string, unknown>;
+
+  @Column({ name: "result_summary", type: "jsonb", default: () => "'{}'::jsonb" })
+  resultSummary!: Record<string, unknown>;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "duration_ms", type: "integer", nullable: true })
+  durationMs!: number | null;
+
+  @Column({ name: "requested_by", type: "varchar", length: 200, nullable: true })
+  requestedBy!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}

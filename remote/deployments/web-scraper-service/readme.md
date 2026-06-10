@@ -33,6 +33,62 @@ Fastify and browser orchestration.
 - `browserless`: Browserless Content API, configured with `BROWSERLESS_TOKEN` or a
   `BROWSERLESS_CONTENT_URL` that already includes a token.
 
+## Proxy rotation
+
+Outbound requests can rotate across a pool of proxies. The pool is configured with
+`SCRAPER_PROXIES` — a comma/newline/whitespace-separated list of proxy URLs
+(`http`, `https`, `socks4`, `socks5`; bare `host:port` and `user:pass@host:port`
+are assumed `http`). An empty list means direct egress.
+
+`SCRAPER_PROXY_ROTATION` selects the strategy:
+
+- `sticky` (default): one egress proxy per target host, so a host keeps the same
+  IP across requests and sessions don't break mid-crawl.
+- `round-robin`: walk the pool in order.
+- `random`: pick uniformly at random.
+
+A proxy that fails a request is put on a `SCRAPER_PROXY_COOLDOWN_MS` cooldown and
+skipped until it expires (if every proxy is cooling down, the pool degrades to
+reusing one rather than dropping the scrape). Proxy applies to `native-fetch`,
+`cheerio`, `jsdom`, `linkedom` (via an undici `ProxyAgent`, HTTP/HTTPS only),
+`playwright`, and `puppeteer` (which also accept SOCKS). `browserless` manages its
+own egress and is left untouched.
+
+Per request:
+
+- `"proxy": "http://user:pass@host:port"` forces a specific proxy (gated by
+  `SCRAPER_ALLOW_REQUEST_PROXY`, default on; the host is re-checked against the
+  same private-network policy as targets).
+- `"useProxy": false` bypasses the pool for that request.
+
+The chosen proxy is reported back as `response.proxy` (label has credentials
+stripped). Prometheus exposes `dd_web_scraper_proxy_pool_size`,
+`dd_web_scraper_proxy_pool_available`, `dd_web_scraper_proxy_selections_total`,
+and `dd_web_scraper_proxy_failures_total`.
+
+## CAPTCHA solving orchestration
+
+For every scrape the fetched page is scanned for a challenge — reCAPTCHA v2/v3,
+hCaptcha, Cloudflare Turnstile, and Cloudflare interstitial ("Just a moment") —
+and the result is reported as `response.captcha` (`detected`, `type`, `sitekey`,
+`signals`). Detection is on by default (`SCRAPER_DETECT_CAPTCHAS`); a request may
+override with `"detectCaptcha": false`.
+
+On the browser strategies (`playwright`/`puppeteer`) the service can also solve
+the challenge: when `SCRAPER_CAPTCHA_AUTOSOLVE=true` (or a request sets
+`"solveCaptcha": true`) and a solver API key is present, it submits the sitekey to
+the provider, injects the returned token into the page's response field, fires the
+widget callback, and continues to extraction. `solved: true` means a token was
+obtained and applied. Static strategies report detection only — they have no page
+to inject into, so retry through a browser strategy.
+
+The solver client speaks the 2captcha `in.php`/`res.php` protocol, which CapSolver,
+CapMonster, and Anti-Captcha expose a compatible surface for, so the vendor is
+swappable via `SCRAPER_CAPTCHA_PROVIDER_URL`. Config: `SCRAPER_CAPTCHA_API_KEY`
+(enables solving), `SCRAPER_CAPTCHA_POLL_INTERVAL_MS`, `SCRAPER_CAPTCHA_TIMEOUT_MS`,
+`SCRAPER_CAPTCHA_MAX_ATTEMPTS`. Prometheus exposes `dd_web_scraper_captcha_total`
+labelled by `event` (`detected`/`solved`/`failed`) and `type`.
+
 ## Browser mode and failure screenshots
 
 Playwright and Puppeteer launch Chromium with `SCRAPER_BROWSER_HEADLESS=true` by default. The

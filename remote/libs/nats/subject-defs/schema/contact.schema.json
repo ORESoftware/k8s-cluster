@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dd.dev/schemas/nats/contact.schema.json",
   "title": "ContactNats",
-  "description": "NATS subjects owned by dd-email-sms-contact-rs (transactional/outreach email + SMS). Other services publish send-requests onto the email/sms send lanes; the contact server consumes them via a shared queue group (each request delivered once), sends via SendGrid/SES (email) or Twilio (SMS) with rate limiting, and publishes a per-send result summary. Payloads carry recipient + subject/body and must never contain provider API keys.",
+  "description": "NATS subjects owned by dd-email-sms-contact-rs (transactional/outreach email + SMS + push notifications). Other services publish send-requests onto the email/sms/push send lanes; the contact server consumes them via a shared queue group (each request delivered once), sends via SendGrid/SES (email), Twilio (SMS), or a push transport — Web Push/VAPID, Firebase Cloud Messaging, Expo, or Apple APNs — with rate limiting, and publishes a per-send result summary. Payloads carry recipient + subject/body/notification and must never contain provider API keys.",
   "type": "object",
   "$dd:nats": {
     "service": "dd-email-sms-contact-rs",
-    "summary": "Email + SMS send-request lanes plus a result fan-out.",
+    "summary": "Email + SMS + push send-request lanes plus a result fan-out.",
     "subjects": [
       {
         "name": "ContactEmailSend",
@@ -25,8 +25,16 @@
         "direction": "subscribe"
       },
       {
+        "name": "ContactPushSend",
+        "description": "Send-a-push-notification request consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { transport: webpush|fcm|expo|apns, [title], [body], [data], [token] (fcm/expo/apns device token), [subscription] (webpush { endpoint, keys: { p256dh, auth } }) }.",
+        "kind": "static",
+        "subject": "dd.remote.contact.push.send",
+        "queueGroup": "dd-email-sms-contact",
+        "direction": "subscribe"
+      },
+      {
         "name": "ContactSendResults",
-        "description": "Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.",
+        "description": "Per-send result summaries published after each email/sms/push attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.",
         "kind": "static",
         "subject": "dd.remote.contact.results",
         "direction": "publish"

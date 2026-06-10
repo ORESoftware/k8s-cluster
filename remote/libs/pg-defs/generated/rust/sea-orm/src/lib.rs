@@ -4504,3 +4504,132 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use benefactor_icps::Entity as BenefactorIcpsEntity;
 pub use benefactor_icps::Model as BenefactorIcpsModel;
+
+pub mod vcs_repositories {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "vcs_repositories")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    #[sea_orm(column_name = "vcs_kind")]
+    pub vcs_kind: String,
+    #[sea_orm(column_name = "remote_url")]
+    pub remote_url: String,
+    #[sea_orm(column_name = "default_branch")]
+    pub default_branch: String,
+    #[sea_orm(column_name = "mirror_path")]
+    pub mirror_path: Option<String>,
+    #[sea_orm(column_name = "mirror_status")]
+    pub mirror_status: String,
+    pub visibility: String,
+    #[sea_orm(column_name = "last_synced_at")]
+    pub last_synced_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "size_bytes")]
+    pub size_bytes: i64,
+    #[sea_orm(column_name = "ref_count")]
+    pub ref_count: i32,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use vcs_repositories::Entity as VcsRepositoriesEntity;
+pub use vcs_repositories::Model as VcsRepositoriesModel;
+
+pub mod vcs_refs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "vcs_refs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "repository_id")]
+    pub repository_id: Uuid,
+    #[sea_orm(column_name = "ref_name")]
+    pub ref_name: String,
+    #[sea_orm(column_name = "ref_type")]
+    pub ref_type: String,
+    #[sea_orm(column_name = "target_revision")]
+    pub target_revision: String,
+    #[sea_orm(column_name = "is_default")]
+    pub is_default: bool,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use vcs_refs::Entity as VcsRefsEntity;
+pub use vcs_refs::Model as VcsRefsModel;
+
+pub mod vcs_operations {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "vcs_operations")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "repository_id")]
+    pub repository_id: Option<Uuid>,
+    #[sea_orm(column_name = "vcs_kind")]
+    pub vcs_kind: String,
+    #[sea_orm(column_name = "op_type")]
+    pub op_type: String,
+    pub status: String,
+    pub params: Json,
+    #[sea_orm(column_name = "result_summary")]
+    pub result_summary: Json,
+    pub error: Option<String>,
+    #[sea_orm(column_name = "duration_ms")]
+    pub duration_ms: Option<i32>,
+    #[sea_orm(column_name = "requested_by")]
+    pub requested_by: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use vcs_operations::Entity as VcsOperationsEntity;
+pub use vcs_operations::Model as VcsOperationsModel;

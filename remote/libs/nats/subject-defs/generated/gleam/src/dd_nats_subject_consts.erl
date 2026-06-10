@@ -27,6 +27,8 @@
     chaos_probe_queue_group/0,
     contact_email_send_subject/0,
     contact_email_send_queue_group/0,
+    contact_push_send_subject/0,
+    contact_push_send_queue_group/0,
     contact_send_results_subject/0,
     contact_sms_send_subject/0,
     contact_sms_send_queue_group/0,
@@ -42,6 +44,11 @@
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
     cron_prompts_stream/0,
+    dataset_labeling_label_events_subject/0,
+    dataset_labeling_pipeline_jobs_subject/0,
+    dataset_labeling_results_subject/0,
+    dataset_labeling_task_requests_subject/0,
+    dataset_labeling_task_requests_queue_group/0,
     data_viz_alerts_events_subject/0,
     data_viz_notifications_dispatch_subject/0,
     data_viz_notifications_dispatch_queue_group/0,
@@ -99,6 +106,14 @@
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
     git_repos_changes_subject/0,
+    gpu_job_requests_subject/0,
+    gpu_job_requests_queue_group/0,
+    gpu_job_results_subject/0,
+    knowledge_graph_build_requests_subject/0,
+    knowledge_graph_build_requests_queue_group/0,
+    knowledge_graph_pipeline_jobs_subject/0,
+    knowledge_graph_results_subject/0,
+    knowledge_graph_updates_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
     mcp_control_subject/0,
@@ -202,9 +217,12 @@
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
+    dataset_labeling_workers_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
+    gpu_scheduler_queue_group/0,
+    knowledge_graph_workers_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     monte_carlo_server_queue_group/0,
@@ -243,6 +261,8 @@ chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
 chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
 contact_email_send_subject() -> <<"dd.remote.contact.email.send"/utf8>>.
 contact_email_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
+contact_push_send_subject() -> <<"dd.remote.contact.push.send"/utf8>>.
+contact_push_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 contact_send_results_subject() -> <<"dd.remote.contact.results"/utf8>>.
 contact_sms_send_subject() -> <<"dd.remote.contact.sms.send"/utf8>>.
 contact_sms_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
@@ -258,6 +278,11 @@ contracts_solana_validate_subject() -> <<"dd.remote.contracts.solana.validate"/u
 contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 cron_prompts_subject() -> <<"dd.remote.cron.prompts"/utf8>>.
 cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
+dataset_labeling_label_events_subject() -> <<"dd.remote.dataset_labeling.label.events"/utf8>>.
+dataset_labeling_pipeline_jobs_subject() -> <<"dd.remote.dataset_labeling.pipeline.jobs"/utf8>>.
+dataset_labeling_results_subject() -> <<"dd.remote.dataset_labeling.results"/utf8>>.
+dataset_labeling_task_requests_subject() -> <<"dd.remote.dataset_labeling.task.requests"/utf8>>.
+dataset_labeling_task_requests_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 data_viz_alerts_events_subject() -> <<"dd.remote.dataviz.alerts.events"/utf8>>.
 data_viz_notifications_dispatch_subject() -> <<"dd.remote.dataviz.notifications.dispatch"/utf8>>.
 data_viz_notifications_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
@@ -315,6 +340,14 @@ fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
 fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
 fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
+gpu_job_requests_subject() -> <<"dd.remote.gpu.jobs.requests"/utf8>>.
+gpu_job_requests_queue_group() -> <<"dd-gpu-rs"/utf8>>.
+gpu_job_results_subject() -> <<"dd.remote.gpu.jobs.results"/utf8>>.
+knowledge_graph_build_requests_subject() -> <<"dd.remote.knowledge_graph.build.requests"/utf8>>.
+knowledge_graph_build_requests_queue_group() -> <<"dd-knowledge-graph-builder"/utf8>>.
+knowledge_graph_pipeline_jobs_subject() -> <<"dd.remote.knowledge_graph.pipeline.jobs"/utf8>>.
+knowledge_graph_results_subject() -> <<"dd.remote.knowledge_graph.results"/utf8>>.
+knowledge_graph_updates_subject() -> <<"dd.remote.knowledge_graph.updates"/utf8>>.
 lambdas_functions_subject() -> <<"dd.remote.lambdas.functions"/utf8>>.
 lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.
 mcp_control_subject() -> <<"dd.remote.mcp.control"/utf8>>.
@@ -418,9 +451,12 @@ billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
 contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+dataset_labeling_workers_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+gpu_scheduler_queue_group() -> <<"dd-gpu-rs"/utf8>>.
+knowledge_graph_workers_queue_group() -> <<"dd-knowledge-graph-builder"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
 monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.

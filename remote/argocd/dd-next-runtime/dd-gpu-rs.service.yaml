@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-gpu-rs
+  namespace: default
+  labels:
+    app: dd-gpu-rs
+spec:
+  selector:
+    app: dd-gpu-rs
+  ports:
+    - name: http
+      port: 8136
+      targetPort: http

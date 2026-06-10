@@ -9562,3 +9562,260 @@ class BenefactorIcpsInsert(BaseModel):
     updatedAt: datetime | None = None
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
+
+VcsRepositoriesVcsKind = Literal["git", "hg", "svn", "fossil"]
+VcsRepositoriesMirrorStatus = Literal["pending", "mirroring", "ready", "error", "disabled"]
+VcsRepositoriesVisibility = Literal["private", "internal", "public"]
+
+class VcsRepositories(Base):
+    __tablename__ = "vcs_repositories"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'", name="vcs_repositories_slug_format_chk"),
+        CheckConstraint("octet_length(display_name) <= 200", name="vcs_repositories_display_name_size_chk"),
+        CheckConstraint("octet_length(remote_url) <= 2048", name="vcs_repositories_remote_url_size_chk"),
+        CheckConstraint("default_branch ~ '^[A-Za-z0-9._/-]{1,160}$'", name="vcs_repositories_default_branch_format_chk"),
+        CheckConstraint("vcs_kind in ('git', 'hg', 'svn', 'fossil')", name="vcs_repositories_vcs_kind_chk"),
+        CheckConstraint("mirror_status in ('pending', 'mirroring', 'ready', 'error', 'disabled')", name="vcs_repositories_mirror_status_chk"),
+        CheckConstraint("visibility in ('private', 'internal', 'public')", name="vcs_repositories_visibility_chk"),
+        CheckConstraint("size_bytes >= 0", name="vcs_repositories_size_bytes_chk"),
+        CheckConstraint("ref_count >= 0", name="vcs_repositories_ref_count_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="vcs_repositories_meta_object_chk"),
+        Index("vcs_repositories_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("vcs_repositories_vcs_kind_idx", "vcs_kind", postgresql_where=text("is_soft_deleted = false")),
+        Index("vcs_repositories_mirror_status_idx", "mirror_status", postgresql_where=text("is_soft_deleted = false")),
+        Index("vcs_repositories_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    vcs_kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'git'"))
+    remote_url: Mapped[str] = mapped_column(Text(), nullable=False)
+    default_branch: Mapped[str] = mapped_column(String(160), nullable=False, server_default=text("'main'"))
+    mirror_path: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    mirror_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    visibility: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'private'"))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    ref_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class VcsRepositoriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9._-]{0,119}$")
+    displayName: str = Field(..., max_length=200)
+    vcsKind: VcsRepositoriesVcsKind
+    remoteUrl: str
+    defaultBranch: str = Field(..., max_length=160, pattern="^[A-Za-z0-9._/-]{1,160}$")
+    mirrorPath: str | None = None
+    mirrorStatus: VcsRepositoriesMirrorStatus
+    visibility: VcsRepositoriesVisibility
+    lastSyncedAt: datetime | None = None
+    lastError: str | None = None
+    sizeBytes: int
+    refCount: int = Field(..., ge=0)
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("vcs_repositories.display_name exceeds 200 bytes")
+        return value
+
+    @field_validator("remoteUrl")
+    @classmethod
+    def validate_remote_url(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("vcs_repositories.remote_url exceeds 2048 bytes")
+        return value
+
+class VcsRepositoriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9._-]{0,119}$")
+    displayName: str = Field(..., max_length=200)
+    vcsKind: VcsRepositoriesVcsKind | None = "git"
+    remoteUrl: str
+    defaultBranch: str | None = Field("main", max_length=160, pattern="^[A-Za-z0-9._/-]{1,160}$")
+    mirrorPath: str | None = None
+    mirrorStatus: VcsRepositoriesMirrorStatus | None = "pending"
+    visibility: VcsRepositoriesVisibility | None = "private"
+    lastSyncedAt: datetime | None = None
+    lastError: str | None = None
+    sizeBytes: int | None = 0
+    refCount: int | None = Field(0, ge=0)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("vcs_repositories.display_name exceeds 200 bytes")
+        return value
+
+    @field_validator("remoteUrl")
+    @classmethod
+    def validate_remote_url(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 2048:
+            raise ValueError("vcs_repositories.remote_url exceeds 2048 bytes")
+        return value
+
+VcsRefsRefType = Literal["branch", "tag", "bookmark", "head", "other"]
+
+class VcsRefs(Base):
+    __tablename__ = "vcs_refs"
+    __table_args__ = (
+        CheckConstraint("octet_length(ref_name) <= 255", name="vcs_refs_ref_name_size_chk"),
+        CheckConstraint("ref_type in ('branch', 'tag', 'bookmark', 'head', 'other')", name="vcs_refs_ref_type_chk"),
+        CheckConstraint("octet_length(target_revision) between 1 and 120", name="vcs_refs_target_revision_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="vcs_refs_meta_object_chk"),
+        Index("vcs_refs_repo_name_uq", "repository_id", "ref_name", unique=True),
+        Index("vcs_refs_repository_id_idx", "repository_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    repository_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    ref_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    ref_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'branch'"))
+    target_revision: Mapped[str] = mapped_column(String(120), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VcsRefsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    repositoryId: UUID
+    refName: str = Field(..., max_length=255)
+    refType: VcsRefsRefType
+    targetRevision: str = Field(..., max_length=120)
+    isDefault: bool
+    metaData: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("refName")
+    @classmethod
+    def validate_ref_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("vcs_refs.ref_name exceeds 255 bytes")
+        return value
+
+    @field_validator("targetRevision")
+    @classmethod
+    def validate_target_revision(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vcs_refs.target_revision exceeds 120 bytes")
+        return value
+
+class VcsRefsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    repositoryId: UUID
+    refName: str = Field(..., max_length=255)
+    refType: VcsRefsRefType | None = "branch"
+    targetRevision: str = Field(..., max_length=120)
+    isDefault: bool | None = False
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("refName")
+    @classmethod
+    def validate_ref_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("vcs_refs.ref_name exceeds 255 bytes")
+        return value
+
+    @field_validator("targetRevision")
+    @classmethod
+    def validate_target_revision(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("vcs_refs.target_revision exceeds 120 bytes")
+        return value
+
+VcsOperationsVcsKind = Literal["git", "hg", "svn", "fossil"]
+VcsOperationsOpType = Literal["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"]
+VcsOperationsStatus = Literal["pending", "running", "success", "error"]
+
+class VcsOperations(Base):
+    __tablename__ = "vcs_operations"
+    __table_args__ = (
+        CheckConstraint("vcs_kind in ('git', 'hg', 'svn', 'fossil')", name="vcs_operations_vcs_kind_chk"),
+        CheckConstraint("op_type in ('mirror', 'fetch', 'refs', 'log', 'show', 'diff', 'tree', 'blob', 'probe', 'remove')", name="vcs_operations_op_type_chk"),
+        CheckConstraint("status in ('pending', 'running', 'success', 'error')", name="vcs_operations_status_chk"),
+        CheckConstraint("duration_ms is null or duration_ms >= 0", name="vcs_operations_duration_chk"),
+        CheckConstraint("jsonb_typeof(params) = 'object'", name="vcs_operations_params_object_chk"),
+        CheckConstraint("jsonb_typeof(result_summary) = 'object'", name="vcs_operations_result_object_chk"),
+        Index("vcs_operations_repository_id_idx", "repository_id"),
+        Index("vcs_operations_op_type_idx", "op_type"),
+        Index("vcs_operations_created_at_idx", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    repository_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    vcs_kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'git'"))
+    op_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'pending'"))
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    result_summary: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    requested_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class VcsOperationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    repositoryId: UUID | None = None
+    vcsKind: VcsOperationsVcsKind
+    opType: VcsOperationsOpType
+    status: VcsOperationsStatus
+    params: dict[str, Any]
+    resultSummary: dict[str, Any]
+    error: str | None = None
+    durationMs: int | None = Field(None, ge=0)
+    requestedBy: str | None = Field(None, max_length=200)
+    createdAt: datetime
+    updatedAt: datetime
+
+class VcsOperationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    repositoryId: UUID | None = None
+    vcsKind: VcsOperationsVcsKind | None = "git"
+    opType: VcsOperationsOpType
+    status: VcsOperationsStatus | None = "pending"
+    params: dict[str, Any] | None = Field(default_factory=dict)
+    resultSummary: dict[str, Any] | None = Field(default_factory=dict)
+    error: str | None = None
+    durationMs: int | None = Field(None, ge=0)
+    requestedBy: str | None = Field(None, max_length=200)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None

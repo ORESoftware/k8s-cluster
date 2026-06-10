@@ -12,16 +12,21 @@ use serde_json::json;
 use crate::{
     audit::{run_audit, validate_request},
     auth::require_auth,
+    behavior::{detect_bots, detect_fraud, detect_login_anomalies},
     config::{Config, SCHEMA_VERSION, SERVICE_NAME},
     diagrams::generate_infrastructure_diagram,
     jobs::JobStore,
     metrics::Metrics,
     models::{
-        diagram_example_request, example_request, schema_example, system_report_example_request,
-        vulnerability_scan_example_request, AuditRequest, DiagramRequest, SystemReportRequest,
-        VulnerabilityScanRequest,
+        bot_detection_example_request, dependency_audit_example_request, diagram_example_request,
+        example_request, fraud_detection_example_request, login_anomaly_example_request,
+        malware_scan_example_request, schema_example, secret_scan_example_request,
+        system_report_example_request, vulnerability_scan_example_request, ArtifactScanRequest,
+        AuditRequest, BotDetectionRequest, DependencyAuditRequest, DiagramRequest,
+        FraudDetectionRequest, LoginAnomalyRequest, SystemReportRequest, VulnerabilityScanRequest,
     },
     reports::{generate_system_report, scan_vulnerabilities},
+    scanners::{audit_dependencies, scan_malware, scan_secrets},
     standards::{standard_by_id_or_alias, CONTROL_CATALOG, STANDARDS},
 };
 
@@ -54,6 +59,18 @@ pub fn router(state: AppState) -> Router {
             get(vulnerability_scan_example),
         )
         .route("/vulnerability-scan", post(vulnerability_scan))
+        .route("/malware-scan/example", get(malware_scan_example))
+        .route("/malware-scan", post(malware_scan_route))
+        .route("/dependency-audit/example", get(dependency_audit_example))
+        .route("/dependency-audit", post(dependency_audit_route))
+        .route("/secret-scan/example", get(secret_scan_example))
+        .route("/secret-scan", post(secret_scan_route))
+        .route("/fraud-detection/example", get(fraud_detection_example))
+        .route("/fraud-detection", post(fraud_detection_route))
+        .route("/bot-detection/example", get(bot_detection_example))
+        .route("/bot-detection", post(bot_detection_route))
+        .route("/login-anomaly/example", get(login_anomaly_example))
+        .route("/login-anomaly", post(login_anomaly_route))
         .route("/standards", get(standards))
         .route("/standards/:standard_id", get(standard))
         .route("/controls", get(controls))
@@ -77,6 +94,8 @@ async fn descriptor() -> Json<serde_json::Value> {
             "audits": ["POST /audits", "GET /audits", "GET /audits/:jobId", "POST /audit-sync"],
             "diagrams": ["GET /diagrams/example", "POST /diagrams/infrastructure"],
             "reports": ["GET /reports/example", "POST /reports/system", "POST /vulnerability-scan"],
+            "scanners": ["POST /malware-scan", "POST /dependency-audit", "POST /secret-scan"],
+            "behavior": ["POST /fraud-detection", "POST /bot-detection", "POST /login-anomaly"],
             "docs": ["/docs/api", "/api/docs", "/api/docs.json"]
         }
     }))
@@ -220,6 +239,138 @@ async fn vulnerability_scan(
         return response;
     }
     Json(scan_vulnerabilities(&state.config, request)).into_response()
+}
+
+async fn malware_scan_example() -> Json<ArtifactScanRequest> {
+    Json(malware_scan_example_request())
+}
+
+async fn malware_scan_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ArtifactScanRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = scan_malware(&state.config, request);
+    state.metrics.malware_scans_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
+}
+
+async fn dependency_audit_example() -> Json<DependencyAuditRequest> {
+    Json(dependency_audit_example_request())
+}
+
+async fn dependency_audit_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DependencyAuditRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = audit_dependencies(&state.config, request);
+    state.metrics.dependency_audits_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
+}
+
+async fn secret_scan_example() -> Json<ArtifactScanRequest> {
+    Json(secret_scan_example_request())
+}
+
+async fn secret_scan_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ArtifactScanRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = scan_secrets(&state.config, request);
+    state.metrics.secret_scans_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
+}
+
+async fn fraud_detection_example() -> Json<FraudDetectionRequest> {
+    Json(fraud_detection_example_request())
+}
+
+async fn fraud_detection_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<FraudDetectionRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = detect_fraud(&state.config, request);
+    state.metrics.fraud_checks_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
+}
+
+async fn bot_detection_example() -> Json<BotDetectionRequest> {
+    Json(bot_detection_example_request())
+}
+
+async fn bot_detection_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<BotDetectionRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = detect_bots(&state.config, request);
+    state.metrics.bot_checks_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
+}
+
+async fn login_anomaly_example() -> Json<LoginAnomalyRequest> {
+    Json(login_anomaly_example_request())
+}
+
+async fn login_anomaly_route(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<LoginAnomalyRequest>,
+) -> Response {
+    state.metrics.http_requests_total.fetch_add(1);
+    if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
+        return response;
+    }
+    let report = detect_login_anomalies(&state.config, request);
+    state.metrics.login_anomaly_checks_total.fetch_add(1);
+    state
+        .metrics
+        .risk_findings_total
+        .fetch_add(report.findings.len() as u64);
+    Json(report).into_response()
 }
 
 async fn submit_audit(

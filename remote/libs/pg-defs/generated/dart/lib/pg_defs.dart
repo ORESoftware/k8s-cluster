@@ -10420,6 +10420,290 @@ class BenefactorIcpsRow {
   }
 }
 
+const vcsRepositoriesTable = "vcs_repositories";
+const vcsRepositoriesSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      vcs_kind,\n      remote_url,\n      default_branch,\n      mirror_path,\n      mirror_status,\n      visibility,\n      to_char(last_synced_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_synced_at,\n      last_error,\n      size_bytes,\n      ref_count,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from vcs_repositories";
+
+const vcsRepositoriesVcsKindValues = <String>["git", "hg", "svn", "fossil"];
+const vcsRepositoriesMirrorStatusValues = <String>["pending", "mirroring", "ready", "error", "disabled"];
+const vcsRepositoriesVisibilityValues = <String>["private", "internal", "public"];
+
+class VcsRepositoriesRow {
+  const VcsRepositoriesRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.vcsKind,
+    required this.remoteUrl,
+    required this.defaultBranch,
+    this.mirrorPath,
+    required this.mirrorStatus,
+    required this.visibility,
+    this.lastSyncedAt,
+    this.lastError,
+    required this.sizeBytes,
+    required this.refCount,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String vcsKind;
+  final String remoteUrl;
+  final String defaultBranch;
+  final String? mirrorPath;
+  final String mirrorStatus;
+  final String visibility;
+  final String? lastSyncedAt;
+  final String? lastError;
+  final int sizeBytes;
+  final int refCount;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory VcsRepositoriesRow.fromJson(Map<String, Object?> json) {
+    return VcsRepositoriesRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      vcsKind: _readRequiredString(json, "vcsKind"),
+      remoteUrl: _readRequiredString(json, "remoteUrl"),
+      defaultBranch: _readRequiredString(json, "defaultBranch"),
+      mirrorPath: _readOptionalString(json, "mirrorPath"),
+      mirrorStatus: _readRequiredString(json, "mirrorStatus"),
+      visibility: _readRequiredString(json, "visibility"),
+      lastSyncedAt: _readOptionalString(json, "lastSyncedAt"),
+      lastError: _readOptionalString(json, "lastError"),
+      sizeBytes: _readRequiredInt(json, "sizeBytes"),
+      refCount: _readRequiredInt(json, "refCount"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "vcsKind": vcsKind,
+    "remoteUrl": remoteUrl,
+    "defaultBranch": defaultBranch,
+    "mirrorPath": mirrorPath,
+    "mirrorStatus": mirrorStatus,
+    "visibility": visibility,
+    "lastSyncedAt": lastSyncedAt,
+    "lastError": lastError,
+    "sizeBytes": sizeBytes,
+    "refCount": refCount,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._-]{0,119}$').hasMatch(slug)) {
+      errors.add("vcs_repositories.slug must be a lowercase slug");
+    }
+    if (utf8.encode(displayName).length > 200) {
+      errors.add("vcs_repositories.display_name exceeds 200 bytes");
+    }
+    if (!vcsRepositoriesVcsKindValues.contains(vcsKind)) {
+      errors.add("unsupported vcs_repositories.vcs_kind");
+    }
+    if (utf8.encode(remoteUrl).length > 2048) {
+      errors.add("vcs_repositories.remote_url exceeds 2048 bytes");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._/-]{1,160}$').hasMatch(defaultBranch)) {
+      errors.add("vcs_repositories.default_branch does not match the required pattern");
+    }
+    if (!vcsRepositoriesMirrorStatusValues.contains(mirrorStatus)) {
+      errors.add("unsupported vcs_repositories.mirror_status");
+    }
+    if (!vcsRepositoriesVisibilityValues.contains(visibility)) {
+      errors.add("unsupported vcs_repositories.visibility");
+    }
+    if (refCount < 0) {
+      errors.add("vcs_repositories.ref_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const vcsRefsTable = "vcs_refs";
+const vcsRefsSelectSql = "select\n      id::text as id,\n      repository_id::text as repository_id,\n      ref_name,\n      ref_type,\n      target_revision,\n      is_default,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from vcs_refs";
+
+const vcsRefsRefTypeValues = <String>["branch", "tag", "bookmark", "head", "other"];
+
+class VcsRefsRow {
+  const VcsRefsRow({
+    required this.id,
+    required this.repositoryId,
+    required this.refName,
+    required this.refType,
+    required this.targetRevision,
+    required this.isDefault,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String repositoryId;
+  final String refName;
+  final String refType;
+  final String targetRevision;
+  final bool isDefault;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String updatedAt;
+
+  factory VcsRefsRow.fromJson(Map<String, Object?> json) {
+    return VcsRefsRow(
+      id: _readRequiredString(json, "id"),
+      repositoryId: _readRequiredString(json, "repositoryId"),
+      refName: _readRequiredString(json, "refName"),
+      refType: _readRequiredString(json, "refType"),
+      targetRevision: _readRequiredString(json, "targetRevision"),
+      isDefault: _readRequiredBool(json, "isDefault"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "repositoryId": repositoryId,
+    "refName": refName,
+    "refType": refType,
+    "targetRevision": targetRevision,
+    "isDefault": isDefault,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(refName).length > 255) {
+      errors.add("vcs_refs.ref_name exceeds 255 bytes");
+    }
+    if (!vcsRefsRefTypeValues.contains(refType)) {
+      errors.add("unsupported vcs_refs.ref_type");
+    }
+    if (utf8.encode(targetRevision).length > 120) {
+      errors.add("vcs_refs.target_revision exceeds 120 bytes");
+    }
+    if (utf8.encode(targetRevision).length < 1) {
+      errors.add("vcs_refs.target_revision is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const vcsOperationsTable = "vcs_operations";
+const vcsOperationsSelectSql = "select\n      id::text as id,\n      repository_id::text as repository_id,\n      vcs_kind,\n      op_type,\n      status,\n      params::text as params_json,\n      result_summary::text as result_summary_json,\n      error,\n      duration_ms,\n      requested_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from vcs_operations";
+
+const vcsOperationsVcsKindValues = <String>["git", "hg", "svn", "fossil"];
+const vcsOperationsOpTypeValues = <String>["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"];
+const vcsOperationsStatusValues = <String>["pending", "running", "success", "error"];
+
+class VcsOperationsRow {
+  const VcsOperationsRow({
+    required this.id,
+    this.repositoryId,
+    required this.vcsKind,
+    required this.opType,
+    required this.status,
+    required this.params,
+    required this.resultSummary,
+    this.error,
+    this.durationMs,
+    this.requestedBy,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? repositoryId;
+  final String vcsKind;
+  final String opType;
+  final String status;
+  final Map<String, Object?> params;
+  final Map<String, Object?> resultSummary;
+  final String? error;
+  final int? durationMs;
+  final String? requestedBy;
+  final String createdAt;
+  final String updatedAt;
+
+  factory VcsOperationsRow.fromJson(Map<String, Object?> json) {
+    return VcsOperationsRow(
+      id: _readRequiredString(json, "id"),
+      repositoryId: _readOptionalString(json, "repositoryId"),
+      vcsKind: _readRequiredString(json, "vcsKind"),
+      opType: _readRequiredString(json, "opType"),
+      status: _readRequiredString(json, "status"),
+      params: _readRequiredObject(json, "params"),
+      resultSummary: _readRequiredObject(json, "resultSummary"),
+      error: _readOptionalString(json, "error"),
+      durationMs: _readOptionalInt(json, "durationMs"),
+      requestedBy: _readOptionalString(json, "requestedBy"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "repositoryId": repositoryId,
+    "vcsKind": vcsKind,
+    "opType": opType,
+    "status": status,
+    "params": params,
+    "resultSummary": resultSummary,
+    "error": error,
+    "durationMs": durationMs,
+    "requestedBy": requestedBy,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!vcsOperationsVcsKindValues.contains(vcsKind)) {
+      errors.add("unsupported vcs_operations.vcs_kind");
+    }
+    if (!vcsOperationsOpTypeValues.contains(opType)) {
+      errors.add("unsupported vcs_operations.op_type");
+    }
+    if (!vcsOperationsStatusValues.contains(status)) {
+      errors.add("unsupported vcs_operations.status");
+    }
+    if (durationMs != null && durationMs! < 0) {
+      errors.add("vcs_operations.duration_ms is below the minimum");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

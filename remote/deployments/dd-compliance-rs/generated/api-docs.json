@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-compliance-rs",
   "language": "rust",
-  "routeCount": 24,
+  "routeCount": 36,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 14,
+    "user-generated": 26,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -120,6 +120,40 @@
       "notes": ""
     },
     {
+      "path": "/bot-detection",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "bot_detection_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/bot-detection/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "bot_detection_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/controls",
       "methods": [
         "GET"
@@ -130,6 +164,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "controls"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/dependency-audit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dependency_audit_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/dependency-audit/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dependency_audit_example"
       ],
       "sourceFiles": [
         "remote/deployments/dd-compliance-rs/src/routes.rs"
@@ -205,6 +273,40 @@
       "notes": ""
     },
     {
+      "path": "/fraud-detection",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fraud_detection_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fraud-detection/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fraud_detection_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/healthz",
       "methods": [
         "GET"
@@ -269,6 +371,74 @@
       ],
       "sourceFiles": [
         "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/login-anomaly",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "login_anomaly_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/login-anomaly/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "login_anomaly_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/malware-scan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "malware_scan_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/malware-scan/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "malware_scan_example"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
       ],
       "notes": ""
     },
@@ -351,6 +521,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/secret-scan",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "secret_scan_route"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/secret-scan/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "secret_scan_example"
       ],
       "sourceFiles": [
         "remote/deployments/dd-compliance-rs/src/routes.rs"

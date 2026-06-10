@@ -83,10 +83,10 @@
     {
       "service": "billing-server-rs",
       "language": "rust",
-      "routeCount": 45,
+      "routeCount": 49,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 39
+        "user-generated": 43
       },
       "generated": [
         "remote/deployments/billing-server-rs/generated/api-docs.json",
@@ -191,10 +191,10 @@
     {
       "service": "dd-compliance-rs",
       "language": "rust",
-      "routeCount": 24,
+      "routeCount": 36,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 14,
+        "user-generated": 26,
         "runtime-config": 3
       },
       "generated": [
@@ -301,10 +301,10 @@
     {
       "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 505,
+      "routeCount": 511,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 495,
+        "user-generated": 501,
         "runtime-config": 3
       },
       "generated": [
@@ -453,10 +453,10 @@
     {
       "service": "patent-filing-rs",
       "language": "rust",
-      "routeCount": 20,
+      "routeCount": 24,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 10,
+        "user-generated": 14,
         "runtime-config": 3
       },
       "generated": [

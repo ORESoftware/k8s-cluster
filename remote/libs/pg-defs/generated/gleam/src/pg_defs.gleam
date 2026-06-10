@@ -8861,6 +8861,346 @@ pub fn validate_benefactor_icps_slug(value: String) -> Result(String, String) {
   }
 }
 
+pub const vcs_repositories_table = "vcs_repositories"
+pub const vcs_repositories_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      vcs_kind,\n      remote_url,\n      default_branch,\n      mirror_path,\n      mirror_status,\n      visibility,\n      to_char(last_synced_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_synced_at,\n      last_error,\n      size_bytes,\n      ref_count,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from vcs_repositories"
+
+pub type VcsRepositoriesVcsKind {
+  VcsRepositoriesVcsKindGit
+  VcsRepositoriesVcsKindHg
+  VcsRepositoriesVcsKindSvn
+  VcsRepositoriesVcsKindFossil
+}
+
+pub fn vcs_repositories_vcs_kind_to_string(value: VcsRepositoriesVcsKind) -> String {
+  case value {
+    VcsRepositoriesVcsKindGit -> "git"
+    VcsRepositoriesVcsKindHg -> "hg"
+    VcsRepositoriesVcsKindSvn -> "svn"
+    VcsRepositoriesVcsKindFossil -> "fossil"
+  }
+}
+
+pub fn parse_vcs_repositories_vcs_kind(value: String) -> Result(VcsRepositoriesVcsKind, String) {
+  case value {
+    "git" -> Ok(VcsRepositoriesVcsKindGit)
+    "hg" -> Ok(VcsRepositoriesVcsKindHg)
+    "svn" -> Ok(VcsRepositoriesVcsKindSvn)
+    "fossil" -> Ok(VcsRepositoriesVcsKindFossil)
+    _ -> Error("unsupported vcs_repositories.vcs_kind: " <> value)
+  }
+}
+
+pub type VcsRepositoriesMirrorStatus {
+  VcsRepositoriesMirrorStatusPending
+  VcsRepositoriesMirrorStatusMirroring
+  VcsRepositoriesMirrorStatusReady
+  VcsRepositoriesMirrorStatusError
+  VcsRepositoriesMirrorStatusDisabled
+}
+
+pub fn vcs_repositories_mirror_status_to_string(value: VcsRepositoriesMirrorStatus) -> String {
+  case value {
+    VcsRepositoriesMirrorStatusPending -> "pending"
+    VcsRepositoriesMirrorStatusMirroring -> "mirroring"
+    VcsRepositoriesMirrorStatusReady -> "ready"
+    VcsRepositoriesMirrorStatusError -> "error"
+    VcsRepositoriesMirrorStatusDisabled -> "disabled"
+  }
+}
+
+pub fn parse_vcs_repositories_mirror_status(value: String) -> Result(VcsRepositoriesMirrorStatus, String) {
+  case value {
+    "pending" -> Ok(VcsRepositoriesMirrorStatusPending)
+    "mirroring" -> Ok(VcsRepositoriesMirrorStatusMirroring)
+    "ready" -> Ok(VcsRepositoriesMirrorStatusReady)
+    "error" -> Ok(VcsRepositoriesMirrorStatusError)
+    "disabled" -> Ok(VcsRepositoriesMirrorStatusDisabled)
+    _ -> Error("unsupported vcs_repositories.mirror_status: " <> value)
+  }
+}
+
+pub type VcsRepositoriesVisibility {
+  VcsRepositoriesVisibilityPrivate
+  VcsRepositoriesVisibilityInternal
+  VcsRepositoriesVisibilityPublic
+}
+
+pub fn vcs_repositories_visibility_to_string(value: VcsRepositoriesVisibility) -> String {
+  case value {
+    VcsRepositoriesVisibilityPrivate -> "private"
+    VcsRepositoriesVisibilityInternal -> "internal"
+    VcsRepositoriesVisibilityPublic -> "public"
+  }
+}
+
+pub fn parse_vcs_repositories_visibility(value: String) -> Result(VcsRepositoriesVisibility, String) {
+  case value {
+    "private" -> Ok(VcsRepositoriesVisibilityPrivate)
+    "internal" -> Ok(VcsRepositoriesVisibilityInternal)
+    "public" -> Ok(VcsRepositoriesVisibilityPublic)
+    _ -> Error("unsupported vcs_repositories.visibility: " <> value)
+  }
+}
+
+pub type VcsRepositoriesRow {
+  VcsRepositoriesRow(
+    id: String,
+    slug: String,
+    display_name: String,
+    vcs_kind: String,
+    remote_url: String,
+    default_branch: String,
+    mirror_path: Option(String),
+    mirror_status: String,
+    visibility: String,
+    last_synced_at: Option(String),
+    last_error: Option(String),
+    size_bytes: Int,
+    ref_count: Int,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_vcs_repositories_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vcs_repositories.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_vcs_repositories_vcs_kind(value: String) -> Result(String, String) {
+  case list.contains(["git", "hg", "svn", "fossil"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_repositories.vcs_kind: " <> value)
+  }
+}
+
+pub fn validate_vcs_repositories_mirror_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "mirroring", "ready", "error", "disabled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_repositories.mirror_status: " <> value)
+  }
+}
+
+pub fn validate_vcs_repositories_visibility(value: String) -> Result(String, String) {
+  case list.contains(["private", "internal", "public"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_repositories.visibility: " <> value)
+  }
+}
+
+pub const vcs_refs_table = "vcs_refs"
+pub const vcs_refs_select_sql = "select\n      id::text as id,\n      repository_id::text as repository_id,\n      ref_name,\n      ref_type,\n      target_revision,\n      is_default,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from vcs_refs"
+
+pub type VcsRefsRefType {
+  VcsRefsRefTypeBranch
+  VcsRefsRefTypeTag
+  VcsRefsRefTypeBookmark
+  VcsRefsRefTypeHead
+  VcsRefsRefTypeOther
+}
+
+pub fn vcs_refs_ref_type_to_string(value: VcsRefsRefType) -> String {
+  case value {
+    VcsRefsRefTypeBranch -> "branch"
+    VcsRefsRefTypeTag -> "tag"
+    VcsRefsRefTypeBookmark -> "bookmark"
+    VcsRefsRefTypeHead -> "head"
+    VcsRefsRefTypeOther -> "other"
+  }
+}
+
+pub fn parse_vcs_refs_ref_type(value: String) -> Result(VcsRefsRefType, String) {
+  case value {
+    "branch" -> Ok(VcsRefsRefTypeBranch)
+    "tag" -> Ok(VcsRefsRefTypeTag)
+    "bookmark" -> Ok(VcsRefsRefTypeBookmark)
+    "head" -> Ok(VcsRefsRefTypeHead)
+    "other" -> Ok(VcsRefsRefTypeOther)
+    _ -> Error("unsupported vcs_refs.ref_type: " <> value)
+  }
+}
+
+pub type VcsRefsRow {
+  VcsRefsRow(
+    id: String,
+    repository_id: String,
+    ref_name: String,
+    ref_type: String,
+    target_revision: String,
+    is_default: Bool,
+    meta_data_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_vcs_refs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vcs_refs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_vcs_refs_ref_type(value: String) -> Result(String, String) {
+  case list.contains(["branch", "tag", "bookmark", "head", "other"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_refs.ref_type: " <> value)
+  }
+}
+
+pub const vcs_operations_table = "vcs_operations"
+pub const vcs_operations_select_sql = "select\n      id::text as id,\n      repository_id::text as repository_id,\n      vcs_kind,\n      op_type,\n      status,\n      params::text as params_json,\n      result_summary::text as result_summary_json,\n      error,\n      duration_ms,\n      requested_by,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from vcs_operations"
+
+pub type VcsOperationsVcsKind {
+  VcsOperationsVcsKindGit
+  VcsOperationsVcsKindHg
+  VcsOperationsVcsKindSvn
+  VcsOperationsVcsKindFossil
+}
+
+pub fn vcs_operations_vcs_kind_to_string(value: VcsOperationsVcsKind) -> String {
+  case value {
+    VcsOperationsVcsKindGit -> "git"
+    VcsOperationsVcsKindHg -> "hg"
+    VcsOperationsVcsKindSvn -> "svn"
+    VcsOperationsVcsKindFossil -> "fossil"
+  }
+}
+
+pub fn parse_vcs_operations_vcs_kind(value: String) -> Result(VcsOperationsVcsKind, String) {
+  case value {
+    "git" -> Ok(VcsOperationsVcsKindGit)
+    "hg" -> Ok(VcsOperationsVcsKindHg)
+    "svn" -> Ok(VcsOperationsVcsKindSvn)
+    "fossil" -> Ok(VcsOperationsVcsKindFossil)
+    _ -> Error("unsupported vcs_operations.vcs_kind: " <> value)
+  }
+}
+
+pub type VcsOperationsOpType {
+  VcsOperationsOpTypeMirror
+  VcsOperationsOpTypeFetch
+  VcsOperationsOpTypeRefs
+  VcsOperationsOpTypeLog
+  VcsOperationsOpTypeShow
+  VcsOperationsOpTypeDiff
+  VcsOperationsOpTypeTree
+  VcsOperationsOpTypeBlob
+  VcsOperationsOpTypeProbe
+  VcsOperationsOpTypeRemove
+}
+
+pub fn vcs_operations_op_type_to_string(value: VcsOperationsOpType) -> String {
+  case value {
+    VcsOperationsOpTypeMirror -> "mirror"
+    VcsOperationsOpTypeFetch -> "fetch"
+    VcsOperationsOpTypeRefs -> "refs"
+    VcsOperationsOpTypeLog -> "log"
+    VcsOperationsOpTypeShow -> "show"
+    VcsOperationsOpTypeDiff -> "diff"
+    VcsOperationsOpTypeTree -> "tree"
+    VcsOperationsOpTypeBlob -> "blob"
+    VcsOperationsOpTypeProbe -> "probe"
+    VcsOperationsOpTypeRemove -> "remove"
+  }
+}
+
+pub fn parse_vcs_operations_op_type(value: String) -> Result(VcsOperationsOpType, String) {
+  case value {
+    "mirror" -> Ok(VcsOperationsOpTypeMirror)
+    "fetch" -> Ok(VcsOperationsOpTypeFetch)
+    "refs" -> Ok(VcsOperationsOpTypeRefs)
+    "log" -> Ok(VcsOperationsOpTypeLog)
+    "show" -> Ok(VcsOperationsOpTypeShow)
+    "diff" -> Ok(VcsOperationsOpTypeDiff)
+    "tree" -> Ok(VcsOperationsOpTypeTree)
+    "blob" -> Ok(VcsOperationsOpTypeBlob)
+    "probe" -> Ok(VcsOperationsOpTypeProbe)
+    "remove" -> Ok(VcsOperationsOpTypeRemove)
+    _ -> Error("unsupported vcs_operations.op_type: " <> value)
+  }
+}
+
+pub type VcsOperationsStatus {
+  VcsOperationsStatusPending
+  VcsOperationsStatusRunning
+  VcsOperationsStatusSuccess
+  VcsOperationsStatusError
+}
+
+pub fn vcs_operations_status_to_string(value: VcsOperationsStatus) -> String {
+  case value {
+    VcsOperationsStatusPending -> "pending"
+    VcsOperationsStatusRunning -> "running"
+    VcsOperationsStatusSuccess -> "success"
+    VcsOperationsStatusError -> "error"
+  }
+}
+
+pub fn parse_vcs_operations_status(value: String) -> Result(VcsOperationsStatus, String) {
+  case value {
+    "pending" -> Ok(VcsOperationsStatusPending)
+    "running" -> Ok(VcsOperationsStatusRunning)
+    "success" -> Ok(VcsOperationsStatusSuccess)
+    "error" -> Ok(VcsOperationsStatusError)
+    _ -> Error("unsupported vcs_operations.status: " <> value)
+  }
+}
+
+pub type VcsOperationsRow {
+  VcsOperationsRow(
+    id: String,
+    repository_id: Option(String),
+    vcs_kind: String,
+    op_type: String,
+    status: String,
+    params_json: String,
+    result_summary_json: String,
+    error: Option(String),
+    duration_ms: Option(Int),
+    requested_by: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_vcs_operations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("vcs_operations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_vcs_operations_vcs_kind(value: String) -> Result(String, String) {
+  case list.contains(["git", "hg", "svn", "fossil"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_operations.vcs_kind: " <> value)
+  }
+}
+
+pub fn validate_vcs_operations_op_type(value: String) -> Result(String, String) {
+  case list.contains(["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_operations.op_type: " <> value)
+  }
+}
+
+pub fn validate_vcs_operations_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "running", "success", "error"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported vcs_operations.status: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

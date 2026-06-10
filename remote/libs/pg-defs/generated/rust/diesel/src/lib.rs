@@ -6090,3 +6090,171 @@ pub struct BenefactorIcpsDieselInsert {
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    vcs_repositories (id) {
+        id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        vcs_kind -> Varchar,
+        remote_url -> Text,
+        default_branch -> Varchar,
+        mirror_path -> Nullable<Text>,
+        mirror_status -> Varchar,
+        visibility -> Varchar,
+        last_synced_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Text>,
+        size_bytes -> Int8,
+        ref_count -> Int4,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = vcs_repositories)]
+pub struct VcsRepositoriesDieselRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub display_name: String,
+    pub vcs_kind: String,
+    pub remote_url: String,
+    pub default_branch: String,
+    pub mirror_path: Option<String>,
+    pub mirror_status: String,
+    pub visibility: String,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub size_bytes: i64,
+    pub ref_count: i32,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = vcs_repositories)]
+pub struct VcsRepositoriesDieselInsert {
+    pub id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub vcs_kind: Option<String>,
+    pub remote_url: Option<String>,
+    pub default_branch: Option<String>,
+    pub mirror_path: Option<String>,
+    pub mirror_status: Option<String>,
+    pub visibility: Option<String>,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub ref_count: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    vcs_refs (id) {
+        id -> Uuid,
+        repository_id -> Uuid,
+        ref_name -> Varchar,
+        ref_type -> Varchar,
+        target_revision -> Varchar,
+        is_default -> Bool,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = vcs_refs)]
+pub struct VcsRefsDieselRow {
+    pub id: Uuid,
+    pub repository_id: Uuid,
+    pub ref_name: String,
+    pub ref_type: String,
+    pub target_revision: String,
+    pub is_default: bool,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = vcs_refs)]
+pub struct VcsRefsDieselInsert {
+    pub id: Option<Uuid>,
+    pub repository_id: Option<Uuid>,
+    pub ref_name: Option<String>,
+    pub ref_type: Option<String>,
+    pub target_revision: Option<String>,
+    pub is_default: Option<bool>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    vcs_operations (id) {
+        id -> Uuid,
+        repository_id -> Nullable<Uuid>,
+        vcs_kind -> Varchar,
+        op_type -> Varchar,
+        status -> Varchar,
+        params -> Jsonb,
+        result_summary -> Jsonb,
+        error -> Nullable<Text>,
+        duration_ms -> Nullable<Int4>,
+        requested_by -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = vcs_operations)]
+pub struct VcsOperationsDieselRow {
+    pub id: Uuid,
+    pub repository_id: Option<Uuid>,
+    pub vcs_kind: String,
+    pub op_type: String,
+    pub status: String,
+    pub params: Value,
+    pub result_summary: Value,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub requested_by: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = vcs_operations)]
+pub struct VcsOperationsDieselInsert {
+    pub id: Option<Uuid>,
+    pub repository_id: Option<Uuid>,
+    pub vcs_kind: Option<String>,
+    pub op_type: Option<String>,
+    pub status: Option<String>,
+    pub params: Option<Value>,
+    pub result_summary: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub requested_by: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}

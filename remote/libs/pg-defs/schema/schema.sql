@@ -5110,3 +5110,138 @@ create index if not exists benefactor_icps_soft_deleted_idx
 alter table if exists benefactor.benefactor_scrape_queries
   add constraint benefactor_scrape_queries_location_fk
   foreign key (benefactor_search_location_id) references benefactor.benefactor_search_locations(id);
+
+-- ---------------------------------------------------------------------------
+-- dd-git-rs: multi-VCS operations server (git, mercurial, subversion, fossil).
+-- vcs_repositories is the server-owned working registry of mirrored repos;
+-- vcs_refs caches the latest ref/branch/tag snapshot per repo; vcs_operations
+-- is the audit log of VCS commands the server runs on behalf of callers.
+-- ---------------------------------------------------------------------------
+
+create table if not exists vcs_repositories (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  display_name varchar(200) not null,
+  vcs_kind varchar(20) default 'git' not null,
+  remote_url text not null,
+  default_branch varchar(160) default 'main' not null,
+  mirror_path text,
+  mirror_status varchar(32) default 'pending' not null,
+  visibility varchar(20) default 'private' not null,
+  last_synced_at timestamptz,
+  last_error text,
+  size_bytes bigint default 0 not null,
+  ref_count integer default 0 not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint vcs_repositories_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'),
+  constraint vcs_repositories_display_name_size_chk
+    check (octet_length(display_name) <= 200),
+  constraint vcs_repositories_remote_url_size_chk
+    check (octet_length(remote_url) <= 2048),
+  constraint vcs_repositories_default_branch_format_chk
+    check (default_branch ~ '^[A-Za-z0-9._/-]{1,160}$'),
+  constraint vcs_repositories_vcs_kind_chk
+    check (vcs_kind in ('git', 'hg', 'svn', 'fossil')),
+  constraint vcs_repositories_mirror_status_chk
+    check (mirror_status in ('pending', 'mirroring', 'ready', 'error', 'disabled')),
+  constraint vcs_repositories_visibility_chk
+    check (visibility in ('private', 'internal', 'public')),
+  constraint vcs_repositories_size_bytes_chk
+    check (size_bytes >= 0),
+  constraint vcs_repositories_ref_count_chk
+    check (ref_count >= 0),
+  constraint vcs_repositories_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists vcs_repositories_slug_active_uq
+  on vcs_repositories (slug)
+  where is_soft_deleted = false;
+
+create index if not exists vcs_repositories_vcs_kind_idx
+  on vcs_repositories (vcs_kind)
+  where is_soft_deleted = false;
+
+create index if not exists vcs_repositories_mirror_status_idx
+  on vcs_repositories (mirror_status)
+  where is_soft_deleted = false;
+
+create index if not exists vcs_repositories_updated_at_idx
+  on vcs_repositories (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists vcs_refs (
+  id uuid primary key default gen_random_uuid(),
+  repository_id uuid not null,
+  ref_name varchar(255) not null,
+  ref_type varchar(20) default 'branch' not null,
+  target_revision varchar(120) not null,
+  is_default boolean default false not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint vcs_refs_ref_name_size_chk
+    check (octet_length(ref_name) <= 255),
+  constraint vcs_refs_ref_type_chk
+    check (ref_type in ('branch', 'tag', 'bookmark', 'head', 'other')),
+  constraint vcs_refs_target_revision_size_chk
+    check (octet_length(target_revision) between 1 and 120),
+  constraint vcs_refs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists vcs_refs_repo_name_uq
+  on vcs_refs (repository_id, ref_name);
+
+create index if not exists vcs_refs_repository_id_idx
+  on vcs_refs (repository_id);
+
+create table if not exists vcs_operations (
+  id uuid primary key default gen_random_uuid(),
+  repository_id uuid,
+  vcs_kind varchar(20) default 'git' not null,
+  op_type varchar(32) not null,
+  status varchar(20) default 'pending' not null,
+  params jsonb default '{}'::jsonb not null,
+  result_summary jsonb default '{}'::jsonb not null,
+  error text,
+  duration_ms integer,
+  requested_by varchar(200),
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint vcs_operations_vcs_kind_chk
+    check (vcs_kind in ('git', 'hg', 'svn', 'fossil')),
+  constraint vcs_operations_op_type_chk
+    check (op_type in ('mirror', 'fetch', 'refs', 'log', 'show', 'diff', 'tree', 'blob', 'probe', 'remove')),
+  constraint vcs_operations_status_chk
+    check (status in ('pending', 'running', 'success', 'error')),
+  constraint vcs_operations_duration_chk
+    check (duration_ms is null or duration_ms >= 0),
+  constraint vcs_operations_params_object_chk
+    check (jsonb_typeof(params) = 'object'),
+  constraint vcs_operations_result_object_chk
+    check (jsonb_typeof(result_summary) = 'object')
+);
+
+create index if not exists vcs_operations_repository_id_idx
+  on vcs_operations (repository_id);
+
+create index if not exists vcs_operations_op_type_idx
+  on vcs_operations (op_type);
+
+create index if not exists vcs_operations_created_at_idx
+  on vcs_operations (created_at desc);
+
+alter table if exists vcs_refs
+  add constraint vcs_refs_repository_fk
+  foreign key (repository_id) references vcs_repositories(id);
+
+alter table if exists vcs_operations
+  add constraint vcs_operations_repository_fk
+  foreign key (repository_id) references vcs_repositories(id);

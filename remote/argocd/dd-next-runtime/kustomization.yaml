@@ -41,6 +41,8 @@ resources:
   - dd-monte-carlo-server.service.yaml
   - dd-raft-consensus.deployment.yaml
   - dd-raft-consensus.service.yaml
+  - dd-gpu-rs.deployment.yaml
+  - dd-gpu-rs.service.yaml
   - dd-fabrication-server.serviceaccount.yaml
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
