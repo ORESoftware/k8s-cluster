@@ -10,6 +10,10 @@
     billing_sync_commands_subject/0,
     billing_sync_commands_queue_group/0,
     billing_webhook_receipts_subject/0,
+    chaos_events_subject/0,
+    chaos_experiments_subject/0,
+    chaos_probe_subject/0,
+    chaos_probe_queue_group/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
     contracts_solana_resolve_subject/0,
@@ -36,6 +40,15 @@
     escrow_solana_results_subject/0,
     escrow_solana_validate_subject/0,
     escrow_solana_validate_queue_group/0,
+    evolution_events_subject/0,
+    evolution_events_stream/0,
+    evolution_jobs_subject/0,
+    evolution_jobs_queue_group/0,
+    evolution_jobs_stream/0,
+    evolution_migrants_subject/0,
+    evolution_migrants_stream/0,
+    evolution_results_subject/0,
+    evolution_results_stream/0,
     fabrication_assembly_planning_requests_subject/0,
     fabrication_assembly_planning_requests_queue_group/0,
     fabrication_assembly_planning_results_subject/0,
@@ -101,6 +114,13 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    routing_events_subject/0,
+    routing_events_stream/0,
+    routing_jobs_subject/0,
+    routing_jobs_queue_group/0,
+    routing_jobs_stream/0,
+    routing_results_subject/0,
+    routing_results_stream/0,
     runtime_critical_events_subject/0,
     runtime_critical_events_queue_group/0,
     runtime_critical_events_stream/0,
@@ -173,10 +193,12 @@
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
+    evolution_islands_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    routing_workers_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     cdc_stream_subjects/0,
@@ -203,11 +225,21 @@
     dd_remote_events_stream_retention/0,
     dd_remote_events_stream_storage/0,
     dd_remote_events_stream_ack/0,
+    dd_remote_evolution_stream_name/0,
+    dd_remote_evolution_stream_subjects/0,
+    dd_remote_evolution_stream_retention/0,
+    dd_remote_evolution_stream_storage/0,
+    dd_remote_evolution_stream_ack/0,
     dd_remote_mip_solver_stream_name/0,
     dd_remote_mip_solver_stream_subjects/0,
     dd_remote_mip_solver_stream_retention/0,
     dd_remote_mip_solver_stream_storage/0,
     dd_remote_mip_solver_stream_ack/0,
+    dd_remote_routing_stream_name/0,
+    dd_remote_routing_stream_subjects/0,
+    dd_remote_routing_stream_retention/0,
+    dd_remote_routing_stream_storage/0,
+    dd_remote_routing_stream_ack/0,
     dd_remote_tasks_stream_name/0,
     dd_remote_tasks_stream_subjects/0,
     dd_remote_tasks_stream_retention/0,
@@ -239,6 +271,19 @@ billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
 %% Redacted provider webhook receipt audit feed. Carries provider, external event id, event type, signature_ok, tenant/connection ids, and the payload sha256 prefix only. The raw webhook body and verification error detail are deliberately NOT published. Mirrors dd.remote.public_data.webhooks.events as an audit source, not a canonical store.
 %% Service: dd-billing-server
 billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
+
+%% Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
+%% Service: dd-chaos
+chaos_events_subject() -> <<"dd.remote.chaos.events"/utf8>>.
+
+%% Auditable chaos experiment records: each planned or executed fault (pod-kill, replica-jitter) is published here with its blast radius, target, and dry-run flag.
+%% Service: dd-chaos
+chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
+
+%% Round-trip latency-probe subject. The chaos NATS probe publishes a ping and the same service replies, measuring request/reply RTT and jitter against the live cluster NATS server.
+%% Service: dd-chaos
+chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
+chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
 
 %% Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 %% Service: dd-container-pool
@@ -319,6 +364,27 @@ escrow_solana_results_subject() -> <<"dd.remote.escrow.solana.results"/utf8>>.
 %% Service: dd-escrow-rs
 escrow_solana_validate_subject() -> <<"dd.remote.escrow.solana.validate"/utf8>>.
 escrow_solana_validate_queue_group() -> <<"dd-escrow-rs"/utf8>>.
+
+%% Lifecycle and per-epoch progress events from the distributed GA (best-fitness-so-far, convergence, epoch boundaries).
+%% Service: dd-evolution-optimizer
+evolution_events_subject() -> <<"dd.remote.evolution.events"/utf8>>.
+evolution_events_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+
+%% Per-island evolution jobs. The master publishes a subpopulation plus GA parameters for one epoch; island worker pods consume through the islands queue group and evolve it for N generations.
+%% Service: dd-evolution-optimizer
+evolution_jobs_subject() -> <<"dd.remote.evolution.jobs"/utf8>>.
+evolution_jobs_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+evolution_jobs_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+
+%% Elite individuals migrating between islands on a ring topology between epochs. Carried inside the next epoch's jobs by the master; this subject lets observers tap migration flow.
+%% Service: dd-evolution-optimizer
+evolution_migrants_subject() -> <<"dd.remote.evolution.migrants"/utf8>>.
+evolution_migrants_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+
+%% Per-island evolution results. Islands publish the evolved (fitness-sorted) subpopulation and their best genome; the master aggregates them by solveId and epoch.
+%% Service: dd-evolution-optimizer
+evolution_results_subject() -> <<"dd.remote.evolution.results"/utf8>>.
+evolution_results_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
 
 %% Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 %% Service: dd-fabrication-server
@@ -519,6 +585,22 @@ public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/u
 %% Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.
 %% Service: dd-public-data-server
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
+
+%% Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.
+%% Service: dd-routing-server
+routing_events_subject() -> <<"dd.remote.routing.events"/utf8>>.
+routing_events_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
+
+%% Per-worker routing jobs. The master publishes one construction+local-search restart (a seeded nearest-neighbour or random start) for a problem; worker pods consume through the workers queue group and return an improved tour.
+%% Service: dd-routing-server
+routing_jobs_subject() -> <<"dd.remote.routing.jobs"/utf8>>.
+routing_jobs_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
+routing_jobs_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
+
+%% Per-worker routing results. Workers publish a completed tour (or per-vehicle routes) with its total distance; the master keeps the global incumbent by solveId.
+%% Service: dd-routing-server
+routing_results_subject() -> <<"dd.remote.routing.results"/utf8>>.
+routing_results_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 
 %% Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
 %% Service: shared
@@ -916,6 +998,10 @@ data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>
 %% Service: dd-economics-server
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 
+%% Shared queue group used by island worker pods so each per-epoch subpopulation is evolved exactly once.
+%% Service: dd-evolution-optimizer
+evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+
 %% Shared queue group used by lambda-runner replicas.
 %% Service: dd-gleam-lambda-runner
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
@@ -931,6 +1017,10 @@ music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 %% Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 %% Service: dd-public-data-server
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
+
+%% Shared queue group used by routing worker pods so each multi-start restart is solved exactly once.
+%% Service: dd-routing-server
+routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
 
 %% Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 %% Service: dd-remote-rest-api
@@ -981,6 +1071,15 @@ dd_remote_events_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_events_stream_storage() -> <<"file"/utf8>>.
 dd_remote_events_stream_ack() -> <<"explicit"/utf8>>.
 
+%% JetStream stream for distributed island-model GA jobs, results, ring migrants, and progress events.
+%% Service: dd-evolution-optimizer
+dd_remote_evolution_stream_name() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+dd_remote_evolution_stream_subjects() ->
+    [<<"dd.remote.evolution.jobs"/utf8>>, <<"dd.remote.evolution.results"/utf8>>, <<"dd.remote.evolution.migrants"/utf8>>, <<"dd.remote.evolution.events"/utf8>>].
+dd_remote_evolution_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_evolution_stream_storage() -> <<"file"/utf8>>.
+dd_remote_evolution_stream_ack() -> <<"explicit"/utf8>>.
+
 %% JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 %% Service: dd-ai-ml-pipeline
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
@@ -989,6 +1088,15 @@ dd_remote_mip_solver_stream_subjects() ->
 dd_remote_mip_solver_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_mip_solver_stream_storage() -> <<"file"/utf8>>.
 dd_remote_mip_solver_stream_ack() -> <<"explicit"/utf8>>.
+
+%% JetStream stream for distributed VRP/TSP solve jobs, worker tour results, and incumbent-improvement events.
+%% Service: dd-routing-server
+dd_remote_routing_stream_name() -> <<"DD_REMOTE_ROUTING"/utf8>>.
+dd_remote_routing_stream_subjects() ->
+    [<<"dd.remote.routing.jobs"/utf8>>, <<"dd.remote.routing.results"/utf8>>, <<"dd.remote.routing.events"/utf8>>].
+dd_remote_routing_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_routing_stream_storage() -> <<"file"/utf8>>.
+dd_remote_routing_stream_ack() -> <<"explicit"/utf8>>.
 
 %% JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 %% Service: dd-remote-rest-api

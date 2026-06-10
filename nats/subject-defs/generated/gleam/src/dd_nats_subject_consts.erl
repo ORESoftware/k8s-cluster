@@ -17,6 +17,10 @@
     billing_sync_commands_subject/0,
     billing_sync_commands_queue_group/0,
     billing_webhook_receipts_subject/0,
+    chaos_events_subject/0,
+    chaos_experiments_subject/0,
+    chaos_probe_subject/0,
+    chaos_probe_queue_group/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
     contracts_solana_resolve_subject/0,
@@ -43,6 +47,15 @@
     escrow_solana_results_subject/0,
     escrow_solana_validate_subject/0,
     escrow_solana_validate_queue_group/0,
+    evolution_events_subject/0,
+    evolution_events_stream/0,
+    evolution_jobs_subject/0,
+    evolution_jobs_queue_group/0,
+    evolution_jobs_stream/0,
+    evolution_migrants_subject/0,
+    evolution_migrants_stream/0,
+    evolution_results_subject/0,
+    evolution_results_stream/0,
     fabrication_assembly_planning_requests_subject/0,
     fabrication_assembly_planning_requests_queue_group/0,
     fabrication_assembly_planning_results_subject/0,
@@ -108,6 +121,13 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    routing_events_subject/0,
+    routing_events_stream/0,
+    routing_jobs_subject/0,
+    routing_jobs_queue_group/0,
+    routing_jobs_stream/0,
+    routing_results_subject/0,
+    routing_results_stream/0,
     runtime_critical_events_subject/0,
     runtime_critical_events_queue_group/0,
     runtime_critical_events_stream/0,
@@ -156,17 +176,21 @@
     critical_events_logger_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
+    evolution_islands_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    routing_workers_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     dd_remote_control_stream_name/0,
     dd_remote_critical_events_stream_name/0,
     dd_remote_cron_stream_name/0,
     dd_remote_events_stream_name/0,
+    dd_remote_evolution_stream_name/0,
     dd_remote_mip_solver_stream_name/0,
+    dd_remote_routing_stream_name/0,
     dd_remote_tasks_stream_name/0
 ]).
 
@@ -177,6 +201,10 @@ billing_reconciliation_breaks_subject() -> <<"dd.remote.billing.reconciliation.b
 billing_sync_commands_subject() -> <<"dd.remote.billing.commands.sync"/utf8>>.
 billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
 billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
+chaos_events_subject() -> <<"dd.remote.chaos.events"/utf8>>.
+chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
+chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
+chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
 container_pool_requests_subject() -> <<"dd.remote.container_pool.requests"/utf8>>.
 container_pool_results_subject() -> <<"dd.remote.container_pool.results"/utf8>>.
 contracts_solana_resolve_subject() -> <<"dd.remote.contracts.solana.resolve"/utf8>>.
@@ -203,6 +231,15 @@ economics_market_events_subject() -> <<"dd.remote.economics.market.events"/utf8>
 escrow_solana_results_subject() -> <<"dd.remote.escrow.solana.results"/utf8>>.
 escrow_solana_validate_subject() -> <<"dd.remote.escrow.solana.validate"/utf8>>.
 escrow_solana_validate_queue_group() -> <<"dd-escrow-rs"/utf8>>.
+evolution_events_subject() -> <<"dd.remote.evolution.events"/utf8>>.
+evolution_events_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+evolution_jobs_subject() -> <<"dd.remote.evolution.jobs"/utf8>>.
+evolution_jobs_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+evolution_jobs_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+evolution_migrants_subject() -> <<"dd.remote.evolution.migrants"/utf8>>.
+evolution_migrants_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
+evolution_results_subject() -> <<"dd.remote.evolution.results"/utf8>>.
+evolution_results_stream() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
 fabrication_assembly_planning_requests_subject() -> <<"dd.remote.fabrication.assembly.planning.requests"/utf8>>.
 fabrication_assembly_planning_requests_queue_group() -> <<"dd-fabrication-assembly-planners"/utf8>>.
 fabrication_assembly_planning_results_subject() -> <<"dd.remote.fabrication.assembly.planning.results"/utf8>>.
@@ -268,6 +305,13 @@ public_data_ingest_requests_queue_group() -> <<"dd-public-data-server"/utf8>>.
 public_data_ingest_results_subject() -> <<"dd.remote.public_data.ingest.results"/utf8>>.
 public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/utf8>>.
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
+routing_events_subject() -> <<"dd.remote.routing.events"/utf8>>.
+routing_events_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
+routing_jobs_subject() -> <<"dd.remote.routing.jobs"/utf8>>.
+routing_jobs_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
+routing_jobs_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
+routing_results_subject() -> <<"dd.remote.routing.results"/utf8>>.
+routing_results_stream() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 runtime_critical_events_subject() -> <<"dd.remote.events.critical"/utf8>>.
 runtime_critical_events_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 runtime_critical_events_stream() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
@@ -316,15 +360,19 @@ billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
+evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
+routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 dd_remote_cron_stream_name() -> <<"DD_REMOTE_CRON"/utf8>>.
 dd_remote_events_stream_name() -> <<"DD_REMOTE_EVENTS"/utf8>>.
+dd_remote_evolution_stream_name() -> <<"DD_REMOTE_EVOLUTION"/utf8>>.
 dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
+dd_remote_routing_stream_name() -> <<"DD_REMOTE_ROUTING"/utf8>>.
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.
