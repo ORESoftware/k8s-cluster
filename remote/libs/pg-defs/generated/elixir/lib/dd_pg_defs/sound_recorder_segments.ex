@@ -32,12 +32,13 @@ defmodule DdPgDefs.SoundRecorderSegments do
     field :etag, :string
     field :uploaded_at, :utc_datetime_usec
     field :expires_at, :utc_datetime_usec
+    field :pinned_at, :utc_datetime_usec
     field :meta_data, :map, default: %{}
     timestamps(inserted_at: :created_at, type: :utc_datetime_usec)
   end
 
   @required_fields ~w(account_id device_id session_id sequence_number storage_bucket storage_key captured_started_at duration_millis expires_at)a
-  @optional_fields ~w(status storage_provider content_type codec captured_ended_at byte_count sha256_hex upload_url_expires_at etag uploaded_at meta_data)a
+  @optional_fields ~w(status storage_provider content_type codec captured_ended_at byte_count sha256_hex upload_url_expires_at etag uploaded_at pinned_at meta_data)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do

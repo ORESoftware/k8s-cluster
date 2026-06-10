@@ -475,6 +475,7 @@ const SoundRecorderUploadSessionsSelectSQL = `select
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
       client_timezone,
       legal_region,
+      use_case,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -482,6 +483,7 @@ const SoundRecorderUploadSessionsSelectSQL = `select
 
 var SoundRecorderUploadSessionsStatusValues = []string{"active", "closed", "revoked", "expired"}
 var SoundRecorderUploadSessionsStorageProviderValues = []string{"s3"}
+var SoundRecorderUploadSessionsUseCaseValues = []string{"security", "music", "meeting", "voice_note", "ambient"}
 
 type SoundRecorderUploadSessionsGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -503,6 +505,7 @@ type SoundRecorderUploadSessionsGorm struct {
 	ExpiresAt *time.Time `gorm:"column:expires_at;type:timestamptz" json:"expiresAt,omitempty"`
 	ClientTimezone *string `gorm:"column:client_timezone;type:varchar(80)" json:"clientTimezone,omitempty"`
 	LegalRegion *string `gorm:"column:legal_region;type:varchar(64)" json:"legalRegion,omitempty"`
+	UseCase string `gorm:"column:use_case;type:varchar(32);default:'security';not null" json:"useCase"`
 	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
@@ -540,6 +543,7 @@ func (value SoundRecorderUploadSessionsGorm) Validate() error {
 	if value.LegalRegion != nil {
 		if !soundRecorderUploadSessionsLegalRegionPattern.MatchString(*value.LegalRegion) { return errors.New("sound_recorder_upload_sessions.legal_region does not match the required pattern") }
 	}
+	if !containsString(SoundRecorderUploadSessionsUseCaseValues, value.UseCase) { return errors.New("unsupported sound_recorder_upload_sessions.use_case") }
 	if !validateJSONString(value.MetaData) { return errors.New("sound_recorder_upload_sessions.meta_data must be valid JSON") }
 	return nil
 }
@@ -566,6 +570,7 @@ const SoundRecorderSegmentsSelectSQL = `select
       etag,
       to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as uploaded_at,
       to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(pinned_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as pinned_at,
       meta_data,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
@@ -595,6 +600,7 @@ type SoundRecorderSegmentsGorm struct {
 	Etag *string `gorm:"column:etag;type:varchar(160)" json:"etag,omitempty"`
 	UploadedAt *time.Time `gorm:"column:uploaded_at;type:timestamptz" json:"uploadedAt,omitempty"`
 	ExpiresAt time.Time `gorm:"column:expires_at;type:timestamptz;not null" json:"expiresAt"`
+	PinnedAt *time.Time `gorm:"column:pinned_at;type:timestamptz" json:"pinnedAt,omitempty"`
 	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
@@ -5274,6 +5280,475 @@ func (value UsaccAuditEventsGorm) Validate() error {
 	if !usaccAuditEventsEventHashPattern.MatchString(value.EventHash) { return errors.New("usacc_audit_events.event_hash does not match the required pattern") }
 	if !usaccAuditEventsSourcePattern.MatchString(value.Source) { return errors.New("usacc_audit_events.source does not match the required pattern") }
 	if !validateJSONString(value.Payload) { return errors.New("usacc_audit_events.payload must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsTable = "benefactor.benefactor_leads"
+const BenefactorLeadsSelectSQL = `select
+      id::text as id,
+      business_name,
+      owner_first_name,
+      owner_last_name,
+      primary_email,
+      secondary_email,
+      primary_phone,
+      website_url,
+      service_category,
+      service_subcategories,
+      city,
+      state,
+      zip_code,
+      country,
+      service_area,
+      lead_status,
+      outreach_status,
+      total_outreach_attempts,
+      to_char(last_outreach_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_outreach_at,
+      contact_attempts,
+      source_url,
+      source_query,
+      source_tool,
+      source_engine,
+      is_verified,
+      tags,
+      meta_data,
+      notes,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads`
+
+var BenefactorLeadsLeadStatusValues = []string{"new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"}
+var BenefactorLeadsOutreachStatusValues = []string{"pending", "new", "contacted", "failed"}
+
+type BenefactorLeadsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	BusinessName string `gorm:"column:business_name;type:varchar(300);default:'';not null" json:"businessName"`
+	OwnerFirstName string `gorm:"column:owner_first_name;type:varchar(120);default:'';not null" json:"ownerFirstName"`
+	OwnerLastName string `gorm:"column:owner_last_name;type:varchar(130);default:'';not null" json:"ownerLastName"`
+	PrimaryEmail string `gorm:"column:primary_email;type:varchar(255);default:'';not null" json:"primaryEmail"`
+	SecondaryEmail *string `gorm:"column:secondary_email;type:varchar(255)" json:"secondaryEmail,omitempty"`
+	PrimaryPhone *string `gorm:"column:primary_phone;type:varchar(100)" json:"primaryPhone,omitempty"`
+	WebsiteUrl *string `gorm:"column:website_url;type:varchar(500)" json:"websiteUrl,omitempty"`
+	ServiceCategory string `gorm:"column:service_category;type:varchar(60);default:'other';not null" json:"serviceCategory"`
+	ServiceSubcategories datatypes.JSON `gorm:"column:service_subcategories;type:jsonb;default:'[]'::jsonb;not null" json:"serviceSubcategories"`
+	City *string `gorm:"column:city;type:varchar(120)" json:"city,omitempty"`
+	State *string `gorm:"column:state;type:varchar(80)" json:"state,omitempty"`
+	ZipCode *string `gorm:"column:zip_code;type:varchar(20)" json:"zipCode,omitempty"`
+	Country string `gorm:"column:country;type:varchar(80);default:'US';not null" json:"country"`
+	ServiceArea *string `gorm:"column:service_area;type:varchar(500)" json:"serviceArea,omitempty"`
+	LeadStatus string `gorm:"column:lead_status;type:varchar(30);default:'new';not null" json:"leadStatus"`
+	OutreachStatus string `gorm:"column:outreach_status;type:varchar(30);default:'pending';not null" json:"outreachStatus"`
+	TotalOutreachAttempts int32 `gorm:"column:total_outreach_attempts;type:integer;default:0;not null" json:"totalOutreachAttempts"`
+	LastOutreachAt *time.Time `gorm:"column:last_outreach_at;type:timestamptz" json:"lastOutreachAt,omitempty"`
+	ContactAttempts datatypes.JSON `gorm:"column:contact_attempts;type:jsonb;default:'[]'::jsonb;not null" json:"contactAttempts"`
+	SourceUrl *string `gorm:"column:source_url;type:varchar(1000)" json:"sourceUrl,omitempty"`
+	SourceQuery *string `gorm:"column:source_query;type:varchar(500)" json:"sourceQuery,omitempty"`
+	SourceTool *string `gorm:"column:source_tool;type:varchar(60)" json:"sourceTool,omitempty"`
+	SourceEngine *string `gorm:"column:source_engine;type:varchar(30)" json:"sourceEngine,omitempty"`
+	IsVerified bool `gorm:"column:is_verified;type:boolean;default:false;not null" json:"isVerified"`
+	Tags datatypes.JSON `gorm:"column:tags;type:jsonb;default:'[]'::jsonb;not null" json:"tags"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	Notes *string `gorm:"column:notes;type:text" json:"notes,omitempty"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorLeadsGorm) TableName() string { return BenefactorLeadsTable }
+
+func (value BenefactorLeadsGorm) Validate() error {
+	if !validateJSONString(value.ServiceSubcategories) { return errors.New("benefactor_leads.service_subcategories must be valid JSON") }
+	if !containsString(BenefactorLeadsLeadStatusValues, value.LeadStatus) { return errors.New("unsupported benefactor_leads.lead_status") }
+	if !containsString(BenefactorLeadsOutreachStatusValues, value.OutreachStatus) { return errors.New("unsupported benefactor_leads.outreach_status") }
+	if !validateJSONString(value.ContactAttempts) { return errors.New("benefactor_leads.contact_attempts must be valid JSON") }
+	if !validateJSONString(value.Tags) { return errors.New("benefactor_leads.tags must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_leads.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsDomainsTable = "benefactor.benefactor_leads_domains"
+const BenefactorLeadsDomainsSelectSQL = `select
+      id::text as id,
+      domain,
+      domain_kind,
+      status,
+      reason,
+      source,
+      is_blacklisted,
+      is_blocked,
+      is_permanently_blocked,
+      blocked_reason,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      to_char(skip_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as skip_until,
+      scrape_count,
+      skip_count,
+      skipped_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(last_scraped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_scraped_at,
+      to_char(last_skipped_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_skipped_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_seen_url,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_domains`
+
+var BenefactorLeadsDomainsDomainKindValues = []string{"email", "website"}
+var BenefactorLeadsDomainsStatusValues = []string{"allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"}
+
+type BenefactorLeadsDomainsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Domain string `gorm:"column:domain;type:varchar(255);not null" json:"domain"`
+	DomainKind string `gorm:"column:domain_kind;type:varchar(32);default:'email';not null" json:"domainKind"`
+	Status string `gorm:"column:status;type:varchar(40);default:'allowed';not null" json:"status"`
+	Reason *string `gorm:"column:reason;type:text" json:"reason,omitempty"`
+	Source string `gorm:"column:source;type:varchar(80);default:'manual';not null" json:"source"`
+	IsBlacklisted bool `gorm:"column:is_blacklisted;type:boolean;default:false;not null" json:"isBlacklisted"`
+	IsBlocked bool `gorm:"column:is_blocked;type:boolean;default:false;not null" json:"isBlocked"`
+	IsPermanentlyBlocked bool `gorm:"column:is_permanently_blocked;type:boolean;default:false;not null" json:"isPermanentlyBlocked"`
+	BlockedReason *string `gorm:"column:blocked_reason;type:text" json:"blockedReason,omitempty"`
+	BlockedUntil *time.Time `gorm:"column:blocked_until;type:timestamptz" json:"blockedUntil,omitempty"`
+	SkipUntil *time.Time `gorm:"column:skip_until;type:timestamptz" json:"skipUntil,omitempty"`
+	ScrapeCount int32 `gorm:"column:scrape_count;type:integer;default:0;not null" json:"scrapeCount"`
+	SkipCount int32 `gorm:"column:skip_count;type:integer;default:0;not null" json:"skipCount"`
+	SkippedCount int32 `gorm:"column:skipped_count;type:integer;default:0;not null" json:"skippedCount"`
+	EmailFoundCount int32 `gorm:"column:email_found_count;type:integer;default:0;not null" json:"emailFoundCount"`
+	LeadInsertedCount int32 `gorm:"column:lead_inserted_count;type:integer;default:0;not null" json:"leadInsertedCount"`
+	LastSeenAt *time.Time `gorm:"column:last_seen_at;type:timestamptz" json:"lastSeenAt,omitempty"`
+	LastScrapedAt *time.Time `gorm:"column:last_scraped_at;type:timestamptz" json:"lastScrapedAt,omitempty"`
+	LastSkippedAt *time.Time `gorm:"column:last_skipped_at;type:timestamptz" json:"lastSkippedAt,omitempty"`
+	LastEmailFoundAt *time.Time `gorm:"column:last_email_found_at;type:timestamptz" json:"lastEmailFoundAt,omitempty"`
+	LastLeadInsertedAt *time.Time `gorm:"column:last_lead_inserted_at;type:timestamptz" json:"lastLeadInsertedAt,omitempty"`
+	LastSeenUrl *string `gorm:"column:last_seen_url;type:text" json:"lastSeenUrl,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorLeadsDomainsGorm) TableName() string { return BenefactorLeadsDomainsTable }
+
+func (value BenefactorLeadsDomainsGorm) Validate() error {
+	if !containsString(BenefactorLeadsDomainsDomainKindValues, value.DomainKind) { return errors.New("unsupported benefactor_leads_domains.domain_kind") }
+	if !containsString(BenefactorLeadsDomainsStatusValues, value.Status) { return errors.New("unsupported benefactor_leads_domains.status") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_leads_domains.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorSearchLocationsTable = "benefactor.benefactor_search_locations"
+const BenefactorSearchLocationsSelectSQL = `select
+      id::text as id,
+      slug,
+      city,
+      state,
+      state_code,
+      country,
+      metro_area,
+      military_area,
+      primary_installation,
+      installation_aliases,
+      location_type,
+      priority,
+      search_weight,
+      total_query_runs,
+      total_emails_inserted,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_search_locations`
+
+type BenefactorSearchLocationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(160);not null" json:"slug"`
+	City string `gorm:"column:city;type:varchar(120);not null" json:"city"`
+	State string `gorm:"column:state;type:varchar(80);not null" json:"state"`
+	StateCode *string `gorm:"column:state_code;type:varchar(10)" json:"stateCode,omitempty"`
+	Country string `gorm:"column:country;type:varchar(80);default:'US';not null" json:"country"`
+	MetroArea *string `gorm:"column:metro_area;type:varchar(220)" json:"metroArea,omitempty"`
+	MilitaryArea *string `gorm:"column:military_area;type:varchar(220)" json:"militaryArea,omitempty"`
+	PrimaryInstallation *string `gorm:"column:primary_installation;type:varchar(220)" json:"primaryInstallation,omitempty"`
+	InstallationAliases datatypes.JSON `gorm:"column:installation_aliases;type:jsonb;default:'[]'::jsonb;not null" json:"installationAliases"`
+	LocationType string `gorm:"column:location_type;type:varchar(80);default:'military_town';not null" json:"locationType"`
+	Priority int32 `gorm:"column:priority;type:integer;default:5;not null" json:"priority"`
+	SearchWeight int32 `gorm:"column:search_weight;type:integer;default:5;not null" json:"searchWeight"`
+	TotalQueryRuns int32 `gorm:"column:total_query_runs;type:integer;default:0;not null" json:"totalQueryRuns"`
+	TotalEmailsInserted int32 `gorm:"column:total_emails_inserted;type:integer;default:0;not null" json:"totalEmailsInserted"`
+	SuccessCount int32 `gorm:"column:success_count;type:integer;default:0;not null" json:"successCount"`
+	FailureCount int32 `gorm:"column:failure_count;type:integer;default:0;not null" json:"failureCount"`
+	LastRunAt *time.Time `gorm:"column:last_run_at;type:timestamptz" json:"lastRunAt,omitempty"`
+	LastSuccessAt *time.Time `gorm:"column:last_success_at;type:timestamptz" json:"lastSuccessAt,omitempty"`
+	LastFailureAt *time.Time `gorm:"column:last_failure_at;type:timestamptz" json:"lastFailureAt,omitempty"`
+	CooldownUntil *time.Time `gorm:"column:cooldown_until;type:timestamptz" json:"cooldownUntil,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorSearchLocationsGorm) TableName() string { return BenefactorSearchLocationsTable }
+
+func (value BenefactorSearchLocationsGorm) Validate() error {
+	if !validateJSONString(value.InstallationAliases) { return errors.New("benefactor_search_locations.installation_aliases must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_search_locations.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorScrapeQueriesTable = "benefactor.benefactor_scrape_queries"
+const BenefactorScrapeQueriesSelectSQL = `select
+      id::text as id,
+      query_text,
+      query_hash,
+      benefactor_icp_slug,
+      benefactor_icp_name,
+      benefactor_search_location_id::text as benefactor_search_location_id,
+      service_category,
+      target_city,
+      target_state,
+      target_country,
+      target_military_area,
+      target_installation,
+      query_variant,
+      search_page_depth,
+      priority,
+      total_runs,
+      total_urls_visited,
+      total_emails_found,
+      total_emails_inserted,
+      total_emails_duplicate,
+      total_errors,
+      success_count,
+      failure_count,
+      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_run_at,
+      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_success_at,
+      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_failure_at,
+      last_run_emails_found,
+      last_run_emails_inserted,
+      last_run_success,
+      last_run_duration_ms,
+      last_run_error,
+      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as cooldown_until,
+      consecutive_zero_new_runs,
+      to_char(last_zero_new_run_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_zero_new_run_at,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_scrape_queries`
+
+var BenefactorScrapeQueriesQueryVariantValues = []string{"email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"}
+
+type BenefactorScrapeQueriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	QueryText string `gorm:"column:query_text;type:text;not null" json:"queryText"`
+	QueryHash string `gorm:"column:query_hash;type:varchar(64);not null" json:"queryHash"`
+	BenefactorIcpSlug *string `gorm:"column:benefactor_icp_slug;type:varchar(160)" json:"benefactorIcpSlug,omitempty"`
+	BenefactorIcpName *string `gorm:"column:benefactor_icp_name;type:varchar(220)" json:"benefactorIcpName,omitempty"`
+	BenefactorSearchLocationId *uuid.UUID `gorm:"column:benefactor_search_location_id;type:uuid" json:"benefactorSearchLocationId,omitempty"`
+	ServiceCategory string `gorm:"column:service_category;type:varchar(60);default:'other';not null" json:"serviceCategory"`
+	TargetCity *string `gorm:"column:target_city;type:varchar(120)" json:"targetCity,omitempty"`
+	TargetState *string `gorm:"column:target_state;type:varchar(80)" json:"targetState,omitempty"`
+	TargetCountry string `gorm:"column:target_country;type:varchar(80);default:'US';not null" json:"targetCountry"`
+	TargetMilitaryArea *string `gorm:"column:target_military_area;type:varchar(220)" json:"targetMilitaryArea,omitempty"`
+	TargetInstallation *string `gorm:"column:target_installation;type:varchar(220)" json:"targetInstallation,omitempty"`
+	QueryVariant string `gorm:"column:query_variant;type:varchar(80);default:'email_contact';not null" json:"queryVariant"`
+	SearchPageDepth int32 `gorm:"column:search_page_depth;type:integer;default:4;not null" json:"searchPageDepth"`
+	Priority int32 `gorm:"column:priority;type:integer;default:5;not null" json:"priority"`
+	TotalRuns int32 `gorm:"column:total_runs;type:integer;default:0;not null" json:"totalRuns"`
+	TotalUrlsVisited int32 `gorm:"column:total_urls_visited;type:integer;default:0;not null" json:"totalUrlsVisited"`
+	TotalEmailsFound int32 `gorm:"column:total_emails_found;type:integer;default:0;not null" json:"totalEmailsFound"`
+	TotalEmailsInserted int32 `gorm:"column:total_emails_inserted;type:integer;default:0;not null" json:"totalEmailsInserted"`
+	TotalEmailsDuplicate int32 `gorm:"column:total_emails_duplicate;type:integer;default:0;not null" json:"totalEmailsDuplicate"`
+	TotalErrors int32 `gorm:"column:total_errors;type:integer;default:0;not null" json:"totalErrors"`
+	SuccessCount int32 `gorm:"column:success_count;type:integer;default:0;not null" json:"successCount"`
+	FailureCount int32 `gorm:"column:failure_count;type:integer;default:0;not null" json:"failureCount"`
+	LastRunAt *time.Time `gorm:"column:last_run_at;type:timestamptz" json:"lastRunAt,omitempty"`
+	LastSuccessAt *time.Time `gorm:"column:last_success_at;type:timestamptz" json:"lastSuccessAt,omitempty"`
+	LastFailureAt *time.Time `gorm:"column:last_failure_at;type:timestamptz" json:"lastFailureAt,omitempty"`
+	LastRunEmailsFound int32 `gorm:"column:last_run_emails_found;type:integer;default:0;not null" json:"lastRunEmailsFound"`
+	LastRunEmailsInserted int32 `gorm:"column:last_run_emails_inserted;type:integer;default:0;not null" json:"lastRunEmailsInserted"`
+	LastRunSuccess bool `gorm:"column:last_run_success;type:boolean;default:false;not null" json:"lastRunSuccess"`
+	LastRunDurationMs int32 `gorm:"column:last_run_duration_ms;type:integer;default:0;not null" json:"lastRunDurationMs"`
+	LastRunError *string `gorm:"column:last_run_error;type:text" json:"lastRunError,omitempty"`
+	CooldownUntil *time.Time `gorm:"column:cooldown_until;type:timestamptz" json:"cooldownUntil,omitempty"`
+	ConsecutiveZeroNewRuns int32 `gorm:"column:consecutive_zero_new_runs;type:integer;default:0;not null" json:"consecutiveZeroNewRuns"`
+	LastZeroNewRunAt *time.Time `gorm:"column:last_zero_new_run_at;type:timestamptz" json:"lastZeroNewRunAt,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorScrapeQueriesGorm) TableName() string { return BenefactorScrapeQueriesTable }
+
+func (value BenefactorScrapeQueriesGorm) Validate() error {
+	if !containsString(BenefactorScrapeQueriesQueryVariantValues, value.QueryVariant) { return errors.New("unsupported benefactor_scrape_queries.query_variant") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_scrape_queries.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorDomainSearchTrackingTable = "benefactor.benefactor_domain_search_tracking"
+const BenefactorDomainSearchTrackingSelectSQL = `select
+      id::text as id,
+      domain,
+      for_what,
+      search_result_appearances,
+      queued_visit_count,
+      visit_count,
+      good_result_count,
+      bad_result_count,
+      email_found_count,
+      lead_inserted_count,
+      to_char(last_queued_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_queued_at,
+      to_char(last_visited_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_visited_at,
+      to_char(last_good_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_good_result_at,
+      to_char(last_bad_result_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_bad_result_at,
+      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_email_found_at,
+      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_lead_inserted_at,
+      last_good_url,
+      last_bad_url,
+      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as blocked_until,
+      is_permanently_blocked,
+      blocked_reason,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_domain_search_tracking`
+
+type BenefactorDomainSearchTrackingGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Domain string `gorm:"column:domain;type:varchar(255);not null" json:"domain"`
+	ForWhat string `gorm:"column:for_what;type:varchar(80);default:'benefactor_lead_scrape';not null" json:"forWhat"`
+	SearchResultAppearances int32 `gorm:"column:search_result_appearances;type:integer;default:0;not null" json:"searchResultAppearances"`
+	QueuedVisitCount int32 `gorm:"column:queued_visit_count;type:integer;default:0;not null" json:"queuedVisitCount"`
+	VisitCount int32 `gorm:"column:visit_count;type:integer;default:0;not null" json:"visitCount"`
+	GoodResultCount int32 `gorm:"column:good_result_count;type:integer;default:0;not null" json:"goodResultCount"`
+	BadResultCount int32 `gorm:"column:bad_result_count;type:integer;default:0;not null" json:"badResultCount"`
+	EmailFoundCount int32 `gorm:"column:email_found_count;type:integer;default:0;not null" json:"emailFoundCount"`
+	LeadInsertedCount int32 `gorm:"column:lead_inserted_count;type:integer;default:0;not null" json:"leadInsertedCount"`
+	LastQueuedAt *time.Time `gorm:"column:last_queued_at;type:timestamptz" json:"lastQueuedAt,omitempty"`
+	LastVisitedAt *time.Time `gorm:"column:last_visited_at;type:timestamptz" json:"lastVisitedAt,omitempty"`
+	LastGoodResultAt *time.Time `gorm:"column:last_good_result_at;type:timestamptz" json:"lastGoodResultAt,omitempty"`
+	LastBadResultAt *time.Time `gorm:"column:last_bad_result_at;type:timestamptz" json:"lastBadResultAt,omitempty"`
+	LastEmailFoundAt *time.Time `gorm:"column:last_email_found_at;type:timestamptz" json:"lastEmailFoundAt,omitempty"`
+	LastLeadInsertedAt *time.Time `gorm:"column:last_lead_inserted_at;type:timestamptz" json:"lastLeadInsertedAt,omitempty"`
+	LastGoodUrl *string `gorm:"column:last_good_url;type:text" json:"lastGoodUrl,omitempty"`
+	LastBadUrl *string `gorm:"column:last_bad_url;type:text" json:"lastBadUrl,omitempty"`
+	BlockedUntil *time.Time `gorm:"column:blocked_until;type:timestamptz" json:"blockedUntil,omitempty"`
+	IsPermanentlyBlocked bool `gorm:"column:is_permanently_blocked;type:boolean;default:false;not null" json:"isPermanentlyBlocked"`
+	BlockedReason *string `gorm:"column:blocked_reason;type:text" json:"blockedReason,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorDomainSearchTrackingGorm) TableName() string { return BenefactorDomainSearchTrackingTable }
+
+func (value BenefactorDomainSearchTrackingGorm) Validate() error {
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_domain_search_tracking.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorIcpsTable = "benefactor.benefactor_icps"
+const BenefactorIcpsSelectSQL = `select
+      id::text as id,
+      slug,
+      name,
+      category,
+      service_category,
+      description,
+      outcall_fit_score,
+      priority,
+      search_terms,
+      search_signals,
+      target_home_services,
+      target_medical,
+      target_legal,
+      target_events,
+      target_corporate,
+      target_industrial,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_icps`
+
+type BenefactorIcpsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(160);not null" json:"slug"`
+	Name string `gorm:"column:name;type:varchar(220);not null" json:"name"`
+	Category string `gorm:"column:category;type:varchar(120);default:'local_services';not null" json:"category"`
+	ServiceCategory string `gorm:"column:service_category;type:varchar(120);default:'other';not null" json:"serviceCategory"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	OutcallFitScore int32 `gorm:"column:outcall_fit_score;type:integer;default:5;not null" json:"outcallFitScore"`
+	Priority int32 `gorm:"column:priority;type:integer;default:5;not null" json:"priority"`
+	SearchTerms datatypes.JSON `gorm:"column:search_terms;type:jsonb;default:'[]'::jsonb;not null" json:"searchTerms"`
+	SearchSignals datatypes.JSON `gorm:"column:search_signals;type:jsonb;default:'[]'::jsonb;not null" json:"searchSignals"`
+	TargetHomeServices bool `gorm:"column:target_home_services;type:boolean;default:false;not null" json:"targetHomeServices"`
+	TargetMedical bool `gorm:"column:target_medical;type:boolean;default:false;not null" json:"targetMedical"`
+	TargetLegal bool `gorm:"column:target_legal;type:boolean;default:false;not null" json:"targetLegal"`
+	TargetEvents bool `gorm:"column:target_events;type:boolean;default:false;not null" json:"targetEvents"`
+	TargetCorporate bool `gorm:"column:target_corporate;type:boolean;default:false;not null" json:"targetCorporate"`
+	TargetIndustrial bool `gorm:"column:target_industrial;type:boolean;default:false;not null" json:"targetIndustrial"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorIcpsGorm) TableName() string { return BenefactorIcpsTable }
+
+func (value BenefactorIcpsGorm) Validate() error {
+	if !validateJSONString(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
+	if !validateJSONString(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
 	return nil
 }
 

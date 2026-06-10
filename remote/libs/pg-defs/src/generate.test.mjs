@@ -139,6 +139,72 @@ test("parser extracts foreign keys onto the source column", () => {
   assert.equal(column.foreignKey?.constraint, "children_parent_fk");
 });
 
+test("parser captures a schema-qualified table while keeping the bare name", () => {
+  const sql = `
+    create schema if not exists benefactor;
+
+    create table benefactor.benefactor_leads (
+      id uuid primary key default gen_random_uuid(),
+      primary_email varchar(255) default '' not null
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  const table = schema.tables.find((item) => item.name === "benefactor_leads");
+  assert.ok(table, "schema-qualified table should parse");
+  assert.equal(table.schema, "benefactor");
+  assert.equal(table.name, "benefactor_leads");
+});
+
+test("parser defaults schema to public for unqualified tables", () => {
+  const sql = `
+    create table example (
+      id uuid primary key default gen_random_uuid()
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  const table = schema.tables.find((item) => item.name === "example");
+  assert.equal(table.schema, "public");
+});
+
+test("parser associates a schema-qualified index with its bare table", () => {
+  const sql = `
+    create table benefactor.benefactor_leads (
+      id uuid primary key default gen_random_uuid(),
+      primary_email varchar(255) default '' not null
+    );
+
+    create unique index if not exists benefactor_leads_email_uq
+      on benefactor.benefactor_leads (primary_email);
+  `;
+  const schema = parseSchemaSql(sql);
+  const table = schema.tables.find((item) => item.name === "benefactor_leads");
+  assert.equal(table.indexes.length, 1);
+  assert.equal(table.indexes[0].name, "benefactor_leads_email_uq");
+});
+
+test("parser flows a schema-qualified foreign key with bare reference table", () => {
+  const sql = `
+    create table benefactor.benefactor_search_locations (
+      id uuid primary key default gen_random_uuid()
+    );
+
+    create table benefactor.benefactor_scrape_queries (
+      id uuid primary key default gen_random_uuid(),
+      benefactor_search_location_id uuid
+    );
+
+    alter table if exists benefactor.benefactor_scrape_queries
+      add constraint benefactor_scrape_queries_location_fk
+      foreign key (benefactor_search_location_id)
+      references benefactor.benefactor_search_locations(id);
+  `;
+  const schema = parseSchemaSql(sql);
+  const column = findColumn(schema, "benefactor_scrape_queries", "benefactor_search_location_id");
+  assert.equal(column.foreignKey?.table, "benefactor_search_locations");
+  assert.equal(column.foreignKey?.column, "id");
+  assert.equal(column.foreignKey?.constraint, "benefactor_scrape_queries_location_fk");
+});
+
 test("parser detects enum + jsonb_typeof shapes inside compound checks", () => {
   const sql = `
     create table example (

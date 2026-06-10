@@ -215,15 +215,29 @@ async fn record_event(
     let tenant_id = connection.as_ref().map(|c| c.tenant_id);
     let connection_id = connection.as_ref().map(|c| c.id);
 
+    // Encrypt the raw body at rest with the master sealer (AES-256-GCM). The
+    // AAD binds the blob to its provider (and tenant when known). We store the
+    // sealed envelope in `payload_sealed` and never persist the plaintext
+    // `payload` column. The integrity hash (`payload_sha256`) is kept in the
+    // clear for dedup / correlation.
+    let sealed = state.sealer.seal(
+        tenant_id.unwrap_or_else(uuid::Uuid::nil),
+        provider.tag(),
+        body.as_ref(),
+    )?;
+    let payload_sealed =
+        serde_json::to_value(&sealed).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+
     sqlx::query(
         r#"
         INSERT INTO webhook_events
-            (provider, external_event_id, event_type, payload, signature_ok,
+            (provider, external_event_id, event_type, payload_sealed, signature_ok,
              tenant_id, connection_id, payload_sha256, verification_error,
              external_account_id)
         VALUES ($1::provider_kind, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (provider, external_event_id) DO UPDATE
         SET signature_ok = webhook_events.signature_ok OR EXCLUDED.signature_ok,
+            payload_sealed = EXCLUDED.payload_sealed,
             tenant_id = COALESCE(webhook_events.tenant_id, EXCLUDED.tenant_id),
             connection_id = COALESCE(webhook_events.connection_id, EXCLUDED.connection_id),
             payload_sha256 = COALESCE(webhook_events.payload_sha256, EXCLUDED.payload_sha256),
@@ -238,7 +252,7 @@ async fn record_event(
     .bind(provider.tag())
     .bind(&external_event_id)
     .bind(&event_type)
-    .bind(&payload)
+    .bind(&payload_sealed)
     .bind(signature_ok)
     .bind(tenant_id)
     .bind(connection_id)
@@ -276,6 +290,22 @@ async fn record_event(
         connection_id = ?connection_id,
         "webhook accepted"
     );
+
+    // Best-effort redacted receipt onto the event bus. Only the payload hash
+    // travels — never the body or the verification-error detail.
+    state
+        .events
+        .publish_webhook_receipt(
+            provider.tag(),
+            &external_event_id,
+            &event_type,
+            signature_ok,
+            tenant_id,
+            connection_id,
+            &payload_sha256,
+        )
+        .await;
+
     Ok(Json(Ack { received: true }))
 }
 

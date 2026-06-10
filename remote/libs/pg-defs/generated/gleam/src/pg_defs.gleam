@@ -385,7 +385,7 @@ pub fn validate_sound_recorder_devices_status(value: String) -> Result(String, S
 }
 
 pub const sound_recorder_upload_sessions_table = "sound_recorder_upload_sessions"
-pub const sound_recorder_upload_sessions_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions"
+pub const sound_recorder_upload_sessions_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      use_case,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions"
 
 pub type SoundRecorderUploadSessionsStatus {
   SoundRecorderUploadSessionsStatusActive
@@ -430,6 +430,35 @@ pub fn parse_sound_recorder_upload_sessions_storage_provider(value: String) -> R
   }
 }
 
+pub type SoundRecorderUploadSessionsUseCase {
+  SoundRecorderUploadSessionsUseCaseSecurity
+  SoundRecorderUploadSessionsUseCaseMusic
+  SoundRecorderUploadSessionsUseCaseMeeting
+  SoundRecorderUploadSessionsUseCaseVoiceNote
+  SoundRecorderUploadSessionsUseCaseAmbient
+}
+
+pub fn sound_recorder_upload_sessions_use_case_to_string(value: SoundRecorderUploadSessionsUseCase) -> String {
+  case value {
+    SoundRecorderUploadSessionsUseCaseSecurity -> "security"
+    SoundRecorderUploadSessionsUseCaseMusic -> "music"
+    SoundRecorderUploadSessionsUseCaseMeeting -> "meeting"
+    SoundRecorderUploadSessionsUseCaseVoiceNote -> "voice_note"
+    SoundRecorderUploadSessionsUseCaseAmbient -> "ambient"
+  }
+}
+
+pub fn parse_sound_recorder_upload_sessions_use_case(value: String) -> Result(SoundRecorderUploadSessionsUseCase, String) {
+  case value {
+    "security" -> Ok(SoundRecorderUploadSessionsUseCaseSecurity)
+    "music" -> Ok(SoundRecorderUploadSessionsUseCaseMusic)
+    "meeting" -> Ok(SoundRecorderUploadSessionsUseCaseMeeting)
+    "voice_note" -> Ok(SoundRecorderUploadSessionsUseCaseVoiceNote)
+    "ambient" -> Ok(SoundRecorderUploadSessionsUseCaseAmbient)
+    _ -> Error("unsupported sound_recorder_upload_sessions.use_case: " <> value)
+  }
+}
+
 pub type SoundRecorderUploadSessionsRow {
   SoundRecorderUploadSessionsRow(
     id: String,
@@ -451,6 +480,7 @@ pub type SoundRecorderUploadSessionsRow {
     expires_at: Option(String),
     client_timezone: Option(String),
     legal_region: Option(String),
+    use_case: String,
     meta_data_json: String,
     created_at: String,
     updated_at: String,
@@ -479,8 +509,15 @@ pub fn validate_sound_recorder_upload_sessions_storage_provider(value: String) -
   }
 }
 
+pub fn validate_sound_recorder_upload_sessions_use_case(value: String) -> Result(String, String) {
+  case list.contains(["security", "music", "meeting", "voice_note", "ambient"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_upload_sessions.use_case: " <> value)
+  }
+}
+
 pub const sound_recorder_segments_table = "sound_recorder_segments"
-pub const sound_recorder_segments_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments"
+pub const sound_recorder_segments_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(pinned_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as pinned_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments"
 
 pub type SoundRecorderSegmentsStatus {
   SoundRecorderSegmentsStatusPending
@@ -550,6 +587,7 @@ pub type SoundRecorderSegmentsRow {
     etag: Option(String),
     uploaded_at: Option(String),
     expires_at: String,
+    pinned_at: Option(String),
     meta_data_json: String,
     created_at: String,
     updated_at: String,
@@ -8364,6 +8402,462 @@ pub fn validate_usacc_audit_events_slug(value: String) -> Result(String, String)
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("usacc_audit_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const benefactor_leads_table = "benefactor.benefactor_leads"
+pub const benefactor_leads_select_sql = "select\n      id::text as id,\n      business_name,\n      owner_first_name,\n      owner_last_name,\n      primary_email,\n      secondary_email,\n      primary_phone,\n      website_url,\n      service_category,\n      service_subcategories::text as service_subcategories_json,\n      city,\n      state,\n      zip_code,\n      country,\n      service_area,\n      lead_status,\n      outreach_status,\n      total_outreach_attempts,\n      to_char(last_outreach_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_outreach_at,\n      contact_attempts::text as contact_attempts_json,\n      source_url,\n      source_query,\n      source_tool,\n      source_engine,\n      is_verified,\n      tags::text as tags_json,\n      meta_data::text as meta_data_json,\n      notes,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads"
+
+pub type BenefactorLeadsLeadStatus {
+  BenefactorLeadsLeadStatusNew
+  BenefactorLeadsLeadStatusContacted
+  BenefactorLeadsLeadStatusReplied
+  BenefactorLeadsLeadStatusBooked
+  BenefactorLeadsLeadStatusRejected
+  BenefactorLeadsLeadStatusUnsubscribed
+  BenefactorLeadsLeadStatusUnqualified
+  BenefactorLeadsLeadStatusDoNotContact
+}
+
+pub fn benefactor_leads_lead_status_to_string(value: BenefactorLeadsLeadStatus) -> String {
+  case value {
+    BenefactorLeadsLeadStatusNew -> "new"
+    BenefactorLeadsLeadStatusContacted -> "contacted"
+    BenefactorLeadsLeadStatusReplied -> "replied"
+    BenefactorLeadsLeadStatusBooked -> "booked"
+    BenefactorLeadsLeadStatusRejected -> "rejected"
+    BenefactorLeadsLeadStatusUnsubscribed -> "unsubscribed"
+    BenefactorLeadsLeadStatusUnqualified -> "unqualified"
+    BenefactorLeadsLeadStatusDoNotContact -> "do_not_contact"
+  }
+}
+
+pub fn parse_benefactor_leads_lead_status(value: String) -> Result(BenefactorLeadsLeadStatus, String) {
+  case value {
+    "new" -> Ok(BenefactorLeadsLeadStatusNew)
+    "contacted" -> Ok(BenefactorLeadsLeadStatusContacted)
+    "replied" -> Ok(BenefactorLeadsLeadStatusReplied)
+    "booked" -> Ok(BenefactorLeadsLeadStatusBooked)
+    "rejected" -> Ok(BenefactorLeadsLeadStatusRejected)
+    "unsubscribed" -> Ok(BenefactorLeadsLeadStatusUnsubscribed)
+    "unqualified" -> Ok(BenefactorLeadsLeadStatusUnqualified)
+    "do_not_contact" -> Ok(BenefactorLeadsLeadStatusDoNotContact)
+    _ -> Error("unsupported benefactor_leads.lead_status: " <> value)
+  }
+}
+
+pub type BenefactorLeadsOutreachStatus {
+  BenefactorLeadsOutreachStatusPending
+  BenefactorLeadsOutreachStatusNew
+  BenefactorLeadsOutreachStatusContacted
+  BenefactorLeadsOutreachStatusFailed
+}
+
+pub fn benefactor_leads_outreach_status_to_string(value: BenefactorLeadsOutreachStatus) -> String {
+  case value {
+    BenefactorLeadsOutreachStatusPending -> "pending"
+    BenefactorLeadsOutreachStatusNew -> "new"
+    BenefactorLeadsOutreachStatusContacted -> "contacted"
+    BenefactorLeadsOutreachStatusFailed -> "failed"
+  }
+}
+
+pub fn parse_benefactor_leads_outreach_status(value: String) -> Result(BenefactorLeadsOutreachStatus, String) {
+  case value {
+    "pending" -> Ok(BenefactorLeadsOutreachStatusPending)
+    "new" -> Ok(BenefactorLeadsOutreachStatusNew)
+    "contacted" -> Ok(BenefactorLeadsOutreachStatusContacted)
+    "failed" -> Ok(BenefactorLeadsOutreachStatusFailed)
+    _ -> Error("unsupported benefactor_leads.outreach_status: " <> value)
+  }
+}
+
+pub type BenefactorLeadsRow {
+  BenefactorLeadsRow(
+    id: String,
+    business_name: String,
+    owner_first_name: String,
+    owner_last_name: String,
+    primary_email: String,
+    secondary_email: Option(String),
+    primary_phone: Option(String),
+    website_url: Option(String),
+    service_category: String,
+    service_subcategories_json: String,
+    city: Option(String),
+    state: Option(String),
+    zip_code: Option(String),
+    country: String,
+    service_area: Option(String),
+    lead_status: String,
+    outreach_status: String,
+    total_outreach_attempts: Int,
+    last_outreach_at: Option(String),
+    contact_attempts_json: String,
+    source_url: Option(String),
+    source_query: Option(String),
+    source_tool: Option(String),
+    source_engine: Option(String),
+    is_verified: Bool,
+    tags_json: String,
+    meta_data_json: String,
+    notes: Option(String),
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_leads_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_leads.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_leads_lead_status(value: String) -> Result(String, String) {
+  case list.contains(["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_leads.lead_status: " <> value)
+  }
+}
+
+pub fn validate_benefactor_leads_outreach_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "new", "contacted", "failed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_leads.outreach_status: " <> value)
+  }
+}
+
+pub const benefactor_leads_domains_table = "benefactor.benefactor_leads_domains"
+pub const benefactor_leads_domains_select_sql = "select\n      id::text as id,\n      domain,\n      domain_kind,\n      status,\n      reason,\n      source,\n      is_blacklisted,\n      is_blocked,\n      is_permanently_blocked,\n      blocked_reason,\n      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as blocked_until,\n      to_char(skip_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as skip_until,\n      scrape_count,\n      skip_count,\n      skipped_count,\n      email_found_count,\n      lead_inserted_count,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(last_scraped_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_scraped_at,\n      to_char(last_skipped_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_skipped_at,\n      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_email_found_at,\n      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_lead_inserted_at,\n      last_seen_url,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_domains"
+
+pub type BenefactorLeadsDomainsDomainKind {
+  BenefactorLeadsDomainsDomainKindEmail
+  BenefactorLeadsDomainsDomainKindWebsite
+}
+
+pub fn benefactor_leads_domains_domain_kind_to_string(value: BenefactorLeadsDomainsDomainKind) -> String {
+  case value {
+    BenefactorLeadsDomainsDomainKindEmail -> "email"
+    BenefactorLeadsDomainsDomainKindWebsite -> "website"
+  }
+}
+
+pub fn parse_benefactor_leads_domains_domain_kind(value: String) -> Result(BenefactorLeadsDomainsDomainKind, String) {
+  case value {
+    "email" -> Ok(BenefactorLeadsDomainsDomainKindEmail)
+    "website" -> Ok(BenefactorLeadsDomainsDomainKindWebsite)
+    _ -> Error("unsupported benefactor_leads_domains.domain_kind: " <> value)
+  }
+}
+
+pub type BenefactorLeadsDomainsStatus {
+  BenefactorLeadsDomainsStatusAllowed
+  BenefactorLeadsDomainsStatusBlocked
+  BenefactorLeadsDomainsStatusSkipped
+  BenefactorLeadsDomainsStatusScrapedRecently
+  BenefactorLeadsDomainsStatusRecentlyScraped
+}
+
+pub fn benefactor_leads_domains_status_to_string(value: BenefactorLeadsDomainsStatus) -> String {
+  case value {
+    BenefactorLeadsDomainsStatusAllowed -> "allowed"
+    BenefactorLeadsDomainsStatusBlocked -> "blocked"
+    BenefactorLeadsDomainsStatusSkipped -> "skipped"
+    BenefactorLeadsDomainsStatusScrapedRecently -> "scraped_recently"
+    BenefactorLeadsDomainsStatusRecentlyScraped -> "recently_scraped"
+  }
+}
+
+pub fn parse_benefactor_leads_domains_status(value: String) -> Result(BenefactorLeadsDomainsStatus, String) {
+  case value {
+    "allowed" -> Ok(BenefactorLeadsDomainsStatusAllowed)
+    "blocked" -> Ok(BenefactorLeadsDomainsStatusBlocked)
+    "skipped" -> Ok(BenefactorLeadsDomainsStatusSkipped)
+    "scraped_recently" -> Ok(BenefactorLeadsDomainsStatusScrapedRecently)
+    "recently_scraped" -> Ok(BenefactorLeadsDomainsStatusRecentlyScraped)
+    _ -> Error("unsupported benefactor_leads_domains.status: " <> value)
+  }
+}
+
+pub type BenefactorLeadsDomainsRow {
+  BenefactorLeadsDomainsRow(
+    id: String,
+    domain: String,
+    domain_kind: String,
+    status: String,
+    reason: Option(String),
+    source: String,
+    is_blacklisted: Bool,
+    is_blocked: Bool,
+    is_permanently_blocked: Bool,
+    blocked_reason: Option(String),
+    blocked_until: Option(String),
+    skip_until: Option(String),
+    scrape_count: Int,
+    skip_count: Int,
+    skipped_count: Int,
+    email_found_count: Int,
+    lead_inserted_count: Int,
+    last_seen_at: Option(String),
+    last_scraped_at: Option(String),
+    last_skipped_at: Option(String),
+    last_email_found_at: Option(String),
+    last_lead_inserted_at: Option(String),
+    last_seen_url: Option(String),
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_leads_domains_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_leads_domains.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_leads_domains_domain_kind(value: String) -> Result(String, String) {
+  case list.contains(["email", "website"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_leads_domains.domain_kind: " <> value)
+  }
+}
+
+pub fn validate_benefactor_leads_domains_status(value: String) -> Result(String, String) {
+  case list.contains(["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_leads_domains.status: " <> value)
+  }
+}
+
+pub const benefactor_search_locations_table = "benefactor.benefactor_search_locations"
+pub const benefactor_search_locations_select_sql = "select\n      id::text as id,\n      slug,\n      city,\n      state,\n      state_code,\n      country,\n      metro_area,\n      military_area,\n      primary_installation,\n      installation_aliases::text as installation_aliases_json,\n      location_type,\n      priority,\n      search_weight,\n      total_query_runs,\n      total_emails_inserted,\n      success_count,\n      failure_count,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_success_at,\n      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_failure_at,\n      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as cooldown_until,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_search_locations"
+
+pub type BenefactorSearchLocationsRow {
+  BenefactorSearchLocationsRow(
+    id: String,
+    slug: String,
+    city: String,
+    state: String,
+    state_code: Option(String),
+    country: String,
+    metro_area: Option(String),
+    military_area: Option(String),
+    primary_installation: Option(String),
+    installation_aliases_json: String,
+    location_type: String,
+    priority: Int,
+    search_weight: Int,
+    total_query_runs: Int,
+    total_emails_inserted: Int,
+    success_count: Int,
+    failure_count: Int,
+    last_run_at: Option(String),
+    last_success_at: Option(String),
+    last_failure_at: Option(String),
+    cooldown_until: Option(String),
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_search_locations_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_search_locations.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const benefactor_scrape_queries_table = "benefactor.benefactor_scrape_queries"
+pub const benefactor_scrape_queries_select_sql = "select\n      id::text as id,\n      query_text,\n      query_hash,\n      benefactor_icp_slug,\n      benefactor_icp_name,\n      benefactor_search_location_id::text as benefactor_search_location_id,\n      service_category,\n      target_city,\n      target_state,\n      target_country,\n      target_military_area,\n      target_installation,\n      query_variant,\n      search_page_depth,\n      priority,\n      total_runs,\n      total_urls_visited,\n      total_emails_found,\n      total_emails_inserted,\n      total_emails_duplicate,\n      total_errors,\n      success_count,\n      failure_count,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_success_at,\n      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_failure_at,\n      last_run_emails_found,\n      last_run_emails_inserted,\n      last_run_success,\n      last_run_duration_ms,\n      last_run_error,\n      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as cooldown_until,\n      consecutive_zero_new_runs,\n      to_char(last_zero_new_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_zero_new_run_at,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_scrape_queries"
+
+pub type BenefactorScrapeQueriesQueryVariant {
+  BenefactorScrapeQueriesQueryVariantEmailContact
+  BenefactorScrapeQueriesQueryVariantContactUs
+  BenefactorScrapeQueriesQueryVariantWebsiteDomain
+  BenefactorScrapeQueriesQueryVariantFuzzyEmail
+  BenefactorScrapeQueriesQueryVariantFuzzyCity
+}
+
+pub fn benefactor_scrape_queries_query_variant_to_string(value: BenefactorScrapeQueriesQueryVariant) -> String {
+  case value {
+    BenefactorScrapeQueriesQueryVariantEmailContact -> "email_contact"
+    BenefactorScrapeQueriesQueryVariantContactUs -> "contact_us"
+    BenefactorScrapeQueriesQueryVariantWebsiteDomain -> "website_domain"
+    BenefactorScrapeQueriesQueryVariantFuzzyEmail -> "fuzzy_email"
+    BenefactorScrapeQueriesQueryVariantFuzzyCity -> "fuzzy_city"
+  }
+}
+
+pub fn parse_benefactor_scrape_queries_query_variant(value: String) -> Result(BenefactorScrapeQueriesQueryVariant, String) {
+  case value {
+    "email_contact" -> Ok(BenefactorScrapeQueriesQueryVariantEmailContact)
+    "contact_us" -> Ok(BenefactorScrapeQueriesQueryVariantContactUs)
+    "website_domain" -> Ok(BenefactorScrapeQueriesQueryVariantWebsiteDomain)
+    "fuzzy_email" -> Ok(BenefactorScrapeQueriesQueryVariantFuzzyEmail)
+    "fuzzy_city" -> Ok(BenefactorScrapeQueriesQueryVariantFuzzyCity)
+    _ -> Error("unsupported benefactor_scrape_queries.query_variant: " <> value)
+  }
+}
+
+pub type BenefactorScrapeQueriesRow {
+  BenefactorScrapeQueriesRow(
+    id: String,
+    query_text: String,
+    query_hash: String,
+    benefactor_icp_slug: Option(String),
+    benefactor_icp_name: Option(String),
+    benefactor_search_location_id: Option(String),
+    service_category: String,
+    target_city: Option(String),
+    target_state: Option(String),
+    target_country: String,
+    target_military_area: Option(String),
+    target_installation: Option(String),
+    query_variant: String,
+    search_page_depth: Int,
+    priority: Int,
+    total_runs: Int,
+    total_urls_visited: Int,
+    total_emails_found: Int,
+    total_emails_inserted: Int,
+    total_emails_duplicate: Int,
+    total_errors: Int,
+    success_count: Int,
+    failure_count: Int,
+    last_run_at: Option(String),
+    last_success_at: Option(String),
+    last_failure_at: Option(String),
+    last_run_emails_found: Int,
+    last_run_emails_inserted: Int,
+    last_run_success: Bool,
+    last_run_duration_ms: Int,
+    last_run_error: Option(String),
+    cooldown_until: Option(String),
+    consecutive_zero_new_runs: Int,
+    last_zero_new_run_at: Option(String),
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_scrape_queries_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_scrape_queries.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_benefactor_scrape_queries_query_variant(value: String) -> Result(String, String) {
+  case list.contains(["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported benefactor_scrape_queries.query_variant: " <> value)
+  }
+}
+
+pub const benefactor_domain_search_tracking_table = "benefactor.benefactor_domain_search_tracking"
+pub const benefactor_domain_search_tracking_select_sql = "select\n      id::text as id,\n      domain,\n      for_what,\n      search_result_appearances,\n      queued_visit_count,\n      visit_count,\n      good_result_count,\n      bad_result_count,\n      email_found_count,\n      lead_inserted_count,\n      to_char(last_queued_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_queued_at,\n      to_char(last_visited_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_visited_at,\n      to_char(last_good_result_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_good_result_at,\n      to_char(last_bad_result_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_bad_result_at,\n      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_email_found_at,\n      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_lead_inserted_at,\n      last_good_url,\n      last_bad_url,\n      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as blocked_until,\n      is_permanently_blocked,\n      blocked_reason,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_domain_search_tracking"
+
+pub type BenefactorDomainSearchTrackingRow {
+  BenefactorDomainSearchTrackingRow(
+    id: String,
+    domain: String,
+    for_what: String,
+    search_result_appearances: Int,
+    queued_visit_count: Int,
+    visit_count: Int,
+    good_result_count: Int,
+    bad_result_count: Int,
+    email_found_count: Int,
+    lead_inserted_count: Int,
+    last_queued_at: Option(String),
+    last_visited_at: Option(String),
+    last_good_result_at: Option(String),
+    last_bad_result_at: Option(String),
+    last_email_found_at: Option(String),
+    last_lead_inserted_at: Option(String),
+    last_good_url: Option(String),
+    last_bad_url: Option(String),
+    blocked_until: Option(String),
+    is_permanently_blocked: Bool,
+    blocked_reason: Option(String),
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_domain_search_tracking_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_domain_search_tracking.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const benefactor_icps_table = "benefactor.benefactor_icps"
+pub const benefactor_icps_select_sql = "select\n      id::text as id,\n      slug,\n      name,\n      category,\n      service_category,\n      description,\n      outcall_fit_score,\n      priority,\n      search_terms::text as search_terms_json,\n      search_signals::text as search_signals_json,\n      target_home_services,\n      target_medical,\n      target_legal,\n      target_events,\n      target_corporate,\n      target_industrial,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_icps"
+
+pub type BenefactorIcpsRow {
+  BenefactorIcpsRow(
+    id: String,
+    slug: String,
+    name: String,
+    category: String,
+    service_category: String,
+    description: String,
+    outcall_fit_score: Int,
+    priority: Int,
+    search_terms_json: String,
+    search_signals_json: String,
+    target_home_services: Bool,
+    target_medical: Bool,
+    target_legal: Bool,
+    target_events: Bool,
+    target_corporate: Bool,
+    target_industrial: Bool,
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_icps_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_icps.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

@@ -73,6 +73,9 @@ public class SoundRecorderUploadSessionsEntity {
     @Column(name = "legal_region", length = 64, nullable = true)
     private String legalRegion;
 
+    @Column(name = "use_case", length = 32, nullable = false)
+    private String useCase;
+
     @Column(name = "meta_data", nullable = false, columnDefinition = "jsonb")
     private String metaData;
 
@@ -232,6 +235,14 @@ public class SoundRecorderUploadSessionsEntity {
 
     public void setLegalRegion(String legalRegion) {
         this.legalRegion = legalRegion;
+    }
+
+    public String getUseCase() {
+        return useCase;
+    }
+
+    public void setUseCase(String useCase) {
+        this.useCase = useCase;
     }
 
     public String getMetaData() {

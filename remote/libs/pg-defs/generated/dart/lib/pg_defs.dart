@@ -676,10 +676,11 @@ class SoundRecorderDevicesRow {
 }
 
 const soundRecorderUploadSessionsTable = "sound_recorder_upload_sessions";
-const soundRecorderUploadSessionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions";
+const soundRecorderUploadSessionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_prefix,\n      content_type,\n      codec,\n      sample_rate,\n      channel_count,\n      segment_duration_seconds,\n      max_segment_bytes,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(last_heartbeat_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_heartbeat_at,\n      to_char(closed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as closed_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      client_timezone,\n      legal_region,\n      use_case,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_upload_sessions";
 
 const soundRecorderUploadSessionsStatusValues = <String>["active", "closed", "revoked", "expired"];
 const soundRecorderUploadSessionsStorageProviderValues = <String>["s3"];
+const soundRecorderUploadSessionsUseCaseValues = <String>["security", "music", "meeting", "voice_note", "ambient"];
 
 class SoundRecorderUploadSessionsRow {
   const SoundRecorderUploadSessionsRow({
@@ -702,6 +703,7 @@ class SoundRecorderUploadSessionsRow {
     this.expiresAt,
     this.clientTimezone,
     this.legalRegion,
+    required this.useCase,
     required this.metaData,
     required this.createdAt,
     required this.updatedAt,
@@ -726,6 +728,7 @@ class SoundRecorderUploadSessionsRow {
   final String? expiresAt;
   final String? clientTimezone;
   final String? legalRegion;
+  final String useCase;
   final Map<String, Object?> metaData;
   final String createdAt;
   final String updatedAt;
@@ -751,6 +754,7 @@ class SoundRecorderUploadSessionsRow {
       expiresAt: _readOptionalString(json, "expiresAt"),
       clientTimezone: _readOptionalString(json, "clientTimezone"),
       legalRegion: _readOptionalString(json, "legalRegion"),
+      useCase: _readRequiredString(json, "useCase"),
       metaData: _readRequiredObject(json, "metaData"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
@@ -777,6 +781,7 @@ class SoundRecorderUploadSessionsRow {
     "expiresAt": expiresAt,
     "clientTimezone": clientTimezone,
     "legalRegion": legalRegion,
+    "useCase": useCase,
     "metaData": metaData,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
@@ -847,12 +852,15 @@ class SoundRecorderUploadSessionsRow {
     if (legalRegion != null && !RegExp(r'^[A-Za-z0-9._:/-]{1,64}$').hasMatch(legalRegion!)) {
       errors.add("sound_recorder_upload_sessions.legal_region does not match the required pattern");
     }
+    if (!soundRecorderUploadSessionsUseCaseValues.contains(useCase)) {
+      errors.add("unsupported sound_recorder_upload_sessions.use_case");
+    }
     return errors;
   }
 }
 
 const soundRecorderSegmentsTable = "sound_recorder_segments";
-const soundRecorderSegmentsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments";
+const soundRecorderSegmentsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      session_id::text as session_id,\n      sequence_number,\n      status,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      content_type,\n      codec,\n      to_char(captured_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_started_at,\n      to_char(captured_ended_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as captured_ended_at,\n      duration_millis,\n      byte_count,\n      sha256_hex,\n      to_char(upload_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as upload_url_expires_at,\n      etag,\n      to_char(uploaded_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as uploaded_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(pinned_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as pinned_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_segments";
 
 const soundRecorderSegmentsStatusValues = <String>["pending", "uploaded", "failed", "expired", "deleted"];
 const soundRecorderSegmentsStorageProviderValues = <String>["s3"];
@@ -879,6 +887,7 @@ class SoundRecorderSegmentsRow {
     this.etag,
     this.uploadedAt,
     required this.expiresAt,
+    this.pinnedAt,
     required this.metaData,
     required this.createdAt,
     required this.updatedAt,
@@ -904,6 +913,7 @@ class SoundRecorderSegmentsRow {
   final String? etag;
   final String? uploadedAt;
   final String expiresAt;
+  final String? pinnedAt;
   final Map<String, Object?> metaData;
   final String createdAt;
   final String updatedAt;
@@ -930,6 +940,7 @@ class SoundRecorderSegmentsRow {
       etag: _readOptionalString(json, "etag"),
       uploadedAt: _readOptionalString(json, "uploadedAt"),
       expiresAt: _readRequiredString(json, "expiresAt"),
+      pinnedAt: _readOptionalString(json, "pinnedAt"),
       metaData: _readRequiredObject(json, "metaData"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
@@ -957,6 +968,7 @@ class SoundRecorderSegmentsRow {
     "etag": etag,
     "uploadedAt": uploadedAt,
     "expiresAt": expiresAt,
+    "pinnedAt": pinnedAt,
     "metaData": metaData,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
@@ -9517,6 +9529,893 @@ class UsaccAuditEventsRow {
     if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(source)) {
       errors.add("usacc_audit_events.source does not match the required pattern");
     }
+    return errors;
+  }
+}
+
+const benefactorLeadsTable = "benefactor.benefactor_leads";
+const benefactorLeadsSelectSql = "select\n      id::text as id,\n      business_name,\n      owner_first_name,\n      owner_last_name,\n      primary_email,\n      secondary_email,\n      primary_phone,\n      website_url,\n      service_category,\n      service_subcategories::text as service_subcategories_json,\n      city,\n      state,\n      zip_code,\n      country,\n      service_area,\n      lead_status,\n      outreach_status,\n      total_outreach_attempts,\n      to_char(last_outreach_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_outreach_at,\n      contact_attempts::text as contact_attempts_json,\n      source_url,\n      source_query,\n      source_tool,\n      source_engine,\n      is_verified,\n      tags::text as tags_json,\n      meta_data::text as meta_data_json,\n      notes,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads";
+
+const benefactorLeadsLeadStatusValues = <String>["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"];
+const benefactorLeadsOutreachStatusValues = <String>["pending", "new", "contacted", "failed"];
+
+class BenefactorLeadsRow {
+  const BenefactorLeadsRow({
+    required this.id,
+    required this.businessName,
+    required this.ownerFirstName,
+    required this.ownerLastName,
+    required this.primaryEmail,
+    this.secondaryEmail,
+    this.primaryPhone,
+    this.websiteUrl,
+    required this.serviceCategory,
+    required this.serviceSubcategories,
+    this.city,
+    this.state,
+    this.zipCode,
+    required this.country,
+    this.serviceArea,
+    required this.leadStatus,
+    required this.outreachStatus,
+    required this.totalOutreachAttempts,
+    this.lastOutreachAt,
+    required this.contactAttempts,
+    this.sourceUrl,
+    this.sourceQuery,
+    this.sourceTool,
+    this.sourceEngine,
+    required this.isVerified,
+    required this.tags,
+    required this.metaData,
+    this.notes,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String businessName;
+  final String ownerFirstName;
+  final String ownerLastName;
+  final String primaryEmail;
+  final String? secondaryEmail;
+  final String? primaryPhone;
+  final String? websiteUrl;
+  final String serviceCategory;
+  final List<Object?> serviceSubcategories;
+  final String? city;
+  final String? state;
+  final String? zipCode;
+  final String country;
+  final String? serviceArea;
+  final String leadStatus;
+  final String outreachStatus;
+  final int totalOutreachAttempts;
+  final String? lastOutreachAt;
+  final List<Object?> contactAttempts;
+  final String? sourceUrl;
+  final String? sourceQuery;
+  final String? sourceTool;
+  final String? sourceEngine;
+  final bool isVerified;
+  final List<Object?> tags;
+  final Map<String, Object?> metaData;
+  final String? notes;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorLeadsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsRow(
+      id: _readRequiredString(json, "id"),
+      businessName: _readRequiredString(json, "businessName"),
+      ownerFirstName: _readRequiredString(json, "ownerFirstName"),
+      ownerLastName: _readRequiredString(json, "ownerLastName"),
+      primaryEmail: _readRequiredString(json, "primaryEmail"),
+      secondaryEmail: _readOptionalString(json, "secondaryEmail"),
+      primaryPhone: _readOptionalString(json, "primaryPhone"),
+      websiteUrl: _readOptionalString(json, "websiteUrl"),
+      serviceCategory: _readRequiredString(json, "serviceCategory"),
+      serviceSubcategories: _readRequiredArray(json, "serviceSubcategories"),
+      city: _readOptionalString(json, "city"),
+      state: _readOptionalString(json, "state"),
+      zipCode: _readOptionalString(json, "zipCode"),
+      country: _readRequiredString(json, "country"),
+      serviceArea: _readOptionalString(json, "serviceArea"),
+      leadStatus: _readRequiredString(json, "leadStatus"),
+      outreachStatus: _readRequiredString(json, "outreachStatus"),
+      totalOutreachAttempts: _readRequiredInt(json, "totalOutreachAttempts"),
+      lastOutreachAt: _readOptionalString(json, "lastOutreachAt"),
+      contactAttempts: _readRequiredArray(json, "contactAttempts"),
+      sourceUrl: _readOptionalString(json, "sourceUrl"),
+      sourceQuery: _readOptionalString(json, "sourceQuery"),
+      sourceTool: _readOptionalString(json, "sourceTool"),
+      sourceEngine: _readOptionalString(json, "sourceEngine"),
+      isVerified: _readRequiredBool(json, "isVerified"),
+      tags: _readRequiredArray(json, "tags"),
+      metaData: _readRequiredObject(json, "metaData"),
+      notes: _readOptionalString(json, "notes"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "businessName": businessName,
+    "ownerFirstName": ownerFirstName,
+    "ownerLastName": ownerLastName,
+    "primaryEmail": primaryEmail,
+    "secondaryEmail": secondaryEmail,
+    "primaryPhone": primaryPhone,
+    "websiteUrl": websiteUrl,
+    "serviceCategory": serviceCategory,
+    "serviceSubcategories": serviceSubcategories,
+    "city": city,
+    "state": state,
+    "zipCode": zipCode,
+    "country": country,
+    "serviceArea": serviceArea,
+    "leadStatus": leadStatus,
+    "outreachStatus": outreachStatus,
+    "totalOutreachAttempts": totalOutreachAttempts,
+    "lastOutreachAt": lastOutreachAt,
+    "contactAttempts": contactAttempts,
+    "sourceUrl": sourceUrl,
+    "sourceQuery": sourceQuery,
+    "sourceTool": sourceTool,
+    "sourceEngine": sourceEngine,
+    "isVerified": isVerified,
+    "tags": tags,
+    "metaData": metaData,
+    "notes": notes,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorLeadsLeadStatusValues.contains(leadStatus)) {
+      errors.add("unsupported benefactor_leads.lead_status");
+    }
+    if (!benefactorLeadsOutreachStatusValues.contains(outreachStatus)) {
+      errors.add("unsupported benefactor_leads.outreach_status");
+    }
+    return errors;
+  }
+}
+
+const benefactorLeadsDomainsTable = "benefactor.benefactor_leads_domains";
+const benefactorLeadsDomainsSelectSql = "select\n      id::text as id,\n      domain,\n      domain_kind,\n      status,\n      reason,\n      source,\n      is_blacklisted,\n      is_blocked,\n      is_permanently_blocked,\n      blocked_reason,\n      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as blocked_until,\n      to_char(skip_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as skip_until,\n      scrape_count,\n      skip_count,\n      skipped_count,\n      email_found_count,\n      lead_inserted_count,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(last_scraped_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_scraped_at,\n      to_char(last_skipped_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_skipped_at,\n      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_email_found_at,\n      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_lead_inserted_at,\n      last_seen_url,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_domains";
+
+const benefactorLeadsDomainsDomainKindValues = <String>["email", "website"];
+const benefactorLeadsDomainsStatusValues = <String>["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"];
+
+class BenefactorLeadsDomainsRow {
+  const BenefactorLeadsDomainsRow({
+    required this.id,
+    required this.domain,
+    required this.domainKind,
+    required this.status,
+    this.reason,
+    required this.source,
+    required this.isBlacklisted,
+    required this.isBlocked,
+    required this.isPermanentlyBlocked,
+    this.blockedReason,
+    this.blockedUntil,
+    this.skipUntil,
+    required this.scrapeCount,
+    required this.skipCount,
+    required this.skippedCount,
+    required this.emailFoundCount,
+    required this.leadInsertedCount,
+    this.lastSeenAt,
+    this.lastScrapedAt,
+    this.lastSkippedAt,
+    this.lastEmailFoundAt,
+    this.lastLeadInsertedAt,
+    this.lastSeenUrl,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String domain;
+  final String domainKind;
+  final String status;
+  final String? reason;
+  final String source;
+  final bool isBlacklisted;
+  final bool isBlocked;
+  final bool isPermanentlyBlocked;
+  final String? blockedReason;
+  final String? blockedUntil;
+  final String? skipUntil;
+  final int scrapeCount;
+  final int skipCount;
+  final int skippedCount;
+  final int emailFoundCount;
+  final int leadInsertedCount;
+  final String? lastSeenAt;
+  final String? lastScrapedAt;
+  final String? lastSkippedAt;
+  final String? lastEmailFoundAt;
+  final String? lastLeadInsertedAt;
+  final String? lastSeenUrl;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorLeadsDomainsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsDomainsRow(
+      id: _readRequiredString(json, "id"),
+      domain: _readRequiredString(json, "domain"),
+      domainKind: _readRequiredString(json, "domainKind"),
+      status: _readRequiredString(json, "status"),
+      reason: _readOptionalString(json, "reason"),
+      source: _readRequiredString(json, "source"),
+      isBlacklisted: _readRequiredBool(json, "isBlacklisted"),
+      isBlocked: _readRequiredBool(json, "isBlocked"),
+      isPermanentlyBlocked: _readRequiredBool(json, "isPermanentlyBlocked"),
+      blockedReason: _readOptionalString(json, "blockedReason"),
+      blockedUntil: _readOptionalString(json, "blockedUntil"),
+      skipUntil: _readOptionalString(json, "skipUntil"),
+      scrapeCount: _readRequiredInt(json, "scrapeCount"),
+      skipCount: _readRequiredInt(json, "skipCount"),
+      skippedCount: _readRequiredInt(json, "skippedCount"),
+      emailFoundCount: _readRequiredInt(json, "emailFoundCount"),
+      leadInsertedCount: _readRequiredInt(json, "leadInsertedCount"),
+      lastSeenAt: _readOptionalString(json, "lastSeenAt"),
+      lastScrapedAt: _readOptionalString(json, "lastScrapedAt"),
+      lastSkippedAt: _readOptionalString(json, "lastSkippedAt"),
+      lastEmailFoundAt: _readOptionalString(json, "lastEmailFoundAt"),
+      lastLeadInsertedAt: _readOptionalString(json, "lastLeadInsertedAt"),
+      lastSeenUrl: _readOptionalString(json, "lastSeenUrl"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "domain": domain,
+    "domainKind": domainKind,
+    "status": status,
+    "reason": reason,
+    "source": source,
+    "isBlacklisted": isBlacklisted,
+    "isBlocked": isBlocked,
+    "isPermanentlyBlocked": isPermanentlyBlocked,
+    "blockedReason": blockedReason,
+    "blockedUntil": blockedUntil,
+    "skipUntil": skipUntil,
+    "scrapeCount": scrapeCount,
+    "skipCount": skipCount,
+    "skippedCount": skippedCount,
+    "emailFoundCount": emailFoundCount,
+    "leadInsertedCount": leadInsertedCount,
+    "lastSeenAt": lastSeenAt,
+    "lastScrapedAt": lastScrapedAt,
+    "lastSkippedAt": lastSkippedAt,
+    "lastEmailFoundAt": lastEmailFoundAt,
+    "lastLeadInsertedAt": lastLeadInsertedAt,
+    "lastSeenUrl": lastSeenUrl,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorLeadsDomainsDomainKindValues.contains(domainKind)) {
+      errors.add("unsupported benefactor_leads_domains.domain_kind");
+    }
+    if (!benefactorLeadsDomainsStatusValues.contains(status)) {
+      errors.add("unsupported benefactor_leads_domains.status");
+    }
+    return errors;
+  }
+}
+
+const benefactorSearchLocationsTable = "benefactor.benefactor_search_locations";
+const benefactorSearchLocationsSelectSql = "select\n      id::text as id,\n      slug,\n      city,\n      state,\n      state_code,\n      country,\n      metro_area,\n      military_area,\n      primary_installation,\n      installation_aliases::text as installation_aliases_json,\n      location_type,\n      priority,\n      search_weight,\n      total_query_runs,\n      total_emails_inserted,\n      success_count,\n      failure_count,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_success_at,\n      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_failure_at,\n      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as cooldown_until,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_search_locations";
+
+class BenefactorSearchLocationsRow {
+  const BenefactorSearchLocationsRow({
+    required this.id,
+    required this.slug,
+    required this.city,
+    required this.state,
+    this.stateCode,
+    required this.country,
+    this.metroArea,
+    this.militaryArea,
+    this.primaryInstallation,
+    required this.installationAliases,
+    required this.locationType,
+    required this.priority,
+    required this.searchWeight,
+    required this.totalQueryRuns,
+    required this.totalEmailsInserted,
+    required this.successCount,
+    required this.failureCount,
+    this.lastRunAt,
+    this.lastSuccessAt,
+    this.lastFailureAt,
+    this.cooldownUntil,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String city;
+  final String state;
+  final String? stateCode;
+  final String country;
+  final String? metroArea;
+  final String? militaryArea;
+  final String? primaryInstallation;
+  final List<Object?> installationAliases;
+  final String locationType;
+  final int priority;
+  final int searchWeight;
+  final int totalQueryRuns;
+  final int totalEmailsInserted;
+  final int successCount;
+  final int failureCount;
+  final String? lastRunAt;
+  final String? lastSuccessAt;
+  final String? lastFailureAt;
+  final String? cooldownUntil;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorSearchLocationsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorSearchLocationsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      city: _readRequiredString(json, "city"),
+      state: _readRequiredString(json, "state"),
+      stateCode: _readOptionalString(json, "stateCode"),
+      country: _readRequiredString(json, "country"),
+      metroArea: _readOptionalString(json, "metroArea"),
+      militaryArea: _readOptionalString(json, "militaryArea"),
+      primaryInstallation: _readOptionalString(json, "primaryInstallation"),
+      installationAliases: _readRequiredArray(json, "installationAliases"),
+      locationType: _readRequiredString(json, "locationType"),
+      priority: _readRequiredInt(json, "priority"),
+      searchWeight: _readRequiredInt(json, "searchWeight"),
+      totalQueryRuns: _readRequiredInt(json, "totalQueryRuns"),
+      totalEmailsInserted: _readRequiredInt(json, "totalEmailsInserted"),
+      successCount: _readRequiredInt(json, "successCount"),
+      failureCount: _readRequiredInt(json, "failureCount"),
+      lastRunAt: _readOptionalString(json, "lastRunAt"),
+      lastSuccessAt: _readOptionalString(json, "lastSuccessAt"),
+      lastFailureAt: _readOptionalString(json, "lastFailureAt"),
+      cooldownUntil: _readOptionalString(json, "cooldownUntil"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "city": city,
+    "state": state,
+    "stateCode": stateCode,
+    "country": country,
+    "metroArea": metroArea,
+    "militaryArea": militaryArea,
+    "primaryInstallation": primaryInstallation,
+    "installationAliases": installationAliases,
+    "locationType": locationType,
+    "priority": priority,
+    "searchWeight": searchWeight,
+    "totalQueryRuns": totalQueryRuns,
+    "totalEmailsInserted": totalEmailsInserted,
+    "successCount": successCount,
+    "failureCount": failureCount,
+    "lastRunAt": lastRunAt,
+    "lastSuccessAt": lastSuccessAt,
+    "lastFailureAt": lastFailureAt,
+    "cooldownUntil": cooldownUntil,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const benefactorScrapeQueriesTable = "benefactor.benefactor_scrape_queries";
+const benefactorScrapeQueriesSelectSql = "select\n      id::text as id,\n      query_text,\n      query_hash,\n      benefactor_icp_slug,\n      benefactor_icp_name,\n      benefactor_search_location_id::text as benefactor_search_location_id,\n      service_category,\n      target_city,\n      target_state,\n      target_country,\n      target_military_area,\n      target_installation,\n      query_variant,\n      search_page_depth,\n      priority,\n      total_runs,\n      total_urls_visited,\n      total_emails_found,\n      total_emails_inserted,\n      total_emails_duplicate,\n      total_errors,\n      success_count,\n      failure_count,\n      to_char(last_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_run_at,\n      to_char(last_success_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_success_at,\n      to_char(last_failure_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_failure_at,\n      last_run_emails_found,\n      last_run_emails_inserted,\n      last_run_success,\n      last_run_duration_ms,\n      last_run_error,\n      to_char(cooldown_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as cooldown_until,\n      consecutive_zero_new_runs,\n      to_char(last_zero_new_run_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_zero_new_run_at,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_scrape_queries";
+
+const benefactorScrapeQueriesQueryVariantValues = <String>["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"];
+
+class BenefactorScrapeQueriesRow {
+  const BenefactorScrapeQueriesRow({
+    required this.id,
+    required this.queryText,
+    required this.queryHash,
+    this.benefactorIcpSlug,
+    this.benefactorIcpName,
+    this.benefactorSearchLocationId,
+    required this.serviceCategory,
+    this.targetCity,
+    this.targetState,
+    required this.targetCountry,
+    this.targetMilitaryArea,
+    this.targetInstallation,
+    required this.queryVariant,
+    required this.searchPageDepth,
+    required this.priority,
+    required this.totalRuns,
+    required this.totalUrlsVisited,
+    required this.totalEmailsFound,
+    required this.totalEmailsInserted,
+    required this.totalEmailsDuplicate,
+    required this.totalErrors,
+    required this.successCount,
+    required this.failureCount,
+    this.lastRunAt,
+    this.lastSuccessAt,
+    this.lastFailureAt,
+    required this.lastRunEmailsFound,
+    required this.lastRunEmailsInserted,
+    required this.lastRunSuccess,
+    required this.lastRunDurationMs,
+    this.lastRunError,
+    this.cooldownUntil,
+    required this.consecutiveZeroNewRuns,
+    this.lastZeroNewRunAt,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String queryText;
+  final String queryHash;
+  final String? benefactorIcpSlug;
+  final String? benefactorIcpName;
+  final String? benefactorSearchLocationId;
+  final String serviceCategory;
+  final String? targetCity;
+  final String? targetState;
+  final String targetCountry;
+  final String? targetMilitaryArea;
+  final String? targetInstallation;
+  final String queryVariant;
+  final int searchPageDepth;
+  final int priority;
+  final int totalRuns;
+  final int totalUrlsVisited;
+  final int totalEmailsFound;
+  final int totalEmailsInserted;
+  final int totalEmailsDuplicate;
+  final int totalErrors;
+  final int successCount;
+  final int failureCount;
+  final String? lastRunAt;
+  final String? lastSuccessAt;
+  final String? lastFailureAt;
+  final int lastRunEmailsFound;
+  final int lastRunEmailsInserted;
+  final bool lastRunSuccess;
+  final int lastRunDurationMs;
+  final String? lastRunError;
+  final String? cooldownUntil;
+  final int consecutiveZeroNewRuns;
+  final String? lastZeroNewRunAt;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorScrapeQueriesRow.fromJson(Map<String, Object?> json) {
+    return BenefactorScrapeQueriesRow(
+      id: _readRequiredString(json, "id"),
+      queryText: _readRequiredString(json, "queryText"),
+      queryHash: _readRequiredString(json, "queryHash"),
+      benefactorIcpSlug: _readOptionalString(json, "benefactorIcpSlug"),
+      benefactorIcpName: _readOptionalString(json, "benefactorIcpName"),
+      benefactorSearchLocationId: _readOptionalString(json, "benefactorSearchLocationId"),
+      serviceCategory: _readRequiredString(json, "serviceCategory"),
+      targetCity: _readOptionalString(json, "targetCity"),
+      targetState: _readOptionalString(json, "targetState"),
+      targetCountry: _readRequiredString(json, "targetCountry"),
+      targetMilitaryArea: _readOptionalString(json, "targetMilitaryArea"),
+      targetInstallation: _readOptionalString(json, "targetInstallation"),
+      queryVariant: _readRequiredString(json, "queryVariant"),
+      searchPageDepth: _readRequiredInt(json, "searchPageDepth"),
+      priority: _readRequiredInt(json, "priority"),
+      totalRuns: _readRequiredInt(json, "totalRuns"),
+      totalUrlsVisited: _readRequiredInt(json, "totalUrlsVisited"),
+      totalEmailsFound: _readRequiredInt(json, "totalEmailsFound"),
+      totalEmailsInserted: _readRequiredInt(json, "totalEmailsInserted"),
+      totalEmailsDuplicate: _readRequiredInt(json, "totalEmailsDuplicate"),
+      totalErrors: _readRequiredInt(json, "totalErrors"),
+      successCount: _readRequiredInt(json, "successCount"),
+      failureCount: _readRequiredInt(json, "failureCount"),
+      lastRunAt: _readOptionalString(json, "lastRunAt"),
+      lastSuccessAt: _readOptionalString(json, "lastSuccessAt"),
+      lastFailureAt: _readOptionalString(json, "lastFailureAt"),
+      lastRunEmailsFound: _readRequiredInt(json, "lastRunEmailsFound"),
+      lastRunEmailsInserted: _readRequiredInt(json, "lastRunEmailsInserted"),
+      lastRunSuccess: _readRequiredBool(json, "lastRunSuccess"),
+      lastRunDurationMs: _readRequiredInt(json, "lastRunDurationMs"),
+      lastRunError: _readOptionalString(json, "lastRunError"),
+      cooldownUntil: _readOptionalString(json, "cooldownUntil"),
+      consecutiveZeroNewRuns: _readRequiredInt(json, "consecutiveZeroNewRuns"),
+      lastZeroNewRunAt: _readOptionalString(json, "lastZeroNewRunAt"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "queryText": queryText,
+    "queryHash": queryHash,
+    "benefactorIcpSlug": benefactorIcpSlug,
+    "benefactorIcpName": benefactorIcpName,
+    "benefactorSearchLocationId": benefactorSearchLocationId,
+    "serviceCategory": serviceCategory,
+    "targetCity": targetCity,
+    "targetState": targetState,
+    "targetCountry": targetCountry,
+    "targetMilitaryArea": targetMilitaryArea,
+    "targetInstallation": targetInstallation,
+    "queryVariant": queryVariant,
+    "searchPageDepth": searchPageDepth,
+    "priority": priority,
+    "totalRuns": totalRuns,
+    "totalUrlsVisited": totalUrlsVisited,
+    "totalEmailsFound": totalEmailsFound,
+    "totalEmailsInserted": totalEmailsInserted,
+    "totalEmailsDuplicate": totalEmailsDuplicate,
+    "totalErrors": totalErrors,
+    "successCount": successCount,
+    "failureCount": failureCount,
+    "lastRunAt": lastRunAt,
+    "lastSuccessAt": lastSuccessAt,
+    "lastFailureAt": lastFailureAt,
+    "lastRunEmailsFound": lastRunEmailsFound,
+    "lastRunEmailsInserted": lastRunEmailsInserted,
+    "lastRunSuccess": lastRunSuccess,
+    "lastRunDurationMs": lastRunDurationMs,
+    "lastRunError": lastRunError,
+    "cooldownUntil": cooldownUntil,
+    "consecutiveZeroNewRuns": consecutiveZeroNewRuns,
+    "lastZeroNewRunAt": lastZeroNewRunAt,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!benefactorScrapeQueriesQueryVariantValues.contains(queryVariant)) {
+      errors.add("unsupported benefactor_scrape_queries.query_variant");
+    }
+    return errors;
+  }
+}
+
+const benefactorDomainSearchTrackingTable = "benefactor.benefactor_domain_search_tracking";
+const benefactorDomainSearchTrackingSelectSql = "select\n      id::text as id,\n      domain,\n      for_what,\n      search_result_appearances,\n      queued_visit_count,\n      visit_count,\n      good_result_count,\n      bad_result_count,\n      email_found_count,\n      lead_inserted_count,\n      to_char(last_queued_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_queued_at,\n      to_char(last_visited_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_visited_at,\n      to_char(last_good_result_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_good_result_at,\n      to_char(last_bad_result_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_bad_result_at,\n      to_char(last_email_found_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_email_found_at,\n      to_char(last_lead_inserted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_lead_inserted_at,\n      last_good_url,\n      last_bad_url,\n      to_char(blocked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as blocked_until,\n      is_permanently_blocked,\n      blocked_reason,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_domain_search_tracking";
+
+class BenefactorDomainSearchTrackingRow {
+  const BenefactorDomainSearchTrackingRow({
+    required this.id,
+    required this.domain,
+    required this.forWhat,
+    required this.searchResultAppearances,
+    required this.queuedVisitCount,
+    required this.visitCount,
+    required this.goodResultCount,
+    required this.badResultCount,
+    required this.emailFoundCount,
+    required this.leadInsertedCount,
+    this.lastQueuedAt,
+    this.lastVisitedAt,
+    this.lastGoodResultAt,
+    this.lastBadResultAt,
+    this.lastEmailFoundAt,
+    this.lastLeadInsertedAt,
+    this.lastGoodUrl,
+    this.lastBadUrl,
+    this.blockedUntil,
+    required this.isPermanentlyBlocked,
+    this.blockedReason,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String domain;
+  final String forWhat;
+  final int searchResultAppearances;
+  final int queuedVisitCount;
+  final int visitCount;
+  final int goodResultCount;
+  final int badResultCount;
+  final int emailFoundCount;
+  final int leadInsertedCount;
+  final String? lastQueuedAt;
+  final String? lastVisitedAt;
+  final String? lastGoodResultAt;
+  final String? lastBadResultAt;
+  final String? lastEmailFoundAt;
+  final String? lastLeadInsertedAt;
+  final String? lastGoodUrl;
+  final String? lastBadUrl;
+  final String? blockedUntil;
+  final bool isPermanentlyBlocked;
+  final String? blockedReason;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorDomainSearchTrackingRow.fromJson(Map<String, Object?> json) {
+    return BenefactorDomainSearchTrackingRow(
+      id: _readRequiredString(json, "id"),
+      domain: _readRequiredString(json, "domain"),
+      forWhat: _readRequiredString(json, "forWhat"),
+      searchResultAppearances: _readRequiredInt(json, "searchResultAppearances"),
+      queuedVisitCount: _readRequiredInt(json, "queuedVisitCount"),
+      visitCount: _readRequiredInt(json, "visitCount"),
+      goodResultCount: _readRequiredInt(json, "goodResultCount"),
+      badResultCount: _readRequiredInt(json, "badResultCount"),
+      emailFoundCount: _readRequiredInt(json, "emailFoundCount"),
+      leadInsertedCount: _readRequiredInt(json, "leadInsertedCount"),
+      lastQueuedAt: _readOptionalString(json, "lastQueuedAt"),
+      lastVisitedAt: _readOptionalString(json, "lastVisitedAt"),
+      lastGoodResultAt: _readOptionalString(json, "lastGoodResultAt"),
+      lastBadResultAt: _readOptionalString(json, "lastBadResultAt"),
+      lastEmailFoundAt: _readOptionalString(json, "lastEmailFoundAt"),
+      lastLeadInsertedAt: _readOptionalString(json, "lastLeadInsertedAt"),
+      lastGoodUrl: _readOptionalString(json, "lastGoodUrl"),
+      lastBadUrl: _readOptionalString(json, "lastBadUrl"),
+      blockedUntil: _readOptionalString(json, "blockedUntil"),
+      isPermanentlyBlocked: _readRequiredBool(json, "isPermanentlyBlocked"),
+      blockedReason: _readOptionalString(json, "blockedReason"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "domain": domain,
+    "forWhat": forWhat,
+    "searchResultAppearances": searchResultAppearances,
+    "queuedVisitCount": queuedVisitCount,
+    "visitCount": visitCount,
+    "goodResultCount": goodResultCount,
+    "badResultCount": badResultCount,
+    "emailFoundCount": emailFoundCount,
+    "leadInsertedCount": leadInsertedCount,
+    "lastQueuedAt": lastQueuedAt,
+    "lastVisitedAt": lastVisitedAt,
+    "lastGoodResultAt": lastGoodResultAt,
+    "lastBadResultAt": lastBadResultAt,
+    "lastEmailFoundAt": lastEmailFoundAt,
+    "lastLeadInsertedAt": lastLeadInsertedAt,
+    "lastGoodUrl": lastGoodUrl,
+    "lastBadUrl": lastBadUrl,
+    "blockedUntil": blockedUntil,
+    "isPermanentlyBlocked": isPermanentlyBlocked,
+    "blockedReason": blockedReason,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const benefactorIcpsTable = "benefactor.benefactor_icps";
+const benefactorIcpsSelectSql = "select\n      id::text as id,\n      slug,\n      name,\n      category,\n      service_category,\n      description,\n      outcall_fit_score,\n      priority,\n      search_terms::text as search_terms_json,\n      search_signals::text as search_signals_json,\n      target_home_services,\n      target_medical,\n      target_legal,\n      target_events,\n      target_corporate,\n      target_industrial,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_icps";
+
+class BenefactorIcpsRow {
+  const BenefactorIcpsRow({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.category,
+    required this.serviceCategory,
+    required this.description,
+    required this.outcallFitScore,
+    required this.priority,
+    required this.searchTerms,
+    required this.searchSignals,
+    required this.targetHomeServices,
+    required this.targetMedical,
+    required this.targetLegal,
+    required this.targetEvents,
+    required this.targetCorporate,
+    required this.targetIndustrial,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String name;
+  final String category;
+  final String serviceCategory;
+  final String description;
+  final int outcallFitScore;
+  final int priority;
+  final List<Object?> searchTerms;
+  final List<Object?> searchSignals;
+  final bool targetHomeServices;
+  final bool targetMedical;
+  final bool targetLegal;
+  final bool targetEvents;
+  final bool targetCorporate;
+  final bool targetIndustrial;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorIcpsRow.fromJson(Map<String, Object?> json) {
+    return BenefactorIcpsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      name: _readRequiredString(json, "name"),
+      category: _readRequiredString(json, "category"),
+      serviceCategory: _readRequiredString(json, "serviceCategory"),
+      description: _readRequiredString(json, "description"),
+      outcallFitScore: _readRequiredInt(json, "outcallFitScore"),
+      priority: _readRequiredInt(json, "priority"),
+      searchTerms: _readRequiredArray(json, "searchTerms"),
+      searchSignals: _readRequiredArray(json, "searchSignals"),
+      targetHomeServices: _readRequiredBool(json, "targetHomeServices"),
+      targetMedical: _readRequiredBool(json, "targetMedical"),
+      targetLegal: _readRequiredBool(json, "targetLegal"),
+      targetEvents: _readRequiredBool(json, "targetEvents"),
+      targetCorporate: _readRequiredBool(json, "targetCorporate"),
+      targetIndustrial: _readRequiredBool(json, "targetIndustrial"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "name": name,
+    "category": category,
+    "serviceCategory": serviceCategory,
+    "description": description,
+    "outcallFitScore": outcallFitScore,
+    "priority": priority,
+    "searchTerms": searchTerms,
+    "searchSignals": searchSignals,
+    "targetHomeServices": targetHomeServices,
+    "targetMedical": targetMedical,
+    "targetLegal": targetLegal,
+    "targetEvents": targetEvents,
+    "targetCorporate": targetCorporate,
+    "targetIndustrial": targetIndustrial,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
     return errors;
   }
 }

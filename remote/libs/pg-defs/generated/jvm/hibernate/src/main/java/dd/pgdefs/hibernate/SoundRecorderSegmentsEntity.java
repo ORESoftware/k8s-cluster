@@ -76,6 +76,9 @@ public class SoundRecorderSegmentsEntity {
     @Column(name = "expires_at", nullable = false, columnDefinition = "timestamptz")
     private OffsetDateTime expiresAt;
 
+    @Column(name = "pinned_at", nullable = true, columnDefinition = "timestamptz")
+    private OffsetDateTime pinnedAt;
+
     @Column(name = "meta_data", nullable = false, columnDefinition = "jsonb")
     private String metaData;
 
@@ -243,6 +246,14 @@ public class SoundRecorderSegmentsEntity {
 
     public void setExpiresAt(OffsetDateTime expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public OffsetDateTime getPinnedAt() {
+        return pinnedAt;
+    }
+
+    public void setPinnedAt(OffsetDateTime pinnedAt) {
+        this.pinnedAt = pinnedAt;
     }
 
     public String getMetaData() {

@@ -165,6 +165,7 @@ model SoundRecorderUploadSessions {
   expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
   clientTimezone String? @map("client_timezone") @db.VarChar(80)
   legalRegion String? @map("legal_region") @db.VarChar(64)
+  useCase String @map("use_case") @default("security") @db.VarChar(32)
   metaData Json @map("meta_data") @default("{}")
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
@@ -196,6 +197,7 @@ model SoundRecorderSegments {
   etag String? @db.VarChar(160)
   uploadedAt DateTime? @map("uploaded_at") @db.Timestamptz(6)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  pinnedAt DateTime? @map("pinned_at") @db.Timestamptz(6)
   metaData Json @map("meta_data") @default("{}")
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
@@ -1993,4 +1995,281 @@ model UsaccAuditEvents {
   // usacc_audit_events_case_created_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("usacc_audit_events")
+}
+
+model BenefactorLeads {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessName String @map("business_name") @default("") @db.VarChar(300)
+  ownerFirstName String @map("owner_first_name") @default("") @db.VarChar(120)
+  ownerLastName String @map("owner_last_name") @default("") @db.VarChar(130)
+  primaryEmail String @map("primary_email") @default("") @db.VarChar(255)
+  secondaryEmail String? @map("secondary_email") @db.VarChar(255)
+  primaryPhone String? @map("primary_phone") @db.VarChar(100)
+  websiteUrl String? @map("website_url") @db.VarChar(500)
+  serviceCategory String @map("service_category") @default("other") @db.VarChar(60)
+  serviceSubcategories Json @map("service_subcategories") @default("[]")
+  city String? @db.VarChar(120)
+  state String? @db.VarChar(80)
+  zipCode String? @map("zip_code") @db.VarChar(20)
+  country String @default("US") @db.VarChar(80)
+  serviceArea String? @map("service_area") @db.VarChar(500)
+  leadStatus String @map("lead_status") @default("new") @db.VarChar(30)
+  outreachStatus String @map("outreach_status") @default("pending") @db.VarChar(30)
+  totalOutreachAttempts Int @map("total_outreach_attempts") @default(0)
+  lastOutreachAt DateTime? @map("last_outreach_at") @db.Timestamptz(6)
+  contactAttempts Json @map("contact_attempts") @default("[]")
+  sourceUrl String? @map("source_url") @db.VarChar(1000)
+  sourceQuery String? @map("source_query") @db.VarChar(500)
+  sourceTool String? @map("source_tool") @db.VarChar(60)
+  sourceEngine String? @map("source_engine") @db.VarChar(30)
+  isVerified Boolean @map("is_verified") @default(false)
+  tags Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  notes String? @db.Text
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([primaryEmail], map: "benefactor_leads_email_uq")
+  @@index([businessName], map: "benefactor_leads_business_name_idx")
+  @@index([serviceCategory], map: "benefactor_leads_category_idx")
+  @@index([city], map: "benefactor_leads_city_idx")
+  @@index([state], map: "benefactor_leads_state_idx")
+  @@index([zipCode], map: "benefactor_leads_zip_idx")
+  @@index([leadStatus], map: "benefactor_leads_status_idx")
+  @@index([outreachStatus], map: "benefactor_leads_outreach_idx")
+  @@index([lastOutreachAt], map: "benefactor_leads_last_outreach_idx")
+  @@index([createdAt], map: "benefactor_leads_created_at_idx")
+  @@index([isSoftDeleted], map: "benefactor_leads_soft_deleted_idx")
+  @@index([isVerified], map: "benefactor_leads_verified_idx")
+  @@index([serviceCategory, city], map: "benefactor_leads_category_city_idx")
+  @@index([serviceCategory, state], map: "benefactor_leads_category_state_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_leads")
+}
+
+model BenefactorLeadsDomains {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domain String @db.VarChar(255)
+  domainKind String @map("domain_kind") @default("email") @db.VarChar(32)
+  status String @default("allowed") @db.VarChar(40)
+  reason String? @db.Text
+  source String @default("manual") @db.VarChar(80)
+  isBlacklisted Boolean @map("is_blacklisted") @default(false)
+  isBlocked Boolean @map("is_blocked") @default(false)
+  isPermanentlyBlocked Boolean @map("is_permanently_blocked") @default(false)
+  blockedReason String? @map("blocked_reason") @db.Text
+  blockedUntil DateTime? @map("blocked_until") @db.Timestamptz(6)
+  skipUntil DateTime? @map("skip_until") @db.Timestamptz(6)
+  scrapeCount Int @map("scrape_count") @default(0)
+  skipCount Int @map("skip_count") @default(0)
+  skippedCount Int @map("skipped_count") @default(0)
+  emailFoundCount Int @map("email_found_count") @default(0)
+  leadInsertedCount Int @map("lead_inserted_count") @default(0)
+  lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  lastScrapedAt DateTime? @map("last_scraped_at") @db.Timestamptz(6)
+  lastSkippedAt DateTime? @map("last_skipped_at") @db.Timestamptz(6)
+  lastEmailFoundAt DateTime? @map("last_email_found_at") @db.Timestamptz(6)
+  lastLeadInsertedAt DateTime? @map("last_lead_inserted_at") @db.Timestamptz(6)
+  lastSeenUrl String? @map("last_seen_url") @db.Text
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([domain, domainKind], map: "benefactor_leads_domains_domain_kind_uq")
+  @@index([domain], map: "benefactor_leads_domains_domain_idx")
+  @@index([domainKind], map: "benefactor_leads_domains_kind_idx")
+  @@index([status], map: "benefactor_leads_domains_status_idx")
+  @@index([isBlacklisted], map: "benefactor_leads_domains_blacklisted_idx")
+  @@index([domainKind, status], map: "benefactor_leads_domains_kind_status_idx")
+  @@index([isBlocked], map: "benefactor_leads_domains_blocked_idx")
+  @@index([blockedUntil], map: "benefactor_leads_domains_blocked_until_idx")
+  @@index([skipUntil], map: "benefactor_leads_domains_skip_until_idx")
+  @@index([lastScrapedAt], map: "benefactor_leads_domains_last_scraped_idx")
+  @@index([isActive], map: "benefactor_leads_domains_active_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_leads_domains")
+}
+
+model BenefactorSearchLocations {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(160)
+  city String @db.VarChar(120)
+  state String @db.VarChar(80)
+  stateCode String? @map("state_code") @db.VarChar(10)
+  country String @default("US") @db.VarChar(80)
+  metroArea String? @map("metro_area") @db.VarChar(220)
+  militaryArea String? @map("military_area") @db.VarChar(220)
+  primaryInstallation String? @map("primary_installation") @db.VarChar(220)
+  installationAliases Json @map("installation_aliases") @default("[]")
+  locationType String @map("location_type") @default("military_town") @db.VarChar(80)
+  priority Int @default(5)
+  searchWeight Int @map("search_weight") @default(5)
+  totalQueryRuns Int @map("total_query_runs") @default(0)
+  totalEmailsInserted Int @map("total_emails_inserted") @default(0)
+  successCount Int @map("success_count") @default(0)
+  failureCount Int @map("failure_count") @default(0)
+  lastRunAt DateTime? @map("last_run_at") @db.Timestamptz(6)
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz(6)
+  lastFailureAt DateTime? @map("last_failure_at") @db.Timestamptz(6)
+  cooldownUntil DateTime? @map("cooldown_until") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([slug], map: "benefactor_search_locations_slug_uq")
+  @@unique([city, state, country], map: "benefactor_search_locations_city_state_country_uq")
+  @@index([state], map: "benefactor_search_locations_state_idx")
+  @@index([militaryArea], map: "benefactor_search_locations_military_area_idx")
+  @@index([locationType], map: "benefactor_search_locations_type_idx")
+  @@index([priority], map: "benefactor_search_locations_priority_idx")
+  @@index([cooldownUntil], map: "benefactor_search_locations_cooldown_idx")
+  @@index([isActive], map: "benefactor_search_locations_active_idx")
+  @@index([isSoftDeleted], map: "benefactor_search_locations_soft_deleted_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_search_locations")
+}
+
+model BenefactorScrapeQueries {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queryText String @map("query_text") @db.Text
+  queryHash String @map("query_hash") @db.VarChar(64)
+  benefactorIcpSlug String? @map("benefactor_icp_slug") @db.VarChar(160)
+  benefactorIcpName String? @map("benefactor_icp_name") @db.VarChar(220)
+  benefactorSearchLocationId String? @map("benefactor_search_location_id") @db.Uuid
+  serviceCategory String @map("service_category") @default("other") @db.VarChar(60)
+  targetCity String? @map("target_city") @db.VarChar(120)
+  targetState String? @map("target_state") @db.VarChar(80)
+  targetCountry String @map("target_country") @default("US") @db.VarChar(80)
+  targetMilitaryArea String? @map("target_military_area") @db.VarChar(220)
+  targetInstallation String? @map("target_installation") @db.VarChar(220)
+  queryVariant String @map("query_variant") @default("email_contact") @db.VarChar(80)
+  searchPageDepth Int @map("search_page_depth") @default(4)
+  priority Int @default(5)
+  totalRuns Int @map("total_runs") @default(0)
+  totalUrlsVisited Int @map("total_urls_visited") @default(0)
+  totalEmailsFound Int @map("total_emails_found") @default(0)
+  totalEmailsInserted Int @map("total_emails_inserted") @default(0)
+  totalEmailsDuplicate Int @map("total_emails_duplicate") @default(0)
+  totalErrors Int @map("total_errors") @default(0)
+  successCount Int @map("success_count") @default(0)
+  failureCount Int @map("failure_count") @default(0)
+  lastRunAt DateTime? @map("last_run_at") @db.Timestamptz(6)
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz(6)
+  lastFailureAt DateTime? @map("last_failure_at") @db.Timestamptz(6)
+  lastRunEmailsFound Int @map("last_run_emails_found") @default(0)
+  lastRunEmailsInserted Int @map("last_run_emails_inserted") @default(0)
+  lastRunSuccess Boolean @map("last_run_success") @default(false)
+  lastRunDurationMs Int @map("last_run_duration_ms") @default(0)
+  lastRunError String? @map("last_run_error") @db.Text
+  cooldownUntil DateTime? @map("cooldown_until") @db.Timestamptz(6)
+  consecutiveZeroNewRuns Int @map("consecutive_zero_new_runs") @default(0)
+  lastZeroNewRunAt DateTime? @map("last_zero_new_run_at") @db.Timestamptz(6)
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([queryHash], map: "benefactor_scrape_queries_hash_uq")
+  @@index([benefactorIcpSlug], map: "benefactor_scrape_queries_icp_slug_idx")
+  @@index([benefactorSearchLocationId], map: "benefactor_scrape_queries_location_id_idx")
+  @@index([serviceCategory], map: "benefactor_scrape_queries_category_idx")
+  @@index([targetCity], map: "benefactor_scrape_queries_city_idx")
+  @@index([targetState], map: "benefactor_scrape_queries_state_idx")
+  @@index([targetMilitaryArea], map: "benefactor_scrape_queries_military_area_idx")
+  @@index([queryVariant], map: "benefactor_scrape_queries_variant_idx")
+  @@index([priority], map: "benefactor_scrape_queries_priority_idx")
+  @@index([lastRunAt], map: "benefactor_scrape_queries_last_run_idx")
+  @@index([successCount], map: "benefactor_scrape_queries_success_count_idx")
+  @@index([failureCount], map: "benefactor_scrape_queries_failure_count_idx")
+  @@index([isActive], map: "benefactor_scrape_queries_active_idx")
+  @@index([cooldownUntil], map: "benefactor_scrape_queries_cooldown_idx")
+  @@index([consecutiveZeroNewRuns], map: "benefactor_scrape_queries_zero_new_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_scrape_queries")
+}
+
+model BenefactorDomainSearchTracking {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  domain String @db.VarChar(255)
+  forWhat String @map("for_what") @default("benefactor_lead_scrape") @db.VarChar(80)
+  searchResultAppearances Int @map("search_result_appearances") @default(0)
+  queuedVisitCount Int @map("queued_visit_count") @default(0)
+  visitCount Int @map("visit_count") @default(0)
+  goodResultCount Int @map("good_result_count") @default(0)
+  badResultCount Int @map("bad_result_count") @default(0)
+  emailFoundCount Int @map("email_found_count") @default(0)
+  leadInsertedCount Int @map("lead_inserted_count") @default(0)
+  lastQueuedAt DateTime? @map("last_queued_at") @db.Timestamptz(6)
+  lastVisitedAt DateTime? @map("last_visited_at") @db.Timestamptz(6)
+  lastGoodResultAt DateTime? @map("last_good_result_at") @db.Timestamptz(6)
+  lastBadResultAt DateTime? @map("last_bad_result_at") @db.Timestamptz(6)
+  lastEmailFoundAt DateTime? @map("last_email_found_at") @db.Timestamptz(6)
+  lastLeadInsertedAt DateTime? @map("last_lead_inserted_at") @db.Timestamptz(6)
+  lastGoodUrl String? @map("last_good_url") @db.Text
+  lastBadUrl String? @map("last_bad_url") @db.Text
+  blockedUntil DateTime? @map("blocked_until") @db.Timestamptz(6)
+  isPermanentlyBlocked Boolean @map("is_permanently_blocked") @default(false)
+  blockedReason String? @map("blocked_reason") @db.Text
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([domain, forWhat], map: "benefactor_domain_search_tracking_domain_for_what_uq")
+  @@index([forWhat], map: "benefactor_domain_search_tracking_for_what_idx")
+  @@index([visitCount], map: "benefactor_domain_search_tracking_visit_count_idx")
+  @@index([goodResultCount], map: "benefactor_domain_search_tracking_good_result_idx")
+  @@index([badResultCount], map: "benefactor_domain_search_tracking_bad_result_idx")
+  @@index([emailFoundCount], map: "benefactor_domain_search_tracking_email_found_idx")
+  @@index([blockedUntil], map: "benefactor_domain_search_tracking_blocked_until_idx")
+  @@index([isActive], map: "benefactor_domain_search_tracking_active_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_domain_search_tracking")
+}
+
+model BenefactorIcps {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(160)
+  name String @db.VarChar(220)
+  category String @default("local_services") @db.VarChar(120)
+  serviceCategory String @map("service_category") @default("other") @db.VarChar(120)
+  description String @default("") @db.Text
+  outcallFitScore Int @map("outcall_fit_score") @default(5)
+  priority Int @default(5)
+  searchTerms Json @map("search_terms") @default("[]")
+  searchSignals Json @map("search_signals") @default("[]")
+  targetHomeServices Boolean @map("target_home_services") @default(false)
+  targetMedical Boolean @map("target_medical") @default(false)
+  targetLegal Boolean @map("target_legal") @default(false)
+  targetEvents Boolean @map("target_events") @default(false)
+  targetCorporate Boolean @map("target_corporate") @default(false)
+  targetIndustrial Boolean @map("target_industrial") @default(false)
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([slug], map: "benefactor_icps_slug_uq")
+  @@index([category], map: "benefactor_icps_category_idx")
+  @@index([serviceCategory], map: "benefactor_icps_service_category_idx")
+  @@index([priority], map: "benefactor_icps_priority_idx")
+  @@index([outcallFitScore], map: "benefactor_icps_outcall_fit_idx")
+  @@index([isActive], map: "benefactor_icps_active_idx")
+  @@index([isSoftDeleted], map: "benefactor_icps_soft_deleted_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_icps")
 }

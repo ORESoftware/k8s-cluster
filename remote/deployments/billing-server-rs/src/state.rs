@@ -33,23 +33,34 @@ pub struct AppState {
     pub scheduler: Arc<crate::scheduler::SchedulerService>,
     pub notifications: Arc<crate::notifications::NotificationService>,
     pub plaid_webhook_verifier: PlaidWebhookVerifier,
+    /// Redacted domain-event publisher + inbound sync-command handle. A
+    /// no-op [`EventBus::disabled`] when NATS is unconfigured.
+    pub events: Arc<EventBus>,
+    /// Master credential sealer. Shared with [`ConnectionService`]; also used
+    /// directly to encrypt inbound webhook payloads at rest (see
+    /// `api/webhooks.rs`).
+    pub sealer: Arc<Sealer>,
 }
 
 impl AppState {
-    pub fn new(cfg: Arc<Config>, pool: PgPool, sealer: Arc<Sealer>) -> Self {
+    pub fn new(cfg: Arc<Config>, pool: PgPool, sealer: Arc<Sealer>, events: Arc<EventBus>) -> Self {
         let tenants = TenantService::new(pool.clone());
         let users = UserService::new(pool.clone());
         let customer_locks = CustomerLockBroker::from_config(&cfg);
-        let ledger = LedgerService::new(pool.clone(), customer_locks.clone());
+        let ledger = LedgerService::new(pool.clone(), customer_locks.clone(), events.clone());
         let customers = CustomerService::new(pool.clone(), users.clone(), customer_locks.clone());
         let vendors = VendorService::new(pool.clone(), users.clone(), ledger.clone());
-        let connections = ConnectionService::new(pool.clone(), sealer);
+        let connections = ConnectionService::new(pool.clone(), sealer.clone(), events.clone());
         let locks = LockService::new(pool.clone());
         let notifications = Arc::new(crate::notifications::NotificationService::new(pool.clone()));
         let scheduler = Arc::new(crate::scheduler::SchedulerService::new(pool.clone()));
 
         let solana_client = SolanaClient::new(&cfg);
-        let anchor = Arc::new(AnchorService::new(pool.clone(), solana_client.clone()));
+        let anchor = Arc::new(AnchorService::new(
+            pool.clone(),
+            solana_client.clone(),
+            events.clone(),
+        ));
         let verifier = Arc::new(Verifier::new(pool.clone(), solana_client.clone()));
 
         Self {
@@ -68,6 +79,8 @@ impl AppState {
             scheduler,
             notifications,
             plaid_webhook_verifier: PlaidWebhookVerifier::new(),
+            events,
+            sealer,
         }
     }
 }

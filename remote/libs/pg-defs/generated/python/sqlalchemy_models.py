@@ -630,11 +630,13 @@ class SoundRecorderDevicesInsert(BaseModel):
 
 SoundRecorderUploadSessionsStatus = Literal["active", "closed", "revoked", "expired"]
 SoundRecorderUploadSessionsStorageProvider = Literal["s3"]
+SoundRecorderUploadSessionsUseCase = Literal["security", "music", "meeting", "voice_note", "ambient"]
 
 class SoundRecorderUploadSessions(Base):
     __tablename__ = "sound_recorder_upload_sessions"
     __table_args__ = (
         CheckConstraint("status in ('active', 'closed', 'revoked', 'expired')", name="sound_recorder_upload_sessions_status_chk"),
+        CheckConstraint("use_case in ('security', 'music', 'meeting', 'voice_note', 'ambient')", name="sound_recorder_upload_sessions_use_case_chk"),
         CheckConstraint("storage_provider in ('s3')", name="sound_recorder_upload_sessions_storage_provider_chk"),
         CheckConstraint("octet_length(storage_bucket) between 1 and 200", name="sound_recorder_upload_sessions_storage_bucket_size_chk"),
         CheckConstraint("octet_length(storage_prefix) between 1 and 2048", name="sound_recorder_upload_sessions_storage_prefix_size_chk"),
@@ -671,6 +673,7 @@ class SoundRecorderUploadSessions(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     client_timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
     legal_region: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    use_case: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'security'"))
     meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -697,6 +700,7 @@ class SoundRecorderUploadSessionsRow(BaseModel):
     expiresAt: datetime | None = None
     clientTimezone: str | None = Field(None, max_length=80)
     legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    useCase: SoundRecorderUploadSessionsUseCase
     metaData: dict[str, Any]
     createdAt: datetime
     updatedAt: datetime
@@ -758,6 +762,7 @@ class SoundRecorderUploadSessionsInsert(BaseModel):
     expiresAt: datetime | None = None
     clientTimezone: str | None = Field(None, max_length=80)
     legalRegion: str | None = Field(None, max_length=64, pattern="^[A-Za-z0-9._:/-]{1,64}$")
+    useCase: SoundRecorderUploadSessionsUseCase | None = "security"
     metaData: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
@@ -819,7 +824,7 @@ class SoundRecorderSegments(Base):
         Index("sound_recorder_segments_session_sequence_uq", "session_id", "sequence_number", unique=True),
         Index("sound_recorder_segments_storage_key_uq", "storage_key", unique=True),
         Index("sound_recorder_segments_account_capture_idx", "account_id", text("captured_started_at desc"), postgresql_where=text("status = 'uploaded'")),
-        Index("sound_recorder_segments_expiry_idx", text("expires_at asc"), postgresql_where=text("status in ('pending', 'uploaded')")),
+        Index("sound_recorder_segments_expiry_idx", text("expires_at asc"), postgresql_where=text("status in ('pending', 'uploaded') and pinned_at is null")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -842,6 +847,7 @@ class SoundRecorderSegments(Base):
     etag: Mapped[str | None] = mapped_column(String(160), nullable=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -869,6 +875,7 @@ class SoundRecorderSegmentsRow(BaseModel):
     etag: str | None = Field(None, max_length=160)
     uploadedAt: datetime | None = None
     expiresAt: datetime
+    pinnedAt: datetime | None = None
     metaData: dict[str, Any]
     createdAt: datetime
     updatedAt: datetime
@@ -931,6 +938,7 @@ class SoundRecorderSegmentsInsert(BaseModel):
     etag: str | None = Field(None, max_length=160)
     uploadedAt: datetime | None = None
     expiresAt: datetime
+    pinnedAt: datetime | None = None
     metaData: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
@@ -8826,3 +8834,725 @@ class UsaccAuditEventsInsert(BaseModel):
     source: str | None = Field("usacc-rest-api-backend-rs", max_length=80, pattern="^[A-Za-z0-9._:/-]{1,80}$")
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
+
+BenefactorLeadsLeadStatus = Literal["new", "contacted", "replied", "booked", "rejected", "unsubscribed", "unqualified", "do_not_contact"]
+BenefactorLeadsOutreachStatus = Literal["pending", "new", "contacted", "failed"]
+
+class BenefactorLeads(Base):
+    __tablename__ = "benefactor_leads"
+    __table_args__ = (
+        CheckConstraint("lead_status in ('new', 'contacted', 'replied', 'booked', 'rejected', 'unsubscribed', 'unqualified', 'do_not_contact')", name="benefactor_leads_status_chk"),
+        CheckConstraint("outreach_status in ('pending', 'new', 'contacted', 'failed')", name="benefactor_leads_outreach_status_chk"),
+        CheckConstraint("jsonb_typeof(service_subcategories) = 'array'", name="benefactor_leads_subcategories_array_chk"),
+        CheckConstraint("jsonb_typeof(contact_attempts) = 'array'", name="benefactor_leads_contact_attempts_array_chk"),
+        CheckConstraint("jsonb_typeof(tags) = 'array'", name="benefactor_leads_tags_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_leads_meta_object_chk"),
+        Index("benefactor_leads_email_uq", "primary_email", unique=True),
+        Index("benefactor_leads_business_name_idx", "business_name"),
+        Index("benefactor_leads_category_idx", "service_category"),
+        Index("benefactor_leads_city_idx", "city"),
+        Index("benefactor_leads_state_idx", "state"),
+        Index("benefactor_leads_zip_idx", "zip_code"),
+        Index("benefactor_leads_status_idx", "lead_status"),
+        Index("benefactor_leads_outreach_idx", "outreach_status"),
+        Index("benefactor_leads_last_outreach_idx", "last_outreach_at"),
+        Index("benefactor_leads_created_at_idx", "created_at"),
+        Index("benefactor_leads_soft_deleted_idx", "is_soft_deleted"),
+        Index("benefactor_leads_verified_idx", "is_verified"),
+        Index("benefactor_leads_category_city_idx", "service_category", "city"),
+        Index("benefactor_leads_category_state_idx", "service_category", "state"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    business_name: Mapped[str] = mapped_column(String(300), nullable=False, server_default=text("''"))
+    owner_first_name: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("''"))
+    owner_last_name: Mapped[str] = mapped_column(String(130), nullable=False, server_default=text("''"))
+    primary_email: Mapped[str] = mapped_column(String(255), nullable=False, server_default=text("''"))
+    secondary_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    primary_phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    service_category: Mapped[str] = mapped_column(String(60), nullable=False, server_default=text("'other'"))
+    service_subcategories: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    zip_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'US'"))
+    service_area: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    lead_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=text("'new'"))
+    outreach_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=text("'pending'"))
+    total_outreach_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_outreach_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    contact_attempts: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    source_query: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_tool: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    source_engine: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    tags: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorLeadsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    businessName: str = Field(..., max_length=300)
+    ownerFirstName: str = Field(..., max_length=120)
+    ownerLastName: str = Field(..., max_length=130)
+    primaryEmail: str = Field(..., max_length=255)
+    secondaryEmail: str | None = Field(None, max_length=255)
+    primaryPhone: str | None = Field(None, max_length=100)
+    websiteUrl: str | None = Field(None, max_length=500)
+    serviceCategory: str = Field(..., max_length=60)
+    serviceSubcategories: list[Any]
+    city: str | None = Field(None, max_length=120)
+    state: str | None = Field(None, max_length=80)
+    zipCode: str | None = Field(None, max_length=20)
+    country: str = Field(..., max_length=80)
+    serviceArea: str | None = Field(None, max_length=500)
+    leadStatus: BenefactorLeadsLeadStatus
+    outreachStatus: BenefactorLeadsOutreachStatus
+    totalOutreachAttempts: int
+    lastOutreachAt: datetime | None = None
+    contactAttempts: list[Any]
+    sourceUrl: str | None = Field(None, max_length=1000)
+    sourceQuery: str | None = Field(None, max_length=500)
+    sourceTool: str | None = Field(None, max_length=60)
+    sourceEngine: str | None = Field(None, max_length=30)
+    isVerified: bool
+    tags: list[Any]
+    metaData: dict[str, Any]
+    notes: str | None = None
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    businessName: str | None = Field("", max_length=300)
+    ownerFirstName: str | None = Field("", max_length=120)
+    ownerLastName: str | None = Field("", max_length=130)
+    primaryEmail: str | None = Field("", max_length=255)
+    secondaryEmail: str | None = Field(None, max_length=255)
+    primaryPhone: str | None = Field(None, max_length=100)
+    websiteUrl: str | None = Field(None, max_length=500)
+    serviceCategory: str | None = Field("other", max_length=60)
+    serviceSubcategories: list[Any] | None = Field(default_factory=list)
+    city: str | None = Field(None, max_length=120)
+    state: str | None = Field(None, max_length=80)
+    zipCode: str | None = Field(None, max_length=20)
+    country: str | None = Field("US", max_length=80)
+    serviceArea: str | None = Field(None, max_length=500)
+    leadStatus: BenefactorLeadsLeadStatus | None = "new"
+    outreachStatus: BenefactorLeadsOutreachStatus | None = "pending"
+    totalOutreachAttempts: int | None = 0
+    lastOutreachAt: datetime | None = None
+    contactAttempts: list[Any] | None = Field(default_factory=list)
+    sourceUrl: str | None = Field(None, max_length=1000)
+    sourceQuery: str | None = Field(None, max_length=500)
+    sourceTool: str | None = Field(None, max_length=60)
+    sourceEngine: str | None = Field(None, max_length=30)
+    isVerified: bool | None = False
+    tags: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    notes: str | None = None
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+BenefactorLeadsDomainsDomainKind = Literal["email", "website"]
+BenefactorLeadsDomainsStatus = Literal["allowed", "blocked", "skipped", "scraped_recently", "recently_scraped"]
+
+class BenefactorLeadsDomains(Base):
+    __tablename__ = "benefactor_leads_domains"
+    __table_args__ = (
+        CheckConstraint("domain_kind in ('email', 'website')", name="benefactor_leads_domains_kind_chk"),
+        CheckConstraint("status in ('allowed', 'blocked', 'skipped', 'scraped_recently', 'recently_scraped')", name="benefactor_leads_domains_status_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_leads_domains_meta_object_chk"),
+        Index("benefactor_leads_domains_domain_kind_uq", "domain", "domain_kind", unique=True),
+        Index("benefactor_leads_domains_domain_idx", "domain"),
+        Index("benefactor_leads_domains_kind_idx", "domain_kind"),
+        Index("benefactor_leads_domains_status_idx", "status"),
+        Index("benefactor_leads_domains_blacklisted_idx", "is_blacklisted"),
+        Index("benefactor_leads_domains_kind_status_idx", "domain_kind", "status"),
+        Index("benefactor_leads_domains_blocked_idx", "is_blocked"),
+        Index("benefactor_leads_domains_blocked_until_idx", "blocked_until"),
+        Index("benefactor_leads_domains_skip_until_idx", "skip_until"),
+        Index("benefactor_leads_domains_last_scraped_idx", "last_scraped_at"),
+        Index("benefactor_leads_domains_active_idx", "is_active"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    domain_kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'email'"))
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'allowed'"))
+    reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    source: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'manual'"))
+    is_blacklisted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    is_blocked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    is_permanently_blocked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    blocked_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    skip_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scrape_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    skip_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    skipped_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    email_found_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    lead_inserted_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_found_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_lead_inserted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorLeadsDomainsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    domain: str = Field(..., max_length=255)
+    domainKind: BenefactorLeadsDomainsDomainKind
+    status: BenefactorLeadsDomainsStatus
+    reason: str | None = None
+    source: str = Field(..., max_length=80)
+    isBlacklisted: bool
+    isBlocked: bool
+    isPermanentlyBlocked: bool
+    blockedReason: str | None = None
+    blockedUntil: datetime | None = None
+    skipUntil: datetime | None = None
+    scrapeCount: int
+    skipCount: int
+    skippedCount: int
+    emailFoundCount: int
+    leadInsertedCount: int
+    lastSeenAt: datetime | None = None
+    lastScrapedAt: datetime | None = None
+    lastSkippedAt: datetime | None = None
+    lastEmailFoundAt: datetime | None = None
+    lastLeadInsertedAt: datetime | None = None
+    lastSeenUrl: str | None = None
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsDomainsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    domain: str = Field(..., max_length=255)
+    domainKind: BenefactorLeadsDomainsDomainKind | None = "email"
+    status: BenefactorLeadsDomainsStatus | None = "allowed"
+    reason: str | None = None
+    source: str | None = Field("manual", max_length=80)
+    isBlacklisted: bool | None = False
+    isBlocked: bool | None = False
+    isPermanentlyBlocked: bool | None = False
+    blockedReason: str | None = None
+    blockedUntil: datetime | None = None
+    skipUntil: datetime | None = None
+    scrapeCount: int | None = 0
+    skipCount: int | None = 0
+    skippedCount: int | None = 0
+    emailFoundCount: int | None = 0
+    leadInsertedCount: int | None = 0
+    lastSeenAt: datetime | None = None
+    lastScrapedAt: datetime | None = None
+    lastSkippedAt: datetime | None = None
+    lastEmailFoundAt: datetime | None = None
+    lastLeadInsertedAt: datetime | None = None
+    lastSeenUrl: str | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorSearchLocations(Base):
+    __tablename__ = "benefactor_search_locations"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(installation_aliases) = 'array'", name="benefactor_search_locations_aliases_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_search_locations_meta_object_chk"),
+        Index("benefactor_search_locations_slug_uq", "slug", unique=True),
+        Index("benefactor_search_locations_city_state_country_uq", "city", "state", "country", unique=True),
+        Index("benefactor_search_locations_state_idx", "state"),
+        Index("benefactor_search_locations_military_area_idx", "military_area"),
+        Index("benefactor_search_locations_type_idx", "location_type"),
+        Index("benefactor_search_locations_priority_idx", "priority"),
+        Index("benefactor_search_locations_cooldown_idx", "cooldown_until"),
+        Index("benefactor_search_locations_active_idx", "is_active"),
+        Index("benefactor_search_locations_soft_deleted_idx", "is_soft_deleted"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    city: Mapped[str] = mapped_column(String(120), nullable=False)
+    state: Mapped[str] = mapped_column(String(80), nullable=False)
+    state_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    country: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'US'"))
+    metro_area: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    military_area: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    primary_installation: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    installation_aliases: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    location_type: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'military_town'"))
+    priority: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    search_weight: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    total_query_runs: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_emails_inserted: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    success_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    failure_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorSearchLocationsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=160)
+    city: str = Field(..., max_length=120)
+    state: str = Field(..., max_length=80)
+    stateCode: str | None = Field(None, max_length=10)
+    country: str = Field(..., max_length=80)
+    metroArea: str | None = Field(None, max_length=220)
+    militaryArea: str | None = Field(None, max_length=220)
+    primaryInstallation: str | None = Field(None, max_length=220)
+    installationAliases: list[Any]
+    locationType: str = Field(..., max_length=80)
+    priority: int
+    searchWeight: int
+    totalQueryRuns: int
+    totalEmailsInserted: int
+    successCount: int
+    failureCount: int
+    lastRunAt: datetime | None = None
+    lastSuccessAt: datetime | None = None
+    lastFailureAt: datetime | None = None
+    cooldownUntil: datetime | None = None
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorSearchLocationsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=160)
+    city: str = Field(..., max_length=120)
+    state: str = Field(..., max_length=80)
+    stateCode: str | None = Field(None, max_length=10)
+    country: str | None = Field("US", max_length=80)
+    metroArea: str | None = Field(None, max_length=220)
+    militaryArea: str | None = Field(None, max_length=220)
+    primaryInstallation: str | None = Field(None, max_length=220)
+    installationAliases: list[Any] | None = Field(default_factory=list)
+    locationType: str | None = Field("military_town", max_length=80)
+    priority: int | None = 5
+    searchWeight: int | None = 5
+    totalQueryRuns: int | None = 0
+    totalEmailsInserted: int | None = 0
+    successCount: int | None = 0
+    failureCount: int | None = 0
+    lastRunAt: datetime | None = None
+    lastSuccessAt: datetime | None = None
+    lastFailureAt: datetime | None = None
+    cooldownUntil: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+BenefactorScrapeQueriesQueryVariant = Literal["email_contact", "contact_us", "website_domain", "fuzzy_email", "fuzzy_city"]
+
+class BenefactorScrapeQueries(Base):
+    __tablename__ = "benefactor_scrape_queries"
+    __table_args__ = (
+        CheckConstraint("query_variant in ('email_contact', 'contact_us', 'website_domain', 'fuzzy_email', 'fuzzy_city')", name="benefactor_scrape_queries_variant_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_scrape_queries_meta_object_chk"),
+        Index("benefactor_scrape_queries_hash_uq", "query_hash", unique=True),
+        Index("benefactor_scrape_queries_icp_slug_idx", "benefactor_icp_slug"),
+        Index("benefactor_scrape_queries_location_id_idx", "benefactor_search_location_id"),
+        Index("benefactor_scrape_queries_category_idx", "service_category"),
+        Index("benefactor_scrape_queries_city_idx", "target_city"),
+        Index("benefactor_scrape_queries_state_idx", "target_state"),
+        Index("benefactor_scrape_queries_military_area_idx", "target_military_area"),
+        Index("benefactor_scrape_queries_variant_idx", "query_variant"),
+        Index("benefactor_scrape_queries_priority_idx", "priority"),
+        Index("benefactor_scrape_queries_last_run_idx", "last_run_at"),
+        Index("benefactor_scrape_queries_success_count_idx", "success_count"),
+        Index("benefactor_scrape_queries_failure_count_idx", "failure_count"),
+        Index("benefactor_scrape_queries_active_idx", "is_active"),
+        Index("benefactor_scrape_queries_cooldown_idx", "cooldown_until"),
+        Index("benefactor_scrape_queries_zero_new_idx", "consecutive_zero_new_runs"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    query_text: Mapped[str] = mapped_column(Text(), nullable=False)
+    query_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    benefactor_icp_slug: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    benefactor_icp_name: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    benefactor_search_location_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    service_category: Mapped[str] = mapped_column(String(60), nullable=False, server_default=text("'other'"))
+    target_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    target_state: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    target_country: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'US'"))
+    target_military_area: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    target_installation: Mapped[str | None] = mapped_column(String(220), nullable=True)
+    query_variant: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'email_contact'"))
+    search_page_depth: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("4"))
+    priority: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    total_runs: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_urls_visited: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_emails_found: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_emails_inserted: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_emails_duplicate: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    total_errors: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    success_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    failure_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_emails_found: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_run_emails_inserted: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_run_success: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    last_run_duration_ms: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_run_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consecutive_zero_new_runs: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_zero_new_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorScrapeQueriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    queryText: str
+    queryHash: str = Field(..., max_length=64)
+    benefactorIcpSlug: str | None = Field(None, max_length=160)
+    benefactorIcpName: str | None = Field(None, max_length=220)
+    benefactorSearchLocationId: UUID | None = None
+    serviceCategory: str = Field(..., max_length=60)
+    targetCity: str | None = Field(None, max_length=120)
+    targetState: str | None = Field(None, max_length=80)
+    targetCountry: str = Field(..., max_length=80)
+    targetMilitaryArea: str | None = Field(None, max_length=220)
+    targetInstallation: str | None = Field(None, max_length=220)
+    queryVariant: BenefactorScrapeQueriesQueryVariant
+    searchPageDepth: int
+    priority: int
+    totalRuns: int
+    totalUrlsVisited: int
+    totalEmailsFound: int
+    totalEmailsInserted: int
+    totalEmailsDuplicate: int
+    totalErrors: int
+    successCount: int
+    failureCount: int
+    lastRunAt: datetime | None = None
+    lastSuccessAt: datetime | None = None
+    lastFailureAt: datetime | None = None
+    lastRunEmailsFound: int
+    lastRunEmailsInserted: int
+    lastRunSuccess: bool
+    lastRunDurationMs: int
+    lastRunError: str | None = None
+    cooldownUntil: datetime | None = None
+    consecutiveZeroNewRuns: int
+    lastZeroNewRunAt: datetime | None = None
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorScrapeQueriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    queryText: str
+    queryHash: str = Field(..., max_length=64)
+    benefactorIcpSlug: str | None = Field(None, max_length=160)
+    benefactorIcpName: str | None = Field(None, max_length=220)
+    benefactorSearchLocationId: UUID | None = None
+    serviceCategory: str | None = Field("other", max_length=60)
+    targetCity: str | None = Field(None, max_length=120)
+    targetState: str | None = Field(None, max_length=80)
+    targetCountry: str | None = Field("US", max_length=80)
+    targetMilitaryArea: str | None = Field(None, max_length=220)
+    targetInstallation: str | None = Field(None, max_length=220)
+    queryVariant: BenefactorScrapeQueriesQueryVariant | None = "email_contact"
+    searchPageDepth: int | None = 4
+    priority: int | None = 5
+    totalRuns: int | None = 0
+    totalUrlsVisited: int | None = 0
+    totalEmailsFound: int | None = 0
+    totalEmailsInserted: int | None = 0
+    totalEmailsDuplicate: int | None = 0
+    totalErrors: int | None = 0
+    successCount: int | None = 0
+    failureCount: int | None = 0
+    lastRunAt: datetime | None = None
+    lastSuccessAt: datetime | None = None
+    lastFailureAt: datetime | None = None
+    lastRunEmailsFound: int | None = 0
+    lastRunEmailsInserted: int | None = 0
+    lastRunSuccess: bool | None = False
+    lastRunDurationMs: int | None = 0
+    lastRunError: str | None = None
+    cooldownUntil: datetime | None = None
+    consecutiveZeroNewRuns: int | None = 0
+    lastZeroNewRunAt: datetime | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorDomainSearchTracking(Base):
+    __tablename__ = "benefactor_domain_search_tracking"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_domain_search_tracking_meta_object_chk"),
+        Index("benefactor_domain_search_tracking_domain_for_what_uq", "domain", "for_what", unique=True),
+        Index("benefactor_domain_search_tracking_for_what_idx", "for_what"),
+        Index("benefactor_domain_search_tracking_visit_count_idx", "visit_count"),
+        Index("benefactor_domain_search_tracking_good_result_idx", "good_result_count"),
+        Index("benefactor_domain_search_tracking_bad_result_idx", "bad_result_count"),
+        Index("benefactor_domain_search_tracking_email_found_idx", "email_found_count"),
+        Index("benefactor_domain_search_tracking_blocked_until_idx", "blocked_until"),
+        Index("benefactor_domain_search_tracking_active_idx", "is_active"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    for_what: Mapped[str] = mapped_column(String(80), nullable=False, server_default=text("'benefactor_lead_scrape'"))
+    search_result_appearances: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    queued_visit_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    visit_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    good_result_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    bad_result_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    email_found_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    lead_inserted_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_visited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_good_result_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_bad_result_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_email_found_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_lead_inserted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_good_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    last_bad_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_permanently_blocked: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    blocked_reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorDomainSearchTrackingRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    domain: str = Field(..., max_length=255)
+    forWhat: str = Field(..., max_length=80)
+    searchResultAppearances: int
+    queuedVisitCount: int
+    visitCount: int
+    goodResultCount: int
+    badResultCount: int
+    emailFoundCount: int
+    leadInsertedCount: int
+    lastQueuedAt: datetime | None = None
+    lastVisitedAt: datetime | None = None
+    lastGoodResultAt: datetime | None = None
+    lastBadResultAt: datetime | None = None
+    lastEmailFoundAt: datetime | None = None
+    lastLeadInsertedAt: datetime | None = None
+    lastGoodUrl: str | None = None
+    lastBadUrl: str | None = None
+    blockedUntil: datetime | None = None
+    isPermanentlyBlocked: bool
+    blockedReason: str | None = None
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorDomainSearchTrackingInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    domain: str = Field(..., max_length=255)
+    forWhat: str | None = Field("benefactor_lead_scrape", max_length=80)
+    searchResultAppearances: int | None = 0
+    queuedVisitCount: int | None = 0
+    visitCount: int | None = 0
+    goodResultCount: int | None = 0
+    badResultCount: int | None = 0
+    emailFoundCount: int | None = 0
+    leadInsertedCount: int | None = 0
+    lastQueuedAt: datetime | None = None
+    lastVisitedAt: datetime | None = None
+    lastGoodResultAt: datetime | None = None
+    lastBadResultAt: datetime | None = None
+    lastEmailFoundAt: datetime | None = None
+    lastLeadInsertedAt: datetime | None = None
+    lastGoodUrl: str | None = None
+    lastBadUrl: str | None = None
+    blockedUntil: datetime | None = None
+    isPermanentlyBlocked: bool | None = False
+    blockedReason: str | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorIcps(Base):
+    __tablename__ = "benefactor_icps"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(search_terms) = 'array'", name="benefactor_icps_search_terms_array_chk"),
+        CheckConstraint("jsonb_typeof(search_signals) = 'array'", name="benefactor_icps_search_signals_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_icps_meta_object_chk"),
+        Index("benefactor_icps_slug_uq", "slug", unique=True),
+        Index("benefactor_icps_category_idx", "category"),
+        Index("benefactor_icps_service_category_idx", "service_category"),
+        Index("benefactor_icps_priority_idx", "priority"),
+        Index("benefactor_icps_outcall_fit_idx", "outcall_fit_score"),
+        Index("benefactor_icps_active_idx", "is_active"),
+        Index("benefactor_icps_soft_deleted_idx", "is_soft_deleted"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    name: Mapped[str] = mapped_column(String(220), nullable=False)
+    category: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'local_services'"))
+    service_category: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'other'"))
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    outcall_fit_score: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    priority: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    search_terms: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    search_signals: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    target_home_services: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    target_medical: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    target_legal: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    target_events: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    target_corporate: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    target_industrial: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorIcpsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=160)
+    name: str = Field(..., max_length=220)
+    category: str = Field(..., max_length=120)
+    serviceCategory: str = Field(..., max_length=120)
+    description: str
+    outcallFitScore: int
+    priority: int
+    searchTerms: list[Any]
+    searchSignals: list[Any]
+    targetHomeServices: bool
+    targetMedical: bool
+    targetLegal: bool
+    targetEvents: bool
+    targetCorporate: bool
+    targetIndustrial: bool
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorIcpsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=160)
+    name: str = Field(..., max_length=220)
+    category: str | None = Field("local_services", max_length=120)
+    serviceCategory: str | None = Field("other", max_length=120)
+    description: str | None = ""
+    outcallFitScore: int | None = 5
+    priority: int | None = 5
+    searchTerms: list[Any] | None = Field(default_factory=list)
+    searchSignals: list[Any] | None = Field(default_factory=list)
+    targetHomeServices: bool | None = False
+    targetMedical: bool | None = False
+    targetLegal: bool | None = False
+    targetEvents: bool | None = False
+    targetCorporate: bool | None = False
+    targetIndustrial: bool | None = False
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None

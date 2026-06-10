@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::events::EventBus;
 use crate::ledger::LedgerService;
 use crate::locks::{AcquireRequest, LockService, ReleaseRequest};
 use crate::providers::connection::{ConnectionService, ProviderConnection};
@@ -38,6 +39,7 @@ pub struct SyncCtx<'a> {
     pub cfg: &'a Config,
     pub ledger: &'a LedgerService,
     pub connections: &'a ConnectionService,
+    pub events: &'a EventBus,
     pub tenant_id: Uuid,
     pub region: Region,
 }
@@ -48,6 +50,7 @@ pub struct ConnectionSyncJob {
     ledger: LedgerService,
     locks: LockService,
     connections: ConnectionService,
+    events: Arc<EventBus>,
     rate_limiter: ProviderRateLimiter,
     solana: SolanaClient,
 }
@@ -59,6 +62,7 @@ impl ConnectionSyncJob {
         ledger: LedgerService,
         locks: LockService,
         connections: ConnectionService,
+        events: Arc<EventBus>,
         solana: SolanaClient,
     ) -> Self {
         let rate_limiter = ProviderRateLimiter::new(pool.clone());
@@ -68,6 +72,7 @@ impl ConnectionSyncJob {
             ledger,
             locks,
             connections,
+            events,
             rate_limiter,
             solana,
         }
@@ -145,6 +150,7 @@ impl JobHandler for ConnectionSyncJob {
                 cfg: &self.cfg,
                 ledger: &self.ledger,
                 connections: &self.connections,
+                events: &self.events,
                 tenant_id,
                 region,
             };

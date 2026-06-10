@@ -18,6 +18,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    DATA_VIZ_ALERTS_EVENTS_SUBJECT, DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT,
+    DATA_VIZ_PUBLISH_EVENTS_SUBJECT,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -58,6 +62,8 @@ use util::{
 
 const SERVICE_NAME: &str = "dd-data-viz-rs";
 const SCHEMA_VERSION: &str = "data-viz.analytics.v1";
+const EVENT_SCHEMA_VERSION: &str = "dd.dataviz.v1";
+const MAX_NATS_PAYLOAD_BYTES: usize = 1024 * 1024;
 const DEFAULT_HOST: &str = "0.0.0.0";
 const DEFAULT_PORT: u16 = 8126;
 const MAX_HTTP_BODY_BYTES: usize = 4 * 1024 * 1024;
@@ -87,6 +93,7 @@ struct AppState {
         Arc<RwLock<BTreeMap<String, notification_dispatch::NotificationDispatchRecord>>>,
     semantic_models: Arc<RwLock<BTreeMap<String, semantic::SavedSemanticModel>>>,
     questions: Arc<RwLock<BTreeMap<String, self_service::SavedQuestion>>>,
+    nats: Option<async_nats::Client>,
 }
 
 #[derive(Clone)]
@@ -529,6 +536,21 @@ impl IntoResponse for ApiError {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env();
     let bind_addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
+    let nats = match env::var("DATAVIZ_NATS_URL").ok().or_else(|| env::var("NATS_URL").ok()) {
+        Some(url) if !url.is_empty() => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                log_event(
+                    "WARN",
+                    "data_viz.nats.connect.error",
+                    "dd-data-viz-rs NATS connect failed; event fan-out disabled",
+                    json!({ "url": url, "error": error.to_string() }),
+                );
+                None
+            }
+        },
+        _ => None,
+    };
     let state = AppState {
         config: Arc::new(config),
         metrics: Arc::new(Metrics::default()),
@@ -546,6 +568,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notification_dispatches: Arc::new(RwLock::new(BTreeMap::new())),
         semantic_models: Arc::new(RwLock::new(BTreeMap::new())),
         questions: Arc::new(RwLock::new(BTreeMap::new())),
+        nats,
     };
     let app = app_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
@@ -2455,28 +2478,39 @@ async fn save_publish_request(
         .into_record(now_ms(), metadata)
         .map_err(ApiError::bad_request)?;
     let mut warnings = Vec::new();
-    let mut requests = state
-        .publishing_requests
-        .write()
-        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
-    if let Some(existing) = requests.get(&publish_request.request_id) {
-        publish_request.created_at_ms = existing.created_at_ms;
-        warnings.push(format!(
-            "publishing request {} replaced with a new pending review",
-            publish_request.request_id
-        ));
-    } else if requests.len() >= publishing::max_publish_requests() {
-        return Err(ApiError::bad_request(format!(
-            "publishing request count exceeds max {}",
-            publishing::max_publish_requests()
-        )));
+    // Scope the lock guard so it is dropped before the async NATS publish below;
+    // a std RwLock guard is not Send and must not be held across an await.
+    {
+        let mut requests = state
+            .publishing_requests
+            .write()
+            .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+        if let Some(existing) = requests.get(&publish_request.request_id) {
+            publish_request.created_at_ms = existing.created_at_ms;
+            warnings.push(format!(
+                "publishing request {} replaced with a new pending review",
+                publish_request.request_id
+            ));
+        } else if requests.len() >= publishing::max_publish_requests() {
+            return Err(ApiError::bad_request(format!(
+                "publishing request count exceeds max {}",
+                publishing::max_publish_requests()
+            )));
+        }
+        publish_request.updated_at_ms = now_ms();
+        requests.insert(publish_request.request_id.clone(), publish_request.clone());
     }
-    publish_request.updated_at_ms = now_ms();
-    requests.insert(publish_request.request_id.clone(), publish_request.clone());
     state
         .metrics
         .publish_requests_saved_total
         .fetch_add(1, Ordering::Relaxed);
+    publish_dataviz_event(
+        &state,
+        DATA_VIZ_PUBLISH_EVENTS_SUBJECT,
+        "publish.requested",
+        serde_json::to_value(&publish_request).unwrap_or(Value::Null),
+    )
+    .await;
     Ok(Json(publishing::save_response(publish_request, warnings)))
 }
 
@@ -2544,21 +2578,33 @@ async fn review_publish_request(
         .publishing_requests_total
         .fetch_add(1, Ordering::Relaxed);
     authorize(&state, &headers, rbac::Permission::PublishingReview)?;
-    let mut requests = state
-        .publishing_requests
-        .write()
-        .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
-    let publish_request = requests.get_mut(&request_id).ok_or_else(|| {
-        ApiError::not_found(format!("publishing request `{request_id}` not found"))
-    })?;
-    request
-        .apply_to(publish_request, now_ms())
-        .map_err(ApiError::bad_request)?;
+    // Scope the lock guard so it is dropped before the async NATS publish below;
+    // a std RwLock guard is not Send and must not be held across an await.
+    let record = {
+        let mut requests = state
+            .publishing_requests
+            .write()
+            .map_err(|_| ApiError::bad_request("publishing request store lock poisoned"))?;
+        let publish_request = requests.get_mut(&request_id).ok_or_else(|| {
+            ApiError::not_found(format!("publishing request `{request_id}` not found"))
+        })?;
+        request
+            .apply_to(publish_request, now_ms())
+            .map_err(ApiError::bad_request)?;
+        publish_request.clone()
+    };
     state
         .metrics
         .publish_reviews_total
         .fetch_add(1, Ordering::Relaxed);
-    Ok(Json(publishing::review_response(publish_request.clone())))
+    publish_dataviz_event(
+        &state,
+        DATA_VIZ_PUBLISH_EVENTS_SUBJECT,
+        "publish.reviewed",
+        serde_json::to_value(&record).unwrap_or(Value::Null),
+    )
+    .await;
+    Ok(Json(publishing::review_response(record)))
 }
 
 fn publish_target_metadata(
@@ -2880,6 +2926,50 @@ async fn get_alert_rule(
         .ok_or_else(|| ApiError::not_found(format!("alert rule `{rule_id}` not found")))
 }
 
+/// Best-effort fan-out of a `dd.dataviz.v1` envelope onto NATS. No-ops when
+/// NATS is not configured and never fails the caller. Subjects come from the
+/// shared @dd/nats-subject-defs lib (schema/dataviz.schema.json).
+async fn publish_dataviz_event(state: &AppState, subject: &str, event: &str, body: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let envelope = json!({
+        "schema": EVENT_SCHEMA_VERSION,
+        "event": event,
+        "source": SERVICE_NAME,
+        "data": body,
+    });
+    let bytes = match serde_json::to_vec(&envelope) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log_event(
+                "ERROR",
+                "data_viz.nats.encode.error",
+                "failed to encode dataviz event",
+                json!({ "subject": subject, "event": event, "error": error.to_string() }),
+            );
+            return;
+        }
+    };
+    if bytes.len() > MAX_NATS_PAYLOAD_BYTES {
+        log_event(
+            "WARN",
+            "data_viz.nats.oversize",
+            "dropping oversize dataviz event",
+            json!({ "subject": subject, "event": event, "bytes": bytes.len() }),
+        );
+        return;
+    }
+    if let Err(error) = nats.publish(subject.to_string(), bytes.into()).await {
+        log_event(
+            "ERROR",
+            "data_viz.nats.publish.error",
+            "failed to publish dataviz event",
+            json!({ "subject": subject, "event": event, "error": error.to_string() }),
+        );
+    }
+}
+
 async fn evaluate_alert_rule(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2911,7 +3001,15 @@ async fn evaluate_alert_rule(
         .metrics
         .alert_evaluations_total
         .fetch_add(1, Ordering::Relaxed);
-    Ok(Json(alerts::evaluate_rule(&rule, &response.rows)))
+    let evaluation = alerts::evaluate_rule(&rule, &response.rows);
+    publish_dataviz_event(
+        &state,
+        DATA_VIZ_ALERTS_EVENTS_SUBJECT,
+        "alert.evaluated",
+        serde_json::to_value(&evaluation).unwrap_or(Value::Null),
+    )
+    .await;
+    Ok(Json(evaluation))
 }
 
 async fn save_contact_point(
@@ -3155,6 +3253,13 @@ async fn dispatch_alert_notifications(
         .metrics
         .notification_delivery_attempts_total
         .fetch_add(attempt_count as u64, Ordering::Relaxed);
+    publish_dataviz_event(
+        &state,
+        DATA_VIZ_NOTIFICATIONS_DISPATCH_SUBJECT,
+        "notification.dispatch",
+        serde_json::to_value(&record).unwrap_or(Value::Null),
+    )
+    .await;
     Ok(Json(record))
 }
 

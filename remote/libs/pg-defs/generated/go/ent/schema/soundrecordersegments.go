@@ -47,6 +47,7 @@ func (SoundRecorderSegments) Fields() []ent.Field {
 		field.String("etag").MaxLen(160).Optional().Nillable().StorageKey("etag"),
 		field.Time("uploaded_at").Optional().Nillable().StorageKey("uploaded_at"),
 		field.Time("expires_at").StorageKey("expires_at"),
+		field.Time("pinned_at").Optional().Nillable().StorageKey("pinned_at"),
 		field.JSON("meta_data", map[string]interface{}{}).StorageKey("meta_data"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),
