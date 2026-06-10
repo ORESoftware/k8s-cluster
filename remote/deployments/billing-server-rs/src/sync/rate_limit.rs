@@ -142,9 +142,11 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
         | ProviderKind::JpmorganZelle
         | ProviderKind::BofaCashProGdd
         | ProviderKind::ModernTreasury
-        | ProviderKind::Dwolla => ProviderBudget {
-            // Limited-fit providers shouldn't be hammered; this also caps
-            // accidental polling cost if a future stub is wired up.
+        | ProviderKind::Dwolla
+        | ProviderKind::Adyen
+        | ProviderKind::Square => ProviderBudget {
+            // Limited-fit / stub providers shouldn't be hammered; this also
+            // caps accidental polling cost if a future stub is wired up.
             window_seconds: 60,
             request_limit: 30,
         },
