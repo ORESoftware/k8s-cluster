@@ -102,6 +102,26 @@ EOF
     END { if (wrote == 0) print "maxPods: " max_pods }
   ' "${config}" > /tmp/dd-kubelet-config.yaml
   cp /tmp/dd-kubelet-config.yaml "${config}"
+
+  # Reserve headroom for the OS, kubelet, container runtime, and control plane
+  # so workloads can never starve them. Without this, allocatable == capacity and
+  # a workload burst (e.g. a cold-start build stampede) can wedge kubelet/apiserver.
+  if ! grep -q '^systemReserved:' "${config}"; then
+    echo "==> Adding kubelet node reservations + eviction thresholds"
+    cat >> "${config}" <<'KUBELET_RESERVATIONS'
+systemReserved:
+  cpu: 1000m
+  memory: 2Gi
+kubeReserved:
+  cpu: 1000m
+  memory: 2Gi
+evictionHard:
+  memory.available: 2Gi
+  nodefs.available: 10%
+  imagefs.available: 10%
+KUBELET_RESERVATIONS
+  fi
+
   systemctl restart kubelet
 }
 
