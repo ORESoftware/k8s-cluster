@@ -2887,71 +2887,79 @@ async fn run_nats_loop(state: AppState) {
     let Some(client) = state.nats.clone() else {
         return;
     };
-    let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
-        Ok(subscriber) => subscriber,
-        Err(error) => {
-            eprintln!("container pool nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscriber.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        if message.payload.len() > state.config.nats_max_payload_bytes {
+    loop {
+        let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
+            Ok(subscriber) => subscriber,
+            Err(error) => {
+                eprintln!("container pool nats subscribe failed: {error}; retrying in 5s");
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscriber.next().await {
             state
                 .metrics
-                .nats_failures_total
+                .nats_messages_total
                 .fetch_add(1, Ordering::Relaxed);
-            continue;
-        }
-        let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
-            Ok(request) => request,
-            Err(error) => {
-                eprintln!("container pool invalid nats request: {error}");
+            if message.payload.len() > state.config.nats_max_payload_bytes {
                 state
                     .metrics
                     .nats_failures_total
                     .fetch_add(1, Ordering::Relaxed);
                 continue;
             }
-        };
-        let selector = {
-            let registry = state.registry.lock().await;
-            pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
-        };
-        let Some(selector) = selector else {
-            eprintln!("container pool nats request missing pool selector");
-            state
-                .metrics
-                .nats_failures_total
-                .fetch_add(1, Ordering::Relaxed);
-            continue;
-        };
-        let response = match dispatch_to_pool(&state, &selector, request).await {
-            Ok(response) => json!(response),
-            Err(error) => {
+            let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
+                Ok(request) => request,
+                Err(error) => {
+                    eprintln!("container pool invalid nats request: {error}");
+                    state
+                        .metrics
+                        .nats_failures_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+            };
+            let selector = {
+                let registry = state.registry.lock().await;
+                pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
+            };
+            let Some(selector) = selector else {
+                eprintln!("container pool nats request missing pool selector");
                 state
                     .metrics
                     .nats_failures_total
                     .fetch_add(1, Ordering::Relaxed);
-                json!({ "ok": false, "error": error, "generatedAtMs": now_ms() })
+                continue;
+            };
+            let response = match dispatch_to_pool(&state, &selector, request).await {
+                Ok(response) => json!(response),
+                Err(error) => {
+                    state
+                        .metrics
+                        .nats_failures_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    json!({ "ok": false, "error": error, "generatedAtMs": now_ms() })
+                }
+            };
+            let Ok(payload) = serde_json::to_vec(&response) else {
+                continue;
+            };
+            if let Some(reply) = message.reply {
+                if let Err(error) = client.publish(reply, payload.into()).await {
+                    eprintln!("container pool nats reply failed: {error}");
+                }
+            } else if let Err(error) = client
+                .publish(state.config.nats_result_subject.clone(), payload.into())
+                .await
+            {
+                eprintln!("container pool nats result publish failed: {error}");
             }
-        };
-        let Ok(payload) = serde_json::to_vec(&response) else {
-            continue;
-        };
-        if let Some(reply) = message.reply {
-            if let Err(error) = client.publish(reply, payload.into()).await {
-                eprintln!("container pool nats reply failed: {error}");
-            }
-        } else if let Err(error) = client
-            .publish(state.config.nats_result_subject.clone(), payload.into())
-            .await
-        {
-            eprintln!("container pool nats result publish failed: {error}");
         }
+        eprintln!(
+            "container pool nats subscription ended (subject={}); re-subscribing in 5s",
+            state.config.nats_subject
+        );
+        sleep(Duration::from_secs(5)).await;
     }
 }
 

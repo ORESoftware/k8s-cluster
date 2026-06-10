@@ -139,3 +139,34 @@ restricted in-cluster service and a crash only triggers a supervised reconnect;
 left unchanged to stay byte-identical with the `gleamlang-presence-server` source.
 
 `cargo test` 11 passed, clippy clean.
+
+## Pass 4 (2026-06-09)
+
+First supply-chain + build + pod-posture pass.
+
+- **DEP1 (the real find — 4 CVEs).** `cargo audit` flagged `rustls-webpki 0.102.8`
+  (transitive via the `=0.23.20` rustls pin): RUSTSEC-2026-0098/0099 (cert
+  **name-constraint** validation accepted URI/wildcard names it shouldn't),
+  RUSTSEC-2026-0049 (CRL authority matching), RUSTSEC-2026-0104 (reachable panic
+  in CRL parsing). The name-constraint bugs matter here — this server validates
+  the k8s API server cert while carrying the SA token. **Fixed** by relaxing the
+  rustls pin `=0.23.20 → 0.23` and `cargo update -p rustls`, which moved
+  rustls `0.23.20 → 0.23.40` and webpki `0.102.8 → 0.103.13` (two packages only).
+  `cargo build --release --locked` still passes (so the Dockerfile / `cargo run
+  --release --locked` deploy path stays reproducible) and `cargo audit` is clean.
+  Remaining: a non-vulnerability "unmaintained" warning for `rustls-pemfile`
+  (transitive via reqwest); resolve later by bumping reqwest off the `=0.12.9`
+  pin. **Fleet note:** other Rust deployments pin the same old rustls and almost
+  certainly carry the same webpki CVEs — worth a fleet-wide `cargo update -p
+  rustls`.
+- **Build/Dockerfile:** good already — multi-stage (`rust:1.90-bookworm` →
+  `debian:bookworm-slim`), `--locked`, `USER 10001:10001`. Only nit: base images
+  are tag-pinned, not digest-pinned (left as-is).
+- **OTLP exporter (Low, noted):** `finish_span` spawns a detached tokio task per
+  request span; under a flood that is request-proportional unbounded background
+  concurrency. Bounded by the 800 ms export timeout and a trusted in-cluster
+  collector, so left as-is — revisit with a bounded worker/semaphore if it ever
+  matters.
+
+The Gleam sibling was brought to non-root in the same pass (it previously ran as
+root while this server already ran as uid 1000) — see `../gleam-mcp-server/AUDIT.md`.

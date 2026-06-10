@@ -3931,68 +3931,72 @@ async fn run_nats_loop(
             "natsSettlementEnabled": state.nats_settlement_enabled,
         }),
     );
-    let subscribe = match &queue_group {
-        Some(group) => nats.queue_subscribe(subject.clone(), group.clone()).await,
-        None => nats.subscribe(subject.clone()).await,
-    };
-    let mut subscription = match subscribe {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            publish_runtime_critical_event(
-                &state,
-                "contract-nats-subscribe-failed",
-                "Contract service could not subscribe to a NATS subject.",
-                json!({ "subject": &subject, "kind": kind.label(), "error": error.to_string() }),
-            )
-            .await;
-            return;
-        }
-    };
+    loop {
+        let subscribe = match &queue_group {
+            Some(group) => nats.queue_subscribe(subject.clone(), group.clone()).await,
+            None => nats.subscribe(subject.clone()).await,
+        };
+        let mut subscription = match subscribe {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                publish_runtime_critical_event(
+                    &state,
+                    "contract-nats-subscribe-failed",
+                    "Contract service could not subscribe to a NATS subject; retrying in 5s.",
+                    json!({ "subject": &subject, "kind": kind.label(), "error": error.to_string() }),
+                )
+                .await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
 
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        while let Some(message) = subscription.next().await {
             state
                 .metrics
-                .nats_payload_rejected_total
+                .nats_messages_total
                 .fetch_add(1, Ordering::Relaxed);
-            publish_runtime_critical_event(
-                &state,
-                "contract-nats-payload-too-large",
-                "Contract service rejected an oversized NATS message.",
-                json!({
-                    "kind": kind.label(),
-                    "payloadBytes": payload.len(),
-                    "maxPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
-                }),
-            )
-            .await;
-            continue;
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                state
+                    .metrics
+                    .nats_payload_rejected_total
+                    .fetch_add(1, Ordering::Relaxed);
+                publish_runtime_critical_event(
+                    &state,
+                    "contract-nats-payload-too-large",
+                    "Contract service rejected an oversized NATS message.",
+                    json!({
+                        "kind": kind.label(),
+                        "payloadBytes": payload.len(),
+                        "maxPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
+                    }),
+                )
+                .await;
+                continue;
+            }
+            match kind {
+                NatsKind::Validate => process_nats_validate(&state, &payload).await,
+                NatsKind::Settle => process_nats_settle(&state, &payload).await,
+                NatsKind::Resolve => process_nats_resolve(&state, &payload).await,
+                NatsKind::EscrowResults => process_nats_escrow_result(&state, &payload).await,
+            }
         }
-        match kind {
-            NatsKind::Validate => process_nats_validate(&state, &payload).await,
-            NatsKind::Settle => process_nats_settle(&state, &payload).await,
-            NatsKind::Resolve => process_nats_resolve(&state, &payload).await,
-            NatsKind::EscrowResults => process_nats_escrow_result(&state, &payload).await,
-        }
-    }
 
-    // The stream only ends when the subscription is closed or the connection is
-    // torn down without async-nats restoring it. That silently kills a consumer,
-    // so alert instead of dying quietly.
-    publish_runtime_critical_event(
-        &state,
-        "contract-nats-loop-ended",
-        "Contract service NATS subscription loop ended unexpectedly; the subject is no longer consumed.",
-        json!({ "subject": &subject, "kind": kind.label() }),
-    )
-    .await;
+        // The stream only ends when the subscription is closed or the connection is
+        // torn down without async-nats restoring it. That silently kills a consumer,
+        // so alert and re-subscribe instead of dying quietly.
+        publish_runtime_critical_event(
+            &state,
+            "contract-nats-loop-ended",
+            "Contract service NATS subscription loop ended unexpectedly; re-subscribing in 5s.",
+            json!({ "subject": &subject, "kind": kind.label() }),
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
 }
 
 fn nats_payload_invalid(state: &AppState, kind: NatsKind, error: &str) {

@@ -10,7 +10,11 @@ futures-util = "0.3"
 hex = "0.4"
 rand = "0.8"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
-rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
+# 0.23.20 pinned webpki ^0.102.8, which has RUSTSEC-2026-0049/0098/0099/0104
+# (cert name-constraint validation bugs + a CRL parse panic). Track latest 0.23.x
+# so webpki resolves to >=0.103.13. cargo build --release --locked still works
+# because Cargo.lock is updated in lockstep.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "signal", "time"] }

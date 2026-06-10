@@ -6870,89 +6870,102 @@ async fn run_nats_loop(state: AppState) {
             "resultSubject": state.config.result_subject
         }),
     );
-    let mut subscription = match nats
-        .queue_subscribe(
-            state.config.request_subject.clone(),
-            state.config.queue_group.clone(),
-        )
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            emit_log(
-                "ERROR",
-                "economics.nats.subscribe.error",
-                "economics NATS subscribe failed",
-                json!({
-                    "error": error_summary(&error.to_string()),
-                    "requestSubject": state.config.request_subject,
-                    "queueGroup": state.config.queue_group
-                }),
-            );
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            emit_log(
-                "WARN",
-                "economics.nats.request.oversize",
-                "economics NATS forecast request rejected because payload is too large",
-                json!({
-                    "bytes": payload.len(),
-                    "maxBytes": MAX_NATS_PAYLOAD_BYTES
-                }),
-            );
-            continue;
-        }
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            match serde_json::from_slice::<ForecastRequest>(&payload) {
-                Ok(request) => match forecast_from_request(&task_state, request) {
-                    Ok(response) => {
-                        task_state
-                            .metrics
-                            .forecasts_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        publish_forecast(&task_state, &response).await;
-                    }
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(
+                state.config.request_subject.clone(),
+                state.config.queue_group.clone(),
+            )
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                emit_log(
+                    "ERROR",
+                    "economics.nats.subscribe.error",
+                    "economics NATS subscribe failed; retrying in 5s",
+                    json!({
+                        "error": error_summary(&error.to_string()),
+                        "requestSubject": state.config.request_subject,
+                        "queueGroup": state.config.queue_group
+                    }),
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                emit_log(
+                    "WARN",
+                    "economics.nats.request.oversize",
+                    "economics NATS forecast request rejected because payload is too large",
+                    json!({
+                        "bytes": payload.len(),
+                        "maxBytes": MAX_NATS_PAYLOAD_BYTES
+                    }),
+                );
+                continue;
+            }
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                match serde_json::from_slice::<ForecastRequest>(&payload) {
+                    Ok(request) => match forecast_from_request(&task_state, request) {
+                        Ok(response) => {
+                            task_state
+                                .metrics
+                                .forecasts_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            publish_forecast(&task_state, &response).await;
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            emit_log(
+                                "ERROR",
+                                "economics.nats.forecast.error",
+                                "economics NATS forecast failed",
+                                json!({
+                                    "error": error_summary(&error)
+                                }),
+                            );
+                        }
+                    },
                     Err(error) => {
                         task_state
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
                         emit_log(
-                            "ERROR",
-                            "economics.nats.forecast.error",
-                            "economics NATS forecast failed",
+                            "WARN",
+                            "economics.nats.request.invalid",
+                            "economics NATS forecast request was invalid JSON",
                             json!({
-                                "error": error_summary(&error)
+                                "error": error_summary(&error.to_string())
                             }),
                         );
                     }
-                },
-                Err(error) => {
-                    task_state
-                        .metrics
-                        .errors_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    emit_log(
-                        "WARN",
-                        "economics.nats.request.invalid",
-                        "economics NATS forecast request was invalid JSON",
-                        json!({
-                            "error": error_summary(&error.to_string())
-                        }),
-                    );
                 }
-            }
-        });
+            });
+        }
+        emit_log(
+            "WARN",
+            "economics.nats.subscription.ended",
+            "economics NATS subscription ended; re-subscribing in 5s",
+            json!({
+                "requestSubject": state.config.request_subject,
+                "queueGroup": state.config.queue_group
+            }),
+        );
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

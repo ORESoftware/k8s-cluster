@@ -1885,43 +1885,51 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         "des simulator nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("des simulator nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "des simulator rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
+    loop {
+        let mut subscription =
+            match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
+                Ok(subscription) => subscription,
+                Err(error) => {
+                    eprintln!("des simulator nats subscribe failed: {error}; retrying in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "des simulator rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
 
-        match serde_json::from_slice::<SimulationRequest>(&payload) {
-            Ok(request) => {
-                if let Err(error) = start_simulation_job(state.clone(), request, "nats") {
+            match serde_json::from_slice::<SimulationRequest>(&payload) {
+                Ok(request) => {
+                    if let Err(error) = start_simulation_job(state.clone(), request, "nats") {
+                        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                        eprintln!(
+                            "des simulator rejected nats simulation: {}",
+                            error.message()
+                        );
+                    }
+                }
+                Err(error) => {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
-                        "des simulator rejected nats simulation: {}",
-                        error.message()
-                    );
+                    eprintln!("des simulator invalid nats request: {error}");
                 }
             }
-            Err(error) => {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("des simulator invalid nats request: {error}");
-            }
         }
+        eprintln!(
+            "des simulator nats subscription ended (subject={subject}); re-subscribing in 5s"
+        );
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

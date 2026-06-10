@@ -1420,56 +1420,64 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         "mdp optimizer nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("mdp optimizer nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "mdp optimizer rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            let parsed = serde_json::from_slice::<OptimizationRequest>(&payload);
-            match parsed {
-                Ok(request) => match optimize_in_background(request).await {
-                    Ok(response) => {
-                        task_state
-                            .metrics
-                            .optimizations_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        publish_result(&task_state, &response).await;
-                    }
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(subject.clone(), queue_group.clone())
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("mdp optimizer nats subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "mdp optimizer rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                let parsed = serde_json::from_slice::<OptimizationRequest>(&payload);
+                match parsed {
+                    Ok(request) => match optimize_in_background(request).await {
+                        Ok(response) => {
+                            task_state
+                                .metrics
+                                .optimizations_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            publish_result(&task_state, &response).await;
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("mdp optimizer failed nats optimization: {error}");
+                        }
+                    },
                     Err(error) => {
                         task_state
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("mdp optimizer failed nats optimization: {error}");
+                        eprintln!("mdp optimizer invalid nats request: {error}");
                     }
-                },
-                Err(error) => {
-                    task_state
-                        .metrics
-                        .errors_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("mdp optimizer invalid nats request: {error}");
                 }
-            }
-        });
+            });
+        }
+        eprintln!("mdp optimizer nats subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -1482,56 +1490,64 @@ async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: 
         "mdp optimizer telemetry nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("mdp optimizer telemetry nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_telemetry_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "mdp optimizer rejected oversize telemetry nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            let parsed = serde_json::from_slice::<TelemetryLearningRequest>(&payload);
-            match parsed {
-                Ok(request) => match optimize_telemetry_in_background(request).await {
-                    Ok(response) => {
-                        task_state
-                            .metrics
-                            .optimizations_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        publish_telemetry_result(&task_state, &response).await;
-                    }
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(subject.clone(), queue_group.clone())
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("mdp optimizer telemetry nats subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_telemetry_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "mdp optimizer rejected oversize telemetry nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                let parsed = serde_json::from_slice::<TelemetryLearningRequest>(&payload);
+                match parsed {
+                    Ok(request) => match optimize_telemetry_in_background(request).await {
+                        Ok(response) => {
+                            task_state
+                                .metrics
+                                .optimizations_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            publish_telemetry_result(&task_state, &response).await;
+                        }
+                        Err(error) => {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("mdp optimizer failed telemetry optimization: {error}");
+                        }
+                    },
                     Err(error) => {
                         task_state
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("mdp optimizer failed telemetry optimization: {error}");
+                        eprintln!("mdp optimizer invalid telemetry request: {error}");
                     }
-                },
-                Err(error) => {
-                    task_state
-                        .metrics
-                        .errors_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("mdp optimizer invalid telemetry request: {error}");
                 }
-            }
-        });
+            });
+        }
+        eprintln!("mdp optimizer telemetry nats subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

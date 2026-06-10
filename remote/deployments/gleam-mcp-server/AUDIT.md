@@ -226,3 +226,28 @@ redirect-secret-leak), and `handle_apply` already bounds the body to 1 MiB via
 `mist.read_body(req, 1_048_576)`. Auth uses a constant-time compare.
 
 Build + 14 tests still green.
+
+## Pass 4 (2026-06-09)
+
+Pod-security-posture pass.
+
+- **D1 (Med, fixed): the pod ran as root.** The container security contexts had
+  `allowPrivilegeEscalation: false`, dropped ALL caps, read-only rootfs, and
+  seccomp — but no `runAsNonRoot`/`runAsUser`, so the BEAM ran as uid 0. The
+  `dd-cluster-mcp-rs` sibling already runs as uid 1000 against the **same**
+  hostPath + emptyDir pattern, proving it works. Added a pod-level
+  `securityContext` (`runAsNonRoot: true`, `runAsUser/Group: 1000`, `fsGroup:
+  1000`, `fsGroupChangePolicy: OnRootMismatch`, seccomp) plus `runAsNonRoot` /
+  `runAsUser` / `runAsGroup: 1000` on both the build init container and the main
+  container. `fsGroup` makes the `work`/`tmp` emptyDirs group-writable so the
+  BEAM build tree + crash dumps land without root; the repo hostPath is mounted
+  read-only and is already read as uid 1000 by the Rust pod. This reaches the
+  "restricted" Pod Security Standard baseline. **Validate on first rollout:** if
+  the EC2 host checkout's files aren't readable by uid 1000 the pod would
+  CrashLoop (the startup probe catches it; recoverable) — but the Rust pod
+  reading the same checkout as 1000 is strong evidence it's fine.
+
+Manifest renders (`kubectl kustomize`); build + 14 tests still green. (No
+automated dependency-CVE scan exists for the Gleam/Erlang side the way
+`cargo audit` covers Rust; the dependency surface is much smaller — mist + a few
+gleam_* packages pinned in `manifest.toml`.)

@@ -2999,77 +2999,85 @@ async fn run_nats_loop(state: AppState) {
         state.config.queue_group,
         state.config.ingest_result_subject
     );
-    let mut subscription = match nats
-        .queue_subscribe(
-            state.config.ingest_request_subject.clone(),
-            state.config.queue_group.clone(),
-        )
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("public-data nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "public-data rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            match serde_json::from_slice::<Value>(&payload) {
-                Ok(value) => {
-                    let result = if value.get("scrape").is_some() {
-                        match serde_json::from_value::<ScrapeRequest>(value["scrape"].clone()) {
-                            Ok(request) => process_scrape_request(&task_state, request).await,
-                            Err(error) => Err(error.to_string()),
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(
+                state.config.ingest_request_subject.clone(),
+                state.config.queue_group.clone(),
+            )
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("public-data nats subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "public-data rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                match serde_json::from_slice::<Value>(&payload) {
+                    Ok(value) => {
+                        let result = if value.get("scrape").is_some() {
+                            match serde_json::from_value::<ScrapeRequest>(value["scrape"].clone()) {
+                                Ok(request) => process_scrape_request(&task_state, request).await,
+                                Err(error) => Err(error.to_string()),
+                            }
+                        } else if value.get("url").is_some() && value.get("records").is_none() {
+                            match serde_json::from_value::<ScrapeRequest>(value) {
+                                Ok(request) => process_scrape_request(&task_state, request).await,
+                                Err(error) => Err(error.to_string()),
+                            }
+                        } else if value.get("webhook").is_some() {
+                            match serde_json::from_value::<WebhookIngestRequest>(
+                                value["webhook"].clone(),
+                            ) {
+                                Ok(request) => process_webhook(&task_state, request).await,
+                                Err(error) => Err(error.to_string()),
+                            }
+                        } else {
+                            match serde_json::from_value::<IngestRequest>(value) {
+                                Ok(request) => process_ingest_request(&task_state, request).await,
+                                Err(error) => Err(error.to_string()),
+                            }
+                        };
+                        if let Err(error) = result {
+                            task_state
+                                .metrics
+                                .errors_total
+                                .fetch_add(1, Ordering::Relaxed);
+                            eprintln!("public-data nats request failed: {error}");
                         }
-                    } else if value.get("url").is_some() && value.get("records").is_none() {
-                        match serde_json::from_value::<ScrapeRequest>(value) {
-                            Ok(request) => process_scrape_request(&task_state, request).await,
-                            Err(error) => Err(error.to_string()),
-                        }
-                    } else if value.get("webhook").is_some() {
-                        match serde_json::from_value::<WebhookIngestRequest>(
-                            value["webhook"].clone(),
-                        ) {
-                            Ok(request) => process_webhook(&task_state, request).await,
-                            Err(error) => Err(error.to_string()),
-                        }
-                    } else {
-                        match serde_json::from_value::<IngestRequest>(value) {
-                            Ok(request) => process_ingest_request(&task_state, request).await,
-                            Err(error) => Err(error.to_string()),
-                        }
-                    };
-                    if let Err(error) = result {
+                    }
+                    Err(error) => {
                         task_state
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("public-data nats request failed: {error}");
+                        eprintln!("public-data invalid nats payload: {error}");
                     }
                 }
-                Err(error) => {
-                    task_state
-                        .metrics
-                        .errors_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("public-data invalid nats payload: {error}");
-                }
-            }
-        });
+            });
+        }
+        eprintln!(
+            "public-data nats subscription ended (subject={}); re-subscribing in 5s",
+            state.config.ingest_request_subject
+        );
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

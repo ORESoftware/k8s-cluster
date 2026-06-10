@@ -332,6 +332,41 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
+fn optional_env(key: &str) -> Option<String> {
+    first_env(&[key])
+}
+
+/// Build a hardened NATS client: stable name, ping, connect timeout, initial
+/// connect retry, and optional auth/TLS. Replaces a bare per-request
+/// `async_nats::connect(url)`.
+async fn connect_nats(config: &Config) -> Result<async_nats::Client, String> {
+    let mut options = async_nats::ConnectOptions::new()
+        .name("dd-agent-worker-broker")
+        .retry_on_initial_connect()
+        .ping_interval(Duration::from_secs(15))
+        .connection_timeout(Duration::from_secs(10));
+
+    if env_bool("NATS_REQUIRE_TLS", false) {
+        options = options.require_tls(true);
+    }
+
+    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
+        options = options
+            .credentials_file(&path)
+            .await
+            .map_err(|error| format!("failed to read NATS_CREDENTIALS_FILE {path}: {error}"))?;
+    } else if let Some(token) = optional_env("NATS_TOKEN") {
+        options = options.token(token);
+    } else if let Some(seed) = optional_env("NATS_NKEY") {
+        options = options.nkey(seed);
+    }
+
+    options
+        .connect(config.nats_url.clone())
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn ensure_task_stream(config: &Config, client: async_nats::Client) -> Result<(), String> {
     let jetstream = async_nats::jetstream::new(client);
     jetstream
@@ -349,15 +384,17 @@ async fn ensure_task_stream(config: &Config, client: async_nats::Client) -> Resu
 }
 
 async fn publish_task_to_nats(
-    config: &Config,
+    state: &AppState,
     thread_id: &str,
     request: &DispatchTaskRequest,
     repo: &str,
     base_branch: &str,
 ) -> Result<NatsPublishResult, String> {
-    let client = async_nats::connect(config.nats_url.clone())
-        .await
-        .map_err(|error| error.to_string())?;
+    let config = &state.config;
+    // Reuse the shared, already-authenticated client. ensure_task_stream stays
+    // here (idempotent get_or_create) so the WorkQueue stream exists even if it
+    // was deleted out from under us; it no longer pays a reconnect each call.
+    let client = state.nats.clone();
     ensure_task_stream(config, client.clone()).await?;
 
     let subject = thread_tasks_subject(thread_id);
@@ -653,8 +690,7 @@ async fn dispatch_task(
             .into_response();
     }
 
-    let nats = match publish_task_to_nats(&state.config, &thread_id, &request, &repo, &base_branch)
-        .await
+    let nats = match publish_task_to_nats(&state, &thread_id, &request, &repo, &base_branch).await
     {
         Ok(value) => value,
         Err(error) => {
@@ -713,9 +749,32 @@ async fn main() {
     let config = config_from_env();
     let host = env_value("HOST", "0.0.0.0");
     let port = env_u64("PORT", 8098) as u16;
+
+    if config.server_auth_secret.is_none() {
+        eprintln!(
+            "dd-agent-worker-broker WARNING: no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
+             dispatch will reject all requests until one is configured"
+        );
+    }
+
+    // Connect once and reuse. retry_on_initial_connect means this returns even
+    // if the broker is briefly unreachable at boot; the stream ensure is then
+    // best-effort (the queue consumer also creates it).
+    let nats = match connect_nats(&config).await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("dd-agent-worker-broker failed to connect to NATS: {error}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(error) = ensure_task_stream(&config, nats.clone()).await {
+        eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}");
+    }
+
     let state = AppState {
         config,
         http: reqwest::Client::new(),
+        nats,
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -729,6 +788,7 @@ async fn main() {
             "/api/agent-worker/threads/:thread_id/tasks",
             post(dispatch_task),
         )
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
 
@@ -767,5 +827,57 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifier_validation_blocks_nats_subject_injection() {
+        // UUIDs and uuid-like ids are accepted.
+        assert!(validate_identifier("018f6b1e-4c2a-7b9d-9f3a-2b1c0d4e5f6a", "threadId").is_ok());
+        assert!(validate_identifier("task_123-abc", "taskId").is_ok());
+
+        // Empty and overlong are rejected.
+        assert!(validate_identifier("", "threadId").is_err());
+        assert!(validate_identifier(&"a".repeat(MAX_IDENTIFIER_LEN + 1), "threadId").is_err());
+
+        // NATS-significant characters must be rejected — `.` is the token
+        // separator, `*`/`>` are wildcards, and these would escape the
+        // `dd.remote.thread.{id}.tasks` subject.
+        assert!(validate_identifier("a.b", "threadId").is_err());
+        assert!(validate_identifier("a.tasks", "threadId").is_err());
+        assert!(validate_identifier("*", "threadId").is_err());
+        assert!(validate_identifier("a.>", "threadId").is_err());
+        assert!(validate_identifier("a b", "threadId").is_err());
+        assert!(validate_identifier("a/b", "threadId").is_err());
+    }
+
+    #[test]
+    fn constant_time_equals_matches_only_identical_secrets() {
+        assert!(constant_time_equals("s3cret", "s3cret"));
+        assert!(!constant_time_equals("s3cret", "s3creT"));
+        assert!(!constant_time_equals("short", "longer-secret"));
+        assert!(!constant_time_equals("", "x"));
+    }
+
+    #[test]
+    fn prompt_validation_rejects_empty_and_oversize() {
+        assert!(validate_prompt("do the thing").is_ok());
+        assert!(validate_prompt("   ").is_err());
+        assert!(validate_prompt("").is_err());
+        assert!(validate_prompt(&"x".repeat(MAX_PROMPT_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn thread_resource_name_is_sanitized_and_bounded() {
+        let name = thread_resource_name("018f6b1e-4c2a-7b9d");
+        assert!(name.starts_with("dd-thread-"));
+        let short = name.trim_start_matches("dd-thread-");
+        assert!(short.len() <= 12);
+        assert!(short.chars().all(|c| c.is_ascii_alphanumeric()));
     }
 }

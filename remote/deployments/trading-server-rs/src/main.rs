@@ -2473,83 +2473,91 @@ async fn run_nats_loop(state: AppState) {
         "trading server nats loop starting: subject={} queueGroup={} decisionSubject={}",
         state.config.signal_subject, state.config.queue_group, state.config.decision_subject
     );
-    let mut subscription = match nats
-        .queue_subscribe(
-            state.config.signal_subject.clone(),
-            state.config.queue_group.clone(),
-        )
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("trading server nats subscribe failed: {error}");
-            return;
-        }
-    };
-
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "trading server rejected oversize nats signal: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
-        // Backpressure: block the receive loop until an inflight slot is
-        // free rather than spawning unbounded tasks under a signal flood.
-        let permit = match state.inflight.clone().acquire_owned().await {
-            Ok(permit) => permit,
-            Err(_) => break, // semaphore closed; shutting down
+    'outer: loop {
+        let mut subscription = match nats
+            .queue_subscribe(
+                state.config.signal_subject.clone(),
+                state.config.queue_group.clone(),
+            )
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("trading server nats subscribe failed: {error}; retrying in 5s");
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
         };
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            match serde_json::from_slice::<DecisionRequest>(&payload) {
-                Ok(request) => {
-                    let platforms = platform_snapshot(&task_state);
-                    match evaluate_decision(&task_state.config, &platforms, request) {
-                        Ok(response) => {
-                            task_state
-                                .metrics
-                                .decisions_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            if response.order_intent.is_some() {
+
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "trading server rejected oversize nats signal: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
+            // Backpressure: block the receive loop until an inflight slot is
+            // free rather than spawning unbounded tasks under a signal flood.
+            let permit = match state.inflight.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => break 'outer, // semaphore closed; shutting down
+            };
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                let _permit = permit;
+                match serde_json::from_slice::<DecisionRequest>(&payload) {
+                    Ok(request) => {
+                        let platforms = platform_snapshot(&task_state);
+                        match evaluate_decision(&task_state.config, &platforms, request) {
+                            Ok(response) => {
                                 task_state
                                     .metrics
-                                    .order_intents_total
+                                    .decisions_total
                                     .fetch_add(1, Ordering::Relaxed);
-                            } else if response.recommended_action != response.final_action {
-                                task_state
-                                    .metrics
-                                    .blocked_orders_total
-                                    .fetch_add(1, Ordering::Relaxed);
+                                if response.order_intent.is_some() {
+                                    task_state
+                                        .metrics
+                                        .order_intents_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                } else if response.recommended_action != response.final_action {
+                                    task_state
+                                        .metrics
+                                        .blocked_orders_total
+                                        .fetch_add(1, Ordering::Relaxed);
+                                }
+                                publish_decision(&task_state, &response).await;
                             }
-                            publish_decision(&task_state, &response).await;
-                        }
-                        Err(error) => {
-                            task_state
-                                .metrics
-                                .errors_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("trading server failed nats decision: {error}");
+                            Err(error) => {
+                                task_state
+                                    .metrics
+                                    .errors_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                eprintln!("trading server failed nats decision: {error}");
+                            }
                         }
                     }
+                    Err(error) => {
+                        task_state
+                            .metrics
+                            .errors_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        eprintln!("trading server invalid nats signal: {error}");
+                    }
                 }
-                Err(error) => {
-                    task_state
-                        .metrics
-                        .errors_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("trading server invalid nats signal: {error}");
-                }
-            }
-        });
+            });
+        }
+        eprintln!(
+            "trading server nats signal subscription ended; re-subscribing in 5s: subject={} queueGroup={}",
+            state.config.signal_subject, state.config.queue_group
+        );
+        sleep(Duration::from_secs(5)).await;
     }
 }
 
