@@ -30,6 +30,19 @@ pub const BILLING_SYNC_COMMANDS_QUEUE_GROUP: &str = "dd-billing-server";
 /// Service: dd-billing-server
 pub const BILLING_WEBHOOK_RECEIPTS_SUBJECT: &str = "dd.remote.billing.webhooks.receipts";
 
+/// Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
+/// Service: dd-chaos
+pub const CHAOS_EVENTS_SUBJECT: &str = "dd.remote.chaos.events";
+
+/// Auditable chaos experiment records: each planned or executed fault (pod-kill, replica-jitter) is published here with its blast radius, target, and dry-run flag.
+/// Service: dd-chaos
+pub const CHAOS_EXPERIMENTS_SUBJECT: &str = "dd.remote.chaos.experiments";
+
+/// Round-trip latency-probe subject. The chaos NATS probe publishes a ping and the same service replies, measuring request/reply RTT and jitter against the live cluster NATS server.
+/// Service: dd-chaos
+pub const CHAOS_PROBE_SUBJECT: &str = "dd.remote.chaos.probe";
+pub const CHAOS_PROBE_QUEUE_GROUP: &str = "dd-chaos-probe";
+
 /// Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 /// Service: dd-container-pool
 pub const CONTAINER_POOL_REQUESTS_SUBJECT: &str = "dd.remote.container_pool.requests";
@@ -109,6 +122,27 @@ pub const ESCROW_SOLANA_RESULTS_SUBJECT: &str = "dd.remote.escrow.solana.results
 /// Service: dd-escrow-rs
 pub const ESCROW_SOLANA_VALIDATE_SUBJECT: &str = "dd.remote.escrow.solana.validate";
 pub const ESCROW_SOLANA_VALIDATE_QUEUE_GROUP: &str = "dd-escrow-rs";
+
+/// Lifecycle and per-epoch progress events from the distributed GA (best-fitness-so-far, convergence, epoch boundaries).
+/// Service: dd-evolution-optimizer
+pub const EVOLUTION_EVENTS_SUBJECT: &str = "dd.remote.evolution.events";
+pub const EVOLUTION_EVENTS_STREAM: &str = "DD_REMOTE_EVOLUTION";
+
+/// Per-island evolution jobs. The master publishes a subpopulation plus GA parameters for one epoch; island worker pods consume through the islands queue group and evolve it for N generations.
+/// Service: dd-evolution-optimizer
+pub const EVOLUTION_JOBS_SUBJECT: &str = "dd.remote.evolution.jobs";
+pub const EVOLUTION_JOBS_QUEUE_GROUP: &str = "dd-evolution-optimizer-islands";
+pub const EVOLUTION_JOBS_STREAM: &str = "DD_REMOTE_EVOLUTION";
+
+/// Elite individuals migrating between islands on a ring topology between epochs. Carried inside the next epoch's jobs by the master; this subject lets observers tap migration flow.
+/// Service: dd-evolution-optimizer
+pub const EVOLUTION_MIGRANTS_SUBJECT: &str = "dd.remote.evolution.migrants";
+pub const EVOLUTION_MIGRANTS_STREAM: &str = "DD_REMOTE_EVOLUTION";
+
+/// Per-island evolution results. Islands publish the evolved (fitness-sorted) subpopulation and their best genome; the master aggregates them by solveId and epoch.
+/// Service: dd-evolution-optimizer
+pub const EVOLUTION_RESULTS_SUBJECT: &str = "dd.remote.evolution.results";
+pub const EVOLUTION_RESULTS_STREAM: &str = "DD_REMOTE_EVOLUTION";
 
 /// Hybrid assembly and process-decomposition requests for workers that split, combine, join, and sequence printed, milled, turned, sheet-cut, and postprocessed parts.
 /// Service: dd-fabrication-server
@@ -309,6 +343,22 @@ pub const PUBLIC_DATA_PIPELINE_JOBS_SUBJECT: &str = "dd.remote.public_data.pipel
 /// Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.
 /// Service: dd-public-data-server
 pub const PUBLIC_DATA_WEBHOOK_EVENTS_SUBJECT: &str = "dd.remote.public_data.webhooks.events";
+
+/// Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.
+/// Service: dd-routing-server
+pub const ROUTING_EVENTS_SUBJECT: &str = "dd.remote.routing.events";
+pub const ROUTING_EVENTS_STREAM: &str = "DD_REMOTE_ROUTING";
+
+/// Per-worker routing jobs. The master publishes one construction+local-search restart (a seeded nearest-neighbour or random start) for a problem; worker pods consume through the workers queue group and return an improved tour.
+/// Service: dd-routing-server
+pub const ROUTING_JOBS_SUBJECT: &str = "dd.remote.routing.jobs";
+pub const ROUTING_JOBS_QUEUE_GROUP: &str = "dd-routing-server-workers";
+pub const ROUTING_JOBS_STREAM: &str = "DD_REMOTE_ROUTING";
+
+/// Per-worker routing results. Workers publish a completed tour (or per-vehicle routes) with its total distance; the master keeps the global incumbent by solveId.
+/// Service: dd-routing-server
+pub const ROUTING_RESULTS_SUBJECT: &str = "dd.remote.routing.results";
+pub const ROUTING_RESULTS_STREAM: &str = "DD_REMOTE_ROUTING";
 
 /// Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
 /// Service: shared
@@ -850,6 +900,10 @@ pub const DATA_VIZ_NOTIFICATION_DISPATCH_QUEUE_GROUP: &str = "dd-data-viz-notifi
 /// Service: dd-economics-server
 pub const ECONOMICS_SERVER_QUEUE_GROUP: &str = "dd-economics-server";
 
+/// Shared queue group used by island worker pods so each per-epoch subpopulation is evolved exactly once.
+/// Service: dd-evolution-optimizer
+pub const EVOLUTION_ISLANDS_QUEUE_GROUP: &str = "dd-evolution-optimizer-islands";
+
 /// Shared queue group used by lambda-runner replicas.
 /// Service: dd-gleam-lambda-runner
 pub const LAMBDA_RUNNER_QUEUE_GROUP: &str = "dd-gleam-lambda-runner";
@@ -865,6 +919,10 @@ pub const MUSIC_GENERATION_QUEUE_GROUP: &str = "dd-music-rs";
 /// Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 /// Service: dd-public-data-server
 pub const PUBLIC_DATA_WORKERS_QUEUE_GROUP: &str = "dd-public-data-server";
+
+/// Shared queue group used by routing worker pods so each multi-start restart is solved exactly once.
+/// Service: dd-routing-server
+pub const ROUTING_WORKERS_QUEUE_GROUP: &str = "dd-routing-server-workers";
 
 /// Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 /// Service: dd-remote-rest-api
@@ -912,6 +970,14 @@ pub const DD_REMOTE_EVENTS_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_EVENTS_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_EVENTS_STREAM_ACK: &str = "explicit";
 
+/// JetStream stream for distributed island-model GA jobs, results, ring migrants, and progress events.
+/// Service: dd-evolution-optimizer
+pub const DD_REMOTE_EVOLUTION_STREAM_NAME: &str = "DD_REMOTE_EVOLUTION";
+pub const DD_REMOTE_EVOLUTION_STREAM_SUBJECTS: &[&str] = &["dd.remote.evolution.jobs", "dd.remote.evolution.results", "dd.remote.evolution.migrants", "dd.remote.evolution.events"];
+pub const DD_REMOTE_EVOLUTION_STREAM_RETENTION: &str = "limits";
+pub const DD_REMOTE_EVOLUTION_STREAM_STORAGE: &str = "file";
+pub const DD_REMOTE_EVOLUTION_STREAM_ACK: &str = "explicit";
+
 /// JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
 /// Service: dd-ai-ml-pipeline
 pub const DD_REMOTE_MIP_SOLVER_STREAM_NAME: &str = "DD_REMOTE_MIP_SOLVER";
@@ -919,6 +985,14 @@ pub const DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS: &[&str] = &["dd.remote.mip_solve
 pub const DD_REMOTE_MIP_SOLVER_STREAM_RETENTION: &str = "limits";
 pub const DD_REMOTE_MIP_SOLVER_STREAM_STORAGE: &str = "file";
 pub const DD_REMOTE_MIP_SOLVER_STREAM_ACK: &str = "explicit";
+
+/// JetStream stream for distributed VRP/TSP solve jobs, worker tour results, and incumbent-improvement events.
+/// Service: dd-routing-server
+pub const DD_REMOTE_ROUTING_STREAM_NAME: &str = "DD_REMOTE_ROUTING";
+pub const DD_REMOTE_ROUTING_STREAM_SUBJECTS: &[&str] = &["dd.remote.routing.jobs", "dd.remote.routing.results", "dd.remote.routing.events"];
+pub const DD_REMOTE_ROUTING_STREAM_RETENTION: &str = "limits";
+pub const DD_REMOTE_ROUTING_STREAM_STORAGE: &str = "file";
+pub const DD_REMOTE_ROUTING_STREAM_ACK: &str = "explicit";
 
 /// JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 /// Service: dd-remote-rest-api

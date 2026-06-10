@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/routing.schema.json",
+  "title": "RoutingNats",
+  "description": "NATS subjects owned by dd-routing-server-rs. Distributed VRP/TSP solver: a master fans out multi-start construction + local-search jobs, workers return tours, and the master tracks a live incumbent that streams to a canvas dashboard.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-routing-server",
+    "summary": "Distributed vehicle-routing/TSP solve jobs, worker tour results, and incumbent-improvement events.",
+    "subjects": [
+      {
+        "name": "RoutingJobs",
+        "description": "Per-worker routing jobs. The master publishes one construction+local-search restart (a seeded nearest-neighbour or random start) for a problem; worker pods consume through the workers queue group and return an improved tour.",
+        "kind": "static",
+        "subject": "dd.remote.routing.jobs",
+        "queueGroup": "dd-routing-server-workers",
+        "direction": "both",
+        "stream": "DD_REMOTE_ROUTING"
+      },
+      {
+        "name": "RoutingResults",
+        "description": "Per-worker routing results. Workers publish a completed tour (or per-vehicle routes) with its total distance; the master keeps the global incumbent by solveId.",
+        "kind": "static",
+        "subject": "dd.remote.routing.results",
+        "direction": "both",
+        "stream": "DD_REMOTE_ROUTING"
+      },
+      {
+        "name": "RoutingEvents",
+        "description": "Incumbent-improvement and lifecycle events. The master emits a new event every time the best-known tour improves; the canvas dashboard renders these live.",
+        "kind": "static",
+        "subject": "dd.remote.routing.events",
+        "direction": "both",
+        "stream": "DD_REMOTE_ROUTING"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "RoutingWorkersQueueGroup",
+        "value": "dd-routing-server-workers",
+        "description": "Shared queue group used by routing worker pods so each multi-start restart is solved exactly once."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_ROUTING",
+        "description": "JetStream stream for distributed VRP/TSP solve jobs, worker tour results, and incumbent-improvement events.",
+        "subjects": [
+          "dd.remote.routing.jobs",
+          "dd.remote.routing.results",
+          "dd.remote.routing.events"
+        ],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      }
+    ]
+  }
+}

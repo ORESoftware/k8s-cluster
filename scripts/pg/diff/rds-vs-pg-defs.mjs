@@ -25,13 +25,21 @@ async function main() {
     return;
   }
 
-  const schemas = parseSchemas(args.schemas);
-  const live = args.fromLiveJson
-    ? JSON.parse(await readFile(path.resolve(repoRoot, args.fromLiveJson), 'utf8'))
-    : introspectLiveRds(databaseUrl(args), schemas);
+  const requestedSchemas = parseSchemas(args.schemas);
 
   const pgDefsRoot = path.resolve(repoRoot, 'remote/libs/pg-defs');
   const { contract, schemaPath } = await loadSqlContract(pgDefsRoot);
+
+  // Always cover every schema the contract owns (e.g. `benefactor`) in addition to whatever the
+  // caller requested, so contract-declared tables are introspected and diffed even when the caller
+  // forgets to pass `--schema` for them. Otherwise non-public tables would be silently skipped.
+  const schemas = [
+    ...new Set([...requestedSchemas, ...contract.tables.map((table) => table.schema ?? 'public')]),
+  ];
+
+  const live = args.fromLiveJson
+    ? JSON.parse(await readFile(path.resolve(repoRoot, args.fromLiveJson), 'utf8'))
+    : introspectLiveRds(databaseUrl(args), schemas);
   const report = buildReport({
     desired: contract,
     live,
@@ -264,7 +272,10 @@ select jsonb_build_object(
 
 function buildReport({ desired, live, schemaPath, schemas }) {
   const desiredTables = new Map(
-    desired.tables.map((table) => [tableKey('public', table.name), normalizeDesiredTable(table)]),
+    desired.tables.map((table) => [
+      tableKey(table.schema ?? 'public', table.name),
+      normalizeDesiredTable(table),
+    ]),
   );
   const liveTables = new Map(
     (live.tables ?? []).map((table) => [tableKey(table.schema ?? 'public', table.name), normalizeLiveTable(table)]),
@@ -342,7 +353,7 @@ function buildReport({ desired, live, schemaPath, schemas }) {
 
 function normalizeDesiredTable(table) {
   return {
-    schema: 'public',
+    schema: table.schema ?? 'public',
     name: table.name,
     columns: new Map(table.columns.map((column) => [column.name, normalizeDesiredColumn(column)])),
     primaryKey: table.columns.filter((column) => column.primaryKey).map((column) => column.name).sort(),
