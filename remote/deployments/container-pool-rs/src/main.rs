@@ -50,9 +50,56 @@ struct AppState {
     metrics: Arc<Metrics>,
 }
 
+// Docker-UX container engines we drive with a shared `run -d`/`rm`/`ps`/`inspect`
+// flag surface. nerdctl scopes to a containerd namespace via the global `-n`;
+// docker and podman do not. Lower-level OCI runtimes (runc, crun, Kata, gVisor)
+// are selected under any of these engines via `--runtime` (see `oci_runtime`),
+// not as a separate engine. LXD (system containers) and CRI-O (crictl + pod
+// sandbox config) use different command models and are intentionally not driven
+// here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EngineKind {
+    Nerdctl,
+    Docker,
+    Podman,
+}
+
+impl EngineKind {
+    fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "docker" => EngineKind::Docker,
+            "podman" => EngineKind::Podman,
+            _ => EngineKind::Nerdctl,
+        }
+    }
+
+    fn default_bin(self) -> &'static str {
+        match self {
+            EngineKind::Docker => "/usr/bin/docker",
+            EngineKind::Podman => "/usr/bin/podman",
+            EngineKind::Nerdctl => "/usr/local/bin/nerdctl",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            EngineKind::Docker => "docker",
+            EngineKind::Podman => "podman",
+            EngineKind::Nerdctl => "nerdctl",
+        }
+    }
+
+    // Only nerdctl carries the containerd namespace as a global pre-subcommand flag.
+    fn uses_namespace(self) -> bool {
+        matches!(self, EngineKind::Nerdctl)
+    }
+}
+
 #[derive(Clone)]
 struct ServiceConfig {
-    nerdctl_bin: String,
+    engine: EngineKind,
+    engine_bin: String,
+    oci_runtime: Option<String>,
     containerd_namespace: String,
     network: String,
     pull_policy: Option<String>,
@@ -541,8 +588,13 @@ fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
     let network = env_value("CONTAINER_POOL_NETWORK", "host");
+    let engine = EngineKind::parse(&env_value("CONTAINER_POOL_ENGINE", "nerdctl"));
     ServiceConfig {
-        nerdctl_bin: env_value("CONTAINER_POOL_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
+        engine,
+        engine_bin: first_env(&["CONTAINER_POOL_ENGINE_BIN", "CONTAINER_POOL_NERDCTL_BIN"])
+            .filter(|bin| !bin.trim().is_empty())
+            .unwrap_or_else(|| engine.default_bin().to_string()),
+        oci_runtime: first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).filter(|value| safe_oci_runtime(value)),
         containerd_namespace: env_value("CONTAINER_POOL_CONTAINERD_NAMESPACE", "k8s.io"),
         network: if safe_network_name(&network) {
             network
@@ -1003,6 +1055,16 @@ fn mounts_from_json(value: &Value, slug: &str) -> Result<Vec<Mount>, String> {
                 "container pool {slug} has invalid mount target: {target}"
             ));
         }
+        if is_reserved_mount_target(&target) {
+            return Err(format!(
+                "container pool {slug} mount target {target} is reserved"
+            ));
+        }
+        if mounts.iter().any(|existing: &Mount| existing.target == target) {
+            return Err(format!(
+                "container pool {slug} has duplicate mount target {target}"
+            ));
+        }
         // Shared code/binaries default to read-only; writable needs an explicit
         // opt-in here and a service-level enable at start.
         let read_only = json_bool_field(item, "readOnly", "read_only").unwrap_or(true);
@@ -1029,7 +1091,9 @@ fn safe_mount_source(input: &str) -> bool {
         return false;
     }
     if input.starts_with('/') {
-        safe_local_path(input)
+        // Require a canonical absolute path (no `//`) so allowlist prefix
+        // matching is exact.
+        safe_local_path(input) && !input.contains("//")
     } else {
         let bytes = input.as_bytes();
         bytes[0].is_ascii_alphanumeric()
@@ -1040,14 +1104,29 @@ fn safe_mount_source(input: &str) -> bool {
 }
 
 fn safe_mount_target(input: &str) -> bool {
-    safe_local_path(input) && !input.contains(':') && !input.contains(',')
+    safe_local_path(input) && !input.contains("//") && !input.contains(':') && !input.contains(',')
+}
+
+// Refuse to overmount the container root or the kernel pseudo-filesystems:
+// these are never legitimate code-mount points and overmounting them can
+// subvert isolation/observability inside the container.
+fn is_reserved_mount_target(target: &str) -> bool {
+    target == "/"
+        || ["/proc", "/sys", "/dev"]
+            .iter()
+            .any(|reserved| path_has_prefix(target, reserved))
 }
 
 // Enforced at container start (has the service config). Named volumes are always
 // allowed; absolute host paths must sit under an allowlisted prefix; writable
 // mounts require the global opt-in. Fails closed with a clear operator message.
-fn enforce_mount_policy(config: &ServiceConfig, slug: &str, mount: &Mount) -> Result<(), String> {
-    if !mount.read_only && !config.allow_writable_mounts {
+fn enforce_mount_policy(
+    allowlist: &[String],
+    allow_writable: bool,
+    slug: &str,
+    mount: &Mount,
+) -> Result<(), String> {
+    if !mount.read_only && !allow_writable {
         return Err(format!(
             "container pool {slug} requests writable mount {}; set \
              CONTAINER_POOL_ALLOW_WRITABLE_MOUNTS=true to permit",
@@ -1055,8 +1134,7 @@ fn enforce_mount_policy(config: &ServiceConfig, slug: &str, mount: &Mount) -> Re
         ));
     }
     if mount.source.starts_with('/') {
-        let allowed = config
-            .mount_source_allowlist
+        let allowed = allowlist
             .iter()
             .any(|prefix| path_has_prefix(&mount.source, prefix));
         if !allowed {
@@ -1074,6 +1152,29 @@ fn enforce_mount_policy(config: &ServiceConfig, slug: &str, mount: &Mount) -> Re
 fn path_has_prefix(path: &str, prefix: &str) -> bool {
     let prefix = prefix.trim_end_matches('/');
     path == prefix || path.starts_with(&format!("{prefix}/"))
+}
+
+// Global flags that precede every subcommand. Only nerdctl needs the containerd
+// namespace; docker/podman take none.
+fn engine_global_args(engine: EngineKind, namespace: &str) -> Vec<String> {
+    if engine.uses_namespace() {
+        vec!["-n".to_string(), namespace.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+// An OCI runtime handler for `--runtime`: a short name (runc, crun, runsc), a
+// containerd handler (io.containerd.kata.v2, io.containerd.runsc.v1), or an
+// absolute path to a runtime binary. No whitespace / shell metacharacters.
+fn safe_oci_runtime(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 128
+        && (bytes[0].is_ascii_alphanumeric() || bytes[0] == b'/')
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
 }
 
 fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
@@ -1455,15 +1556,29 @@ async fn allocate_container_slot(
     Ok((pool, container))
 }
 
-async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmContainer, String> {
-    let (pool, mut container) = allocate_container_slot(state, pool_id).await?;
-    let mut args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "run".to_string(),
-        "-d".to_string(),
+// Pure builder for the engine `run -d` argv (everything after the engine binary),
+// extracted so it can be unit-tested across engines/runtimes/languages without a
+// live daemon. Network/env are resolved by the caller and passed in; mount policy
+// is enforced here so a disallowed mount fails the start with a clear error.
+#[allow(clippy::too_many_arguments)]
+fn build_run_args(
+    config: &ServiceConfig,
+    pool: &PoolConfig,
+    container_name: &str,
+    host_port: u16,
+    container_env: &BTreeMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let mut args = engine_global_args(config.engine, &config.containerd_namespace);
+    args.push("run".to_string());
+    args.push("-d".to_string());
+    // Lower-level OCI runtime (runc/crun/Kata/gVisor) selection, engine-agnostic.
+    if let Some(runtime) = config.oci_runtime.as_deref() {
+        args.push("--runtime".to_string());
+        args.push(runtime.to_string());
+    }
+    args.extend([
         "--name".to_string(),
-        container.name.clone(),
+        container_name.to_string(),
         "--label".to_string(),
         "dd.container-pool.managed=true".to_string(),
         "--label".to_string(),
@@ -1475,15 +1590,15 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         "--user".to_string(),
         pool.user.clone(),
         "--pids-limit".to_string(),
-        state.config.pids_limit.to_string(),
+        config.pids_limit.to_string(),
         "--ulimit".to_string(),
-        format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
-    ];
-    if state.config.cap_drop_all {
+        format!("nofile={limit}:{limit}", limit = config.nofile_limit),
+    ]);
+    if config.cap_drop_all {
         args.push("--cap-drop".to_string());
         args.push("ALL".to_string());
     }
-    if state.config.no_new_privileges {
+    if config.no_new_privileges {
         args.push("--security-opt".to_string());
         args.push("no-new-privileges".to_string());
     }
@@ -1492,15 +1607,15 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         args.push("--tmpfs".to_string());
         args.push("/tmp:rw,noexec,nosuid,size=64m".to_string());
     }
-    if let Some(memory) = state.config.container_memory.as_deref() {
+    if let Some(memory) = config.container_memory.as_deref() {
         args.push("--memory".to_string());
         args.push(memory.to_string());
     }
-    if let Some(cpus) = state.config.container_cpus.as_deref() {
+    if let Some(cpus) = config.container_cpus.as_deref() {
         args.push("--cpus".to_string());
         args.push(cpus.to_string());
     }
-    if let Some(pull_policy) = state.config.pull_policy.as_deref() {
+    if let Some(pull_policy) = config.pull_policy.as_deref() {
         args.push("--pull".to_string());
         args.push(pull_policy.to_string());
     }
@@ -1508,28 +1623,42 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     // Share code/binaries into the warm container (zero-copy) from a named volume
     // or allowlisted host path. Read-only by default; policy is enforced here.
     for mount in &pool.mounts {
-        enforce_mount_policy(&state.config, &pool.slug, mount)?;
+        enforce_mount_policy(
+            &config.mount_source_allowlist,
+            config.allow_writable_mounts,
+            &pool.slug,
+            mount,
+        )?;
         let mode = if mount.read_only { "ro" } else { "rw" };
         args.push("--volume".to_string());
         args.push(format!("{}:{}:{}", mount.source, mount.target, mode));
     }
 
-    if state.config.network == "host" {
+    if config.network == "host" {
         args.push("--network".to_string());
         args.push("host".to_string());
         args.push("--env".to_string());
-        args.push(format!("PORT={}", container.port));
+        args.push(format!("PORT={host_port}"));
     } else {
         args.push("--network".to_string());
-        args.push(state.config.network.clone());
+        args.push(config.network.clone());
         args.push("--publish".to_string());
-        args.push(format!(
-            "127.0.0.1:{}:{}",
-            container.port, pool.container_port
-        ));
+        args.push(format!("127.0.0.1:{}:{}", host_port, pool.container_port));
         args.push("--env".to_string());
         args.push(format!("PORT={}", pool.container_port));
     }
+
+    for (key, value) in container_env {
+        args.push("--env".to_string());
+        args.push(format!("{key}={value}"));
+    }
+    args.push(pool.image.clone());
+    args.extend(pool.command.clone());
+    Ok(args)
+}
+
+async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmContainer, String> {
+    let (pool, mut container) = allocate_container_slot(state, pool_id).await?;
 
     let mut container_env = pool.env.clone();
     container_env
@@ -1581,12 +1710,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         }
     }
 
-    for (key, value) in &container_env {
-        args.push("--env".to_string());
-        args.push(format!("{key}={value}"));
-    }
-    args.push(pool.image.clone());
-    args.extend(pool.command.clone());
+    let args = build_run_args(&state.config, &pool, &container.name, container.port, &container_env)?;
 
     let container_run_timeout = state.config.nerdctl_run_timeout;
     let scrubbed_args = args
@@ -1620,9 +1744,10 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         })
         .collect::<Vec<_>>();
     eprintln!(
-        "dd-container-pool nerdctl run for {name}: {bin} {scrubbed_args:?}",
+        "dd-container-pool {engine} run for {name}: {bin} {scrubbed_args:?}",
+        engine = state.config.engine.label(),
         name = container.name,
-        bin = state.config.nerdctl_bin,
+        bin = state.config.engine_bin,
     );
     // Surface the *names* (not values) of the env keys that end up forwarded
     // into the warm worker. This makes silent-misconfig regressions obvious in
@@ -1645,12 +1770,13 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
          worker_fanout_secret={worker_fanout_secret_present}",
         name = container.name,
     );
-    match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
+    match run_command(&state.config.engine_bin, &args, container_run_timeout).await {
         Ok(output) => {
             let trimmed = output.trim();
             if !trimmed.is_empty() {
                 eprintln!(
-                    "dd-container-pool nerdctl run -d output for {name}: {trimmed}",
+                    "dd-container-pool {engine} run -d output for {name}: {trimmed}",
+                    engine = state.config.engine.label(),
                     name = container.name
                 );
             }
@@ -1720,19 +1846,9 @@ async fn wait_container_ready(
 }
 
 async fn remove_container(state: &AppState, name: &str) -> Result<(), String> {
-    let args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "rm".to_string(),
-        "-f".to_string(),
-        name.to_string(),
-    ];
-    run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await?;
+    let mut args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    args.extend(["rm".to_string(), "-f".to_string(), name.to_string()]);
+    run_command(&state.config.engine_bin, &args, state.config.command_timeout).await?;
     state
         .metrics
         .containers_removed_total
@@ -1744,17 +1860,16 @@ async fn cleanup_managed_containers_on_start(state: &AppState) -> Result<(), Str
     if !state.config.cleanup_on_start {
         return Ok(());
     }
-    let list_args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
+    let mut list_args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    list_args.extend([
         "ps".to_string(),
         "-a".to_string(),
         "-q".to_string(),
         "--filter".to_string(),
         "label=dd.container-pool.managed=true".to_string(),
-    ];
+    ]);
     let output = run_command(
-        &state.config.nerdctl_bin,
+        &state.config.engine_bin,
         &list_args,
         state.config.command_timeout,
     )
@@ -1803,13 +1918,9 @@ async fn run_command(
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
     let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(15));
-    let args = vec![
-        "-n".to_string(),
-        state.config.containerd_namespace.clone(),
-        "inspect".to_string(),
-        name.to_string(),
-    ];
-    let output = match run_command(&state.config.nerdctl_bin, &args, inspect_timeout).await {
+    let mut args = engine_global_args(state.config.engine, &state.config.containerd_namespace);
+    args.extend(["inspect".to_string(), name.to_string()]);
+    let output = match run_command(&state.config.engine_bin, &args, inspect_timeout).await {
         Ok(output) => output,
         Err(error) => {
             let lower = error.to_ascii_lowercase();
@@ -3179,9 +3290,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     println!(
-        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={} redis_locks={}",
-        state.config.nerdctl_bin,
+        "{SERVICE_NAME} starting: engine={} bin={} namespace={} oci_runtime={} network={} db_configured={} nats_subject={} redis_locks={}",
+        state.config.engine.label(),
+        state.config.engine_bin,
         state.config.containerd_namespace,
+        state.config.oci_runtime.as_deref().unwrap_or("(default)"),
         state.config.network,
         state.config.database_url.is_some(),
         state.config.nats_subject,
@@ -3305,5 +3418,259 @@ mod tests {
             new_thread,
             false
         ));
+    }
+
+    #[test]
+    fn mount_source_accepts_named_volumes_and_rejects_path_smuggling() {
+        assert!(safe_mount_source("dd-code"));
+        assert!(safe_mount_source("dd_code.v1-2"));
+        assert!(safe_mount_source("/srv/lambda-bin"));
+        // Path-classification escapes and `-v` delimiter smuggling.
+        assert!(!safe_mount_source("../etc"));
+        assert!(!safe_mount_source("./code"));
+        assert!(!safe_mount_source("/srv/../etc"));
+        assert!(!safe_mount_source("/srv//code"));
+        assert!(!safe_mount_source("vol:/etc"));
+        assert!(!safe_mount_source("vol,extra"));
+        assert!(!safe_mount_source("bad name"));
+        assert!(!safe_mount_source(""));
+    }
+
+    #[test]
+    fn mount_target_must_be_safe_and_unreserved() {
+        assert!(safe_mount_target("/opt/code"));
+        assert!(!safe_mount_target("/opt/../etc"));
+        assert!(!safe_mount_target("relative"));
+        assert!(!safe_mount_target("/opt:/code"));
+        assert!(is_reserved_mount_target("/"));
+        assert!(is_reserved_mount_target("/proc"));
+        assert!(is_reserved_mount_target("/proc/sys"));
+        assert!(is_reserved_mount_target("/dev/shm"));
+        assert!(!is_reserved_mount_target("/opt/code"));
+        // Boundary: /devices is not under /dev.
+        assert!(!is_reserved_mount_target("/devices"));
+    }
+
+    #[test]
+    fn path_prefix_matches_on_boundary() {
+        assert!(path_has_prefix("/srv/code", "/srv/code"));
+        assert!(path_has_prefix("/srv/code/bin", "/srv/code/"));
+        assert!(!path_has_prefix("/srv/codex", "/srv/code"));
+        assert!(!path_has_prefix("/srv", "/srv/code"));
+    }
+
+    #[test]
+    fn mounts_from_json_parses_validates_and_defaults_read_only() {
+        let value = json!({
+            "mounts": [
+                { "source": "dd-code", "target": "/opt/code" },
+                { "volume": "dd-bin", "mountPath": "/opt/bin", "readOnly": false }
+            ]
+        });
+        let mounts = mounts_from_json(&value, "svc").expect("valid mounts");
+        assert_eq!(mounts.len(), 2);
+        assert_eq!(mounts[0].target, "/opt/code");
+        assert!(mounts[0].read_only, "defaults to read-only");
+        assert!(!mounts[1].read_only);
+
+        assert!(mounts_from_json(&json!({}), "svc").unwrap().is_empty());
+        assert!(mounts_from_json(&json!({ "mounts": null }), "svc").unwrap().is_empty());
+        assert!(mounts_from_json(&json!({ "mounts": "x" }), "svc").is_err());
+        assert!(
+            mounts_from_json(
+                &json!({ "mounts": [
+                    { "source": "a", "target": "/opt/code" },
+                    { "source": "b", "target": "/opt/code" }
+                ] }),
+                "svc"
+            )
+            .is_err(),
+            "duplicate target must be rejected"
+        );
+        assert!(
+            mounts_from_json(&json!({ "mounts": [{ "source": "a", "target": "/proc" }] }), "svc")
+                .is_err(),
+            "reserved target must be rejected"
+        );
+    }
+
+    #[test]
+    fn enforce_mount_policy_gates_host_paths_and_writes() {
+        let allowlist = vec!["/srv/code".to_string()];
+
+        let named_ro = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &named_ro).is_ok());
+
+        let host_allowed = Mount { source: "/srv/code/bin".into(), target: "/opt/bin".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &host_allowed).is_ok());
+
+        // Host path outside the allowlist is rejected.
+        let host_denied = Mount { source: "/etc".into(), target: "/opt/etc".into(), read_only: true };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &host_denied).is_err());
+        // ...and rejected outright when no allowlist is configured.
+        assert!(enforce_mount_policy(&[], false, "svc", &host_allowed).is_err());
+
+        // Writable needs the explicit opt-in.
+        let writable = Mount { source: "dd-code".into(), target: "/opt/code".into(), read_only: false };
+        assert!(enforce_mount_policy(&allowlist, false, "svc", &writable).is_err());
+        assert!(enforce_mount_policy(&allowlist, true, "svc", &writable).is_ok());
+    }
+
+    fn test_service_config() -> ServiceConfig {
+        ServiceConfig {
+            engine: EngineKind::Nerdctl,
+            engine_bin: "/usr/local/bin/nerdctl".to_string(),
+            oci_runtime: None,
+            containerd_namespace: "k8s.io".to_string(),
+            network: "host".to_string(),
+            pull_policy: Some("never".to_string()),
+            database_url: None,
+            app_config_key: "container-pool.runtime-pools.v1".to_string(),
+            app_config_scope: "default".to_string(),
+            nats_url: None,
+            nats_subject: "dd.remote.container_pool.requests".to_string(),
+            nats_result_subject: "dd.remote.container_pool.results".to_string(),
+            nats_max_payload_bytes: 1024,
+            redis_url: None,
+            redis_lock_prefix: "lock".to_string(),
+            redis_lock_ttl: Duration::from_secs(1),
+            redis_lock_wait_timeout: Duration::from_secs(1),
+            redis_lock_retry_delay: Duration::from_millis(10),
+            redis_lock_request_timeout: Duration::from_secs(1),
+            worker_response_max_bytes: 1024,
+            config_refresh: Duration::from_secs(1),
+            reconcile_interval: Duration::from_secs(1),
+            command_timeout: Duration::from_secs(1),
+            nerdctl_run_timeout: Duration::from_secs(1),
+            container_start_timeout: Duration::from_secs(1),
+            health_check_interval: Duration::from_secs(1),
+            health_check_timeout: Duration::from_millis(100),
+            unhealthy_grace: Duration::from_secs(1),
+            unhealthy_failure_threshold: 2,
+            port_start: 12_000,
+            port_end: 12_999,
+            cleanup_on_start: false,
+            server_auth_secret: None,
+            container_memory: Some("256m".to_string()),
+            container_cpus: Some("0.50".to_string()),
+            forward_env_keys: Vec::new(),
+            pids_limit: 4096,
+            nofile_limit: 65536,
+            cap_drop_all: true,
+            no_new_privileges: true,
+            mount_source_allowlist: Vec::new(),
+            allow_writable_mounts: false,
+        }
+    }
+
+    fn code_pool(slug: &str, image: &str, command: &[&str]) -> PoolConfig {
+        let value = json!({
+            "slug": slug,
+            "image": image,
+            "mounts": [{ "source": "dd-code", "target": "/opt/code", "readOnly": true }],
+            "command": command,
+        });
+        pool_config_from_json(&value).expect("valid pool config")
+    }
+
+    fn contains_pair(args: &[String], a: &str, b: &str) -> bool {
+        args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    fn tail_is(args: &[String], tail: &[&str]) -> bool {
+        args.len() >= tail.len()
+            && args[args.len() - tail.len()..]
+                .iter()
+                .zip(tail)
+                .all(|(got, want)| got == want)
+    }
+
+    #[test]
+    fn shared_volume_code_runs_eight_runtimes_zero_copy() {
+        let config = test_service_config();
+        // Code (not data) is shared read-only from one volume; the image only
+        // supplies the runtime/libc. Covers multi-file trees (erlang ebin, java
+        // classpath, node/python/ruby/bash sources) and single compiled binaries
+        // (go, rust) — all zero-copy, no per-function image build.
+        let runtimes: [(&str, &str, &[&str]); 8] = [
+            ("nodejs-fn", "docker.io/library/dd-cp-nodejs:dev", &["node", "/opt/code/server.mjs"]),
+            ("python-fn", "docker.io/library/dd-cp-python3:dev", &["python3", "/opt/code/app.py"]),
+            ("ruby-fn", "docker.io/library/dd-cp-ruby:dev", &["ruby", "/opt/code/app.rb"]),
+            ("bash-fn", "docker.io/library/dd-cp-bash:dev", &["bash", "/opt/code/run.sh"]),
+            (
+                "erlang-fn",
+                "docker.io/library/dd-cp-erlang:dev",
+                &["erl", "-noshell", "-pa", "/opt/code/ebin", "-s", "myapp", "start"],
+            ),
+            ("golang-fn", "docker.io/library/dd-cp-golang:dev", &["/opt/code/bin/server"]),
+            ("rust-fn", "docker.io/library/dd-cp-rust:dev", &["/opt/code/bin/svc"]),
+            ("java-fn", "docker.io/library/dd-cp-java:dev", &["java", "-cp", "/opt/code/classes", "Main"]),
+        ];
+        for (slug, image, command) in runtimes {
+            let pool = code_pool(slug, image, command);
+            let args = build_run_args(&config, &pool, "c1", 12_345, &BTreeMap::new())
+                .unwrap_or_else(|error| panic!("{slug}: {error}"));
+            assert!(
+                contains_pair(&args, "--volume", "dd-code:/opt/code:ro"),
+                "{slug} shared-volume mount missing: {args:?}"
+            );
+            let mut tail = vec![image];
+            tail.extend_from_slice(command);
+            assert!(tail_is(&args, &tail), "{slug} image+command tail wrong: {args:?}");
+            // Hardening still applies uniformly across runtimes.
+            assert!(contains_pair(&args, "--cap-drop", "ALL"), "{slug} cap-drop");
+            assert!(args.iter().any(|arg| arg == "--read-only"), "{slug} read-only");
+        }
+    }
+
+    #[test]
+    fn engine_kind_controls_namespace_flag() {
+        let pool = code_pool("nodejs-fn", "docker.io/library/x:dev", &["node", "/opt/code/s.mjs"]);
+
+        let nerd = test_service_config();
+        let args = build_run_args(&nerd, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert_eq!(&args[0..4], &["-n", "k8s.io", "run", "-d"], "nerdctl scopes to a namespace");
+
+        for engine in [EngineKind::Docker, EngineKind::Podman] {
+            let mut config = test_service_config();
+            config.engine = engine;
+            let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+            assert_eq!(&args[0..2], &["run", "-d"], "{engine:?} omits namespace");
+            assert!(!args.iter().any(|arg| arg == "-n"), "{engine:?} has no -n");
+        }
+    }
+
+    #[test]
+    fn oci_runtime_passthrough_and_validation() {
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/bin/app"]);
+        // runc/crun and the containerd Kata/gVisor handlers all flow through
+        // --runtime under any engine.
+        for runtime in ["runc", "crun", "runsc", "io.containerd.kata.v2", "io.containerd.runsc.v1"] {
+            let mut config = test_service_config();
+            config.engine = EngineKind::Docker;
+            config.oci_runtime = Some(runtime.to_string());
+            let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+            assert!(contains_pair(&args, "--runtime", runtime), "{runtime}: {args:?}");
+        }
+        let config = test_service_config();
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|arg| arg == "--runtime"), "no --runtime when unset");
+
+        assert!(safe_oci_runtime("crun"));
+        assert!(safe_oci_runtime("io.containerd.kata.v2"));
+        assert!(safe_oci_runtime("/usr/local/bin/crun"));
+        assert!(!safe_oci_runtime("runc; rm -rf /"));
+        assert!(!safe_oci_runtime("two words"));
+        assert!(!safe_oci_runtime(""));
+    }
+
+    #[test]
+    fn bridge_network_publishes_host_port() {
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/app"]);
+        let mut config = test_service_config();
+        config.network = "bridge".to_string();
+        let args = build_run_args(&config, &pool, "c1", 23_456, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--network", "bridge"));
+        assert!(contains_pair(&args, "--publish", "127.0.0.1:23456:8080"));
     }
 }

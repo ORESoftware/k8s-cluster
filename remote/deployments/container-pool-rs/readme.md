@@ -162,6 +162,27 @@ By default the manager calls `/usr/local/bin/nerdctl -n k8s.io run -d`, allocate
 `CONTAINER_POOL_NETWORK=host` is the default for the EC2 runtime; workers should listen on the
 injected `PORT` value.
 
+### Container engines and OCI runtimes
+
+The engine is selected with `CONTAINER_POOL_ENGINE` (default `nerdctl`; also `docker`, `podman`) —
+these share one Docker-UX `run`/`ps`/`inspect`/`rm` flag surface. nerdctl scopes to the containerd
+namespace via the global `-n` (`CONTAINER_POOL_CONTAINERD_NAMESPACE`); docker/podman take no
+namespace. The binary path is `CONTAINER_POOL_ENGINE_BIN` (falls back to the legacy
+`CONTAINER_POOL_NERDCTL_BIN`, else a per-engine default).
+
+The low-level **OCI runtime** is orthogonal and set with `CONTAINER_POOL_OCI_RUNTIME`, passed through
+as `--runtime` under whichever engine is active. This covers `runc` (default when unset), `crun`,
+and sandboxed runtimes — gVisor (`runsc`, or `io.containerd.runsc.v1` under containerd/nerdctl) and
+Kata Containers (`io.containerd.kata.v2`). The value is validated to a runtime handler name or an
+absolute binary path (no whitespace/shell metacharacters). So `nerdctl` over `containerd` with
+`--runtime io.containerd.kata.v2` gives Kata-isolated warm pools; `docker --runtime runsc` gives
+gVisor. Any OCI image (built declaratively from a Dockerfile) works across all of these.
+
+**Out of scope:** `LXD` (system containers, not Dockerfile/OCI images) and `CRI-O` (driven via
+`crictl` with a pod-sandbox + container JSON spec, not a `docker run`-style CLI) use fundamentally
+different command models and are not driven by this manager. Use one of the Docker-UX engines above
+to run OCI images; select `runc`/`crun`/Kata/gVisor via `--runtime` for the isolation profile.
+
 ## Worker contract
 
 Every managed worker image should implement this convention:

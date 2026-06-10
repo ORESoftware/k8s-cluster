@@ -138,6 +138,7 @@ enum EscrowKind {
     SubscriptionRelease,
     GroupBuy,
     DisputeResolution,
+    CollabShow,
 }
 
 impl EscrowKind {
@@ -153,11 +154,12 @@ impl EscrowKind {
             EscrowKind::SubscriptionRelease => "subscription-release",
             EscrowKind::GroupBuy => "group-buy",
             EscrowKind::DisputeResolution => "dispute-resolution",
+            EscrowKind::CollabShow => "collab-show",
         }
     }
 }
 
-const ESCROW_KINDS: [EscrowKind; 10] = [
+const ESCROW_KINDS: [EscrowKind; 11] = [
     EscrowKind::MarketplaceOrder,
     EscrowKind::Milestone,
     EscrowKind::FreelanceContract,
@@ -168,6 +170,7 @@ const ESCROW_KINDS: [EscrowKind; 10] = [
     EscrowKind::SubscriptionRelease,
     EscrowKind::GroupBuy,
     EscrowKind::DisputeResolution,
+    EscrowKind::CollabShow,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -189,6 +192,7 @@ enum PartyRole {
     Fulfiller,
     Landlord,
     Tenant,
+    Creator,
 }
 
 impl PartyRole {
@@ -210,6 +214,7 @@ impl PartyRole {
             PartyRole::Fulfiller => "fulfiller",
             PartyRole::Landlord => "landlord",
             PartyRole::Tenant => "tenant",
+            PartyRole::Creator => "creator",
         }
     }
 }
@@ -1104,6 +1109,27 @@ fn kind_spec(kind: EscrowKind) -> KindSpec {
                 SettlementAction::Cancel,
             ],
         },
+        EscrowKind::CollabShow => KindSpec {
+            kind,
+            description: "Two-creator collaboration/show escrow: each creator funds a commitment stake plus a shared pool, split by revenue-share payoutBps on success, with a required arbiter awarding or splitting funds on a no-show or rule violation.",
+            min_parties: 3,
+            required_roles: vec![PartyRole::Creator, PartyRole::Arbitrator],
+            release_modes: vec![
+                ReleaseMode::ArbiterDecision,
+                ReleaseMode::MultiSig,
+                ReleaseMode::TimeLocked,
+                ReleaseMode::DeliveryProof,
+            ],
+            settlement_actions: vec![
+                SettlementAction::Fund,
+                SettlementAction::SplitRelease,
+                SettlementAction::Release,
+                SettlementAction::Refund,
+                SettlementAction::DisputeAward,
+                SettlementAction::Expire,
+                SettlementAction::Cancel,
+            ],
+        },
     }
 }
 
@@ -1314,6 +1340,16 @@ fn validate_parties(
             .count();
         if contributors < 2 {
             errors.push("group-buy escrow requires at least two contributor parties".to_string());
+        }
+    }
+    if request.kind == EscrowKind::CollabShow {
+        let creators = request
+            .parties
+            .iter()
+            .filter(|party| party.role == PartyRole::Creator)
+            .count();
+        if creators < 2 {
+            errors.push("collab-show escrow requires at least two creator parties".to_string());
         }
     }
 }
@@ -1797,6 +1833,7 @@ fn is_refundable_role(role: PartyRole) -> bool {
             | PartyRole::Client
             | PartyRole::Tenant
             | PartyRole::Contributor
+            | PartyRole::Creator
     )
 }
 
@@ -2491,6 +2528,106 @@ fn example_request() -> EscrowIntentRequest {
         }),
         memo: Some("example marketplace escrow intent".to_string()),
         metadata: Some(json!({ "source": "dd-escrow-rs-example" })),
+    }
+}
+
+/// Worked `collab-show` intent: two creators (60/40 revenue split) each stake a
+/// commitment bond into a shared vault that also holds a prize pool, with a
+/// required arbiter who awards or splits funds on a no-show or rule violation.
+/// The per-creator stake, pool size, show date, and rules live in `metadata`;
+/// the on-chain program (`settlementPlan.programId`) enforces the amounts.
+fn collab_show_example() -> EscrowIntentRequest {
+    let system_program = "11111111111111111111111111111111".to_string();
+    let creator_a = system_program.clone();
+    let creator_b = system_program.clone();
+    let arbiter = system_program.clone();
+    let show_date = now_unix_seconds() + 14 * 24 * 60 * 60;
+    EscrowIntentRequest {
+        schema_version: SCHEMA_VERSION.to_string(),
+        request_id: Some("collab-show-demo".to_string()),
+        cluster: Some("devnet".to_string()),
+        kind: EscrowKind::CollabShow,
+        escrow_id: "collab.show.001".to_string(),
+        parties: vec![
+            EscrowParty {
+                role: PartyRole::Creator,
+                pubkey: creator_a.clone(),
+                label: Some("creator-a".to_string()),
+                required_signer: Some(true),
+                payout_bps: Some(6_000),
+            },
+            EscrowParty {
+                role: PartyRole::Creator,
+                pubkey: creator_b.clone(),
+                label: Some("creator-b".to_string()),
+                required_signer: Some(true),
+                payout_bps: Some(4_000),
+            },
+            EscrowParty {
+                role: PartyRole::Arbitrator,
+                pubkey: arbiter,
+                label: Some("arbiter".to_string()),
+                required_signer: Some(false),
+                payout_bps: None,
+            },
+        ],
+        asset: EscrowAsset {
+            asset_type: AssetType::Sol,
+            mint: None,
+            // Total locked value = both creators' stakes + the shared prize pool
+            // (2_000_000 + 2_000_000 + 5_000_000), broken down in `metadata`.
+            amount_lamports: Some(9_000_000),
+            token_amount: None,
+            decimals: None,
+            collection: None,
+            escrow_vault: Some(system_program.clone()),
+        },
+        terms: EscrowTerms {
+            release_mode: ReleaseMode::ArbiterDecision,
+            settlement_actions: Some(vec![
+                SettlementAction::Fund,
+                SettlementAction::SplitRelease,
+                SettlementAction::Refund,
+                SettlementAction::DisputeAward,
+                SettlementAction::Expire,
+                SettlementAction::Cancel,
+            ]),
+            dispute_window_seconds: Some(7 * 24 * 60 * 60),
+            inspection_period_seconds: None,
+            timeout_unix_seconds: Some(show_date),
+            milestones: None,
+            required_approvals: Some(vec![PartyRole::Creator]),
+            max_partial_releases: None,
+            delivery_required: Some(true),
+        },
+        settlement_plan: Some(SettlementPlan {
+            program_id: system_program,
+            vault_pubkey: None,
+            fee_bps: Some(50),
+            memo_required: Some(true),
+        }),
+        memo: Some("collab show: two creators stake + shared pool, split on success".to_string()),
+        metadata: Some(json!({
+            "product": "collab-show",
+            "showTitle": "Creator A x Creator B live collab",
+            "showDateUnix": show_date,
+            "stakeLamports": { "creator-a": 2_000_000, "creator-b": 2_000_000 },
+            "prizePoolLamports": 5_000_000,
+            "revenueSplitBps": { "creator-a": 6_000, "creator-b": 4_000 },
+            "rules": [
+                {
+                    "id": "attendance",
+                    "description": "Both creators must join the live show at showDateUnix",
+                    "onBreach": "dispute-award-to-other"
+                },
+                {
+                    "id": "conduct",
+                    "description": "No content-policy or conduct violations during the show",
+                    "onBreach": "arbiter-decision"
+                }
+            ],
+            "arbiterPolicy": "Arbiter rules within disputeWindowSeconds: dispute-award the breacher's stake to the wronged creator, or set a split."
+        })),
     }
 }
 
@@ -3535,13 +3672,14 @@ mod tests {
     }
 
     #[test]
-    fn catalog_has_ten_escrow_kinds() {
+    fn catalog_has_eleven_escrow_kinds() {
         let catalog = kind_catalog();
-        assert_eq!(catalog.len(), 10);
+        assert_eq!(catalog.len(), 11);
         assert!(catalog
             .iter()
             .any(|entry| entry.kind == "marketplace-order"));
         assert!(catalog.iter().any(|entry| entry.kind == "group-buy"));
+        assert!(catalog.iter().any(|entry| entry.kind == "collab-show"));
     }
 
     #[test]
@@ -3830,6 +3968,103 @@ mod tests {
             &resolution,
             &[party(PartyRole::Contributor), party(PartyRole::Seller)],
             ReleaseMode::TimeLocked,
+        );
+        assert!(errors.is_empty(), "expected no errors, got {errors:?}");
+    }
+
+    #[test]
+    fn collab_show_example_validates() {
+        let request = collab_show_example();
+        let response = validate_escrow_intent(&request, "devnet", &[])
+            .expect("collab-show example should validate");
+        assert_eq!(response.kind, EscrowKind::CollabShow);
+        assert_eq!(response.party_count, 3);
+        assert!(response.on_chain_settlement_ready);
+        assert!(response
+            .required_roles
+            .iter()
+            .any(|role| *role == "creator"));
+    }
+
+    #[test]
+    fn collab_show_requires_two_creators() {
+        let mut request = collab_show_example();
+        // Demote the second creator so only one creator remains.
+        request.parties[1].role = PartyRole::Platform;
+        request.parties[1].payout_bps = None;
+        request.parties[0].payout_bps = Some(10_000);
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject a single-creator collab show");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("at least two creator")));
+    }
+
+    #[test]
+    fn collab_show_requires_arbiter() {
+        let mut request = collab_show_example();
+        // Drop the arbiter party.
+        request.parties.retain(|p| p.role != PartyRole::Arbitrator);
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject a collab show with no arbiter");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("role arbitrator")));
+    }
+
+    #[test]
+    fn collab_show_no_show_awards_other_creator() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::DisputeAward,
+            winner_role: Some(PartyRole::Creator),
+            refund_role: None,
+            allocations: None,
+            rationale: Some("creator-b no-showed".to_string()),
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::CollabShow,
+            SettlementAction::DisputeAward,
+            &resolution,
+            &[
+                party(PartyRole::Creator),
+                party(PartyRole::Creator),
+                party(PartyRole::Arbitrator),
+            ],
+            ReleaseMode::ArbiterDecision,
+        );
+        assert!(errors.is_empty(), "expected no errors, got {errors:?}");
+    }
+
+    #[test]
+    fn collab_show_arbiter_split_validates() {
+        let resolution = EscrowResolution {
+            outcome: ResolutionOutcome::Split,
+            winner_role: None,
+            refund_role: None,
+            allocations: Some(vec![
+                ResolutionAllocation {
+                    role: PartyRole::Creator,
+                    pubkey: None,
+                    payout_bps: 7_000,
+                },
+                ResolutionAllocation {
+                    role: PartyRole::Creator,
+                    pubkey: None,
+                    payout_bps: 3_000,
+                },
+            ]),
+            rationale: Some("arbiter-set partial-fault split".to_string()),
+        };
+        let (errors, _) = run_resolution(
+            EscrowKind::CollabShow,
+            SettlementAction::SplitRelease,
+            &resolution,
+            &[
+                party(PartyRole::Creator),
+                party(PartyRole::Creator),
+                party(PartyRole::Arbitrator),
+            ],
+            ReleaseMode::ArbiterDecision,
         );
         assert!(errors.is_empty(), "expected no errors, got {errors:?}");
     }
