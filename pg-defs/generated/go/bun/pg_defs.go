@@ -94,6 +94,8 @@ var usaccLedgerEntriesCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
 var usaccAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,96}$`)
 var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
 var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var vcsRepositoriesSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var vcsRepositoriesDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,160}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -5648,6 +5650,155 @@ func (value BenefactorIcpsBun) Validate() error {
 	if !validateRawJSON(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
 	if !validateRawJSON(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsRepositoriesTable = "vcs_repositories"
+const VcsRepositoriesSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      vcs_kind,
+      remote_url,
+      default_branch,
+      mirror_path,
+      mirror_status,
+      visibility,
+      to_char(last_synced_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_synced_at,
+      last_error,
+      size_bytes,
+      ref_count,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from vcs_repositories`
+
+var VcsRepositoriesVcsKindValues = []string{"git", "hg", "svn", "fossil"}
+var VcsRepositoriesMirrorStatusValues = []string{"pending", "mirroring", "ready", "error", "disabled"}
+var VcsRepositoriesVisibilityValues = []string{"private", "internal", "public"}
+
+type VcsRepositoriesBun struct {
+	bun.BaseModel `bun:"table:vcs_repositories"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
+	VcsKind string `bun:"vcs_kind,type:varchar(20),default:'git'" json:"vcsKind"`
+	RemoteUrl string `bun:"remote_url,type:text" json:"remoteUrl"`
+	DefaultBranch string `bun:"default_branch,type:varchar(160),default:'main'" json:"defaultBranch"`
+	MirrorPath *string `bun:"mirror_path,type:text,nullzero" json:"mirrorPath,omitempty"`
+	MirrorStatus string `bun:"mirror_status,type:varchar(32),default:'pending'" json:"mirrorStatus"`
+	Visibility string `bun:"visibility,type:varchar(20),default:'private'" json:"visibility"`
+	LastSyncedAt *time.Time `bun:"last_synced_at,type:timestamptz,nullzero" json:"lastSyncedAt,omitempty"`
+	LastError *string `bun:"last_error,type:text,nullzero" json:"lastError,omitempty"`
+	SizeBytes int64 `bun:"size_bytes,type:bigint,default:0" json:"sizeBytes"`
+	RefCount int32 `bun:"ref_count,type:integer,default:0" json:"refCount"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value VcsRepositoriesBun) Validate() error {
+	if !vcsRepositoriesSlugPattern.MatchString(value.Slug) { return errors.New("vcs_repositories.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("vcs_repositories.display_name exceeds 200 bytes") }
+	if !containsString(VcsRepositoriesVcsKindValues, value.VcsKind) { return errors.New("unsupported vcs_repositories.vcs_kind") }
+	if len([]byte(value.RemoteUrl)) > 2048 { return errors.New("vcs_repositories.remote_url exceeds 2048 bytes") }
+	if !vcsRepositoriesDefaultBranchPattern.MatchString(value.DefaultBranch) { return errors.New("vcs_repositories.default_branch does not match the required pattern") }
+	if !containsString(VcsRepositoriesMirrorStatusValues, value.MirrorStatus) { return errors.New("unsupported vcs_repositories.mirror_status") }
+	if !containsString(VcsRepositoriesVisibilityValues, value.Visibility) { return errors.New("unsupported vcs_repositories.visibility") }
+	if value.SizeBytes < 0 { return errors.New("vcs_repositories.size_bytes is below the minimum") }
+	if value.RefCount < 0 { return errors.New("vcs_repositories.ref_count is below the minimum") }
+	if !validateRawJSON(value.MetaData) { return errors.New("vcs_repositories.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsRefsTable = "vcs_refs"
+const VcsRefsSelectSQL = `select
+      id::text as id,
+      repository_id::text as repository_id,
+      ref_name,
+      ref_type,
+      target_revision,
+      is_default,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_refs`
+
+var VcsRefsRefTypeValues = []string{"branch", "tag", "bookmark", "head", "other"}
+
+type VcsRefsBun struct {
+	bun.BaseModel `bun:"table:vcs_refs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	RepositoryId uuid.UUID `bun:"repository_id,type:uuid" json:"repositoryId"`
+	RefName string `bun:"ref_name,type:varchar(255)" json:"refName"`
+	RefType string `bun:"ref_type,type:varchar(20),default:'branch'" json:"refType"`
+	TargetRevision string `bun:"target_revision,type:varchar(120)" json:"targetRevision"`
+	IsDefault bool `bun:"is_default,type:boolean,default:false" json:"isDefault"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value VcsRefsBun) Validate() error {
+	if len([]byte(value.RefName)) > 255 { return errors.New("vcs_refs.ref_name exceeds 255 bytes") }
+	if !containsString(VcsRefsRefTypeValues, value.RefType) { return errors.New("unsupported vcs_refs.ref_type") }
+	if len([]byte(value.TargetRevision)) > 120 { return errors.New("vcs_refs.target_revision exceeds 120 bytes") }
+	if len([]byte(value.TargetRevision)) < 1 { return errors.New("vcs_refs.target_revision is below 1 bytes") }
+	if !validateRawJSON(value.MetaData) { return errors.New("vcs_refs.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsOperationsTable = "vcs_operations"
+const VcsOperationsSelectSQL = `select
+      id::text as id,
+      repository_id::text as repository_id,
+      vcs_kind,
+      op_type,
+      status,
+      params,
+      result_summary,
+      error,
+      duration_ms,
+      requested_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_operations`
+
+var VcsOperationsVcsKindValues = []string{"git", "hg", "svn", "fossil"}
+var VcsOperationsOpTypeValues = []string{"mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"}
+var VcsOperationsStatusValues = []string{"pending", "running", "success", "error"}
+
+type VcsOperationsBun struct {
+	bun.BaseModel `bun:"table:vcs_operations"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	RepositoryId *uuid.UUID `bun:"repository_id,type:uuid,nullzero" json:"repositoryId,omitempty"`
+	VcsKind string `bun:"vcs_kind,type:varchar(20),default:'git'" json:"vcsKind"`
+	OpType string `bun:"op_type,type:varchar(32)" json:"opType"`
+	Status string `bun:"status,type:varchar(20),default:'pending'" json:"status"`
+	Params json.RawMessage `bun:"params,type:jsonb,default:'{}'::jsonb" json:"params"`
+	ResultSummary json.RawMessage `bun:"result_summary,type:jsonb,default:'{}'::jsonb" json:"resultSummary"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	DurationMs *int32 `bun:"duration_ms,type:integer,nullzero" json:"durationMs,omitempty"`
+	RequestedBy *string `bun:"requested_by,type:varchar(200),nullzero" json:"requestedBy,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value VcsOperationsBun) Validate() error {
+	if !containsString(VcsOperationsVcsKindValues, value.VcsKind) { return errors.New("unsupported vcs_operations.vcs_kind") }
+	if !containsString(VcsOperationsOpTypeValues, value.OpType) { return errors.New("unsupported vcs_operations.op_type") }
+	if !containsString(VcsOperationsStatusValues, value.Status) { return errors.New("unsupported vcs_operations.status") }
+	if !validateRawJSON(value.Params) { return errors.New("vcs_operations.params must be valid JSON") }
+	if !validateRawJSON(value.ResultSummary) { return errors.New("vcs_operations.result_summary must be valid JSON") }
+	if value.DurationMs != nil {
+		if *value.DurationMs < 0 { return errors.New("vcs_operations.duration_ms is below the minimum") }
+	}
 	return nil
 }
 

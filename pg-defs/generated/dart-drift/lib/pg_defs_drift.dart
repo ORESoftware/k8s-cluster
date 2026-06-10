@@ -2801,6 +2801,85 @@ class BenefactorIcpsTable extends Table {
   };
 }
 
+@DataClassName("VcsRepositoriesData")
+class VcsRepositoriesTable extends Table {
+  @override String get tableName => "vcs_repositories";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 200)();
+  TextColumn get vcsKind => text().named("vcs_kind").clientDefault(() => 'git')();
+  TextColumn get remoteUrl => text().named("remote_url")();
+  TextColumn get defaultBranch => text().named("default_branch").withLength(max: 160).clientDefault(() => 'main')();
+  TextColumn get mirrorPath => text().named("mirror_path").nullable()();
+  TextColumn get mirrorStatus => text().named("mirror_status").clientDefault(() => 'pending')();
+  TextColumn get visibility => text().named("visibility").clientDefault(() => 'private')();
+  DateTimeColumn get lastSyncedAt => dateTime().named("last_synced_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").nullable()();
+  Int64Column get sizeBytes => int64().named("size_bytes").clientDefault(() => 0)();
+  IntColumn get refCount => integer().named("ref_count").clientDefault(() => 0)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VcsRefsData")
+class VcsRefsTable extends Table {
+  @override String get tableName => "vcs_refs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get repositoryId => text().named("repository_id").customConstraint("UUID REFERENCES vcs_repositories (id)")();
+  TextColumn get refName => text().named("ref_name").withLength(max: 255)();
+  TextColumn get refType => text().named("ref_type").clientDefault(() => 'branch')();
+  TextColumn get targetRevision => text().named("target_revision").withLength(max: 120)();
+  BoolColumn get isDefault => boolean().named("is_default").clientDefault(() => false)();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("VcsOperationsData")
+class VcsOperationsTable extends Table {
+  @override String get tableName => "vcs_operations";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get repositoryId => text().named("repository_id").nullable().customConstraint("UUID REFERENCES vcs_repositories (id)")();
+  TextColumn get vcsKind => text().named("vcs_kind").clientDefault(() => 'git')();
+  TextColumn get opType => text().named("op_type")();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  TextColumn get params => text().named("params").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get resultSummary => text().named("result_summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  IntColumn get durationMs => integer().named("duration_ms").nullable()();
+  TextColumn get requestedBy => text().named("requested_by").withLength(max: 200).nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -2905,4 +2984,7 @@ const List<Type> registeredDriftTables = <Type>[
   BenefactorScrapeQueriesTable,
   BenefactorDomainSearchTrackingTable,
   BenefactorIcpsTable,
+  VcsRepositoriesTable,
+  VcsRefsTable,
+  VcsOperationsTable,
 ];

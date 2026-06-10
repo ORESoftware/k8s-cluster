@@ -94,6 +94,8 @@ var usaccLedgerEntriesCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,12}$`)
 var usaccAuditEventsEventTypePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,96}$`)
 var usaccAuditEventsEventHashPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
 var usaccAuditEventsSourcePattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,80}$`)
+var vcsRepositoriesSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,119}$`)
+var vcsRepositoriesDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,160}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -5749,6 +5751,158 @@ func (value BenefactorIcpsGorm) Validate() error {
 	if !validateJSONString(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
 	if !validateJSONString(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsRepositoriesTable = "vcs_repositories"
+const VcsRepositoriesSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      vcs_kind,
+      remote_url,
+      default_branch,
+      mirror_path,
+      mirror_status,
+      visibility,
+      to_char(last_synced_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_synced_at,
+      last_error,
+      size_bytes,
+      ref_count,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from vcs_repositories`
+
+var VcsRepositoriesVcsKindValues = []string{"git", "hg", "svn", "fossil"}
+var VcsRepositoriesMirrorStatusValues = []string{"pending", "mirroring", "ready", "error", "disabled"}
+var VcsRepositoriesVisibilityValues = []string{"private", "internal", "public"}
+
+type VcsRepositoriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
+	VcsKind string `gorm:"column:vcs_kind;type:varchar(20);default:'git';not null" json:"vcsKind"`
+	RemoteUrl string `gorm:"column:remote_url;type:text;not null" json:"remoteUrl"`
+	DefaultBranch string `gorm:"column:default_branch;type:varchar(160);default:'main';not null" json:"defaultBranch"`
+	MirrorPath *string `gorm:"column:mirror_path;type:text" json:"mirrorPath,omitempty"`
+	MirrorStatus string `gorm:"column:mirror_status;type:varchar(32);default:'pending';not null" json:"mirrorStatus"`
+	Visibility string `gorm:"column:visibility;type:varchar(20);default:'private';not null" json:"visibility"`
+	LastSyncedAt *time.Time `gorm:"column:last_synced_at;type:timestamptz" json:"lastSyncedAt,omitempty"`
+	LastError *string `gorm:"column:last_error;type:text" json:"lastError,omitempty"`
+	SizeBytes int64 `gorm:"column:size_bytes;type:bigint;default:0;not null" json:"sizeBytes"`
+	RefCount int32 `gorm:"column:ref_count;type:integer;default:0;not null" json:"refCount"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (VcsRepositoriesGorm) TableName() string { return VcsRepositoriesTable }
+
+func (value VcsRepositoriesGorm) Validate() error {
+	if !vcsRepositoriesSlugPattern.MatchString(value.Slug) { return errors.New("vcs_repositories.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("vcs_repositories.display_name exceeds 200 bytes") }
+	if !containsString(VcsRepositoriesVcsKindValues, value.VcsKind) { return errors.New("unsupported vcs_repositories.vcs_kind") }
+	if len([]byte(value.RemoteUrl)) > 2048 { return errors.New("vcs_repositories.remote_url exceeds 2048 bytes") }
+	if !vcsRepositoriesDefaultBranchPattern.MatchString(value.DefaultBranch) { return errors.New("vcs_repositories.default_branch does not match the required pattern") }
+	if !containsString(VcsRepositoriesMirrorStatusValues, value.MirrorStatus) { return errors.New("unsupported vcs_repositories.mirror_status") }
+	if !containsString(VcsRepositoriesVisibilityValues, value.Visibility) { return errors.New("unsupported vcs_repositories.visibility") }
+	if value.SizeBytes < 0 { return errors.New("vcs_repositories.size_bytes is below the minimum") }
+	if value.RefCount < 0 { return errors.New("vcs_repositories.ref_count is below the minimum") }
+	if !validateJSONString(value.MetaData) { return errors.New("vcs_repositories.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsRefsTable = "vcs_refs"
+const VcsRefsSelectSQL = `select
+      id::text as id,
+      repository_id::text as repository_id,
+      ref_name,
+      ref_type,
+      target_revision,
+      is_default,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_refs`
+
+var VcsRefsRefTypeValues = []string{"branch", "tag", "bookmark", "head", "other"}
+
+type VcsRefsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RepositoryId uuid.UUID `gorm:"column:repository_id;type:uuid;not null" json:"repositoryId"`
+	RefName string `gorm:"column:ref_name;type:varchar(255);not null" json:"refName"`
+	RefType string `gorm:"column:ref_type;type:varchar(20);default:'branch';not null" json:"refType"`
+	TargetRevision string `gorm:"column:target_revision;type:varchar(120);not null" json:"targetRevision"`
+	IsDefault bool `gorm:"column:is_default;type:boolean;default:false;not null" json:"isDefault"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (VcsRefsGorm) TableName() string { return VcsRefsTable }
+
+func (value VcsRefsGorm) Validate() error {
+	if len([]byte(value.RefName)) > 255 { return errors.New("vcs_refs.ref_name exceeds 255 bytes") }
+	if !containsString(VcsRefsRefTypeValues, value.RefType) { return errors.New("unsupported vcs_refs.ref_type") }
+	if len([]byte(value.TargetRevision)) > 120 { return errors.New("vcs_refs.target_revision exceeds 120 bytes") }
+	if len([]byte(value.TargetRevision)) < 1 { return errors.New("vcs_refs.target_revision is below 1 bytes") }
+	if !validateJSONString(value.MetaData) { return errors.New("vcs_refs.meta_data must be valid JSON") }
+	return nil
+}
+
+const VcsOperationsTable = "vcs_operations"
+const VcsOperationsSelectSQL = `select
+      id::text as id,
+      repository_id::text as repository_id,
+      vcs_kind,
+      op_type,
+      status,
+      params,
+      result_summary,
+      error,
+      duration_ms,
+      requested_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_operations`
+
+var VcsOperationsVcsKindValues = []string{"git", "hg", "svn", "fossil"}
+var VcsOperationsOpTypeValues = []string{"mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"}
+var VcsOperationsStatusValues = []string{"pending", "running", "success", "error"}
+
+type VcsOperationsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RepositoryId *uuid.UUID `gorm:"column:repository_id;type:uuid" json:"repositoryId,omitempty"`
+	VcsKind string `gorm:"column:vcs_kind;type:varchar(20);default:'git';not null" json:"vcsKind"`
+	OpType string `gorm:"column:op_type;type:varchar(32);not null" json:"opType"`
+	Status string `gorm:"column:status;type:varchar(20);default:'pending';not null" json:"status"`
+	Params datatypes.JSON `gorm:"column:params;type:jsonb;default:'{}'::jsonb;not null" json:"params"`
+	ResultSummary datatypes.JSON `gorm:"column:result_summary;type:jsonb;default:'{}'::jsonb;not null" json:"resultSummary"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	DurationMs *int32 `gorm:"column:duration_ms;type:integer" json:"durationMs,omitempty"`
+	RequestedBy *string `gorm:"column:requested_by;type:varchar(200)" json:"requestedBy,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (VcsOperationsGorm) TableName() string { return VcsOperationsTable }
+
+func (value VcsOperationsGorm) Validate() error {
+	if !containsString(VcsOperationsVcsKindValues, value.VcsKind) { return errors.New("unsupported vcs_operations.vcs_kind") }
+	if !containsString(VcsOperationsOpTypeValues, value.OpType) { return errors.New("unsupported vcs_operations.op_type") }
+	if !containsString(VcsOperationsStatusValues, value.Status) { return errors.New("unsupported vcs_operations.status") }
+	if !validateJSONString(value.Params) { return errors.New("vcs_operations.params must be valid JSON") }
+	if !validateJSONString(value.ResultSummary) { return errors.New("vcs_operations.result_summary must be valid JSON") }
+	if value.DurationMs != nil {
+		if *value.DurationMs < 0 { return errors.New("vcs_operations.duration_ms is below the minimum") }
+	}
 	return nil
 }
 

@@ -7995,3 +7995,237 @@ export const benefactorIcpsUpdateSchema = benefactorIcpsInsertSchema.partial();
 export type BenefactorIcpsRow = z.infer<typeof benefactorIcpsRowSchema>;
 export type BenefactorIcpsInsert = z.infer<typeof benefactorIcpsInsertSchema>;
 export type BenefactorIcpsUpdate = z.infer<typeof benefactorIcpsUpdateSchema>;
+
+export const vcsRepositoriesVcsKindValues = ["git","hg","svn","fossil"] as const;
+export const vcsRepositoriesVcsKindSchema = z.enum(vcsRepositoriesVcsKindValues);
+export type VcsRepositoriesVcsKind = z.infer<typeof vcsRepositoriesVcsKindSchema>;
+
+export const vcsRepositoriesMirrorStatusValues = ["pending","mirroring","ready","error","disabled"] as const;
+export const vcsRepositoriesMirrorStatusSchema = z.enum(vcsRepositoriesMirrorStatusValues);
+export type VcsRepositoriesMirrorStatus = z.infer<typeof vcsRepositoriesMirrorStatusSchema>;
+
+export const vcsRepositoriesVisibilityValues = ["private","internal","public"] as const;
+export const vcsRepositoriesVisibilitySchema = z.enum(vcsRepositoriesVisibilityValues);
+export type VcsRepositoriesVisibility = z.infer<typeof vcsRepositoriesVisibilitySchema>;
+
+export const vcsRepositories = pgTable(
+  "vcs_repositories",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 200 }).notNull(),
+    vcsKind: varchar("vcs_kind", { length: 20 }).default(sql`'git'`).notNull(),
+    remoteUrl: text("remote_url").notNull(),
+    defaultBranch: varchar("default_branch", { length: 160 }).default(sql`'main'`).notNull(),
+    mirrorPath: text("mirror_path"),
+    mirrorStatus: varchar("mirror_status", { length: 32 }).default(sql`'pending'`).notNull(),
+    visibility: varchar("visibility", { length: 20 }).default(sql`'private'`).notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "string" }),
+    lastError: text("last_error"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).default(sql`0`).notNull(),
+    refCount: integer("ref_count").default(sql`0`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    vcsRepositoriesSlugFormatChk: check("vcs_repositories_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9._-]{0,119}$'")),
+    vcsRepositoriesDisplayNameSizeChk: check("vcs_repositories_display_name_size_chk", sql.raw("octet_length(display_name) <= 200")),
+    vcsRepositoriesRemoteUrlSizeChk: check("vcs_repositories_remote_url_size_chk", sql.raw("octet_length(remote_url) <= 2048")),
+    vcsRepositoriesDefaultBranchFormatChk: check("vcs_repositories_default_branch_format_chk", sql.raw("default_branch ~ '^[A-Za-z0-9._/-]{1,160}$'")),
+    vcsRepositoriesVcsKindChk: check("vcs_repositories_vcs_kind_chk", sql.raw("vcs_kind in ('git', 'hg', 'svn', 'fossil')")),
+    vcsRepositoriesMirrorStatusChk: check("vcs_repositories_mirror_status_chk", sql.raw("mirror_status in ('pending', 'mirroring', 'ready', 'error', 'disabled')")),
+    vcsRepositoriesVisibilityChk: check("vcs_repositories_visibility_chk", sql.raw("visibility in ('private', 'internal', 'public')")),
+    vcsRepositoriesSizeBytesChk: check("vcs_repositories_size_bytes_chk", sql.raw("size_bytes >= 0")),
+    vcsRepositoriesRefCountChk: check("vcs_repositories_ref_count_chk", sql.raw("ref_count >= 0")),
+    vcsRepositoriesMetaObjectChk: check("vcs_repositories_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    vcsRepositoriesSlugActiveUq: uniqueIndex("vcs_repositories_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    vcsRepositoriesVcsKindIdx: index("vcs_repositories_vcs_kind_idx").on(table.vcsKind).where(sql.raw("is_soft_deleted = false")),
+    vcsRepositoriesMirrorStatusIdx: index("vcs_repositories_mirror_status_idx").on(table.mirrorStatus).where(sql.raw("is_soft_deleted = false")),
+    vcsRepositoriesUpdatedAtIdx: index("vcs_repositories_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const vcsRepositoriesRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  vcsKind: vcsRepositoriesVcsKindSchema,
+  remoteUrl: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  defaultBranch: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._/-]{1,160}$")),
+  mirrorPath: z.string().nullable(),
+  mirrorStatus: vcsRepositoriesMirrorStatusSchema,
+  visibility: vcsRepositoriesVisibilitySchema,
+  lastSyncedAt: z.string().datetime().nullable(),
+  lastError: z.string().nullable(),
+  sizeBytes: z.number().int().min(0),
+  refCount: z.number().int().min(0),
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const vcsRepositoriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9._-]{0,119}$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  vcsKind: vcsRepositoriesVcsKindSchema.optional().default("git"),
+  remoteUrl: z.string().refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
+  defaultBranch: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._/-]{1,160}$")).optional().default("main"),
+  mirrorPath: z.string().nullable().optional(),
+  mirrorStatus: vcsRepositoriesMirrorStatusSchema.optional().default("pending"),
+  visibility: vcsRepositoriesVisibilitySchema.optional().default("private"),
+  lastSyncedAt: z.string().datetime().nullable().optional(),
+  lastError: z.string().nullable().optional(),
+  sizeBytes: z.number().int().min(0).optional().default(0),
+  refCount: z.number().int().min(0).optional().default(0),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const vcsRepositoriesUpdateSchema = vcsRepositoriesInsertSchema.partial();
+export type VcsRepositoriesRow = z.infer<typeof vcsRepositoriesRowSchema>;
+export type VcsRepositoriesInsert = z.infer<typeof vcsRepositoriesInsertSchema>;
+export type VcsRepositoriesUpdate = z.infer<typeof vcsRepositoriesUpdateSchema>;
+
+export const vcsRefsRefTypeValues = ["branch","tag","bookmark","head","other"] as const;
+export const vcsRefsRefTypeSchema = z.enum(vcsRefsRefTypeValues);
+export type VcsRefsRefType = z.infer<typeof vcsRefsRefTypeSchema>;
+
+export const vcsRefs = pgTable(
+  "vcs_refs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    repositoryId: uuid("repository_id").notNull(),
+    refName: varchar("ref_name", { length: 255 }).notNull(),
+    refType: varchar("ref_type", { length: 20 }).default(sql`'branch'`).notNull(),
+    targetRevision: varchar("target_revision", { length: 120 }).notNull(),
+    isDefault: boolean("is_default").default(sql`false`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    vcsRefsRefNameSizeChk: check("vcs_refs_ref_name_size_chk", sql.raw("octet_length(ref_name) <= 255")),
+    vcsRefsRefTypeChk: check("vcs_refs_ref_type_chk", sql.raw("ref_type in ('branch', 'tag', 'bookmark', 'head', 'other')")),
+    vcsRefsTargetRevisionSizeChk: check("vcs_refs_target_revision_size_chk", sql.raw("octet_length(target_revision) between 1 and 120")),
+    vcsRefsMetaObjectChk: check("vcs_refs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    vcsRefsRepoNameUq: uniqueIndex("vcs_refs_repo_name_uq").on(table.repositoryId, table.refName),
+    vcsRefsRepositoryIdIdx: index("vcs_refs_repository_id_idx").on(table.repositoryId),
+  }),
+);
+
+export const vcsRefsRowSchema = z.object({
+  id: z.string().uuid(),
+  repositoryId: z.string().uuid(),
+  refName: z.string().max(255).refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  refType: vcsRefsRefTypeSchema,
+  targetRevision: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  isDefault: z.boolean(),
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const vcsRefsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  repositoryId: z.string().uuid(),
+  refName: z.string().max(255).refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  refType: vcsRefsRefTypeSchema.optional().default("branch"),
+  targetRevision: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes"),
+  isDefault: z.boolean().optional().default(false),
+  metaData: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const vcsRefsUpdateSchema = vcsRefsInsertSchema.partial();
+export type VcsRefsRow = z.infer<typeof vcsRefsRowSchema>;
+export type VcsRefsInsert = z.infer<typeof vcsRefsInsertSchema>;
+export type VcsRefsUpdate = z.infer<typeof vcsRefsUpdateSchema>;
+
+export const vcsOperationsVcsKindValues = ["git","hg","svn","fossil"] as const;
+export const vcsOperationsVcsKindSchema = z.enum(vcsOperationsVcsKindValues);
+export type VcsOperationsVcsKind = z.infer<typeof vcsOperationsVcsKindSchema>;
+
+export const vcsOperationsOpTypeValues = ["mirror","fetch","refs","log","show","diff","tree","blob","probe","remove"] as const;
+export const vcsOperationsOpTypeSchema = z.enum(vcsOperationsOpTypeValues);
+export type VcsOperationsOpType = z.infer<typeof vcsOperationsOpTypeSchema>;
+
+export const vcsOperationsStatusValues = ["pending","running","success","error"] as const;
+export const vcsOperationsStatusSchema = z.enum(vcsOperationsStatusValues);
+export type VcsOperationsStatus = z.infer<typeof vcsOperationsStatusSchema>;
+
+export const vcsOperations = pgTable(
+  "vcs_operations",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    repositoryId: uuid("repository_id"),
+    vcsKind: varchar("vcs_kind", { length: 20 }).default(sql`'git'`).notNull(),
+    opType: varchar("op_type", { length: 32 }).notNull(),
+    status: varchar("status", { length: 20 }).default(sql`'pending'`).notNull(),
+    params: jsonb("params").default(sql`'{}'::jsonb`).notNull(),
+    resultSummary: jsonb("result_summary").default(sql`'{}'::jsonb`).notNull(),
+    error: text("error"),
+    durationMs: integer("duration_ms"),
+    requestedBy: varchar("requested_by", { length: 200 }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    vcsOperationsVcsKindChk: check("vcs_operations_vcs_kind_chk", sql.raw("vcs_kind in ('git', 'hg', 'svn', 'fossil')")),
+    vcsOperationsOpTypeChk: check("vcs_operations_op_type_chk", sql.raw("op_type in ('mirror', 'fetch', 'refs', 'log', 'show', 'diff', 'tree', 'blob', 'probe', 'remove')")),
+    vcsOperationsStatusChk: check("vcs_operations_status_chk", sql.raw("status in ('pending', 'running', 'success', 'error')")),
+    vcsOperationsDurationChk: check("vcs_operations_duration_chk", sql.raw("duration_ms is null or duration_ms >= 0")),
+    vcsOperationsParamsObjectChk: check("vcs_operations_params_object_chk", sql.raw("jsonb_typeof(params) = 'object'")),
+    vcsOperationsResultObjectChk: check("vcs_operations_result_object_chk", sql.raw("jsonb_typeof(result_summary) = 'object'")),
+    vcsOperationsRepositoryIdIdx: index("vcs_operations_repository_id_idx").on(table.repositoryId),
+    vcsOperationsOpTypeIdx: index("vcs_operations_op_type_idx").on(table.opType),
+    vcsOperationsCreatedAtIdx: index("vcs_operations_created_at_idx").on(table.createdAt.desc()),
+  }),
+);
+
+export const vcsOperationsRowSchema = z.object({
+  id: z.string().uuid(),
+  repositoryId: z.string().uuid().nullable(),
+  vcsKind: vcsOperationsVcsKindSchema,
+  opType: vcsOperationsOpTypeSchema,
+  status: vcsOperationsStatusSchema,
+  params: jsonObjectSchema,
+  resultSummary: jsonObjectSchema,
+  error: z.string().nullable(),
+  durationMs: z.number().int().min(0).nullable(),
+  requestedBy: z.string().max(200).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const vcsOperationsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  repositoryId: z.string().uuid().nullable().optional(),
+  vcsKind: vcsOperationsVcsKindSchema.optional().default("git"),
+  opType: vcsOperationsOpTypeSchema,
+  status: vcsOperationsStatusSchema.optional().default("pending"),
+  params: jsonObjectSchema.optional().default({}),
+  resultSummary: jsonObjectSchema.optional().default({}),
+  error: z.string().nullable().optional(),
+  durationMs: z.number().int().min(0).nullable().optional(),
+  requestedBy: z.string().max(200).nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const vcsOperationsUpdateSchema = vcsOperationsInsertSchema.partial();
+export type VcsOperationsRow = z.infer<typeof vcsOperationsRowSchema>;
+export type VcsOperationsInsert = z.infer<typeof vcsOperationsInsertSchema>;
+export type VcsOperationsUpdate = z.infer<typeof vcsOperationsUpdateSchema>;

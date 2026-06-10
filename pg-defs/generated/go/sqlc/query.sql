@@ -1515,3 +1515,48 @@ update benefactor.benefactor_icps set slug = $2, name = $3, category = $4, servi
 
 -- name: DeleteBenefactorIcps :exec
 delete from benefactor.benefactor_icps where id = $1;
+
+-- name: ListVcsRepositories :many
+select id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from vcs_repositories;
+
+-- name: GetVcsRepositories :one
+select id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from vcs_repositories where id = $1 limit 1;
+
+-- name: CreateVcsRepositories :one
+insert into vcs_repositories (id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateVcsRepositories :one
+update vcs_repositories set slug = $2, display_name = $3, vcs_kind = $4, remote_url = $5, default_branch = $6, mirror_path = $7, mirror_status = $8, visibility = $9, last_synced_at = $10, last_error = $11, size_bytes = $12, ref_count = $13, meta_data = $14, is_soft_deleted = $15, updated_at = $16, created_by = $17, updated_by = $18 where id = $1 returning id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteVcsRepositories :exec
+delete from vcs_repositories where id = $1;
+
+-- name: ListVcsRefs :many
+select id, repository_id, ref_name, ref_type, target_revision, is_default, meta_data, created_at, updated_at from vcs_refs;
+
+-- name: GetVcsRefs :one
+select id, repository_id, ref_name, ref_type, target_revision, is_default, meta_data, created_at, updated_at from vcs_refs where id = $1 limit 1;
+
+-- name: CreateVcsRefs :one
+insert into vcs_refs (id, repository_id, ref_name, ref_type, target_revision, is_default, meta_data, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, repository_id, ref_name, ref_type, target_revision, is_default, meta_data, created_at, updated_at;
+
+-- name: UpdateVcsRefs :one
+update vcs_refs set repository_id = $2, ref_name = $3, ref_type = $4, target_revision = $5, is_default = $6, meta_data = $7, updated_at = $8 where id = $1 returning id, repository_id, ref_name, ref_type, target_revision, is_default, meta_data, created_at, updated_at;
+
+-- name: DeleteVcsRefs :exec
+delete from vcs_refs where id = $1;
+
+-- name: ListVcsOperations :many
+select id, repository_id, vcs_kind, op_type, status, params, result_summary, error, duration_ms, requested_by, created_at, updated_at from vcs_operations;
+
+-- name: GetVcsOperations :one
+select id, repository_id, vcs_kind, op_type, status, params, result_summary, error, duration_ms, requested_by, created_at, updated_at from vcs_operations where id = $1 limit 1;
+
+-- name: CreateVcsOperations :one
+insert into vcs_operations (id, repository_id, vcs_kind, op_type, status, params, result_summary, error, duration_ms, requested_by, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning id, repository_id, vcs_kind, op_type, status, params, result_summary, error, duration_ms, requested_by, created_at, updated_at;
+
+-- name: UpdateVcsOperations :one
+update vcs_operations set repository_id = $2, vcs_kind = $3, op_type = $4, status = $5, params = $6, result_summary = $7, error = $8, duration_ms = $9, requested_by = $10, updated_at = $11 where id = $1 returning id, repository_id, vcs_kind, op_type, status, params, result_summary, error, duration_ms, requested_by, created_at, updated_at;
+
+-- name: DeleteVcsOperations :exec
+delete from vcs_operations where id = $1;

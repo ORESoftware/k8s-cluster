@@ -9529,3 +9529,264 @@ class BenefactorIcpsObjectBox {
     );
   }
 }
+
+@Entity()
+class VcsRepositoriesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String displayName;
+
+  String vcsKind;
+
+  String remoteUrl;
+
+  String defaultBranch;
+
+  String? mirrorPath;
+
+  String mirrorStatus;
+
+  String visibility;
+
+  String? lastSyncedAt;
+
+  String? lastError;
+
+  int sizeBytes;
+
+  int refCount;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  VcsRepositoriesObjectBox({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.vcsKind,
+    required this.remoteUrl,
+    required this.defaultBranch,
+    this.mirrorPath,
+    required this.mirrorStatus,
+    required this.visibility,
+    this.lastSyncedAt,
+    this.lastError,
+    required this.sizeBytes,
+    required this.refCount,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "vcsKind": vcsKind,
+    "remoteUrl": remoteUrl,
+    "defaultBranch": defaultBranch,
+    "mirrorPath": mirrorPath,
+    "mirrorStatus": mirrorStatus,
+    "visibility": visibility,
+    "lastSyncedAt": lastSyncedAt,
+    "lastError": lastError,
+    "sizeBytes": sizeBytes,
+    "refCount": refCount,
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static VcsRepositoriesObjectBox fromJson(Map<String, Object?> json) {
+    return VcsRepositoriesObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      displayName: json["displayName"] as String,
+      vcsKind: json["vcsKind"] as String,
+      remoteUrl: json["remoteUrl"] as String,
+      defaultBranch: json["defaultBranch"] as String,
+      mirrorPath: json["mirrorPath"] as String?,
+      mirrorStatus: json["mirrorStatus"] as String,
+      visibility: json["visibility"] as String,
+      lastSyncedAt: json["lastSyncedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      sizeBytes: (json["sizeBytes"] as num).toInt(),
+      refCount: (json["refCount"] as num).toInt(),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class VcsRefsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String repositoryId;
+
+  String refName;
+
+  String refType;
+
+  String targetRevision;
+
+  bool isDefault;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  VcsRefsObjectBox({
+    required this.id,
+    required this.repositoryId,
+    required this.refName,
+    required this.refType,
+    required this.targetRevision,
+    required this.isDefault,
+    required this.metaData,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "repositoryId": repositoryId,
+    "refName": refName,
+    "refType": refType,
+    "targetRevision": targetRevision,
+    "isDefault": isDefault,
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static VcsRefsObjectBox fromJson(Map<String, Object?> json) {
+    return VcsRefsObjectBox(
+      id: json["id"] as String,
+      repositoryId: json["repositoryId"] as String,
+      refName: json["refName"] as String,
+      refType: json["refType"] as String,
+      targetRevision: json["targetRevision"] as String,
+      isDefault: json["isDefault"] as bool,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class VcsOperationsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? repositoryId;
+
+  String vcsKind;
+
+  String opType;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String params;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String resultSummary;
+
+  String? error;
+
+  int? durationMs;
+
+  String? requestedBy;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  VcsOperationsObjectBox({
+    required this.id,
+    this.repositoryId,
+    required this.vcsKind,
+    required this.opType,
+    required this.status,
+    required this.params,
+    required this.resultSummary,
+    this.error,
+    this.durationMs,
+    this.requestedBy,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "repositoryId": repositoryId,
+    "vcsKind": vcsKind,
+    "opType": opType,
+    "status": status,
+    "params": jsonDecode(params),
+    "resultSummary": jsonDecode(resultSummary),
+    "error": error,
+    "durationMs": durationMs,
+    "requestedBy": requestedBy,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static VcsOperationsObjectBox fromJson(Map<String, Object?> json) {
+    return VcsOperationsObjectBox(
+      id: json["id"] as String,
+      repositoryId: json["repositoryId"] as String?,
+      vcsKind: json["vcsKind"] as String,
+      opType: json["opType"] as String,
+      status: json["status"] as String,
+      params: json["params"] is String ? json["params"] as String : jsonEncode(json["params"]),
+      resultSummary: json["resultSummary"] is String ? json["resultSummary"] as String : jsonEncode(json["resultSummary"]),
+      error: json["error"] as String?,
+      durationMs: json["durationMs"] == null ? null : (json["durationMs"] as num).toInt(),
+      requestedBy: json["requestedBy"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}

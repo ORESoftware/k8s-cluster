@@ -96,7 +96,14 @@ public final class DdNatsSubjects {
     public static final String CONTACT_EMAIL_SEND_QUEUE_GROUP = "dd-email-sms-contact";
 
     /**
-     * Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+     * Send-a-push-notification request consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { transport: webpush|fcm|expo|apns, [title], [body], [data], [token] (fcm/expo/apns device token), [subscription] (webpush { endpoint, keys: { p256dh, auth } }) }.
+     * Service: dd-email-sms-contact-rs
+     */
+    public static final String CONTACT_PUSH_SEND_SUBJECT = "dd.remote.contact.push.send";
+    public static final String CONTACT_PUSH_SEND_QUEUE_GROUP = "dd-email-sms-contact";
+
+    /**
+     * Per-send result summaries published after each email/sms/push attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
      * Service: dd-email-sms-contact-rs
      */
     public static final String CONTACT_SEND_RESULTS_SUBJECT = "dd.remote.contact.results";
@@ -159,6 +166,31 @@ public final class DdNatsSubjects {
      */
     public static final String CRON_PROMPTS_SUBJECT = "dd.remote.cron.prompts";
     public static final String CRON_PROMPTS_STREAM = "DD_REMOTE_CRON";
+
+    /**
+     * Per-label annotation events emitted when a human annotator, model, or labeling function submits a label for a task item.
+     * Service: dd-dataset-labeling
+     */
+    public static final String DATASET_LABELING_LABEL_EVENTS_SUBJECT = "dd.remote.dataset_labeling.label.events";
+
+    /**
+     * Spark/Airflow pipeline job intents that materialize aggregated gold labels into training datasets for downstream model training.
+     * Service: dd-dataset-labeling
+     */
+    public static final String DATASET_LABELING_PIPELINE_JOBS_SUBJECT = "dd.remote.dataset_labeling.pipeline.jobs";
+
+    /**
+     * Aggregation, inter-annotator agreement, and gold-label export results from labeling runs.
+     * Service: dd-dataset-labeling
+     */
+    public static final String DATASET_LABELING_RESULTS_SUBJECT = "dd.remote.dataset_labeling.results";
+
+    /**
+     * Inbound labeling task/annotation requests accepted over NATS. Payloads mirror the HTTP /tasks, /labels, and /functions/apply contracts.
+     * Service: dd-dataset-labeling
+     */
+    public static final String DATASET_LABELING_TASK_REQUESTS_SUBJECT = "dd.remote.dataset_labeling.task.requests";
+    public static final String DATASET_LABELING_TASK_REQUESTS_QUEUE_GROUP = "dd-dataset-labeling";
 
     /**
      * Fan-out emitted on each evaluation of an enabled alert rule (disabled-rule evaluations are not published). Carries the rule id, title, current state (alerting/normal/no_data/error), and the triggering metric summary (observed value + condition) — never the underlying rows.
@@ -401,6 +433,44 @@ public final class DdNatsSubjects {
      * Service: shared
      */
     public static final String GIT_REPOS_CHANGES_SUBJECT = "dd.remote.git-repos.changes";
+
+    /**
+     * Inbound GPU job-scheduling requests (a fleet of GPUs plus jobs needing VRAM and an estimated duration) consumed by the scheduler. Subscribed with the dd-gpu-rs queue group so requests load-balance across replicas. Default for GPU_JOB_SUBJECT.
+     * Service: dd-gpu-rs
+     */
+    public static final String GPU_JOB_REQUESTS_SUBJECT = "dd.remote.gpu.jobs.requests";
+    public static final String GPU_JOB_REQUESTS_QUEUE_GROUP = "dd-gpu-rs";
+
+    /**
+     * Computed GPU placements (per-job gpu assignment, start/finish times, makespan, per-GPU memory utilisation, rejected jobs) emitted by the scheduler. Carries a gpu.schedule.v1 envelope. Default for GPU_RESULT_SUBJECT.
+     * Service: dd-gpu-rs
+     */
+    public static final String GPU_JOB_RESULTS_SUBJECT = "dd.remote.gpu.jobs.results";
+
+    /**
+     * Inbound knowledge-graph build requests accepted over NATS. Payloads mirror the HTTP /graph/upsert and /graph/extract contracts.
+     * Service: dd-knowledge-graph-builder
+     */
+    public static final String KNOWLEDGE_GRAPH_BUILD_REQUESTS_SUBJECT = "dd.remote.knowledge_graph.build.requests";
+    public static final String KNOWLEDGE_GRAPH_BUILD_REQUESTS_QUEUE_GROUP = "dd-knowledge-graph-builder";
+
+    /**
+     * Spark/Airflow graph-analytics pipeline job intents (PageRank, community detection, embeddings) generated from the constructed knowledge graph.
+     * Service: dd-knowledge-graph-builder
+     */
+    public static final String KNOWLEDGE_GRAPH_PIPELINE_JOBS_SUBJECT = "dd.remote.knowledge_graph.pipeline.jobs";
+
+    /**
+     * Query, path, and centrality/analysis results from knowledge-graph runs.
+     * Service: dd-knowledge-graph-builder
+     */
+    public static final String KNOWLEDGE_GRAPH_RESULTS_SUBJECT = "dd.remote.knowledge_graph.results";
+
+    /**
+     * Graph mutation events emitted after nodes and edges are upserted or extracted into the graph store. Consumers should treat this as an incremental change feed.
+     * Service: dd-knowledge-graph-builder
+     */
+    public static final String KNOWLEDGE_GRAPH_UPDATES_SUBJECT = "dd.remote.knowledge_graph.updates";
 
     /**
      * Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
@@ -1133,6 +1203,12 @@ public final class DdNatsSubjects {
     public static final String CRITICAL_EVENTS_LOGGER_QUEUE_GROUP = "dd-runtime-critical-events";
 
     /**
+     * Shared queue group used by dd-dataset-labeling replicas so each queued labeling task/annotation request is processed once.
+     * Service: dd-dataset-labeling
+     */
+    public static final String DATASET_LABELING_WORKERS_QUEUE_GROUP = "dd-dataset-labeling";
+
+    /**
      * Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
      * Service: dd-data-viz-rs
      */
@@ -1149,6 +1225,18 @@ public final class DdNatsSubjects {
      * Service: dd-evolution-optimizer
      */
     public static final String EVOLUTION_ISLANDS_QUEUE_GROUP = "dd-evolution-optimizer-islands";
+
+    /**
+     * Shared queue group used by dd-gpu-rs replicas consuming GPU job requests.
+     * Service: dd-gpu-rs
+     */
+    public static final String GPU_SCHEDULER_QUEUE_GROUP = "dd-gpu-rs";
+
+    /**
+     * Shared queue group used by dd-knowledge-graph-builder replicas so each queued build request is processed once.
+     * Service: dd-knowledge-graph-builder
+     */
+    public static final String KNOWLEDGE_GRAPH_WORKERS_QUEUE_GROUP = "dd-knowledge-graph-builder";
 
     /**
      * Shared queue group used by lambda-runner replicas.

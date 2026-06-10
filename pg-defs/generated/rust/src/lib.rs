@@ -16896,6 +16896,565 @@ pub fn validate_benefactor_icps_insert(value: &BenefactorIcpsInsert) -> Result<(
     Ok(())
 }
 
+pub const VCS_REPOSITORIES_TABLE: &str = "vcs_repositories";
+pub const VCS_REPOSITORIES_COLUMNS: &[&str] = &["id", "slug", "display_name", "vcs_kind", "remote_url", "default_branch", "mirror_path", "mirror_status", "visibility", "last_synced_at", "last_error", "size_bytes", "ref_count", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const VCS_REPOSITORIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      display_name,
+      vcs_kind,
+      remote_url,
+      default_branch,
+      mirror_path,
+      mirror_status,
+      visibility,
+      to_char(last_synced_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_synced_at,
+      last_error,
+      size_bytes,
+      ref_count,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from vcs_repositories"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsRepositoriesVcsKind {
+    Git,
+    Hg,
+    Svn,
+    Fossil,
+}
+
+impl VcsRepositoriesVcsKind {
+    pub const VALUES: &'static [&'static str] = &["git", "hg", "svn", "fossil"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Git => "git",
+            Self::Hg => "hg",
+            Self::Svn => "svn",
+            Self::Fossil => "fossil",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsRepositoriesVcsKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "git" => Ok(Self::Git),
+            "hg" => Ok(Self::Hg),
+            "svn" => Ok(Self::Svn),
+            "fossil" => Ok(Self::Fossil),
+            _ => Err(format!("unsupported vcs_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsRepositoriesMirrorStatus {
+    Pending,
+    Mirroring,
+    Ready,
+    Error,
+    Disabled,
+}
+
+impl VcsRepositoriesMirrorStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "mirroring", "ready", "error", "disabled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Mirroring => "mirroring",
+            Self::Ready => "ready",
+            Self::Error => "error",
+            Self::Disabled => "disabled",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsRepositoriesMirrorStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "mirroring" => Ok(Self::Mirroring),
+            "ready" => Ok(Self::Ready),
+            "error" => Ok(Self::Error),
+            "disabled" => Ok(Self::Disabled),
+            _ => Err(format!("unsupported mirror_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsRepositoriesVisibility {
+    Private,
+    Internal,
+    Public,
+}
+
+impl VcsRepositoriesVisibility {
+    pub const VALUES: &'static [&'static str] = &["private", "internal", "public"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Private => "private",
+            Self::Internal => "internal",
+            Self::Public => "public",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsRepositoriesVisibility {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "private" => Ok(Self::Private),
+            "internal" => Ok(Self::Internal),
+            "public" => Ok(Self::Public),
+            _ => Err(format!("unsupported visibility: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VcsRepositoriesRow {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub vcs_kind: String,
+    pub remote_url: String,
+    pub default_branch: String,
+    pub mirror_path: Option<String>,
+    pub mirror_status: String,
+    pub visibility: String,
+    pub last_synced_at: Option<String>,
+    pub last_error: Option<String>,
+    pub size_bytes: i64,
+    pub ref_count: i32,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VcsRepositoriesInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub vcs_kind: Option<String>,
+    pub remote_url: Option<String>,
+    pub default_branch: Option<String>,
+    pub mirror_path: Option<String>,
+    pub mirror_status: Option<String>,
+    pub visibility: Option<String>,
+    pub last_synced_at: Option<String>,
+    pub last_error: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub ref_count: Option<i32>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_vcs_repositories_row(value: &VcsRepositoriesRow) -> Result<(), String> {
+    validate_slug("vcs_repositories.slug", &value.slug)?;
+    validate_string_length("vcs_repositories.display_name", &value.display_name, None, Some(200))?;
+    if (&value.display_name).as_bytes().len() > 200 { return Err("vcs_repositories.display_name exceeds 200 bytes".to_string()); }
+    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) { return Err(format!("unsupported vcs_repositories.vcs_kind: {}", &value.vcs_kind)); }
+    if (&value.remote_url).as_bytes().len() > 2048 { return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string()); }
+    validate_string_length("vcs_repositories.default_branch", &value.default_branch, None, Some(160))?;
+    if !["pending", "mirroring", "ready", "error", "disabled"].contains(&(&value.mirror_status).as_str()) { return Err(format!("unsupported vcs_repositories.mirror_status: {}", &value.mirror_status)); }
+    if !["private", "internal", "public"].contains(&(&value.visibility).as_str()) { return Err(format!("unsupported vcs_repositories.visibility: {}", &value.visibility)); }
+    if *(&value.size_bytes) < 0 { return Err("vcs_repositories.size_bytes is below the minimum".to_string()); }
+    if *(&value.ref_count) < 0 { return Err("vcs_repositories.ref_count is below the minimum".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("vcs_repositories.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vcs_repositories_insert(value: &VcsRepositoriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("vcs_repositories.slug", value)?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("vcs_repositories.display_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("vcs_repositories.display_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.vcs_kind {
+        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.vcs_kind: {}", value)); }
+    }
+    if let Some(value) = &value.remote_url {
+        if (value).as_bytes().len() > 2048 { return Err("vcs_repositories.remote_url exceeds 2048 bytes".to_string()); }
+    }
+    if let Some(value) = &value.default_branch {
+        validate_string_length("vcs_repositories.default_branch", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.mirror_status {
+        if !["pending", "mirroring", "ready", "error", "disabled"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.mirror_status: {}", value)); }
+    }
+    if let Some(value) = &value.visibility {
+        if !["private", "internal", "public"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_repositories.visibility: {}", value)); }
+    }
+    if let Some(value) = &value.size_bytes {
+        if *(value) < 0 { return Err("vcs_repositories.size_bytes is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.ref_count {
+        if *(value) < 0 { return Err("vcs_repositories.ref_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("vcs_repositories.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VCS_REFS_TABLE: &str = "vcs_refs";
+pub const VCS_REFS_COLUMNS: &[&str] = &["id", "repository_id", "ref_name", "ref_type", "target_revision", "is_default", "meta_data", "created_at", "updated_at"];
+pub const VCS_REFS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      repository_id::text as repository_id,
+      ref_name,
+      ref_type,
+      target_revision,
+      is_default,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_refs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsRefsRefType {
+    Branch,
+    Tag,
+    Bookmark,
+    Head,
+    Other,
+}
+
+impl VcsRefsRefType {
+    pub const VALUES: &'static [&'static str] = &["branch", "tag", "bookmark", "head", "other"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Branch => "branch",
+            Self::Tag => "tag",
+            Self::Bookmark => "bookmark",
+            Self::Head => "head",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsRefsRefType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "branch" => Ok(Self::Branch),
+            "tag" => Ok(Self::Tag),
+            "bookmark" => Ok(Self::Bookmark),
+            "head" => Ok(Self::Head),
+            "other" => Ok(Self::Other),
+            _ => Err(format!("unsupported ref_type: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VcsRefsRow {
+    pub id: String,
+    pub repository_id: String,
+    pub ref_name: String,
+    pub ref_type: String,
+    pub target_revision: String,
+    pub is_default: bool,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VcsRefsInsert {
+    pub id: Option<String>,
+    pub repository_id: Option<String>,
+    pub ref_name: Option<String>,
+    pub ref_type: Option<String>,
+    pub target_revision: Option<String>,
+    pub is_default: Option<bool>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_vcs_refs_row(value: &VcsRefsRow) -> Result<(), String> {
+    validate_string_length("vcs_refs.ref_name", &value.ref_name, None, Some(255))?;
+    if (&value.ref_name).as_bytes().len() > 255 { return Err("vcs_refs.ref_name exceeds 255 bytes".to_string()); }
+    if !["branch", "tag", "bookmark", "head", "other"].contains(&(&value.ref_type).as_str()) { return Err(format!("unsupported vcs_refs.ref_type: {}", &value.ref_type)); }
+    validate_string_length("vcs_refs.target_revision", &value.target_revision, None, Some(120))?;
+    if (&value.target_revision).as_bytes().len() > 120 { return Err("vcs_refs.target_revision exceeds 120 bytes".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("vcs_refs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_vcs_refs_insert(value: &VcsRefsInsert) -> Result<(), String> {
+    if let Some(value) = &value.ref_name {
+        validate_string_length("vcs_refs.ref_name", value, None, Some(255))?;
+        if (value).as_bytes().len() > 255 { return Err("vcs_refs.ref_name exceeds 255 bytes".to_string()); }
+    }
+    if let Some(value) = &value.ref_type {
+        if !["branch", "tag", "bookmark", "head", "other"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_refs.ref_type: {}", value)); }
+    }
+    if let Some(value) = &value.target_revision {
+        validate_string_length("vcs_refs.target_revision", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("vcs_refs.target_revision exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("vcs_refs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const VCS_OPERATIONS_TABLE: &str = "vcs_operations";
+pub const VCS_OPERATIONS_COLUMNS: &[&str] = &["id", "repository_id", "vcs_kind", "op_type", "status", "params", "result_summary", "error", "duration_ms", "requested_by", "created_at", "updated_at"];
+pub const VCS_OPERATIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      repository_id::text as repository_id,
+      vcs_kind,
+      op_type,
+      status,
+      params,
+      result_summary,
+      error,
+      duration_ms,
+      requested_by,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from vcs_operations"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsOperationsVcsKind {
+    Git,
+    Hg,
+    Svn,
+    Fossil,
+}
+
+impl VcsOperationsVcsKind {
+    pub const VALUES: &'static [&'static str] = &["git", "hg", "svn", "fossil"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Git => "git",
+            Self::Hg => "hg",
+            Self::Svn => "svn",
+            Self::Fossil => "fossil",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsOperationsVcsKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "git" => Ok(Self::Git),
+            "hg" => Ok(Self::Hg),
+            "svn" => Ok(Self::Svn),
+            "fossil" => Ok(Self::Fossil),
+            _ => Err(format!("unsupported vcs_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsOperationsOpType {
+    Mirror,
+    Fetch,
+    Refs,
+    Log,
+    Show,
+    Diff,
+    Tree,
+    Blob,
+    Probe,
+    Remove,
+}
+
+impl VcsOperationsOpType {
+    pub const VALUES: &'static [&'static str] = &["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mirror => "mirror",
+            Self::Fetch => "fetch",
+            Self::Refs => "refs",
+            Self::Log => "log",
+            Self::Show => "show",
+            Self::Diff => "diff",
+            Self::Tree => "tree",
+            Self::Blob => "blob",
+            Self::Probe => "probe",
+            Self::Remove => "remove",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsOperationsOpType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "mirror" => Ok(Self::Mirror),
+            "fetch" => Ok(Self::Fetch),
+            "refs" => Ok(Self::Refs),
+            "log" => Ok(Self::Log),
+            "show" => Ok(Self::Show),
+            "diff" => Ok(Self::Diff),
+            "tree" => Ok(Self::Tree),
+            "blob" => Ok(Self::Blob),
+            "probe" => Ok(Self::Probe),
+            "remove" => Ok(Self::Remove),
+            _ => Err(format!("unsupported op_type: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VcsOperationsStatus {
+    Pending,
+    Running,
+    Success,
+    Error,
+}
+
+impl VcsOperationsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "success", "error"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Success => "success",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl TryFrom<&str> for VcsOperationsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "success" => Ok(Self::Success),
+            "error" => Ok(Self::Error),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct VcsOperationsRow {
+    pub id: String,
+    pub repository_id: Option<String>,
+    pub vcs_kind: String,
+    pub op_type: String,
+    pub status: String,
+    pub params: Value,
+    pub result_summary: Value,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub requested_by: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VcsOperationsInsert {
+    pub id: Option<String>,
+    pub repository_id: Option<String>,
+    pub vcs_kind: Option<String>,
+    pub op_type: Option<String>,
+    pub status: Option<String>,
+    pub params: Option<Value>,
+    pub result_summary: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub requested_by: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_vcs_operations_row(value: &VcsOperationsRow) -> Result<(), String> {
+    if !["git", "hg", "svn", "fossil"].contains(&(&value.vcs_kind).as_str()) { return Err(format!("unsupported vcs_operations.vcs_kind: {}", &value.vcs_kind)); }
+    if !["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"].contains(&(&value.op_type).as_str()) { return Err(format!("unsupported vcs_operations.op_type: {}", &value.op_type)); }
+    if !["pending", "running", "success", "error"].contains(&(&value.status).as_str()) { return Err(format!("unsupported vcs_operations.status: {}", &value.status)); }
+    if !(&value.params).is_object() { return Err("vcs_operations.params must be a JSON object".to_string()); }
+    if !(&value.result_summary).is_object() { return Err("vcs_operations.result_summary must be a JSON object".to_string()); }
+    if let Some(value) = &value.duration_ms {
+        if *(value) < 0 { return Err("vcs_operations.duration_ms is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.requested_by {
+        validate_string_length("vcs_operations.requested_by", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub fn validate_vcs_operations_insert(value: &VcsOperationsInsert) -> Result<(), String> {
+    if let Some(value) = &value.vcs_kind {
+        if !["git", "hg", "svn", "fossil"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.vcs_kind: {}", value)); }
+    }
+    if let Some(value) = &value.op_type {
+        if !["mirror", "fetch", "refs", "log", "show", "diff", "tree", "blob", "probe", "remove"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.op_type: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "running", "success", "error"].contains(&(value).as_str()) { return Err(format!("unsupported vcs_operations.status: {}", value)); }
+    }
+    if let Some(value) = &value.params {
+        if !(value).is_object() { return Err("vcs_operations.params must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.result_summary {
+        if !(value).is_object() { return Err("vcs_operations.result_summary must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.duration_ms {
+        if *(value) < 0 { return Err("vcs_operations.duration_ms is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.requested_by {
+        validate_string_length("vcs_operations.requested_by", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

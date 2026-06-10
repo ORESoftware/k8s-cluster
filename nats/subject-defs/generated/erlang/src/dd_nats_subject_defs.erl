@@ -20,6 +20,8 @@
     chaos_probe_queue_group/0,
     contact_email_send_subject/0,
     contact_email_send_queue_group/0,
+    contact_push_send_subject/0,
+    contact_push_send_queue_group/0,
     contact_send_results_subject/0,
     contact_sms_send_subject/0,
     contact_sms_send_queue_group/0,
@@ -35,6 +37,11 @@
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
     cron_prompts_stream/0,
+    dataset_labeling_label_events_subject/0,
+    dataset_labeling_pipeline_jobs_subject/0,
+    dataset_labeling_results_subject/0,
+    dataset_labeling_task_requests_subject/0,
+    dataset_labeling_task_requests_queue_group/0,
     data_viz_alerts_events_subject/0,
     data_viz_notifications_dispatch_subject/0,
     data_viz_notifications_dispatch_queue_group/0,
@@ -92,6 +99,14 @@
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
     git_repos_changes_subject/0,
+    gpu_job_requests_subject/0,
+    gpu_job_requests_queue_group/0,
+    gpu_job_results_subject/0,
+    knowledge_graph_build_requests_subject/0,
+    knowledge_graph_build_requests_queue_group/0,
+    knowledge_graph_pipeline_jobs_subject/0,
+    knowledge_graph_results_subject/0,
+    knowledge_graph_updates_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
     mcp_control_subject/0,
@@ -219,9 +234,12 @@
     constraint_scheduler_queue_group/0,
     contact_send_queue_group/0,
     critical_events_logger_queue_group/0,
+    dataset_labeling_workers_queue_group/0,
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
+    gpu_scheduler_queue_group/0,
+    knowledge_graph_workers_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
     monte_carlo_server_queue_group/0,
@@ -335,7 +353,12 @@ chaos_probe_queue_group() -> <<"dd-chaos-probe"/utf8>>.
 contact_email_send_subject() -> <<"dd.remote.contact.email.send"/utf8>>.
 contact_email_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 
-%% Per-send result summaries published after each email/sms attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
+%% Send-a-push-notification request consumed by dd-email-sms-contact-rs via the dd-email-sms-contact queue group. Payload: { transport: webpush|fcm|expo|apns, [title], [body], [data], [token] (fcm/expo/apns device token), [subscription] (webpush { endpoint, keys: { p256dh, auth } }) }.
+%% Service: dd-email-sms-contact-rs
+contact_push_send_subject() -> <<"dd.remote.contact.push.send"/utf8>>.
+contact_push_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
+
+%% Per-send result summaries published after each email/sms/push attempt (channel, recipient, ok, transport, upstream status). Carries no message bodies or secrets.
 %% Service: dd-email-sms-contact-rs
 contact_send_results_subject() -> <<"dd.remote.contact.results"/utf8>>.
 
@@ -379,6 +402,23 @@ contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 %% Service: dd-remote-rest-api
 cron_prompts_subject() -> <<"dd.remote.cron.prompts"/utf8>>.
 cron_prompts_stream() -> <<"DD_REMOTE_CRON"/utf8>>.
+
+%% Per-label annotation events emitted when a human annotator, model, or labeling function submits a label for a task item.
+%% Service: dd-dataset-labeling
+dataset_labeling_label_events_subject() -> <<"dd.remote.dataset_labeling.label.events"/utf8>>.
+
+%% Spark/Airflow pipeline job intents that materialize aggregated gold labels into training datasets for downstream model training.
+%% Service: dd-dataset-labeling
+dataset_labeling_pipeline_jobs_subject() -> <<"dd.remote.dataset_labeling.pipeline.jobs"/utf8>>.
+
+%% Aggregation, inter-annotator agreement, and gold-label export results from labeling runs.
+%% Service: dd-dataset-labeling
+dataset_labeling_results_subject() -> <<"dd.remote.dataset_labeling.results"/utf8>>.
+
+%% Inbound labeling task/annotation requests accepted over NATS. Payloads mirror the HTTP /tasks, /labels, and /functions/apply contracts.
+%% Service: dd-dataset-labeling
+dataset_labeling_task_requests_subject() -> <<"dd.remote.dataset_labeling.task.requests"/utf8>>.
+dataset_labeling_task_requests_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 
 %% Fan-out emitted on each evaluation of an enabled alert rule (disabled-rule evaluations are not published). Carries the rule id, title, current state (alerting/normal/no_data/error), and the triggering metric summary (observed value + condition) — never the underlying rows.
 %% Service: dd-data-viz-rs
@@ -547,6 +587,32 @@ fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 %% Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 %% Service: shared
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
+
+%% Inbound GPU job-scheduling requests (a fleet of GPUs plus jobs needing VRAM and an estimated duration) consumed by the scheduler. Subscribed with the dd-gpu-rs queue group so requests load-balance across replicas. Default for GPU_JOB_SUBJECT.
+%% Service: dd-gpu-rs
+gpu_job_requests_subject() -> <<"dd.remote.gpu.jobs.requests"/utf8>>.
+gpu_job_requests_queue_group() -> <<"dd-gpu-rs"/utf8>>.
+
+%% Computed GPU placements (per-job gpu assignment, start/finish times, makespan, per-GPU memory utilisation, rejected jobs) emitted by the scheduler. Carries a gpu.schedule.v1 envelope. Default for GPU_RESULT_SUBJECT.
+%% Service: dd-gpu-rs
+gpu_job_results_subject() -> <<"dd.remote.gpu.jobs.results"/utf8>>.
+
+%% Inbound knowledge-graph build requests accepted over NATS. Payloads mirror the HTTP /graph/upsert and /graph/extract contracts.
+%% Service: dd-knowledge-graph-builder
+knowledge_graph_build_requests_subject() -> <<"dd.remote.knowledge_graph.build.requests"/utf8>>.
+knowledge_graph_build_requests_queue_group() -> <<"dd-knowledge-graph-builder"/utf8>>.
+
+%% Spark/Airflow graph-analytics pipeline job intents (PageRank, community detection, embeddings) generated from the constructed knowledge graph.
+%% Service: dd-knowledge-graph-builder
+knowledge_graph_pipeline_jobs_subject() -> <<"dd.remote.knowledge_graph.pipeline.jobs"/utf8>>.
+
+%% Query, path, and centrality/analysis results from knowledge-graph runs.
+%% Service: dd-knowledge-graph-builder
+knowledge_graph_results_subject() -> <<"dd.remote.knowledge_graph.results"/utf8>>.
+
+%% Graph mutation events emitted after nodes and edges are upserted or extracted into the graph store. Consumers should treat this as an incremental change feed.
+%% Service: dd-knowledge-graph-builder
+knowledge_graph_updates_subject() -> <<"dd.remote.knowledge_graph.updates"/utf8>>.
 
 %% Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 %% Service: dd-gleam-lambda-runner
@@ -1110,6 +1176,10 @@ contact_send_queue_group() -> <<"dd-email-sms-contact"/utf8>>.
 %% Service: shared
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 
+%% Shared queue group used by dd-dataset-labeling replicas so each queued labeling task/annotation request is processed once.
+%% Service: dd-dataset-labeling
+dataset_labeling_workers_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
+
 %% Shared queue group used by dd-data-viz notifier workers consuming the notification-dispatch lane.
 %% Service: dd-data-viz-rs
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
@@ -1121,6 +1191,14 @@ economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 %% Shared queue group used by island worker pods so each per-epoch subpopulation is evolved exactly once.
 %% Service: dd-evolution-optimizer
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+
+%% Shared queue group used by dd-gpu-rs replicas consuming GPU job requests.
+%% Service: dd-gpu-rs
+gpu_scheduler_queue_group() -> <<"dd-gpu-rs"/utf8>>.
+
+%% Shared queue group used by dd-knowledge-graph-builder replicas so each queued build request is processed once.
+%% Service: dd-knowledge-graph-builder
+knowledge_graph_workers_queue_group() -> <<"dd-knowledge-graph-builder"/utf8>>.
 
 %% Shared queue group used by lambda-runner replicas.
 %% Service: dd-gleam-lambda-runner

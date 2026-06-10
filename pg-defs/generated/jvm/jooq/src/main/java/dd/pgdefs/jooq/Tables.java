@@ -1818,4 +1818,53 @@ public final class Tables {
     public static final Field<UUID> BENEFACTOR_ICPS_CREATED_BY = DSL.field(DSL.name("benefactor", "benefactor_icps", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> BENEFACTOR_ICPS_UPDATED_BY = DSL.field(DSL.name("benefactor", "benefactor_icps", "updated_by"), SQLDataType.UUID);
 
+    public static final Name VCS_REPOSITORIES_NAME = DSL.name("vcs_repositories");
+    public static final Table<org.jooq.Record> VCS_REPOSITORIES = DSL.table(VCS_REPOSITORIES_NAME);
+    public static final Field<UUID> VCS_REPOSITORIES_ID = DSL.field(DSL.name("vcs_repositories", "id"), SQLDataType.UUID);
+    public static final Field<String> VCS_REPOSITORIES_SLUG = DSL.field(DSL.name("vcs_repositories", "slug"), SQLDataType.VARCHAR(120));
+    public static final Field<String> VCS_REPOSITORIES_DISPLAY_NAME = DSL.field(DSL.name("vcs_repositories", "display_name"), SQLDataType.VARCHAR(200));
+    public static final Field<String> VCS_REPOSITORIES_VCS_KIND = DSL.field(DSL.name("vcs_repositories", "vcs_kind"), SQLDataType.VARCHAR(20));
+    public static final Field<String> VCS_REPOSITORIES_REMOTE_URL = DSL.field(DSL.name("vcs_repositories", "remote_url"), SQLDataType.CLOB);
+    public static final Field<String> VCS_REPOSITORIES_DEFAULT_BRANCH = DSL.field(DSL.name("vcs_repositories", "default_branch"), SQLDataType.VARCHAR(160));
+    public static final Field<String> VCS_REPOSITORIES_MIRROR_PATH = DSL.field(DSL.name("vcs_repositories", "mirror_path"), SQLDataType.CLOB);
+    public static final Field<String> VCS_REPOSITORIES_MIRROR_STATUS = DSL.field(DSL.name("vcs_repositories", "mirror_status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> VCS_REPOSITORIES_VISIBILITY = DSL.field(DSL.name("vcs_repositories", "visibility"), SQLDataType.VARCHAR(20));
+    public static final Field<OffsetDateTime> VCS_REPOSITORIES_LAST_SYNCED_AT = DSL.field(DSL.name("vcs_repositories", "last_synced_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> VCS_REPOSITORIES_LAST_ERROR = DSL.field(DSL.name("vcs_repositories", "last_error"), SQLDataType.CLOB);
+    public static final Field<Long> VCS_REPOSITORIES_SIZE_BYTES = DSL.field(DSL.name("vcs_repositories", "size_bytes"), SQLDataType.BIGINT);
+    public static final Field<Integer> VCS_REPOSITORIES_REF_COUNT = DSL.field(DSL.name("vcs_repositories", "ref_count"), SQLDataType.INTEGER);
+    public static final Field<JSONB> VCS_REPOSITORIES_META_DATA = DSL.field(DSL.name("vcs_repositories", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> VCS_REPOSITORIES_IS_SOFT_DELETED = DSL.field(DSL.name("vcs_repositories", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> VCS_REPOSITORIES_CREATED_AT = DSL.field(DSL.name("vcs_repositories", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> VCS_REPOSITORIES_UPDATED_AT = DSL.field(DSL.name("vcs_repositories", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> VCS_REPOSITORIES_CREATED_BY = DSL.field(DSL.name("vcs_repositories", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> VCS_REPOSITORIES_UPDATED_BY = DSL.field(DSL.name("vcs_repositories", "updated_by"), SQLDataType.UUID);
+
+    public static final Name VCS_REFS_NAME = DSL.name("vcs_refs");
+    public static final Table<org.jooq.Record> VCS_REFS = DSL.table(VCS_REFS_NAME);
+    public static final Field<UUID> VCS_REFS_ID = DSL.field(DSL.name("vcs_refs", "id"), SQLDataType.UUID);
+    public static final Field<UUID> VCS_REFS_REPOSITORY_ID = DSL.field(DSL.name("vcs_refs", "repository_id"), SQLDataType.UUID);
+    public static final Field<String> VCS_REFS_REF_NAME = DSL.field(DSL.name("vcs_refs", "ref_name"), SQLDataType.VARCHAR(255));
+    public static final Field<String> VCS_REFS_REF_TYPE = DSL.field(DSL.name("vcs_refs", "ref_type"), SQLDataType.VARCHAR(20));
+    public static final Field<String> VCS_REFS_TARGET_REVISION = DSL.field(DSL.name("vcs_refs", "target_revision"), SQLDataType.VARCHAR(120));
+    public static final Field<Boolean> VCS_REFS_IS_DEFAULT = DSL.field(DSL.name("vcs_refs", "is_default"), SQLDataType.BOOLEAN);
+    public static final Field<JSONB> VCS_REFS_META_DATA = DSL.field(DSL.name("vcs_refs", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> VCS_REFS_CREATED_AT = DSL.field(DSL.name("vcs_refs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> VCS_REFS_UPDATED_AT = DSL.field(DSL.name("vcs_refs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name VCS_OPERATIONS_NAME = DSL.name("vcs_operations");
+    public static final Table<org.jooq.Record> VCS_OPERATIONS = DSL.table(VCS_OPERATIONS_NAME);
+    public static final Field<UUID> VCS_OPERATIONS_ID = DSL.field(DSL.name("vcs_operations", "id"), SQLDataType.UUID);
+    public static final Field<UUID> VCS_OPERATIONS_REPOSITORY_ID = DSL.field(DSL.name("vcs_operations", "repository_id"), SQLDataType.UUID);
+    public static final Field<String> VCS_OPERATIONS_VCS_KIND = DSL.field(DSL.name("vcs_operations", "vcs_kind"), SQLDataType.VARCHAR(20));
+    public static final Field<String> VCS_OPERATIONS_OP_TYPE = DSL.field(DSL.name("vcs_operations", "op_type"), SQLDataType.VARCHAR(32));
+    public static final Field<String> VCS_OPERATIONS_STATUS = DSL.field(DSL.name("vcs_operations", "status"), SQLDataType.VARCHAR(20));
+    public static final Field<JSONB> VCS_OPERATIONS_PARAMS = DSL.field(DSL.name("vcs_operations", "params"), SQLDataType.JSONB);
+    public static final Field<JSONB> VCS_OPERATIONS_RESULT_SUMMARY = DSL.field(DSL.name("vcs_operations", "result_summary"), SQLDataType.JSONB);
+    public static final Field<String> VCS_OPERATIONS_ERROR = DSL.field(DSL.name("vcs_operations", "error"), SQLDataType.CLOB);
+    public static final Field<Integer> VCS_OPERATIONS_DURATION_MS = DSL.field(DSL.name("vcs_operations", "duration_ms"), SQLDataType.INTEGER);
+    public static final Field<String> VCS_OPERATIONS_REQUESTED_BY = DSL.field(DSL.name("vcs_operations", "requested_by"), SQLDataType.VARCHAR(200));
+    public static final Field<OffsetDateTime> VCS_OPERATIONS_CREATED_AT = DSL.field(DSL.name("vcs_operations", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> VCS_OPERATIONS_UPDATED_AT = DSL.field(DSL.name("vcs_operations", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }
