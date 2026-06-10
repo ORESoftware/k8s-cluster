@@ -41,4 +41,4 @@ curl -s localhost:8134/simulate -H 'content-type: application/json' -d '{
 
 ## Limits & hardening
 
-Inflight-concurrency cap (`MONTE_CARLO_MAX_INFLIGHT`, default 16); HTTP returns `503` when saturated, NATS applies backpressure. `samples` is clamped to 20 000 000 per request.
+Inflight-concurrency cap (`MONTE_CARLO_MAX_INFLIGHT`, default 16); HTTP returns `503` when saturated, NATS applies backpressure. `samples` is clamped to 20 000 000 per request. Option inputs are bounded (`spot`/`strike ≤ 1e12`, `volatility ≤ 5`, `maturity ≤ 100`, `|rate| ≤ 1`) so the GBM exponent stays in a range where `exp()` is finite, and any residual non-finite result is reported as `0` with a warning rather than serialised as `null`. The M/M/1 `L`/`Lq` figures are derived from the measured wait via Little's law.
