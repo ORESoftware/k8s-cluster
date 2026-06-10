@@ -100,13 +100,15 @@ class ConversationChange {
 class ConversationRegistry {
   ConversationRegistry({
     int recentCapacityPerConv = 32,
+    int maxMembersPerConversation = 10000,
     Duration recentTtl = const Duration(hours: 24),
   }) : _recent = InMemoryCache<List<ConversationMessage>>(
           name: 'conv_recent_messages',
           defaultTtl: recentTtl,
           capacity: 1024, // total distinct conversations cached at once
         ),
-        _recentCapacityPerConv = recentCapacityPerConv;
+        _recentCapacityPerConv = recentCapacityPerConv,
+        _maxMembersPerConversation = maxMembersPerConversation;
 
   final _convs = <String, ConversationMeta>{};
   final _members = <String, Set<String>>{}; // conv → users
@@ -114,6 +116,12 @@ class ConversationRegistry {
 
   final InMemoryCache<List<ConversationMessage>> _recent;
   final int _recentCapacityPerConv;
+
+  /// Hard cap on distinct members one conversation will track. The member
+  /// set is otherwise unbounded: a single connection can re-`Identify` to
+  /// fresh user ids and re-join the same conversation, growing the set (and
+  /// the `userId → conversations` reverse index) without limit. 0 disables.
+  final int _maxMembersPerConversation;
 
   final _changes = PublishSubject<ConversationChange>();
   Stream<ConversationChange> get changes => _changes.stream;
@@ -210,6 +218,14 @@ class ConversationRegistry {
   /// Add [userId] as a member of [conversationId]. Returns true when the
   /// membership was actually new (false when idempotent no-op).
   bool addMember(String conversationId, String userId) {
+    final existing = _members[conversationId];
+    if (existing != null && existing.contains(userId)) return false;
+    // Enforce the per-conversation member cap before creating the set entry,
+    // so a refused add doesn't leave an empty set behind.
+    if (_maxMembersPerConversation > 0 &&
+        (existing?.length ?? 0) >= _maxMembersPerConversation) {
+      return false;
+    }
     final set = _members.putIfAbsent(conversationId, () => <String>{});
     if (!set.add(userId)) return false;
     _byUser.putIfAbsent(userId, () => <String>{}).add(conversationId);

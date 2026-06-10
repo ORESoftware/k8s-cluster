@@ -10,9 +10,21 @@
 -module(dd_nats_subject_consts).
 
 -export([
+    billing_anchors_subject/0,
+    billing_connection_events_subject/0,
+    billing_ledger_postings_subject/0,
+    billing_reconciliation_breaks_subject/0,
+    billing_sync_commands_subject/0,
+    billing_sync_commands_queue_group/0,
+    billing_webhook_receipts_subject/0,
     container_pool_requests_subject/0,
     container_pool_results_subject/0,
+    contracts_solana_resolve_subject/0,
+    contracts_solana_resolve_queue_group/0,
     contracts_solana_results_subject/0,
+    contracts_solana_settle_subject/0,
+    contracts_solana_settle_queue_group/0,
+    contracts_solana_settlement_results_subject/0,
     contracts_solana_validate_subject/0,
     contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
@@ -127,6 +139,7 @@
     thread_tasks_wildcard/0,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    billing_server_queue_group/0,
     critical_events_logger_queue_group/0,
     lambda_runner_queue_group/0,
     mip_solver_workers_queue_group/0,
@@ -141,9 +154,21 @@
     dd_remote_tasks_stream_name/0
 ]).
 
+billing_anchors_subject() -> <<"dd.remote.billing.anchors"/utf8>>.
+billing_connection_events_subject() -> <<"dd.remote.billing.connections.events"/utf8>>.
+billing_ledger_postings_subject() -> <<"dd.remote.billing.ledger.postings"/utf8>>.
+billing_reconciliation_breaks_subject() -> <<"dd.remote.billing.reconciliation.breaks"/utf8>>.
+billing_sync_commands_subject() -> <<"dd.remote.billing.commands.sync"/utf8>>.
+billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
+billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
 container_pool_requests_subject() -> <<"dd.remote.container_pool.requests"/utf8>>.
 container_pool_results_subject() -> <<"dd.remote.container_pool.results"/utf8>>.
+contracts_solana_resolve_subject() -> <<"dd.remote.contracts.solana.resolve"/utf8>>.
+contracts_solana_resolve_queue_group() -> <<"dd-contract-service"/utf8>>.
 contracts_solana_results_subject() -> <<"dd.remote.contracts.solana.results"/utf8>>.
+contracts_solana_settle_subject() -> <<"dd.remote.contracts.solana.settle"/utf8>>.
+contracts_solana_settle_queue_group() -> <<"dd-contract-service"/utf8>>.
+contracts_solana_settlement_results_subject() -> <<"dd.remote.contracts.solana.settlement.results"/utf8>>.
 contracts_solana_validate_subject() -> <<"dd.remote.contracts.solana.validate"/utf8>>.
 contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 cron_prompts_subject() -> <<"dd.remote.cron.prompts"/utf8>>.
@@ -258,6 +283,7 @@ thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
 thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
+billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.

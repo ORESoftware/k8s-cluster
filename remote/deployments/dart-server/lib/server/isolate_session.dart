@@ -45,6 +45,21 @@ const String _lobbyTopic = 'lobby';
 const String _presenceTopic = 'presence';
 const String _convListTopic = 'conv-list';
 
+/// Hard length caps on client-supplied text fields accepted from an HTMX
+/// trigger. Inbound frames are already byte-capped (`WS_MAX_INBOUND_BYTES`,
+/// 64 KiB by default) but that limit is per-frame: without a per-field cap a
+/// single 64 KiB display name / conversation id / chat line would still be
+/// (a) stored verbatim as a map key/value in the shard's Presence /
+/// ConversationRegistry / EventBus state, and (b) fanned out to *every*
+/// joined session on the shard — a cheap amplification vector. We truncate
+/// rather than reject so the demo stays forgiving; identifiers get a short
+/// cap, free-text chat a larger one.
+const int _maxIdentLen = 128;
+const int _maxTextLen = 2000;
+
+/// Truncate [s] to at most [max] code units. Trim first at the call site.
+String _cap(String s, int max) => s.length <= max ? s : s.substring(0, max);
+
 /// Entry point for a session-host isolate. Receives a one-time handshake
 /// SendPort, replies with its own mailbox, then loops forever multiplexing
 /// `AttachSession` / `RouteToSession` / `DetachSession` frames coming in
@@ -576,12 +591,12 @@ class Session {
         _counter.add(0);
         _send(const MetricEvent('dart_session_resets_total'));
       case 'echo':
-        final text = msg.stringField('message').trim();
+        final text = _cap(msg.stringField('message').trim(), _maxTextLen);
         if (text.isEmpty) return;
         _history.add([..._history.value, text]);
         _send(const MetricEvent('dart_session_echoes_total'));
       case 'say':
-        final text = msg.stringField('text').trim();
+        final text = _cap(msg.stringField('text').trim(), _maxTextLen);
         if (text.isEmpty) return;
         _send(BusPublish(
           topic: _lobbyTopic,
@@ -594,8 +609,9 @@ class Session {
         ));
         _send(const MetricEvent('dart_session_says_total'));
       case 'identify':
-        final userId = msg.stringField('user_id').trim();
-        final displayName = msg.stringField('display_name').trim();
+        final userId = _cap(msg.stringField('user_id').trim(), _maxIdentLen);
+        final displayName =
+            _cap(msg.stringField('display_name').trim(), _maxIdentLen);
         if (userId.isEmpty) {
           unawaited(_emitFragment(
             const StatusPill('user_id required to identify'),
@@ -605,21 +621,24 @@ class Session {
         _identity.add((userId: userId, displayName: displayName));
         _send(Identify(userId: userId, displayName: displayName));
       case 'open-conv':
-        final convId = msg.stringField('conversation_id').trim();
-        final title = msg.stringField('title').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
+        final title = _cap(msg.stringField('title').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _send(ConversationOpen(
           conversationId: convId,
           title: title,
-          kind: msg.stringField('kind', 'chat'),
+          kind: _cap(msg.stringField('kind', 'chat'), _maxIdentLen),
         ));
       case 'join-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _activeConv.add(convId);
         _send(ConversationJoin(convId));
       case 'leave-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         if (_activeConv.value == convId) _activeConv.add('');
         _send(ConversationLeave(
@@ -627,17 +646,20 @@ class Session {
           dropMembership: msg.stringField('drop') == '1',
         ));
       case 'say-conv':
-        final convId = msg.stringField('conversation_id').trim();
-        final text = msg.stringField('text').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
+        final text = _cap(msg.stringField('text').trim(), _maxTextLen);
         if (convId.isEmpty || text.isEmpty) return;
         _send(ConversationSay(conversationId: convId, text: text));
       case 'switch-conv':
         // Sets which conversation the local panel renders. No supervisor
         // round-trip needed; the bus deliveries already populate
         // `_convMessages` for any topic this session is bus-joined to.
-        _activeConv.add(msg.stringField('conversation_id').trim());
+        _activeConv.add(
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen));
       case 'delete-conv':
-        final convId = msg.stringField('conversation_id').trim();
+        final convId =
+            _cap(msg.stringField('conversation_id').trim(), _maxIdentLen);
         if (convId.isEmpty) return;
         _send(ConversationDelete(convId));
       default:

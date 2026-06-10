@@ -14,6 +14,31 @@ var _ = strings.Split
 
 // ---------- Static subjects ----------
 
+// Emitted when a Merkle root over a posting range is anchored to Solana (tamper-evidence notary). Carries tenant, anchor id, posting range/count, merkle root hex, tx signature, and slot.
+// Service: dd-billing-server
+const BillingAnchorsSubject = "dd.remote.billing.anchors"
+
+// Provider-connection lifecycle feed (created, attached/activated, synced, failed). Carries tenant, connection id, provider tag, and the lifecycle transition. No credentials.
+// Service: dd-billing-server
+const BillingConnectionEventsSubject = "dd.remote.billing.connections.events"
+
+// Emitted after a double-entry transaction is committed to the Postgres ledger. Carries a redacted summary (tenant, transaction id, kind, per-currency totals, posting count) so downstream services can react to ledger movement without reading the database. Default for BILLING_NATS_SUBJECT_LEDGER.
+// Service: dd-billing-server
+const BillingLedgerPostingsSubject = "dd.remote.billing.ledger.postings"
+
+// Emitted when a reconciliation break is opened during provider sync (drift between provider-reported state and the ledger). Carries tenant, provider, break type, currency, external ref, and expected/actual minor amounts. Alert-worthy.
+// Service: dd-billing-server
+const BillingReconciliationBreaksSubject = "dd.remote.billing.reconciliation.breaks"
+
+// Inbound command requesting a provider-connection sync. Payload is {tenantId, connectionId}. Queue-grouped so billing-server replicas load-balance and a given command runs on exactly one pod. Default for BILLING_NATS_SUBJECT_SYNC_COMMANDS.
+// Service: dd-billing-server
+const BillingSyncCommandsSubject = "dd.remote.billing.commands.sync"
+const BillingSyncCommandsQueueGroup = "dd-billing-server"
+
+// Redacted provider webhook receipt audit feed. Carries provider, external event id, event type, signature_ok, tenant/connection ids, and the payload sha256 prefix only. The raw webhook body and verification error detail are deliberately NOT published. Mirrors dd.remote.public_data.webhooks.events as an audit source, not a canonical store.
+// Service: dd-billing-server
+const BillingWebhookReceiptsSubject = "dd.remote.billing.webhooks.receipts"
+
 // Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).
 // Service: dd-container-pool
 const ContainerPoolRequestsSubject = "dd.remote.container_pool.requests"
@@ -22,9 +47,23 @@ const ContainerPoolRequestsSubject = "dd.remote.container_pool.requests"
 // Service: dd-container-pool
 const ContainerPoolResultsSubject = "dd.remote.container_pool.results"
 
+// Dispute resolution requests for solana.resolution.v1 envelopes (release-to-payee/refund-to-payer/split/award-to-claimant/uphold/overturn). Default for CONTRACT_RESOLVE_SUBJECT. Same NATS broadcast gating as ContractsSolanaSettle.
+// Service: dd-contract-service
+const ContractsSolanaResolveSubject = "dd.remote.contracts.solana.resolve"
+const ContractsSolanaResolveQueueGroup = "dd-contract-service"
+
 // Published validation/simulation results. Default for CONTRACT_RESULT_SUBJECT.
 // Service: dd-contract-service
 const ContractsSolanaResultsSubject = "dd.remote.contracts.solana.results"
+
+// Settlement requests for solana.settlement.v1 envelopes (fund/release/refund/partial-release/split-release/dispute-award/expire/cancel). Default for CONTRACT_SETTLE_SUBJECT. NATS-initiated broadcast is off unless CONTRACT_NATS_SETTLEMENT_ENABLED=true; otherwise the service only validates, simulates, and confirms.
+// Service: dd-contract-service
+const ContractsSolanaSettleSubject = "dd.remote.contracts.solana.settle"
+const ContractsSolanaSettleQueueGroup = "dd-contract-service"
+
+// Published settlement and dispute-resolution outcomes, including on-chain confirmation status. Default for CONTRACT_SETTLEMENT_RESULT_SUBJECT.
+// Service: dd-contract-service
+const ContractsSolanaSettlementResultsSubject = "dd.remote.contracts.solana.settlement.results"
 
 // Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 // Service: dd-contract-service
@@ -755,6 +794,10 @@ func ParseThreadTasksSubject(subject string) (*ThreadTasksSubjectParts, bool) {
 }
 
 // ---------- Standalone queue groups ----------
+
+// Queue group shared by dd-billing-server replicas for inbound sync commands so each command is handled by exactly one pod.
+// Service: dd-billing-server
+const BillingServerQueueGroup = "dd-billing-server"
 
 // Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
 // Service: shared

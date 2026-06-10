@@ -1,16 +1,17 @@
 use std::{
+    collections::HashMap,
     env,
     error::Error,
     net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -18,8 +19,11 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use dd_nats_subject_defs::{
-    CONTRACTS_SOLANA_RESULTS_SUBJECT, CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP,
-    CONTRACTS_SOLANA_VALIDATE_SUBJECT, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+    CONTRACTS_SOLANA_RESOLVE_QUEUE_GROUP, CONTRACTS_SOLANA_RESOLVE_SUBJECT,
+    CONTRACTS_SOLANA_RESULTS_SUBJECT, CONTRACTS_SOLANA_SETTLEMENT_RESULTS_SUBJECT,
+    CONTRACTS_SOLANA_SETTLE_QUEUE_GROUP, CONTRACTS_SOLANA_SETTLE_SUBJECT,
+    CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP, CONTRACTS_SOLANA_VALIDATE_SUBJECT,
+    ESCROW_SOLANA_RESULTS_SUBJECT, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -42,6 +46,20 @@ const MAX_TRANSACTION_COMPUTE_UNITS: u64 = 1_400_000;
 const MAX_SEND_RETRIES: usize = 20;
 const DEFAULT_COMMITMENT: &str = "confirmed";
 const SEND_AUTH_HEADER: &str = "x-contract-send-auth";
+const SETTLEMENT_AUTH_HEADER: &str = "x-contract-settlement-auth";
+const SETTLEMENT_SCHEMA_VERSION: &str = "solana.settlement.v1";
+const RESOLUTION_SCHEMA_VERSION: &str = "solana.resolution.v1";
+const MAX_SIGNATURE_LEN: usize = 96;
+const MAX_RATIONALE_BYTES: usize = 2048;
+const MAX_RENT_EXEMPTION_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_CONFIRM_SIGNATURES: usize = 8;
+const DEFAULT_CONFIRM_TIMEOUT_MS: u64 = 30_000;
+const MAX_CONFIRM_TIMEOUT_MS: u64 = 120_000;
+const MIN_CONFIRM_POLL_INTERVAL_MS: u64 = 250;
+const DEFAULT_CONFIRM_POLL_INTERVAL_MS: u64 = 1_500;
+const MAX_CONFIRM_POLLS: u32 = 240;
+const IDEMPOTENCY_TTL_MS: u128 = 10 * 60 * 1000;
+const MAX_IDEMPOTENCY_ENTRIES: usize = 8_192;
 const SERVICE_NAME: &str = "dd-contract-service";
 const SERVICE_NAMESPACE: &str = "remote-dev";
 const LOG_SCHEMA: &str = "dd.log.v1";
@@ -55,11 +73,46 @@ struct AppState {
     send_enabled: bool,
     send_auth_secret: Option<String>,
     allow_skip_preflight: bool,
+    settlement_enabled: bool,
+    resolution_enabled: bool,
+    nats_settlement_enabled: bool,
+    settlement_auth_secret: Option<String>,
     nats: Option<async_nats::Client>,
     result_subject: String,
+    settlement_result_subject: String,
     event_subject: String,
     critical_event_subject: String,
     metrics: Arc<Metrics>,
+    idempotency: Arc<Mutex<HashMap<String, u128>>>,
+}
+
+impl AppState {
+    /// Records a settlement/resolution request id for at-most-once broadcast.
+    /// Returns `false` when the id was already seen within the TTL window (a
+    /// replay), so callers can skip a duplicate on-chain broadcast.
+    fn claim_idempotency_key(&self, key: &str) -> bool {
+        let now = now_ms();
+        let mut guard = match self.idempotency.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        guard.retain(|_, recorded| now.saturating_sub(*recorded) < IDEMPOTENCY_TTL_MS);
+        if guard.contains_key(key) {
+            return false;
+        }
+        if guard.len() >= MAX_IDEMPOTENCY_ENTRIES {
+            // Bounded memory: drop the oldest entry before inserting a new one.
+            if let Some(oldest) = guard
+                .iter()
+                .min_by_key(|(_, recorded)| **recorded)
+                .map(|(stored_key, _)| stored_key.clone())
+            {
+                guard.remove(&oldest);
+            }
+        }
+        guard.insert(key.to_string(), now);
+        true
+    }
 }
 
 #[derive(Default)]
@@ -79,6 +132,15 @@ struct Metrics {
     send_auth_failures_total: AtomicU64,
     policy_rejections_total: AtomicU64,
     errors_total: AtomicU64,
+    settlements_total: AtomicU64,
+    settlement_errors_total: AtomicU64,
+    resolutions_total: AtomicU64,
+    resolution_errors_total: AtomicU64,
+    settlement_idempotent_hits_total: AtomicU64,
+    confirmations_confirmed_total: AtomicU64,
+    confirmations_finalized_total: AtomicU64,
+    confirmations_failed_total: AtomicU64,
+    confirmations_pending_total: AtomicU64,
     rpc_get_health_requests_total: AtomicU64,
     rpc_get_health_errors_total: AtomicU64,
     rpc_get_version_requests_total: AtomicU64,
@@ -87,6 +149,22 @@ struct Metrics {
     rpc_simulate_transaction_errors_total: AtomicU64,
     rpc_send_transaction_requests_total: AtomicU64,
     rpc_send_transaction_errors_total: AtomicU64,
+    rpc_get_latest_blockhash_requests_total: AtomicU64,
+    rpc_get_latest_blockhash_errors_total: AtomicU64,
+    rpc_get_signature_statuses_requests_total: AtomicU64,
+    rpc_get_signature_statuses_errors_total: AtomicU64,
+    rpc_get_transaction_requests_total: AtomicU64,
+    rpc_get_transaction_errors_total: AtomicU64,
+    rpc_get_account_info_requests_total: AtomicU64,
+    rpc_get_account_info_errors_total: AtomicU64,
+    rpc_get_balance_requests_total: AtomicU64,
+    rpc_get_balance_errors_total: AtomicU64,
+    rpc_get_token_account_balance_requests_total: AtomicU64,
+    rpc_get_token_account_balance_errors_total: AtomicU64,
+    rpc_get_fee_for_message_requests_total: AtomicU64,
+    rpc_get_fee_for_message_errors_total: AtomicU64,
+    rpc_get_minimum_balance_for_rent_exemption_requests_total: AtomicU64,
+    rpc_get_minimum_balance_for_rent_exemption_errors_total: AtomicU64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -438,6 +516,38 @@ fn rpc_method_counters<'a>(metrics: &'a Metrics, method: &str) -> (&'a AtomicU64
             &metrics.rpc_send_transaction_requests_total,
             &metrics.rpc_send_transaction_errors_total,
         ),
+        "getLatestBlockhash" => (
+            &metrics.rpc_get_latest_blockhash_requests_total,
+            &metrics.rpc_get_latest_blockhash_errors_total,
+        ),
+        "getSignatureStatuses" => (
+            &metrics.rpc_get_signature_statuses_requests_total,
+            &metrics.rpc_get_signature_statuses_errors_total,
+        ),
+        "getTransaction" => (
+            &metrics.rpc_get_transaction_requests_total,
+            &metrics.rpc_get_transaction_errors_total,
+        ),
+        "getAccountInfo" => (
+            &metrics.rpc_get_account_info_requests_total,
+            &metrics.rpc_get_account_info_errors_total,
+        ),
+        "getBalance" => (
+            &metrics.rpc_get_balance_requests_total,
+            &metrics.rpc_get_balance_errors_total,
+        ),
+        "getTokenAccountBalance" => (
+            &metrics.rpc_get_token_account_balance_requests_total,
+            &metrics.rpc_get_token_account_balance_errors_total,
+        ),
+        "getFeeForMessage" => (
+            &metrics.rpc_get_fee_for_message_requests_total,
+            &metrics.rpc_get_fee_for_message_errors_total,
+        ),
+        "getMinimumBalanceForRentExemption" => (
+            &metrics.rpc_get_minimum_balance_for_rent_exemption_requests_total,
+            &metrics.rpc_get_minimum_balance_for_rent_exemption_errors_total,
+        ),
         _ => (&metrics.rpc_requests_total, &metrics.rpc_errors_total),
     }
 }
@@ -477,6 +587,57 @@ fn authorize_send(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCo
         ));
     }
     Ok(())
+}
+
+fn authorize_settlement(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), (StatusCode, &'static str)> {
+    let Some(secret) = &state.settlement_auth_secret else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "settlement/resolution is not configured with CONTRACT_SETTLEMENT_AUTH_SECRET",
+        ));
+    };
+    let Some(value) = headers
+        .get(SETTLEMENT_AUTH_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "missing x-contract-settlement-auth header",
+        ));
+    };
+    if !sensitive_eq(value.trim(), secret) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid x-contract-settlement-auth header",
+        ));
+    }
+    Ok(())
+}
+
+/// Validates a base58 transaction signature (64-byte ed25519 sig).
+fn validate_signature(value: &str, label: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if trimmed.len() > MAX_SIGNATURE_LEN {
+        return Err(format!(
+            "{label} must be at most {MAX_SIGNATURE_LEN} characters"
+        ));
+    }
+    let decoded = bs58::decode(trimmed)
+        .into_vec()
+        .map_err(|error| format!("{label} must be valid base58: {error}"))?;
+    if decoded.len() != 64 {
+        return Err(format!(
+            "{label} must decode to a 64 byte signature, got {} bytes",
+            decoded.len()
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 fn config_error(message: impl Into<String>) -> std::io::Error {
@@ -856,6 +1017,489 @@ fn send_params(
     Ok(json!([request.transaction.trim(), Value::Object(config)]))
 }
 
+// ---------------------------------------------------------------------------
+// Read-only Solana RPC surface
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlockhashQuery {
+    cluster: Option<String>,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountInfoRequest {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    pubkey: String,
+    encoding: Option<String>,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BalanceRequest {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    pubkey: String,
+    /// "sol" (default) reads the lamport balance; "token" reads an SPL token
+    /// account balance via getTokenAccountBalance.
+    kind: Option<String>,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FeeForMessageRequest {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    /// Base64-encoded compiled message (not a full signed transaction).
+    message: String,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RentExemptionQuery {
+    cluster: Option<String>,
+    bytes: u64,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransactionLookupRequest {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    signature: String,
+    commitment: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfirmRequest {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    signatures: Vec<String>,
+    target_commitment: Option<String>,
+    timeout_ms: Option<u64>,
+    poll_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ConfirmOutcome {
+    signature: String,
+    status: &'static str,
+    target_commitment: String,
+    reached: bool,
+    polls: u32,
+    elapsed_ms: u128,
+    slot: Option<u64>,
+    confirmation_status: Option<String>,
+    error: Option<Value>,
+}
+
+/// Validates a confirmation commitment target. Only `confirmed` and
+/// `finalized` are valid landing targets; `processed` is not durable.
+fn normalize_confirm_commitment(input: Option<&str>) -> Result<String, String> {
+    let value = input
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("confirmed");
+    match value.to_ascii_lowercase().as_str() {
+        "confirmed" => Ok("confirmed".to_string()),
+        "finalized" => Ok("finalized".to_string()),
+        _ => Err(format!(
+            "targetCommitment must be confirmed or finalized: {value}"
+        )),
+    }
+}
+
+fn commitment_rank(status: &str) -> u8 {
+    match status {
+        "processed" => 1,
+        "confirmed" => 2,
+        "finalized" => 3,
+        _ => 0,
+    }
+}
+
+fn record_confirm_outcome(metrics: &Metrics, status: &str) {
+    let counter = match status {
+        "confirmed" => &metrics.confirmations_confirmed_total,
+        "finalized" => &metrics.confirmations_finalized_total,
+        "failed" => &metrics.confirmations_failed_total,
+        _ => &metrics.confirmations_pending_total,
+    };
+    counter.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Polls `getSignatureStatuses` until the signature reaches the target
+/// commitment, fails on-chain, or the bounded timeout elapses.
+async fn confirm_signature(
+    state: &AppState,
+    signature: &str,
+    target_commitment: &str,
+    timeout_ms: u64,
+    poll_interval_ms: u64,
+) -> ConfirmOutcome {
+    let interval = poll_interval_ms
+        .clamp(MIN_CONFIRM_POLL_INTERVAL_MS, MAX_CONFIRM_TIMEOUT_MS)
+        .max(1);
+    let timeout = timeout_ms.clamp(interval, MAX_CONFIRM_TIMEOUT_MS);
+    let max_polls = ((timeout / interval) as u32 + 1).min(MAX_CONFIRM_POLLS);
+    let target_rank = commitment_rank(target_commitment);
+    let started = Instant::now();
+
+    let mut polls = 0u32;
+    let mut last_confirmation_status: Option<String> = None;
+    let mut last_slot: Option<u64> = None;
+
+    while polls < max_polls {
+        polls += 1;
+        let params = json!([[signature], { "searchTransactionHistory": true }]);
+        match solana_rpc(state, "getSignatureStatuses", params).await {
+            Ok(result) => {
+                let entry = result.pointer("/value/0").cloned().unwrap_or(Value::Null);
+                if entry.is_object() {
+                    last_slot = entry.get("slot").and_then(Value::as_u64).or(last_slot);
+                    if let Some(error) = entry.get("err") {
+                        if !error.is_null() {
+                            let outcome = ConfirmOutcome {
+                                signature: signature.to_string(),
+                                status: "failed",
+                                target_commitment: target_commitment.to_string(),
+                                reached: false,
+                                polls,
+                                elapsed_ms: started.elapsed().as_millis(),
+                                slot: last_slot,
+                                confirmation_status: entry
+                                    .get("confirmationStatus")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string),
+                                error: Some(error.clone()),
+                            };
+                            record_confirm_outcome(&state.metrics, "failed");
+                            return outcome;
+                        }
+                    }
+                    let confirmation_status = entry
+                        .get("confirmationStatus")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    if let Some(status) = &confirmation_status {
+                        last_confirmation_status = Some(status.clone());
+                        if commitment_rank(status) >= target_rank {
+                            let status_label: &'static str = if target_commitment == "finalized" {
+                                "finalized"
+                            } else {
+                                "confirmed"
+                            };
+                            record_confirm_outcome(&state.metrics, status_label);
+                            return ConfirmOutcome {
+                                signature: signature.to_string(),
+                                status: status_label,
+                                target_commitment: target_commitment.to_string(),
+                                reached: true,
+                                polls,
+                                elapsed_ms: started.elapsed().as_millis(),
+                                slot: last_slot,
+                                confirmation_status,
+                                error: None,
+                            };
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Transient RPC error is already counted/logged in solana_rpc;
+                // keep polling until the bounded budget is exhausted.
+            }
+        }
+        if polls < max_polls {
+            tokio::time::sleep(Duration::from_millis(interval)).await;
+        }
+    }
+
+    record_confirm_outcome(&state.metrics, "pending");
+    ConfirmOutcome {
+        signature: signature.to_string(),
+        status: "pending",
+        target_commitment: target_commitment.to_string(),
+        reached: false,
+        polls,
+        elapsed_ms: started.elapsed().as_millis(),
+        slot: last_slot,
+        confirmation_status: last_confirmation_status,
+        error: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Settlement and resolution vocabulary (shared with dd-escrow-rs)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SettlementAction {
+    Fund,
+    Release,
+    Refund,
+    PartialRelease,
+    SplitRelease,
+    DisputeAward,
+    Expire,
+    Cancel,
+}
+
+impl SettlementAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            SettlementAction::Fund => "fund",
+            SettlementAction::Release => "release",
+            SettlementAction::Refund => "refund",
+            SettlementAction::PartialRelease => "partial-release",
+            SettlementAction::SplitRelease => "split-release",
+            SettlementAction::DisputeAward => "dispute-award",
+            SettlementAction::Expire => "expire",
+            SettlementAction::Cancel => "cancel",
+        }
+    }
+}
+
+const SETTLEMENT_ACTIONS: [&str; 8] = [
+    "fund",
+    "release",
+    "refund",
+    "partial-release",
+    "split-release",
+    "dispute-award",
+    "expire",
+    "cancel",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ResolutionDecision {
+    ReleaseToPayee,
+    RefundToPayer,
+    Split,
+    AwardToClaimant,
+    Uphold,
+    Overturn,
+}
+
+impl ResolutionDecision {
+    fn as_str(self) -> &'static str {
+        match self {
+            ResolutionDecision::ReleaseToPayee => "release-to-payee",
+            ResolutionDecision::RefundToPayer => "refund-to-payer",
+            ResolutionDecision::Split => "split",
+            ResolutionDecision::AwardToClaimant => "award-to-claimant",
+            ResolutionDecision::Uphold => "uphold",
+            ResolutionDecision::Overturn => "overturn",
+        }
+    }
+
+    /// Settlement actions that may legitimately enact a given dispute decision.
+    fn allowed_actions(self) -> &'static [SettlementAction] {
+        match self {
+            ResolutionDecision::ReleaseToPayee => {
+                &[SettlementAction::Release, SettlementAction::PartialRelease]
+            }
+            ResolutionDecision::RefundToPayer => &[SettlementAction::Refund],
+            ResolutionDecision::Split => &[SettlementAction::SplitRelease],
+            ResolutionDecision::AwardToClaimant => &[SettlementAction::DisputeAward],
+            ResolutionDecision::Uphold => &[
+                SettlementAction::Release,
+                SettlementAction::PartialRelease,
+                SettlementAction::SplitRelease,
+                SettlementAction::DisputeAward,
+            ],
+            ResolutionDecision::Overturn => &[
+                SettlementAction::Refund,
+                SettlementAction::SplitRelease,
+                SettlementAction::DisputeAward,
+            ],
+        }
+    }
+}
+
+const RESOLUTION_DECISIONS: [&str; 6] = [
+    "release-to-payee",
+    "refund-to-payer",
+    "split",
+    "award-to-claimant",
+    "uphold",
+    "overturn",
+];
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ConfirmOptions {
+    target_commitment: Option<String>,
+    timeout_ms: Option<u64>,
+    poll_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettlementRequest {
+    schema_version: String,
+    request_id: Option<String>,
+    cluster: Option<String>,
+    contract_id: Option<String>,
+    escrow_id: Option<String>,
+    action: SettlementAction,
+    transaction: String,
+    encoding: Option<String>,
+    commitment: Option<String>,
+    skip_preflight: Option<bool>,
+    max_retries: Option<usize>,
+    min_context_slot: Option<u64>,
+    confirm: Option<ConfirmOptions>,
+    intent_digest: Option<String>,
+    memo: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolutionRequest {
+    schema_version: String,
+    request_id: Option<String>,
+    cluster: Option<String>,
+    dispute_id: Option<String>,
+    escrow_id: Option<String>,
+    decision: ResolutionDecision,
+    action: SettlementAction,
+    arbiter: Option<String>,
+    arbiter_required_signer: Option<bool>,
+    transaction: String,
+    encoding: Option<String>,
+    commitment: Option<String>,
+    skip_preflight: Option<bool>,
+    max_retries: Option<usize>,
+    min_context_slot: Option<u64>,
+    confirm: Option<ConfirmOptions>,
+    rationale: Option<String>,
+}
+
+/// Common fields needed to drive simulate/send for a settlement-style request.
+struct SettlementCore {
+    request_id: Option<String>,
+    cluster: Option<String>,
+    transaction: String,
+    encoding: Option<String>,
+    commitment: Option<String>,
+    skip_preflight: Option<bool>,
+    max_retries: Option<usize>,
+    min_context_slot: Option<u64>,
+}
+
+impl SettlementCore {
+    /// Builds a TransactionRpcRequest so settlement paths reuse the audited
+    /// validate/simulate/send helpers. `for_simulate` flips on
+    /// replaceRecentBlockhash so dry-runs don't need a fresh blockhash.
+    fn tx_request(&self, for_simulate: bool) -> TransactionRpcRequest {
+        TransactionRpcRequest {
+            request_id: self.request_id.clone(),
+            cluster: self.cluster.clone(),
+            transaction: self.transaction.clone(),
+            encoding: self.encoding.clone(),
+            commitment: self.commitment.clone(),
+            sig_verify: Some(false),
+            replace_recent_blockhash: Some(for_simulate),
+            skip_preflight: self.skip_preflight,
+            max_retries: self.max_retries,
+            min_context_slot: self.min_context_slot,
+        }
+    }
+}
+
+impl SettlementRequest {
+    fn core(&self) -> SettlementCore {
+        SettlementCore {
+            request_id: self.request_id.clone(),
+            cluster: self.cluster.clone(),
+            transaction: self.transaction.clone(),
+            encoding: self.encoding.clone(),
+            commitment: self.commitment.clone(),
+            skip_preflight: self.skip_preflight,
+            max_retries: self.max_retries,
+            min_context_slot: self.min_context_slot,
+        }
+    }
+}
+
+impl ResolutionRequest {
+    fn core(&self) -> SettlementCore {
+        SettlementCore {
+            request_id: self.request_id.clone(),
+            cluster: self.cluster.clone(),
+            transaction: self.transaction.clone(),
+            encoding: self.encoding.clone(),
+            commitment: self.commitment.clone(),
+            skip_preflight: self.skip_preflight,
+            max_retries: self.max_retries,
+            min_context_slot: self.min_context_slot,
+        }
+    }
+}
+
+fn resolve_confirm_target(options: &Option<ConfirmOptions>) -> Result<(String, u64, u64), String> {
+    let (target, timeout_ms, poll_interval_ms) = match options {
+        Some(options) => (
+            normalize_confirm_commitment(options.target_commitment.as_deref())?,
+            options.timeout_ms.unwrap_or(DEFAULT_CONFIRM_TIMEOUT_MS),
+            options
+                .poll_interval_ms
+                .unwrap_or(DEFAULT_CONFIRM_POLL_INTERVAL_MS),
+        ),
+        None => (
+            "confirmed".to_string(),
+            DEFAULT_CONFIRM_TIMEOUT_MS,
+            DEFAULT_CONFIRM_POLL_INTERVAL_MS,
+        ),
+    };
+    Ok((target, timeout_ms, poll_interval_ms))
+}
+
+/// Shared validation for the settlement-style transaction core. Returns the
+/// validated encoding plus decoded byte length, or a list of errors.
+fn validate_settlement_core(
+    core: &SettlementCore,
+    default_cluster: &str,
+) -> Result<(String, &'static str, usize), Vec<String>> {
+    let mut errors = Vec::new();
+    let tx = core.tx_request(false);
+    let cluster = match normalize_request_cluster(core.cluster.as_deref(), default_cluster) {
+        Ok(cluster) => cluster,
+        Err(error) => {
+            errors.push(error);
+            default_cluster.to_string()
+        }
+    };
+    if let Err(error) = normalize_commitment(core.commitment.as_deref()) {
+        errors.push(error);
+    }
+    match validate_signed_transaction(&tx) {
+        Ok((encoding, decoded_len)) => {
+            if errors.is_empty() {
+                Ok((cluster, encoding, decoded_len))
+            } else {
+                Err(errors)
+            }
+        }
+        Err(error) => {
+            errors.push(error);
+            Err(errors)
+        }
+    }
+}
+
 async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
     record_rpc_request(&state.metrics, method);
 
@@ -964,21 +1608,41 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
         "runtime": "rust",
         "chain": "solana",
         "schemaVersion": SCHEMA_VERSION,
+        "settlementSchemaVersion": SETTLEMENT_SCHEMA_VERSION,
+        "resolutionSchemaVersion": RESOLUTION_SCHEMA_VERSION,
         "cluster": state.default_cluster,
         "sendEnabled": state.send_enabled,
         "skipPreflightAllowed": state.allow_skip_preflight,
+        "settlementEnabled": state.settlement_enabled,
+        "resolutionEnabled": state.resolution_enabled,
+        "natsSettlementEnabled": state.nats_settlement_enabled,
         "routes": {
             "health": "/healthz",
             "metrics": "/metrics",
             "status": "/status",
             "schema": "/schema",
+            "settlementSchema": "/schema/settlement",
+            "resolutionSchema": "/schema/resolution",
             "example": "/example",
+            "settlementExample": "/example/settlement",
             "validate": "POST /validate",
             "simulate": "POST /simulate",
-            "send": "POST /send"
+            "send": "POST /send",
+            "blockhash": "GET /blockhash",
+            "account": "POST /account",
+            "balance": "POST /balance",
+            "fee": "POST /fee",
+            "rentExemption": "GET /rent-exemption",
+            "transaction": "POST /transaction",
+            "confirm": "POST /confirm",
+            "simulateSettlement": "POST /simulate-settlement",
+            "settle": "POST /settle",
+            "resolve": "POST /resolve"
         },
         "nats": {
+            "validateSubject": state.result_subject,
             "resultSubject": state.result_subject,
+            "settlementResultSubject": state.settlement_result_subject,
             "eventSubject": state.event_subject
         }
     }))
@@ -1045,6 +1709,30 @@ async fn example_http(State(state): State<AppState>) -> impl IntoResponse {
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
     Json(contract_example())
+}
+
+async fn settlement_schema_http(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(settlement_schema())
+}
+
+async fn resolution_schema_http(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(resolution_schema())
+}
+
+async fn settlement_example_http(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    Json(settlement_example())
 }
 
 async fn validate_http(
@@ -1357,6 +2045,803 @@ async fn send_http(
     }
 }
 
+/// Returns the caller-supplied request id only when it is explicitly set and
+/// non-empty, so idempotency keys never collapse onto the default prefix.
+fn explicit_request_id(input: Option<&String>) -> Option<String> {
+    input
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[allow(clippy::result_large_err)]
+fn enforce_cluster(
+    state: &AppState,
+    cluster: Option<&str>,
+    metrics_prefix: &str,
+) -> Result<String, Response> {
+    normalize_request_cluster(cluster, &state.default_cluster).map_err(|error| {
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        log_warn(
+            "contract-read-policy-rejected",
+            "Read RPC request was rejected by policy.",
+            json!({ "reason": "cluster_mismatch", "scope": metrics_prefix }),
+        );
+        json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+    })
+}
+
+async fn read_rpc_response(
+    state: &AppState,
+    method: &str,
+    params: Value,
+    request_id: String,
+    cluster: String,
+) -> Response {
+    match solana_rpc(state, method, params).await {
+        Ok(result) => json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "requestId": request_id,
+                "cluster": cluster,
+                "rpcMethod": method,
+                "result": result,
+                "generatedAtMs": now_ms()
+            }),
+        ),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({
+                    "ok": false,
+                    "requestId": request_id,
+                    "rpcMethod": method,
+                    "error": error,
+                    "generatedAtMs": now_ms()
+                }),
+            )
+        }
+    }
+}
+
+async fn blockhash_http(
+    State(state): State<AppState>,
+    Query(query): Query<BlockhashQuery>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, query.cluster.as_deref(), "blockhash") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    let commitment = match normalize_commitment_or_default(query.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let params = json!([{ "commitment": commitment }]);
+    read_rpc_response(
+        &state,
+        "getLatestBlockhash",
+        params,
+        "contract-blockhash".to_string(),
+        cluster,
+    )
+    .await
+}
+
+async fn account_http(
+    State(state): State<AppState>,
+    Json(request): Json<AccountInfoRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, request.cluster.as_deref(), "account") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    if let Err(error) = validate_pubkey(&request.pubkey, "pubkey") {
+        return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }));
+    }
+    let encoding = match request.encoding.as_deref().map(str::trim) {
+        Some("base64") | None => "base64",
+        Some("base58") => "base58",
+        Some("jsonParsed") => "jsonParsed",
+        Some(other) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "error": format!("encoding must be base64, base58, or jsonParsed: {other}") }),
+            )
+        }
+    };
+    let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let params = json!([
+        request.pubkey.trim(),
+        { "encoding": encoding, "commitment": commitment }
+    ]);
+    read_rpc_response(
+        &state,
+        "getAccountInfo",
+        params,
+        request_id(request.request_id.as_ref(), "contract-account"),
+        cluster,
+    )
+    .await
+}
+
+async fn balance_http(
+    State(state): State<AppState>,
+    Json(request): Json<BalanceRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, request.cluster.as_deref(), "balance") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    if let Err(error) = validate_pubkey(&request.pubkey, "pubkey") {
+        return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }));
+    }
+    let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let (method, params) = match request.kind.as_deref().map(str::trim).unwrap_or("sol") {
+        "sol" => (
+            "getBalance",
+            json!([request.pubkey.trim(), { "commitment": commitment }]),
+        ),
+        "token" => (
+            "getTokenAccountBalance",
+            json!([request.pubkey.trim(), { "commitment": commitment }]),
+        ),
+        other => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "error": format!("kind must be sol or token: {other}") }),
+            )
+        }
+    };
+    read_rpc_response(
+        &state,
+        method,
+        params,
+        request_id(request.request_id.as_ref(), "contract-balance"),
+        cluster,
+    )
+    .await
+}
+
+async fn fee_http(
+    State(state): State<AppState>,
+    Json(request): Json<FeeForMessageRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, request.cluster.as_deref(), "fee") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    let message = request.message.trim();
+    if message.is_empty() {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "error": "message must not be empty" }),
+        );
+    }
+    match general_purpose::STANDARD.decode(message) {
+        Ok(bytes) if bytes.len() <= MAX_SIGNED_TRANSACTION_BYTES => {}
+        Ok(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "error": "message exceeds maximum size" }),
+            )
+        }
+        Err(error) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "error": format!("message must be valid base64: {error}") }),
+            )
+        }
+    }
+    let commitment = match normalize_commitment_or_default(request.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let params = json!([message, { "commitment": commitment }]);
+    read_rpc_response(
+        &state,
+        "getFeeForMessage",
+        params,
+        request_id(request.request_id.as_ref(), "contract-fee"),
+        cluster,
+    )
+    .await
+}
+
+async fn rent_exemption_http(
+    State(state): State<AppState>,
+    Query(query): Query<RentExemptionQuery>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, query.cluster.as_deref(), "rent-exemption") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    if query.bytes > MAX_RENT_EXEMPTION_BYTES {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "error": format!("bytes must be at most {MAX_RENT_EXEMPTION_BYTES}") }),
+        );
+    }
+    let commitment = match normalize_commitment_or_default(query.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let params = json!([query.bytes, { "commitment": commitment }]);
+    read_rpc_response(
+        &state,
+        "getMinimumBalanceForRentExemption",
+        params,
+        "contract-rent-exemption".to_string(),
+        cluster,
+    )
+    .await
+}
+
+async fn transaction_http(
+    State(state): State<AppState>,
+    Json(request): Json<TransactionLookupRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, request.cluster.as_deref(), "transaction") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    let signature = match validate_signature(&request.signature, "signature") {
+        Ok(signature) => signature,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let commitment = match normalize_confirm_commitment(request.commitment.as_deref()) {
+        Ok(commitment) => commitment,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let params = json!([
+        signature,
+        { "commitment": commitment, "maxSupportedTransactionVersion": 0, "encoding": "json" }
+    ]);
+    read_rpc_response(
+        &state,
+        "getTransaction",
+        params,
+        request_id(request.request_id.as_ref(), "contract-transaction"),
+        cluster,
+    )
+    .await
+}
+
+async fn confirm_http(
+    State(state): State<AppState>,
+    Json(request): Json<ConfirmRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let cluster = match enforce_cluster(&state, request.cluster.as_deref(), "confirm") {
+        Ok(cluster) => cluster,
+        Err(response) => return response,
+    };
+    if request.signatures.is_empty() {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "error": "signatures must contain at least one signature" }),
+        );
+    }
+    if request.signatures.len() > MAX_CONFIRM_SIGNATURES {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "error": format!("signatures must contain at most {MAX_CONFIRM_SIGNATURES} signatures") }),
+        );
+    }
+    let mut signatures = Vec::with_capacity(request.signatures.len());
+    for (index, signature) in request.signatures.iter().enumerate() {
+        match validate_signature(signature, &format!("signatures[{index}]")) {
+            Ok(signature) => signatures.push(signature),
+            Err(error) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "error": error }),
+                )
+            }
+        }
+    }
+    let target = match normalize_confirm_commitment(request.target_commitment.as_deref()) {
+        Ok(target) => target,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    let timeout_ms = request.timeout_ms.unwrap_or(DEFAULT_CONFIRM_TIMEOUT_MS);
+    let poll_interval_ms = request
+        .poll_interval_ms
+        .unwrap_or(DEFAULT_CONFIRM_POLL_INTERVAL_MS);
+
+    let mut outcomes = Vec::with_capacity(signatures.len());
+    for signature in &signatures {
+        outcomes
+            .push(confirm_signature(&state, signature, &target, timeout_ms, poll_interval_ms).await);
+    }
+    let all_reached = outcomes.iter().all(|outcome| outcome.reached);
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": all_reached,
+            "requestId": request_id(request.request_id.as_ref(), "contract-confirm"),
+            "cluster": cluster,
+            "targetCommitment": target,
+            "outcomes": outcomes,
+            "generatedAtMs": now_ms()
+        }),
+    )
+}
+
+async fn simulate_settlement_http(
+    State(state): State<AppState>,
+    Json(request): Json<SettlementRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if request.schema_version != SETTLEMENT_SCHEMA_VERSION {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "error": format!("schemaVersion must be {SETTLEMENT_SCHEMA_VERSION}") }),
+        );
+    }
+    let core = request.core();
+    let (cluster, encoding, decoded_bytes) =
+        match validate_settlement_core(&core, &state.default_cluster) {
+            Ok(validated) => validated,
+            Err(errors) => {
+                state
+                    .metrics
+                    .policy_rejections_total
+                    .fetch_add(1, Ordering::Relaxed);
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "errors": errors }),
+                );
+            }
+        };
+    let tx = core.tx_request(true);
+    let params = match simulate_params(&tx, encoding) {
+        Ok(params) => params,
+        Err(error) => {
+            return json_response(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": error }))
+        }
+    };
+    match solana_rpc(&state, "simulateTransaction", params).await {
+        Ok(result) => json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "requestId": request_id(request.request_id.as_ref(), "contract-settlement-simulate"),
+                "schemaVersion": SETTLEMENT_SCHEMA_VERSION,
+                "cluster": cluster,
+                "action": request.action.as_str(),
+                "encoding": encoding,
+                "transactionBytes": decoded_bytes,
+                "result": result,
+                "generatedAtMs": now_ms()
+            }),
+        ),
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({ "ok": false, "error": error }),
+            )
+        }
+    }
+}
+
+async fn settle_http(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<SettlementRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .settlements_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    let req_id = request_id(request.request_id.as_ref(), "contract-settlement");
+
+    if !state.settlement_enabled {
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({
+                "ok": false,
+                "requestId": req_id,
+                "error": "settlement is disabled; set SOLANA_SETTLEMENT_ENABLED=true to permit /settle",
+                "generatedAtMs": now_ms()
+            }),
+        );
+    }
+    if let Err((status, error)) = authorize_settlement(&headers, &state) {
+        state
+            .metrics
+            .send_auth_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            status,
+            json!({ "ok": false, "requestId": req_id, "error": error }),
+        );
+    }
+    if request.schema_version != SETTLEMENT_SCHEMA_VERSION {
+        state
+            .metrics
+            .settlement_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "requestId": req_id, "error": format!("schemaVersion must be {SETTLEMENT_SCHEMA_VERSION}") }),
+        );
+    }
+    let core = request.core();
+    let (cluster, encoding, decoded_bytes) =
+        match validate_settlement_core(&core, &state.default_cluster) {
+            Ok(validated) => validated,
+            Err(errors) => {
+                state
+                    .metrics
+                    .settlement_errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "requestId": req_id, "errors": errors }),
+                );
+            }
+        };
+    let (confirm_target, confirm_timeout, confirm_interval) =
+        match resolve_confirm_target(&request.confirm) {
+            Ok(values) => values,
+            Err(error) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "requestId": req_id, "error": error }),
+                )
+            }
+        };
+
+    // Idempotency: only an explicitly provided request id guards a broadcast.
+    if let Some(key) = explicit_request_id(request.request_id.as_ref()) {
+        if !state.claim_idempotency_key(&format!("settle:{key}")) {
+            state
+                .metrics
+                .settlement_idempotent_hits_total
+                .fetch_add(1, Ordering::Relaxed);
+            return json_response(
+                StatusCode::CONFLICT,
+                json!({
+                    "ok": false,
+                    "requestId": req_id,
+                    "error": "duplicate settlement requestId within the idempotency window; broadcast suppressed",
+                    "idempotent": true,
+                    "generatedAtMs": now_ms()
+                }),
+            );
+        }
+    }
+
+    let tx = core.tx_request(false);
+    let send = match send_params(&tx, encoding, state.allow_skip_preflight) {
+        Ok(params) => params,
+        Err(error) => {
+            state
+                .metrics
+                .settlement_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "requestId": req_id, "error": error }),
+            );
+        }
+    };
+    let signature_value = match solana_rpc(&state, "sendTransaction", send).await {
+        Ok(value) => value,
+        Err(error) => {
+            state
+                .metrics
+                .settlement_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            publish_runtime_critical_event(
+                &state,
+                "contract-settlement-send-failed",
+                "Settlement sendTransaction failed.",
+                json!({ "requestId": req_id, "action": request.action.as_str(), "error": error }),
+            )
+            .await;
+            return json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({ "ok": false, "requestId": req_id, "error": error }),
+            );
+        }
+    };
+    let signature = signature_value.as_str().unwrap_or_default().to_string();
+    let confirmation = confirm_signature(
+        &state,
+        &signature,
+        &confirm_target,
+        confirm_timeout,
+        confirm_interval,
+    )
+    .await;
+
+    let outcome = json!({
+        "messageKind": "solana.settlement.outcome",
+        "source": SERVICE_NAME,
+        "ok": confirmation.reached,
+        "requestId": req_id,
+        "schemaVersion": SETTLEMENT_SCHEMA_VERSION,
+        "cluster": cluster,
+        "kind": "settlement",
+        "action": request.action.as_str(),
+        "contractId": request.contract_id,
+        "escrowId": request.escrow_id,
+        "intentDigest": request.intent_digest,
+        "memo": request.memo,
+        "encoding": encoding,
+        "transactionBytes": decoded_bytes,
+        "signature": signature,
+        "confirmation": confirmation,
+        "generatedAtMs": now_ms()
+    });
+    publish_settlement_outcome(&state, outcome.clone()).await;
+    publish_contract_event(&state, "solana.contract.settlement", &req_id, confirmation.reached)
+        .await;
+    json_response(StatusCode::OK, outcome)
+}
+
+async fn resolve_http(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(request): Json<ResolutionRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .resolutions_total
+        .fetch_add(1, Ordering::Relaxed);
+
+    let req_id = request_id(request.request_id.as_ref(), "contract-resolution");
+
+    if !state.resolution_enabled {
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({
+                "ok": false,
+                "requestId": req_id,
+                "error": "resolution is disabled; set SOLANA_RESOLUTION_ENABLED=true to permit /resolve",
+                "generatedAtMs": now_ms()
+            }),
+        );
+    }
+    if let Err((status, error)) = authorize_settlement(&headers, &state) {
+        state
+            .metrics
+            .send_auth_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .policy_rejections_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            status,
+            json!({ "ok": false, "requestId": req_id, "error": error }),
+        );
+    }
+
+    let mut errors = Vec::new();
+    if request.schema_version != RESOLUTION_SCHEMA_VERSION {
+        errors.push(format!("schemaVersion must be {RESOLUTION_SCHEMA_VERSION}"));
+    }
+    if !request.decision.allowed_actions().contains(&request.action) {
+        errors.push(format!(
+            "decision {} does not permit settlement action {}",
+            request.decision.as_str(),
+            request.action.as_str()
+        ));
+    }
+    if let Some(arbiter) = &request.arbiter {
+        if let Err(error) = validate_pubkey(arbiter, "arbiter") {
+            errors.push(error);
+        }
+    } else if request.arbiter_required_signer == Some(true) {
+        errors.push("arbiter pubkey is required when arbiterRequiredSigner is true".to_string());
+    }
+    if let Some(rationale) = &request.rationale {
+        if rationale.len() > MAX_RATIONALE_BYTES {
+            errors.push(format!(
+                "rationale must be at most {MAX_RATIONALE_BYTES} bytes"
+            ));
+        }
+    }
+    let core = request.core();
+    let (cluster, encoding, decoded_bytes) =
+        match validate_settlement_core(&core, &state.default_cluster) {
+            Ok(validated) => validated,
+            Err(core_errors) => {
+                errors.extend(core_errors);
+                (state.default_cluster.clone(), "base64", 0)
+            }
+        };
+    let (confirm_target, confirm_timeout, confirm_interval) =
+        match resolve_confirm_target(&request.confirm) {
+            Ok(values) => values,
+            Err(error) => {
+                errors.push(error);
+                ("confirmed".to_string(), DEFAULT_CONFIRM_TIMEOUT_MS, DEFAULT_CONFIRM_POLL_INTERVAL_MS)
+            }
+        };
+    if !errors.is_empty() {
+        state
+            .metrics
+            .resolution_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "ok": false, "requestId": req_id, "errors": errors }),
+        );
+    }
+
+    if let Some(key) = explicit_request_id(request.request_id.as_ref()) {
+        if !state.claim_idempotency_key(&format!("resolve:{key}")) {
+            state
+                .metrics
+                .settlement_idempotent_hits_total
+                .fetch_add(1, Ordering::Relaxed);
+            return json_response(
+                StatusCode::CONFLICT,
+                json!({
+                    "ok": false,
+                    "requestId": req_id,
+                    "error": "duplicate resolution requestId within the idempotency window; broadcast suppressed",
+                    "idempotent": true,
+                    "generatedAtMs": now_ms()
+                }),
+            );
+        }
+    }
+
+    let tx = core.tx_request(false);
+    let send = match send_params(&tx, encoding, state.allow_skip_preflight) {
+        Ok(params) => params,
+        Err(error) => {
+            state
+                .metrics
+                .resolution_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                json!({ "ok": false, "requestId": req_id, "error": error }),
+            );
+        }
+    };
+    let signature_value = match solana_rpc(&state, "sendTransaction", send).await {
+        Ok(value) => value,
+        Err(error) => {
+            state
+                .metrics
+                .resolution_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            publish_runtime_critical_event(
+                &state,
+                "contract-resolution-send-failed",
+                "Resolution sendTransaction failed.",
+                json!({ "requestId": req_id, "decision": request.decision.as_str(), "action": request.action.as_str(), "error": error }),
+            )
+            .await;
+            return json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({ "ok": false, "requestId": req_id, "error": error }),
+            );
+        }
+    };
+    let signature = signature_value.as_str().unwrap_or_default().to_string();
+    let confirmation = confirm_signature(
+        &state,
+        &signature,
+        &confirm_target,
+        confirm_timeout,
+        confirm_interval,
+    )
+    .await;
+
+    let outcome = json!({
+        "messageKind": "solana.resolution.outcome",
+        "source": SERVICE_NAME,
+        "ok": confirmation.reached,
+        "requestId": req_id,
+        "schemaVersion": RESOLUTION_SCHEMA_VERSION,
+        "cluster": cluster,
+        "kind": "resolution",
+        "decision": request.decision.as_str(),
+        "action": request.action.as_str(),
+        "disputeId": request.dispute_id,
+        "escrowId": request.escrow_id,
+        "arbiter": request.arbiter,
+        "encoding": encoding,
+        "transactionBytes": decoded_bytes,
+        "signature": signature,
+        "confirmation": confirmation,
+        "generatedAtMs": now_ms()
+    });
+    publish_settlement_outcome(&state, outcome.clone()).await;
+    publish_contract_event(&state, "solana.contract.resolution", &req_id, confirmation.reached)
+        .await;
+    json_response(StatusCode::OK, outcome)
+}
+
 fn bool_label(value: bool) -> &'static str {
     if value {
         "true"
@@ -1365,139 +2850,192 @@ fn bool_label(value: bool) -> &'static str {
     }
 }
 
+/// RPC methods exposed as low-cardinality `rpc_method` label values in the
+/// per-method counter families.
+const METRICS_RPC_METHODS: [&str; 12] = [
+    "getHealth",
+    "getVersion",
+    "simulateTransaction",
+    "sendTransaction",
+    "getLatestBlockhash",
+    "getSignatureStatuses",
+    "getTransaction",
+    "getAccountInfo",
+    "getBalance",
+    "getTokenAccountBalance",
+    "getFeeForMessage",
+    "getMinimumBalanceForRentExemption",
+];
+
+/// Appends a single-line Prometheus counter family (HELP/TYPE + one sample).
+fn push_counter(out: &mut String, name: &str, help: &str, value: u64) {
+    out.push_str(&format!(
+        "# HELP {name} {help}\n# TYPE {name} counter\n{name} {value}\n"
+    ));
+}
+
 fn metrics_body(state: &AppState) -> String {
+    let m = &state.metrics;
+    let load = |counter: &AtomicU64| counter.load(Ordering::Relaxed);
+    let mut out = String::with_capacity(4096);
+
+    push_counter(
+        &mut out,
+        "dd_contract_service_http_requests_total",
+        "HTTP requests handled by the Solana contract service.",
+        load(&m.http_requests_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_validations_total",
+        "Contract validation requests handled.",
+        load(&m.validations_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_validation_errors_total",
+        "Contract validation requests rejected.",
+        load(&m.validation_errors_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_policy_rejections_total",
+        "Requests rejected by contract service safety policy before upstream RPC.",
+        load(&m.policy_rejections_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_settlements_total",
+        "Settlement requests handled by /settle and the settle NATS subject.",
+        load(&m.settlements_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_settlement_errors_total",
+        "Settlement requests that failed validation or broadcast.",
+        load(&m.settlement_errors_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_resolutions_total",
+        "Dispute resolution requests handled by /resolve and the resolve NATS subject.",
+        load(&m.resolutions_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_resolution_errors_total",
+        "Dispute resolution requests that failed validation or broadcast.",
+        load(&m.resolution_errors_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_settlement_idempotent_hits_total",
+        "Settlement/resolution broadcasts suppressed by the idempotency guard.",
+        load(&m.settlement_idempotent_hits_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_rpc_requests_total",
+        "Solana JSON-RPC requests sent.",
+        load(&m.rpc_requests_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_rpc_errors_total",
+        "Solana JSON-RPC requests that failed.",
+        load(&m.rpc_errors_total),
+    );
+
+    // Per-method request/error families (stable label set).
+    out.push_str("# HELP dd_contract_service_rpc_requests_by_method_total Solana JSON-RPC requests sent by low-cardinality method.\n# TYPE dd_contract_service_rpc_requests_by_method_total counter\n");
+    for method in METRICS_RPC_METHODS {
+        let (requests, _) = rpc_method_counters(m, method);
+        out.push_str(&format!(
+            "dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"{method}\"}} {}\n",
+            load(requests)
+        ));
+    }
+    out.push_str("# HELP dd_contract_service_rpc_errors_by_method_total Solana JSON-RPC failures by low-cardinality method.\n# TYPE dd_contract_service_rpc_errors_by_method_total counter\n");
+    for method in METRICS_RPC_METHODS {
+        let (_, errors) = rpc_method_counters(m, method);
+        out.push_str(&format!(
+            "dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"{method}\"}} {}\n",
+            load(errors)
+        ));
+    }
+
+    // Confirmation outcomes by terminal status.
+    out.push_str("# HELP dd_contract_service_confirmations_total Settlement/resolution signature confirmation outcomes by terminal status.\n# TYPE dd_contract_service_confirmations_total counter\n");
+    for (outcome, value) in [
+        ("confirmed", load(&m.confirmations_confirmed_total)),
+        ("finalized", load(&m.confirmations_finalized_total)),
+        ("failed", load(&m.confirmations_failed_total)),
+        ("pending", load(&m.confirmations_pending_total)),
+    ] {
+        out.push_str(&format!(
+            "dd_contract_service_confirmations_total{{outcome=\"{outcome}\"}} {value}\n"
+        ));
+    }
+
+    push_counter(
+        &mut out,
+        "dd_contract_service_nats_messages_total",
+        "NATS messages received across subscribed subjects.",
+        load(&m.nats_messages_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_nats_payload_rejected_total",
+        "NATS messages rejected before processing.",
+        load(&m.nats_payload_rejected_total),
+    );
+    out.push_str("# HELP dd_contract_service_nats_published_total NATS messages published by subject kind.\n# TYPE dd_contract_service_nats_published_total counter\n");
+    out.push_str(&format!(
+        "dd_contract_service_nats_published_total{{subject_kind=\"result\"}} {}\n",
+        load(&m.nats_results_published_total)
+    ));
+    out.push_str(&format!(
+        "dd_contract_service_nats_published_total{{subject_kind=\"event\"}} {}\n",
+        load(&m.nats_events_published_total)
+    ));
+    out.push_str(&format!(
+        "dd_contract_service_nats_published_total{{subject_kind=\"critical\"}} {}\n",
+        load(&m.nats_critical_events_published_total)
+    ));
+    push_counter(
+        &mut out,
+        "dd_contract_service_nats_publish_errors_total",
+        "NATS publish failures observed.",
+        load(&m.nats_publish_errors_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_send_blocked_total",
+        "Raw transaction sends blocked by policy.",
+        load(&m.send_blocked_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_send_auth_failures_total",
+        "Send/settlement attempts rejected by an auth header check.",
+        load(&m.send_auth_failures_total),
+    );
+    push_counter(
+        &mut out,
+        "dd_contract_service_errors_total",
+        "Contract service errors observed.",
+        load(&m.errors_total),
+    );
+
     format!(
-        "\
-# HELP dd_contract_service_info Static service configuration labels for the Solana contract service.\n\
+        "# HELP dd_contract_service_info Static service configuration labels for the Solana contract service.\n\
 # TYPE dd_contract_service_info gauge\n\
-dd_contract_service_info{{cluster=\"{}\",send_enabled=\"{}\",skip_preflight_allowed=\"{}\"}} 1\n\
-# HELP dd_contract_service_http_requests_total HTTP requests handled by the Solana contract service.\n\
-# TYPE dd_contract_service_http_requests_total counter\n\
-dd_contract_service_http_requests_total {}\n\
-# HELP dd_contract_service_validations_total Contract validation requests handled.\n\
-# TYPE dd_contract_service_validations_total counter\n\
-dd_contract_service_validations_total {}\n\
-# HELP dd_contract_service_validation_errors_total Contract validation requests rejected.\n\
-# TYPE dd_contract_service_validation_errors_total counter\n\
-dd_contract_service_validation_errors_total {}\n\
-# HELP dd_contract_service_policy_rejections_total Requests rejected by contract service safety policy before upstream RPC.\n\
-# TYPE dd_contract_service_policy_rejections_total counter\n\
-dd_contract_service_policy_rejections_total {}\n\
-# HELP dd_contract_service_rpc_requests_total Solana JSON-RPC requests sent.\n\
-# TYPE dd_contract_service_rpc_requests_total counter\n\
-dd_contract_service_rpc_requests_total {}\n\
-# HELP dd_contract_service_rpc_errors_total Solana JSON-RPC requests that failed.\n\
-# TYPE dd_contract_service_rpc_errors_total counter\n\
-dd_contract_service_rpc_errors_total {}\n\
-# HELP dd_contract_service_rpc_requests_by_method_total Solana JSON-RPC requests sent by low-cardinality method.\n\
-# TYPE dd_contract_service_rpc_requests_by_method_total counter\n\
-dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"getHealth\"}} {}\n\
-dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"getVersion\"}} {}\n\
-dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"simulateTransaction\"}} {}\n\
-dd_contract_service_rpc_requests_by_method_total{{rpc_method=\"sendTransaction\"}} {}\n\
-# HELP dd_contract_service_rpc_errors_by_method_total Solana JSON-RPC failures by low-cardinality method.\n\
-# TYPE dd_contract_service_rpc_errors_by_method_total counter\n\
-dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"getHealth\"}} {}\n\
-dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"getVersion\"}} {}\n\
-dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"simulateTransaction\"}} {}\n\
-dd_contract_service_rpc_errors_by_method_total{{rpc_method=\"sendTransaction\"}} {}\n\
-# HELP dd_contract_service_nats_messages_total NATS validation messages received.\n\
-# TYPE dd_contract_service_nats_messages_total counter\n\
-dd_contract_service_nats_messages_total {}\n\
-# HELP dd_contract_service_nats_payload_rejected_total NATS validation messages rejected before contract validation.\n\
-# TYPE dd_contract_service_nats_payload_rejected_total counter\n\
-dd_contract_service_nats_payload_rejected_total {}\n\
-# HELP dd_contract_service_nats_published_total NATS messages published by subject kind.\n\
-# TYPE dd_contract_service_nats_published_total counter\n\
-dd_contract_service_nats_published_total{{subject_kind=\"result\"}} {}\n\
-dd_contract_service_nats_published_total{{subject_kind=\"event\"}} {}\n\
-dd_contract_service_nats_published_total{{subject_kind=\"critical\"}} {}\n\
-# HELP dd_contract_service_nats_publish_errors_total NATS publish failures observed.\n\
-# TYPE dd_contract_service_nats_publish_errors_total counter\n\
-dd_contract_service_nats_publish_errors_total {}\n\
-# HELP dd_contract_service_send_blocked_total Raw transaction sends blocked by policy.\n\
-# TYPE dd_contract_service_send_blocked_total counter\n\
-dd_contract_service_send_blocked_total {}\n\
-# HELP dd_contract_service_send_auth_failures_total Raw transaction send attempts rejected by the send auth header check.\n\
-# TYPE dd_contract_service_send_auth_failures_total counter\n\
-dd_contract_service_send_auth_failures_total {}\n\
-# HELP dd_contract_service_errors_total Contract service errors observed.\n\
-# TYPE dd_contract_service_errors_total counter\n\
-dd_contract_service_errors_total {}\n",
+dd_contract_service_info{{cluster=\"{}\",send_enabled=\"{}\",skip_preflight_allowed=\"{}\",settlement_enabled=\"{}\",resolution_enabled=\"{}\"}} 1\n{out}",
         state.default_cluster,
         bool_label(state.send_enabled),
         bool_label(state.allow_skip_preflight),
-        state.metrics.http_requests_total.load(Ordering::Relaxed),
-        state.metrics.validations_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .validation_errors_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .policy_rejections_total
-            .load(Ordering::Relaxed),
-        state.metrics.rpc_requests_total.load(Ordering::Relaxed),
-        state.metrics.rpc_errors_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_get_health_requests_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_get_version_requests_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_simulate_transaction_requests_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_send_transaction_requests_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_get_health_errors_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_get_version_errors_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_simulate_transaction_errors_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .rpc_send_transaction_errors_total
-            .load(Ordering::Relaxed),
-        state.metrics.nats_messages_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_payload_rejected_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_results_published_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_events_published_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_critical_events_published_total
-            .load(Ordering::Relaxed),
-        state
-            .metrics
-            .nats_publish_errors_total
-            .load(Ordering::Relaxed),
-        state.metrics.send_blocked_total.load(Ordering::Relaxed),
-        state
-            .metrics
-            .send_auth_failures_total
-            .load(Ordering::Relaxed),
-        state.metrics.errors_total.load(Ordering::Relaxed),
+        bool_label(state.settlement_enabled),
+        bool_label(state.resolution_enabled),
     )
 }
 
@@ -1593,6 +3131,89 @@ fn contract_example() -> Value {
     })
 }
 
+fn settlement_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "dd-contract-service Solana settlement request",
+        "type": "object",
+        "required": ["schemaVersion", "action", "transaction"],
+        "properties": {
+            "schemaVersion": { "const": SETTLEMENT_SCHEMA_VERSION },
+            "requestId": { "type": "string", "maxLength": MAX_REQUEST_ID_LEN, "description": "Explicit ids guard at-most-once broadcast within the idempotency window." },
+            "cluster": { "enum": ["mainnet-beta", "devnet", "testnet", "localnet", "custom"] },
+            "contractId": { "type": "string" },
+            "escrowId": { "type": "string" },
+            "action": { "enum": SETTLEMENT_ACTIONS },
+            "transaction": { "type": "string", "description": "Signed transaction, base64 (default) or base58" },
+            "encoding": { "enum": ["base64", "base58"] },
+            "commitment": { "enum": ["processed", "confirmed", "finalized"] },
+            "skipPreflight": { "type": "boolean" },
+            "maxRetries": { "type": "integer", "minimum": 0, "maximum": MAX_SEND_RETRIES },
+            "minContextSlot": { "type": "integer", "minimum": 0 },
+            "intentDigest": { "type": "string" },
+            "memo": { "type": "string", "maxLength": MAX_MEMO_BYTES },
+            "confirm": {
+                "type": "object",
+                "properties": {
+                    "targetCommitment": { "enum": ["confirmed", "finalized"] },
+                    "timeoutMs": { "type": "integer", "minimum": 0, "maximum": MAX_CONFIRM_TIMEOUT_MS },
+                    "pollIntervalMs": { "type": "integer", "minimum": MIN_CONFIRM_POLL_INTERVAL_MS }
+                }
+            }
+        }
+    })
+}
+
+fn resolution_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "dd-contract-service Solana dispute resolution request",
+        "type": "object",
+        "required": ["schemaVersion", "decision", "action", "transaction"],
+        "properties": {
+            "schemaVersion": { "const": RESOLUTION_SCHEMA_VERSION },
+            "requestId": { "type": "string", "maxLength": MAX_REQUEST_ID_LEN },
+            "cluster": { "enum": ["mainnet-beta", "devnet", "testnet", "localnet", "custom"] },
+            "disputeId": { "type": "string" },
+            "escrowId": { "type": "string" },
+            "decision": { "enum": RESOLUTION_DECISIONS, "description": "Dispute outcome; constrains which settlement action may enact it." },
+            "action": { "enum": SETTLEMENT_ACTIONS },
+            "arbiter": { "type": "string", "description": "Base58 arbiter public key" },
+            "arbiterRequiredSigner": { "type": "boolean" },
+            "transaction": { "type": "string" },
+            "encoding": { "enum": ["base64", "base58"] },
+            "commitment": { "enum": ["processed", "confirmed", "finalized"] },
+            "skipPreflight": { "type": "boolean" },
+            "maxRetries": { "type": "integer", "minimum": 0, "maximum": MAX_SEND_RETRIES },
+            "minContextSlot": { "type": "integer", "minimum": 0 },
+            "rationale": { "type": "string", "maxLength": MAX_RATIONALE_BYTES },
+            "confirm": {
+                "type": "object",
+                "properties": {
+                    "targetCommitment": { "enum": ["confirmed", "finalized"] },
+                    "timeoutMs": { "type": "integer", "minimum": 0, "maximum": MAX_CONFIRM_TIMEOUT_MS },
+                    "pollIntervalMs": { "type": "integer", "minimum": MIN_CONFIRM_POLL_INTERVAL_MS }
+                }
+            }
+        }
+    })
+}
+
+fn settlement_example() -> Value {
+    json!({
+        "schemaVersion": SETTLEMENT_SCHEMA_VERSION,
+        "requestId": "settlement-demo",
+        "cluster": "devnet",
+        "escrowId": "escrow-demo",
+        "action": "release",
+        "transaction": "<base64-encoded signed settlement transaction>",
+        "encoding": "base64",
+        "commitment": "confirmed",
+        "intentDigest": "solana:0011223344556677",
+        "confirm": { "targetCommitment": "finalized", "timeoutMs": 30000 }
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -1634,11 +3255,17 @@ mod tests {
             send_enabled: true,
             send_auth_secret: Some("secret".to_string()),
             allow_skip_preflight: false,
+            settlement_enabled: true,
+            resolution_enabled: true,
+            nats_settlement_enabled: false,
+            settlement_auth_secret: Some("settlement-secret".to_string()),
             nats: None,
             result_subject: "results".to_string(),
+            settlement_result_subject: "settlement.results".to_string(),
             event_subject: "events".to_string(),
             critical_event_subject: "events.critical".to_string(),
             metrics: Arc::new(Metrics::default()),
+            idempotency: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -1836,6 +3463,142 @@ mod tests {
             body.contains("dd_contract_service_nats_published_total{subject_kind=\"critical\"} 1")
         );
     }
+
+    #[test]
+    fn metrics_body_includes_new_rpc_methods_and_settlement_counters() {
+        let state = sample_state();
+        record_rpc_request(&state.metrics, "getSignatureStatuses");
+        record_rpc_request(&state.metrics, "getLatestBlockhash");
+        record_confirm_outcome(&state.metrics, "finalized");
+
+        let body = metrics_body(&state);
+
+        assert!(body.contains(
+            "dd_contract_service_rpc_requests_by_method_total{rpc_method=\"getSignatureStatuses\"} 1"
+        ));
+        assert!(body.contains(
+            "dd_contract_service_rpc_requests_by_method_total{rpc_method=\"getLatestBlockhash\"} 1"
+        ));
+        assert!(body.contains("dd_contract_service_confirmations_total{outcome=\"finalized\"} 1"));
+        assert!(body.contains("dd_contract_service_settlements_total 0"));
+        assert!(body.contains("settlement_enabled=\"true\""));
+    }
+
+    #[test]
+    fn settlement_auth_requires_matching_header() {
+        let state = sample_state();
+        let mut headers = HeaderMap::new();
+
+        assert!(authorize_settlement(&headers, &state).is_err());
+        headers.insert(SETTLEMENT_AUTH_HEADER, "settlement-secret".parse().unwrap());
+        assert!(authorize_settlement(&headers, &state).is_ok());
+        headers.insert(SETTLEMENT_AUTH_HEADER, "nope".parse().unwrap());
+        assert!(authorize_settlement(&headers, &state).is_err());
+    }
+
+    #[test]
+    fn resolution_decision_constrains_actions() {
+        assert!(ResolutionDecision::RefundToPayer
+            .allowed_actions()
+            .contains(&SettlementAction::Refund));
+        assert!(!ResolutionDecision::RefundToPayer
+            .allowed_actions()
+            .contains(&SettlementAction::Release));
+        assert!(ResolutionDecision::AwardToClaimant
+            .allowed_actions()
+            .contains(&SettlementAction::DisputeAward));
+    }
+
+    #[test]
+    fn confirm_commitment_target_is_durable_only() {
+        assert_eq!(normalize_confirm_commitment(None).unwrap(), "confirmed");
+        assert_eq!(
+            normalize_confirm_commitment(Some("finalized")).unwrap(),
+            "finalized"
+        );
+        // processed is not a durable landing target.
+        assert!(normalize_confirm_commitment(Some("processed")).is_err());
+        assert!(commitment_rank("finalized") > commitment_rank("confirmed"));
+        assert!(commitment_rank("confirmed") > commitment_rank("processed"));
+    }
+
+    #[test]
+    fn signature_validation_requires_64_bytes() {
+        let signature = bs58::encode([7_u8; 64]).into_string();
+        assert!(validate_signature(&signature, "signature").is_ok());
+        assert!(validate_signature("not-base58-!!!", "signature").is_err());
+        let short = bs58::encode([7_u8; 32]).into_string();
+        assert!(validate_signature(&short, "signature").is_err());
+    }
+
+    #[test]
+    fn idempotency_key_is_claimed_once() {
+        let state = sample_state();
+        assert!(state.claim_idempotency_key("settle:abc"));
+        // Second claim of the same key within the TTL window is suppressed.
+        assert!(!state.claim_idempotency_key("settle:abc"));
+        // A distinct key is independent.
+        assert!(state.claim_idempotency_key("settle:def"));
+    }
+
+    #[test]
+    fn settlement_core_rejects_cluster_drift_and_bad_tx() {
+        let core = SettlementCore {
+            request_id: Some("settle-demo".to_string()),
+            cluster: Some("mainnet-beta".to_string()),
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            skip_preflight: None,
+            max_retries: None,
+            min_context_slot: None,
+        };
+        let errors = validate_settlement_core(&core, "devnet").expect_err("cluster drift");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("cluster must match configured SOLANA_CLUSTER")));
+
+        let valid = SettlementCore {
+            cluster: Some("devnet".to_string()),
+            ..core_with_tx(general_purpose::STANDARD.encode([9_u8; 64]))
+        };
+        let (cluster, encoding, bytes) =
+            validate_settlement_core(&valid, "devnet").expect("valid core");
+        assert_eq!(cluster, "devnet");
+        assert_eq!(encoding, "base64");
+        assert_eq!(bytes, 64);
+    }
+
+    fn core_with_tx(transaction: String) -> SettlementCore {
+        SettlementCore {
+            request_id: Some("settle-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            transaction,
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            skip_preflight: None,
+            max_retries: None,
+            min_context_slot: None,
+        }
+    }
+
+    #[test]
+    fn confirm_options_resolve_with_defaults() {
+        let (target, timeout, interval) = resolve_confirm_target(&None).unwrap();
+        assert_eq!(target, "confirmed");
+        assert_eq!(timeout, DEFAULT_CONFIRM_TIMEOUT_MS);
+        assert_eq!(interval, DEFAULT_CONFIRM_POLL_INTERVAL_MS);
+
+        let options = Some(ConfirmOptions {
+            target_commitment: Some("finalized".to_string()),
+            timeout_ms: Some(5_000),
+            poll_interval_ms: Some(500),
+        });
+        let (target, timeout, interval) = resolve_confirm_target(&options).unwrap();
+        assert_eq!(target, "finalized");
+        assert_eq!(timeout, 5_000);
+        assert_eq!(interval, 500);
+    }
 }
 
 async fn publish_contract_result(state: &AppState, payload: Value) {
@@ -1866,6 +3629,46 @@ async fn publish_contract_result(state: &AppState, payload: Value) {
             "Contract validation result NATS publish failed.",
             json!({
                 "subject": &state.result_subject,
+                "error": error.to_string(),
+            }),
+        )
+        .await;
+    } else {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+async fn publish_settlement_outcome(state: &AppState, payload: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let Ok(encoded) = serde_json::to_vec(&payload) else {
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        log_error(
+            "contract-settlement-result-serialize-failed",
+            "Settlement/resolution outcome could not be serialized for NATS.",
+            json!({}),
+        );
+        return;
+    };
+    if let Err(error) = nats
+        .publish(state.settlement_result_subject.clone(), encoded.into())
+        .await
+    {
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .nats_publish_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        publish_runtime_critical_event(
+            state,
+            "contract-settlement-result-publish-failed",
+            "Settlement/resolution outcome NATS publish failed.",
+            json!({
+                "subject": &state.settlement_result_subject,
                 "error": error.to_string(),
             }),
         )
@@ -1978,7 +3781,31 @@ async fn publish_runtime_critical_event(
     }
 }
 
-async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NatsKind {
+    Validate,
+    Settle,
+    Resolve,
+    EscrowResults,
+}
+
+impl NatsKind {
+    fn label(self) -> &'static str {
+        match self {
+            NatsKind::Validate => "validate",
+            NatsKind::Settle => "settle",
+            NatsKind::Resolve => "resolve",
+            NatsKind::EscrowResults => "escrow-results",
+        }
+    }
+}
+
+async fn run_nats_loop(
+    state: AppState,
+    subject: String,
+    queue_group: Option<String>,
+    kind: NatsKind,
+) {
     let Some(nats) = state.nats.clone() else {
         log_info(
             "contract-nats-loop-disabled",
@@ -1989,26 +3816,27 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     };
     log_info(
         "contract-nats-loop-starting",
-        "Contract service NATS validation loop is starting.",
+        "Contract service NATS subscription loop is starting.",
         json!({
             "subject": &subject,
             "queueGroup": &queue_group,
-            "resultSubject": &state.result_subject,
-            "eventSubject": &state.event_subject,
-            "criticalEventSubject": &state.critical_event_subject,
+            "kind": kind.label(),
+            "natsSettlementEnabled": state.nats_settlement_enabled,
         }),
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
+    let subscribe = match &queue_group {
+        Some(group) => nats.queue_subscribe(subject.clone(), group.clone()).await,
+        None => nats.subscribe(subject.clone()).await,
+    };
+    let mut subscription = match subscribe {
         Ok(subscription) => subscription,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             publish_runtime_critical_event(
                 &state,
                 "contract-nats-subscribe-failed",
-                "Contract service could not subscribe to validation requests.",
-                json!({
-                    "error": error.to_string(),
-                }),
+                "Contract service could not subscribe to a NATS subject.",
+                json!({ "subject": &subject, "kind": kind.label(), "error": error.to_string() }),
             )
             .await;
             return;
@@ -2030,8 +3858,9 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             publish_runtime_critical_event(
                 &state,
                 "contract-nats-payload-too-large",
-                "Contract service rejected an oversized NATS validation request.",
+                "Contract service rejected an oversized NATS message.",
                 json!({
+                    "kind": kind.label(),
                     "payloadBytes": payload.len(),
                     "maxPayloadBytes": MAX_NATS_PAYLOAD_BYTES,
                 }),
@@ -2039,65 +3868,358 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             .await;
             continue;
         }
-
-        match serde_json::from_slice::<ContractRequest>(&payload) {
-            Ok(request) => {
-                state
-                    .metrics
-                    .validations_total
-                    .fetch_add(1, Ordering::Relaxed);
-                let request_id = request_id(request.request_id.as_ref(), "contract-validation");
-                let result = match validate_contract_request(&request, &state.default_cluster) {
-                    Ok(response) => {
-                        json!({
-                            "messageKind": "solana.contract.validation.result",
-                            "source": "dd-contract-service",
-                            "result": response
-                        })
-                    }
-                    Err(errors) => {
-                        state
-                            .metrics
-                            .validation_errors_total
-                            .fetch_add(1, Ordering::Relaxed);
-                        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        json!({
-                            "messageKind": "solana.contract.validation.result",
-                            "source": "dd-contract-service",
-                            "result": {
-                                "ok": false,
-                                "requestId": request_id,
-                                "errors": errors,
-                                "generatedAtMs": now_ms()
-                            }
-                        })
-                    }
-                };
-                let ok = result
-                    .pointer("/result/ok")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                publish_contract_result(&state, result).await;
-                publish_contract_event(&state, "solana.contract.validation", &request_id, ok).await;
-            }
-            Err(error) => {
-                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                state
-                    .metrics
-                    .nats_payload_rejected_total
-                    .fetch_add(1, Ordering::Relaxed);
-                publish_runtime_critical_event(
-                    &state,
-                    "contract-nats-payload-invalid",
-                    "Contract service rejected an invalid NATS validation request.",
-                    json!({
-                        "error": error.to_string(),
-                    }),
-                )
-                .await;
-            }
+        match kind {
+            NatsKind::Validate => process_nats_validate(&state, &payload).await,
+            NatsKind::Settle => process_nats_settle(&state, &payload).await,
+            NatsKind::Resolve => process_nats_resolve(&state, &payload).await,
+            NatsKind::EscrowResults => process_nats_escrow_result(&state, &payload).await,
         }
     }
+}
+
+fn nats_payload_invalid(state: &AppState, kind: NatsKind, error: &str) {
+    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .nats_payload_rejected_total
+        .fetch_add(1, Ordering::Relaxed);
+    log_warn(
+        "contract-nats-payload-invalid",
+        "Contract service rejected an invalid NATS message.",
+        json!({ "kind": kind.label(), "error": error }),
+    );
+}
+
+async fn process_nats_validate(state: &AppState, payload: &[u8]) {
+    match serde_json::from_slice::<ContractRequest>(payload) {
+        Ok(request) => {
+            state
+                .metrics
+                .validations_total
+                .fetch_add(1, Ordering::Relaxed);
+            let request_id = request_id(request.request_id.as_ref(), "contract-validation");
+            let result = match validate_contract_request(&request, &state.default_cluster) {
+                Ok(response) => json!({
+                    "messageKind": "solana.contract.validation.result",
+                    "source": "dd-contract-service",
+                    "result": response
+                }),
+                Err(errors) => {
+                    state
+                        .metrics
+                        .validation_errors_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                    json!({
+                        "messageKind": "solana.contract.validation.result",
+                        "source": "dd-contract-service",
+                        "result": {
+                            "ok": false,
+                            "requestId": request_id,
+                            "errors": errors,
+                            "generatedAtMs": now_ms()
+                        }
+                    })
+                }
+            };
+            let ok = result
+                .pointer("/result/ok")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            publish_contract_result(state, result).await;
+            publish_contract_event(state, "solana.contract.validation", &request_id, ok).await;
+        }
+        Err(error) => nats_payload_invalid(state, NatsKind::Validate, &error.to_string()),
+    }
+}
+
+/// Drives validate -> simulate -> (optional broadcast+confirm) -> publish for a
+/// settlement-style NATS message. Broadcast only happens when
+/// `CONTRACT_NATS_SETTLEMENT_ENABLED=true`, because NATS messages carry no auth
+/// header; otherwise the service validates, simulates, and reports.
+#[allow(clippy::too_many_arguments)]
+async fn nats_settlement_flow(
+    state: &AppState,
+    req_id: &str,
+    schema_version: &str,
+    message_kind: &str,
+    event_type: &str,
+    core: &SettlementCore,
+    confirm: &Option<ConfirmOptions>,
+    mut extra: Map<String, Value>,
+) {
+    let (cluster, encoding, decoded_bytes) =
+        match validate_settlement_core(core, &state.default_cluster) {
+            Ok(validated) => validated,
+            Err(errors) => {
+                let mut outcome = base_settlement_outcome(
+                    message_kind,
+                    schema_version,
+                    req_id,
+                    &state.default_cluster,
+                    false,
+                    "rejected",
+                );
+                outcome.append(&mut extra);
+                outcome.insert("errors".to_string(), json!(errors));
+                publish_settlement_outcome(state, Value::Object(outcome)).await;
+                publish_contract_event(state, event_type, req_id, false).await;
+                return;
+            }
+        };
+
+    // Always simulate for visibility, regardless of broadcast policy.
+    let sim_tx = core.tx_request(true);
+    let simulation = match simulate_params(&sim_tx, encoding) {
+        Ok(params) => solana_rpc(state, "simulateTransaction", params)
+            .await
+            .unwrap_or_else(|error| json!({ "error": error })),
+        Err(error) => json!({ "error": error }),
+    };
+
+    let mut outcome = base_settlement_outcome(
+        message_kind,
+        schema_version,
+        req_id,
+        &cluster,
+        false,
+        "validated",
+    );
+    outcome.append(&mut extra);
+    outcome.insert("encoding".to_string(), json!(encoding));
+    outcome.insert("transactionBytes".to_string(), json!(decoded_bytes));
+    outcome.insert("simulation".to_string(), simulation);
+
+    if !state.nats_settlement_enabled {
+        outcome.insert("broadcast".to_string(), json!(false));
+        outcome.insert(
+            "note".to_string(),
+            json!("NATS-initiated broadcast is disabled; set CONTRACT_NATS_SETTLEMENT_ENABLED=true to broadcast"),
+        );
+        publish_settlement_outcome(state, Value::Object(outcome)).await;
+        publish_contract_event(state, event_type, req_id, true).await;
+        return;
+    }
+
+    // Broadcast path: guard double-broadcast on explicit ids.
+    if !state.claim_idempotency_key(&format!("nats:{message_kind}:{req_id}")) {
+        state
+            .metrics
+            .settlement_idempotent_hits_total
+            .fetch_add(1, Ordering::Relaxed);
+        outcome.insert("idempotent".to_string(), json!(true));
+        outcome.insert("broadcast".to_string(), json!(false));
+        publish_settlement_outcome(state, Value::Object(outcome)).await;
+        return;
+    }
+
+    let send_tx = core.tx_request(false);
+    let send = match send_params(&send_tx, encoding, state.allow_skip_preflight) {
+        Ok(params) => params,
+        Err(error) => {
+            outcome.insert("broadcast".to_string(), json!(false));
+            outcome.insert("error".to_string(), json!(error));
+            publish_settlement_outcome(state, Value::Object(outcome)).await;
+            publish_contract_event(state, event_type, req_id, false).await;
+            return;
+        }
+    };
+    match solana_rpc(state, "sendTransaction", send).await {
+        Ok(signature_value) => {
+            let signature = signature_value.as_str().unwrap_or_default().to_string();
+            let (target, timeout_ms, poll_ms) =
+                resolve_confirm_target(confirm).unwrap_or_else(|_| {
+                    (
+                        "confirmed".to_string(),
+                        DEFAULT_CONFIRM_TIMEOUT_MS,
+                        DEFAULT_CONFIRM_POLL_INTERVAL_MS,
+                    )
+                });
+            let confirmation =
+                confirm_signature(state, &signature, &target, timeout_ms, poll_ms).await;
+            let reached = confirmation.reached;
+            outcome.insert("ok".to_string(), json!(reached));
+            outcome.insert("status".to_string(), json!("broadcast"));
+            outcome.insert("broadcast".to_string(), json!(true));
+            outcome.insert("signature".to_string(), json!(signature));
+            outcome.insert("confirmation".to_string(), json!(confirmation));
+            publish_settlement_outcome(state, Value::Object(outcome)).await;
+            publish_contract_event(state, event_type, req_id, reached).await;
+        }
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            outcome.insert("broadcast".to_string(), json!(false));
+            outcome.insert("error".to_string(), json!(error.clone()));
+            publish_settlement_outcome(state, Value::Object(outcome)).await;
+            publish_runtime_critical_event(
+                state,
+                "contract-nats-settlement-send-failed",
+                "NATS settlement broadcast failed.",
+                json!({ "requestId": req_id, "messageKind": message_kind, "error": error }),
+            )
+            .await;
+        }
+    }
+}
+
+fn base_settlement_outcome(
+    message_kind: &str,
+    schema_version: &str,
+    req_id: &str,
+    cluster: &str,
+    ok: bool,
+    status: &str,
+) -> Map<String, Value> {
+    let mut map = Map::new();
+    map.insert("messageKind".to_string(), json!(message_kind));
+    map.insert("source".to_string(), json!(SERVICE_NAME));
+    map.insert("ok".to_string(), json!(ok));
+    map.insert("status".to_string(), json!(status));
+    map.insert("requestId".to_string(), json!(req_id));
+    map.insert("schemaVersion".to_string(), json!(schema_version));
+    map.insert("cluster".to_string(), json!(cluster));
+    map.insert("generatedAtMs".to_string(), json!(now_ms()));
+    map
+}
+
+async fn process_nats_settle(state: &AppState, payload: &[u8]) {
+    match serde_json::from_slice::<SettlementRequest>(payload) {
+        Ok(request) => {
+            state
+                .metrics
+                .settlements_total
+                .fetch_add(1, Ordering::Relaxed);
+            let req_id = request_id(request.request_id.as_ref(), "contract-settlement");
+            if request.schema_version != SETTLEMENT_SCHEMA_VERSION {
+                state
+                    .metrics
+                    .settlement_errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                nats_payload_invalid(
+                    state,
+                    NatsKind::Settle,
+                    &format!("schemaVersion must be {SETTLEMENT_SCHEMA_VERSION}"),
+                );
+                return;
+            }
+            let mut extra = Map::new();
+            extra.insert("kind".to_string(), json!("settlement"));
+            extra.insert("action".to_string(), json!(request.action.as_str()));
+            extra.insert("escrowId".to_string(), json!(request.escrow_id));
+            extra.insert("contractId".to_string(), json!(request.contract_id));
+            nats_settlement_flow(
+                state,
+                &req_id,
+                SETTLEMENT_SCHEMA_VERSION,
+                "solana.settlement.outcome",
+                "solana.contract.settlement",
+                &request.core(),
+                &request.confirm,
+                extra,
+            )
+            .await;
+        }
+        Err(error) => nats_payload_invalid(state, NatsKind::Settle, &error.to_string()),
+    }
+}
+
+async fn process_nats_resolve(state: &AppState, payload: &[u8]) {
+    match serde_json::from_slice::<ResolutionRequest>(payload) {
+        Ok(request) => {
+            state
+                .metrics
+                .resolutions_total
+                .fetch_add(1, Ordering::Relaxed);
+            let req_id = request_id(request.request_id.as_ref(), "contract-resolution");
+            let mut schema_errors = Vec::new();
+            if request.schema_version != RESOLUTION_SCHEMA_VERSION {
+                schema_errors.push(format!("schemaVersion must be {RESOLUTION_SCHEMA_VERSION}"));
+            }
+            if !request.decision.allowed_actions().contains(&request.action) {
+                schema_errors.push(format!(
+                    "decision {} does not permit settlement action {}",
+                    request.decision.as_str(),
+                    request.action.as_str()
+                ));
+            }
+            if !schema_errors.is_empty() {
+                state
+                    .metrics
+                    .resolution_errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                nats_payload_invalid(state, NatsKind::Resolve, &schema_errors.join("; "));
+                return;
+            }
+            let mut extra = Map::new();
+            extra.insert("kind".to_string(), json!("resolution"));
+            extra.insert("decision".to_string(), json!(request.decision.as_str()));
+            extra.insert("action".to_string(), json!(request.action.as_str()));
+            extra.insert("escrowId".to_string(), json!(request.escrow_id));
+            extra.insert("disputeId".to_string(), json!(request.dispute_id));
+            extra.insert("arbiter".to_string(), json!(request.arbiter));
+            nats_settlement_flow(
+                state,
+                &req_id,
+                RESOLUTION_SCHEMA_VERSION,
+                "solana.resolution.outcome",
+                "solana.contract.resolution",
+                &request.core(),
+                &request.confirm,
+                extra,
+            )
+            .await;
+        }
+        Err(error) => nats_payload_invalid(state, NatsKind::Resolve, &error.to_string()),
+    }
+}
+
+/// Verifier surface: confirm a settlement signature carried in an escrow result.
+async fn process_nats_escrow_result(state: &AppState, payload: &[u8]) {
+    let value = match serde_json::from_slice::<Value>(payload) {
+        Ok(value) => value,
+        Err(error) => {
+            nats_payload_invalid(state, NatsKind::EscrowResults, &error.to_string());
+            return;
+        }
+    };
+    // Escrow settlement results may carry an RPC sendTransaction signature.
+    let signature = value
+        .pointer("/result/signature")
+        .or_else(|| value.pointer("/signature"))
+        .or_else(|| value.pointer("/result/result"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let Some(signature) = signature.filter(|sig| validate_signature(sig, "signature").is_ok())
+    else {
+        // Not a settlement result we can confirm; ignore quietly.
+        return;
+    };
+    let req_id = value
+        .pointer("/result/requestId")
+        .or_else(|| value.pointer("/requestId"))
+        .and_then(Value::as_str)
+        .unwrap_or("escrow-result")
+        .to_string();
+    let confirmation = confirm_signature(
+        state,
+        &signature,
+        "finalized",
+        DEFAULT_CONFIRM_TIMEOUT_MS,
+        DEFAULT_CONFIRM_POLL_INTERVAL_MS,
+    )
+    .await;
+    let outcome = json!({
+        "messageKind": "solana.escrow.confirmation",
+        "source": SERVICE_NAME,
+        "ok": confirmation.reached,
+        "status": "verified",
+        "requestId": req_id,
+        "kind": "escrow-confirmation",
+        "signature": signature,
+        "confirmation": confirmation,
+        "generatedAtMs": now_ms()
+    });
+    publish_settlement_outcome(state, outcome).await;
 }
 
 async fn shutdown_signal() {
@@ -2142,8 +4264,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
     }
     let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
+
+    let settlement_enabled = env_bool("SOLANA_SETTLEMENT_ENABLED", false);
+    let resolution_enabled = env_bool("SOLANA_RESOLUTION_ENABLED", false);
+    let nats_settlement_enabled = env_bool("CONTRACT_NATS_SETTLEMENT_ENABLED", false);
+    let settlement_auth_secret = env_secret("CONTRACT_SETTLEMENT_AUTH_SECRET");
+    if (settlement_enabled || resolution_enabled) && settlement_auth_secret.is_none() {
+        return Err(config_error(
+            "SOLANA_SETTLEMENT_ENABLED/SOLANA_RESOLUTION_ENABLED require CONTRACT_SETTLEMENT_AUTH_SECRET",
+        )
+        .into());
+    }
+    if nats_settlement_enabled && !send_enabled {
+        return Err(config_error(
+            "CONTRACT_NATS_SETTLEMENT_ENABLED=true requires SOLANA_SEND_ENABLED=true",
+        )
+        .into());
+    }
+    let escrow_confirm_enabled = env_bool("CONTRACT_ESCROW_CONFIRM_ENABLED", false);
+
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
     let result_subject = env_value("CONTRACT_RESULT_SUBJECT", CONTRACTS_SOLANA_RESULTS_SUBJECT);
+    let settlement_result_subject = env_value(
+        "CONTRACT_SETTLEMENT_RESULT_SUBJECT",
+        CONTRACTS_SOLANA_SETTLEMENT_RESULTS_SUBJECT,
+    );
     let event_subject = env_value("CONTRACT_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT);
     let critical_event_subject = env_value(
         "NATS_CRITICAL_EVENT_SUBJECT",
@@ -2156,6 +4301,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let queue_group = env_value(
         "CONTRACT_QUEUE_GROUP",
         CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP,
+    );
+    let settle_subject = env_value("CONTRACT_SETTLE_SUBJECT", CONTRACTS_SOLANA_SETTLE_SUBJECT);
+    let settle_queue_group = env_value(
+        "CONTRACT_SETTLE_QUEUE_GROUP",
+        CONTRACTS_SOLANA_SETTLE_QUEUE_GROUP,
+    );
+    let resolve_subject = env_value("CONTRACT_RESOLVE_SUBJECT", CONTRACTS_SOLANA_RESOLVE_SUBJECT);
+    let resolve_queue_group = env_value(
+        "CONTRACT_RESOLVE_QUEUE_GROUP",
+        CONTRACTS_SOLANA_RESOLVE_QUEUE_GROUP,
+    );
+    let escrow_results_subject =
+        env_value("CONTRACT_ESCROW_RESULT_SUBJECT", ESCROW_SOLANA_RESULTS_SUBJECT);
+    let escrow_confirm_queue_group = env_value(
+        "CONTRACT_ESCROW_CONFIRM_QUEUE_GROUP",
+        "dd-contract-service-escrow-confirm",
     );
 
     let rpc_client = reqwest::Client::builder()
@@ -2191,11 +4352,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         send_enabled,
         send_auth_secret,
         allow_skip_preflight,
+        settlement_enabled,
+        resolution_enabled,
+        nats_settlement_enabled,
+        settlement_auth_secret,
         nats,
         result_subject,
+        settlement_result_subject,
         event_subject,
         critical_event_subject,
         metrics: Arc::new(Metrics::default()),
+        idempotency: Arc::new(Mutex::new(HashMap::new())),
     };
 
     log_info(
@@ -2205,7 +4372,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "cluster": &state.default_cluster,
             "sendEnabled": state.send_enabled,
             "skipPreflightAllowed": state.allow_skip_preflight,
+            "settlementEnabled": state.settlement_enabled,
+            "resolutionEnabled": state.resolution_enabled,
+            "natsSettlementEnabled": state.nats_settlement_enabled,
+            "escrowConfirmEnabled": escrow_confirm_enabled,
             "resultSubject": &state.result_subject,
+            "settlementResultSubject": &state.settlement_result_subject,
             "eventSubject": &state.event_subject,
             "criticalEventSubject": &state.critical_event_subject,
             "natsEnabled": state.nats.is_some(),
@@ -2213,7 +4385,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     if state.nats.is_some() {
-        tokio::spawn(run_nats_loop(state.clone(), validate_subject, queue_group));
+        tokio::spawn(run_nats_loop(
+            state.clone(),
+            validate_subject,
+            Some(queue_group),
+            NatsKind::Validate,
+        ));
+        tokio::spawn(run_nats_loop(
+            state.clone(),
+            settle_subject,
+            Some(settle_queue_group),
+            NatsKind::Settle,
+        ));
+        tokio::spawn(run_nats_loop(
+            state.clone(),
+            resolve_subject,
+            Some(resolve_queue_group),
+            NatsKind::Resolve,
+        ));
+        if escrow_confirm_enabled {
+            tokio::spawn(run_nats_loop(
+                state.clone(),
+                escrow_results_subject,
+                Some(escrow_confirm_queue_group),
+                NatsKind::EscrowResults,
+            ));
+        }
     }
 
     let app = Router::new()
@@ -2225,10 +4422,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/metrics", get(metrics))
         .route("/status", get(status_http))
         .route("/schema", get(schema_http))
+        .route("/schema/settlement", get(settlement_schema_http))
+        .route("/schema/resolution", get(resolution_schema_http))
         .route("/example", get(example_http))
+        .route("/example/settlement", get(settlement_example_http))
         .route("/validate", post(validate_http))
         .route("/simulate", post(simulate_http))
         .route("/send", post(send_http))
+        .route("/blockhash", get(blockhash_http))
+        .route("/account", post(account_http))
+        .route("/balance", post(balance_http))
+        .route("/fee", post(fee_http))
+        .route("/rent-exemption", get(rent_exemption_http))
+        .route("/transaction", post(transaction_http))
+        .route("/confirm", post(confirm_http))
+        .route("/simulate-settlement", post(simulate_settlement_http))
+        .route("/settle", post(settle_http))
+        .route("/resolve", post(resolve_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());

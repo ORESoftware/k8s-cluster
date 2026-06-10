@@ -45,12 +45,21 @@ struct AppState {
     platform_config: Arc<RwLock<TradingPlatformConfig>>,
     nats: Option<async_nats::Client>,
     metrics: Arc<Metrics>,
+    // Bounds the number of decisions evaluated concurrently off the NATS
+    // signal stream. Without this a burst of signals would spawn an
+    // unbounded number of tasks and exhaust memory/CPU.
+    inflight: Arc<tokio::sync::Semaphore>,
 }
 
 #[derive(Clone)]
 struct Config {
     trading_mode: String,
     live_orders_enabled: bool,
+    // Global kill switch. When true every decision is forced to `hold`
+    // regardless of signals or mode. Intended as an operator-flippable
+    // circuit breaker that takes effect on the next config refresh.
+    halted: bool,
+    max_inflight: usize,
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
     database_url: Option<String>,
@@ -351,6 +360,9 @@ fn config_from_env() -> Config {
     Config {
         trading_mode: normalized_mode(&env_value("TRADING_MODE", "paper")),
         live_orders_enabled: env_bool("TRADING_ALLOW_LIVE_ORDERS", false),
+        halted: env_bool("TRADING_HALT", false),
+        // Cap concurrent decision evaluations from the NATS stream.
+        max_inflight: env_u64("TRADING_MAX_INFLIGHT", 256).clamp(1, 4096) as usize,
         server_auth_secret: optional_env("SERVER_AUTH_SECRET")
             .or_else(|| optional_env("TRADING_SERVER_AUTH_SECRET")),
         allow_unauthenticated: env_bool("TRADING_ALLOW_UNAUTHENTICATED", false),
@@ -393,13 +405,21 @@ fn config_from_env() -> Config {
 }
 
 fn request_id(input: Option<&String>, prefix: &str) -> String {
-    input
+    // Drop control characters so a caller-supplied id can't inject newlines
+    // into logs or break downstream NATS/JSON consumers, then length-cap.
+    let sanitized: String = input
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
         .unwrap_or(prefix)
         .chars()
+        .filter(|ch| !ch.is_control())
         .take(MAX_REQUEST_ID_LEN)
-        .collect()
+        .collect();
+    if sanitized.is_empty() {
+        prefix.chars().take(MAX_REQUEST_ID_LEN).collect()
+    } else {
+        sanitized
+    }
 }
 
 fn normalize_symbol(input: &str) -> Result<String, String> {
@@ -464,15 +484,23 @@ fn validate_local_or_https_url(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label} must not contain control characters"));
     }
     let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("https://")
-        || lower.starts_with("http://localhost")
-        || lower.starts_with("http://127.0.0.1")
-        || lower.starts_with("http://[::1]")
-    {
-        Ok(())
-    } else {
-        Err(format!("{label} must be https or a localhost URL"))
+    if lower.starts_with("https://") {
+        return Ok(());
     }
+    // Plaintext http is only allowed for an actual loopback host. Match the
+    // host exactly: the authority must be `localhost`, `127.0.0.1`, or
+    // `[::1]` terminated by a port (`:`), a path (`/`), or end-of-string.
+    // This rejects look-alikes like `http://localhost.evil.com` that a
+    // naive `starts_with` would let through.
+    for host in ["localhost", "127.0.0.1", "[::1]"] {
+        let prefix = format!("http://{host}");
+        if let Some(rest) = lower.strip_prefix(&prefix) {
+            if rest.is_empty() || rest.starts_with('/') || rest.starts_with(':') {
+                return Ok(());
+            }
+        }
+    }
+    Err(format!("{label} must be https or a loopback http URL"))
 }
 
 fn safe_slug(input: &str) -> bool {
@@ -753,6 +781,128 @@ fn default_platform_config() -> TradingPlatformConfig {
                 "labels": ["crypto"]
             },
             {
+                "slug": "tradestation",
+                "displayName": "TradeStation",
+                "provider": "tradestation",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["equities", "options", "futures", "commodities"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://sim-api.tradestation.com/v3", "live": "https://api.tradestation.com/v3" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["TRADESTATION_API_KEY", "TRADESTATION_API_SECRET"],
+                "accountRefKey": "TRADESTATION_ACCOUNT_ID",
+                "labels": ["brokerage", "futures", "commodities"]
+            },
+            {
+                "slug": "tradovate",
+                "displayName": "Tradovate",
+                "provider": "tradovate",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["futures", "commodities"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://demo.tradovateapi.com/v1", "live": "https://live.tradovateapi.com/v1" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["TRADOVATE_API_KEY", "TRADOVATE_API_SECRET"],
+                "accountRefKey": "TRADOVATE_ACCOUNT_ID",
+                "labels": ["futures", "commodities", "paper-first"]
+            },
+            {
+                "slug": "ironbeam",
+                "displayName": "Ironbeam",
+                "provider": "ironbeam",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["futures", "commodities"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://demo.ironbeamapi.com/v2", "live": "https://live.ironbeamapi.com/v2" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["IRONBEAM_API_KEY", "IRONBEAM_API_SECRET"],
+                "accountRefKey": "IRONBEAM_ACCOUNT_ID",
+                "labels": ["futures", "commodities"]
+            },
+            {
+                "slug": "oanda",
+                "displayName": "OANDA",
+                "provider": "oanda",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["forex", "commodities", "metals", "indices"],
+                "orderTypes": ["market", "limit", "stop", "trailing_stop"],
+                "baseUrls": { "paper": "https://api-fxpractice.oanda.com/v3", "live": "https://api-fxtrade.oanda.com/v3" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["OANDA_API_TOKEN"],
+                "accountRefKey": "OANDA_ACCOUNT_ID",
+                "labels": ["forex", "commodities", "metals", "paper-first"]
+            },
+            {
+                "slug": "saxo",
+                "displayName": "Saxo Bank",
+                "provider": "saxo",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["futures", "commodities", "forex", "equities", "options"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://gateway.saxobank.com/sim/openapi", "live": "https://gateway.saxobank.com/openapi" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["SAXO_APP_KEY", "SAXO_APP_SECRET"],
+                "accountRefKey": "SAXO_ACCOUNT_KEY",
+                "labels": ["brokerage", "multi-asset", "commodities"]
+            },
+            {
+                "slug": "ig",
+                "displayName": "IG",
+                "provider": "ig",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["commodities", "indices", "forex", "metals"],
+                "orderTypes": ["market", "limit", "stop"],
+                "baseUrls": { "paper": "https://demo-api.ig.com/gateway/deal", "live": "https://api.ig.com/gateway/deal" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["IG_API_KEY", "IG_API_SECRET"],
+                "accountRefKey": "IG_ACCOUNT_ID",
+                "labels": ["cfd", "commodities", "paper-first"]
+            },
+            {
+                "slug": "cqg",
+                "displayName": "CQG",
+                "provider": "cqg",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["futures", "commodities", "metals", "energy", "agriculture"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://localhost:2845", "live": "https://localhost:2845" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["CQG_API_KEY", "CQG_API_SECRET"],
+                "accountRefKey": "CQG_ACCOUNT_ID",
+                "labels": ["futures", "commodities", "gateway"],
+                "metaData": { "connector": "cqg-webapi-gateway", "notes": "Routed through an in-cluster CQG WebAPI gateway; base URL is the loopback gateway, not a public endpoint." }
+            },
+            {
+                "slug": "amp-futures",
+                "displayName": "AMP Futures",
+                "provider": "amp-futures",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": true,
+                "assetClasses": ["futures", "commodities", "energy", "metals", "agriculture"],
+                "orderTypes": ["market", "limit", "stop", "stop_limit"],
+                "baseUrls": { "paper": "https://localhost:2846", "live": "https://localhost:2846" },
+                "credentialSecret": "dd-trading-broker-secrets",
+                "credentialKeys": ["AMP_FUTURES_API_KEY", "AMP_FUTURES_API_SECRET"],
+                "accountRefKey": "AMP_FUTURES_ACCOUNT_ID",
+                "labels": ["futures", "commodities", "gateway"],
+                "metaData": { "connector": "cqg-or-rithmic-gateway", "notes": "AMP routes orders via CQG/Rithmic; base URL is an in-cluster loopback gateway." }
+            },
+            {
                 "slug": "polymarket",
                 "displayName": "Polymarket",
                 "provider": "polymarket",
@@ -828,6 +978,50 @@ fn add_rds_root_certificates(root_store: &mut rustls::RootCertStore) -> Result<(
     }
 
     Ok(())
+}
+
+/// Build a hardened NATS client from `NATS_URL` plus optional auth/TLS env.
+///
+/// The previous code called `async_nats::connect(url)` directly, which has no
+/// client name, no auth, and aborts startup if the broker is briefly
+/// unreachable. For a trading control-plane service we want: a stable client
+/// name for server-side observability, optional credentials/token/nkey, a TLS
+/// requirement toggle, and resilience to an initial-connect blip.
+///
+/// Returns `Ok(None)` when `NATS_URL` is unset (NATS features stay disabled),
+/// `Err` only on a hard misconfiguration (e.g. unreadable creds file).
+async fn connect_nats() -> Result<Option<async_nats::Client>, String> {
+    let Some(url) = optional_env("NATS_URL") else {
+        return Ok(None);
+    };
+
+    let mut options = async_nats::ConnectOptions::new()
+        .name(SERVICE_NAME)
+        .retry_on_initial_connect()
+        .ping_interval(Duration::from_secs(15))
+        .connection_timeout(Duration::from_secs(10));
+
+    if env_bool("NATS_REQUIRE_TLS", false) {
+        options = options.require_tls(true);
+    }
+
+    // Auth precedence: credentials file (JWT+nkey) > token > nkey seed.
+    if let Some(path) = optional_env("NATS_CREDENTIALS_FILE") {
+        options = options
+            .credentials_file(&path)
+            .await
+            .map_err(|error| format!("failed to read NATS_CREDENTIALS_FILE {path}: {error}"))?;
+    } else if let Some(token) = optional_env("NATS_TOKEN") {
+        options = options.token(token);
+    } else if let Some(seed) = optional_env("NATS_NKEY") {
+        options = options.nkey(seed);
+    }
+
+    let client = options
+        .connect(url)
+        .await
+        .map_err(|error| format!("failed to connect to NATS: {error}"))?;
+    Ok(Some(client))
 }
 
 async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, String> {
@@ -1133,8 +1327,11 @@ fn validate_request(request: &DecisionRequest, limits: &RiskLimits) -> Result<Ve
     }
 
     if let Some(portfolio) = request.portfolio.as_ref() {
-        finite_positive_optional(portfolio.cash, "portfolio.cash")?;
-        finite_positive_optional(portfolio.equity, "portfolio.equity")?;
+        // Cash and equity may legitimately be zero (a flat or freshly
+        // funded account); only reject negative/non-finite values. A
+        // zero cash balance still blocks buys via the cash cap downstream.
+        finite_nonnegative_optional(portfolio.cash, "portfolio.cash")?;
+        finite_nonnegative_optional(portfolio.equity, "portfolio.equity")?;
         finite_optional(portfolio.current_position, "portfolio.currentPosition")?;
         finite_positive_optional(portfolio.average_entry_price, "portfolio.averageEntryPrice")?;
     }
@@ -1635,6 +1832,16 @@ fn evaluate_decision(
 
     let mut safety_checks = Vec::new();
     safety_checks.push(safety_check(
+        "tradingNotHalted",
+        !config.halted,
+        "blocker",
+        if config.halted {
+            "TRADING_HALT kill switch is engaged; all orders forced to hold".to_string()
+        } else {
+            "trading kill switch is disengaged".to_string()
+        },
+    ));
+    safety_checks.push(safety_check(
         "platformConfigured",
         recommended_action == "hold" || selected_platform.is_some(),
         "blocker",
@@ -1884,6 +2091,7 @@ fn service_descriptor(state: &AppState) -> serde_json::Value {
         "schemaVersion": SCHEMA_VERSION,
         "mode": &state.config.trading_mode,
         "liveOrdersEnabled": state.config.live_orders_enabled,
+        "halted": state.config.halted,
         "authRequired": state.config.server_auth_secret.is_some(),
         "endpoints": {
             "schema": "GET /schema",
@@ -1917,6 +2125,9 @@ fn service_descriptor(state: &AppState) -> serde_json::Value {
         "tradingPlatforms": public_platforms,
         "safety": {
             "liveTradingRequires": "TRADING_MODE=live and TRADING_ALLOW_LIVE_ORDERS=true",
+            "killSwitch": "set TRADING_HALT=true to force every decision to hold",
+            "halted": state.config.halted,
+            "maxInflightDecisions": state.config.max_inflight,
             "executor": "not implemented; this service emits order intents only",
             "defaultLimits": &state.config.default_limits
         },
@@ -2105,6 +2316,7 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         "service": SERVICE_NAME,
         "mode": &state.config.trading_mode,
         "liveOrdersEnabled": state.config.live_orders_enabled,
+        "halted": state.config.halted,
         "platformCount": platforms.platforms.len(),
         "lastConfigRefreshMs": platforms.last_config_refresh_ms,
         "lastConfigError": platforms.last_config_error,
@@ -2114,7 +2326,14 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn readyz(State(state): State<AppState>) -> Response {
     let platforms = platform_snapshot(&state);
-    let ready = !platforms.platforms.is_empty() && platforms.last_config_error.is_none();
+    // Readiness keys off whether we hold a usable platform catalog, NOT off
+    // the most recent refresh result. A transient RDS/CDC hiccup sets
+    // `last_config_error` while the last-good config stays cached; gating
+    // readiness on that error would pull *every* replica out of rotation on
+    // a shared-DB blip and take the whole decision service down. The error
+    // is surfaced as advisory data and tracked via
+    // dd_trading_server_config_refresh_failures_total for alerting instead.
+    let ready = !platforms.platforms.is_empty();
     let status = if ready {
         StatusCode::OK
     } else {
@@ -2126,6 +2345,7 @@ async fn readyz(State(state): State<AppState>) -> Response {
             "ok": ready,
             "service": SERVICE_NAME,
             "mode": &state.config.trading_mode,
+            "halted": state.config.halted,
             "platformCount": platforms.platforms.len(),
             "lastConfigRefreshMs": platforms.last_config_refresh_ms,
             "lastConfigError": platforms.last_config_error,
@@ -2281,8 +2501,15 @@ async fn run_nats_loop(state: AppState) {
             );
             continue;
         }
+        // Backpressure: block the receive loop until an inflight slot is
+        // free rather than spawning unbounded tasks under a signal flood.
+        let permit = match state.inflight.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => break, // semaphore closed; shutting down
+        };
         let task_state = state.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             match serde_json::from_slice::<DecisionRequest>(&payload) {
                 Ok(request) => {
                     let platforms = platform_snapshot(&task_state);
@@ -2341,18 +2568,15 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8103").parse::<u16>()?;
-    let nats = match env::var("NATS_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-    {
-        Some(url) => Some(async_nats::connect(url).await?),
-        None => None,
-    };
+    let nats = connect_nats().await?;
+    let config = config_from_env();
+    let inflight = Arc::new(tokio::sync::Semaphore::new(config.max_inflight));
     let state = AppState {
-        config: Arc::new(config_from_env()),
+        config: Arc::new(config),
         platform_config: Arc::new(RwLock::new(default_platform_config())),
         nats,
         metrics: Arc::new(Metrics::default()),
+        inflight,
     };
     if let Err(error) = refresh_platform_config(&state).await {
         eprintln!("trading platform initial config refresh failed: {error}");
@@ -2399,6 +2623,8 @@ mod tests {
         Config {
             trading_mode: normalized_mode(mode),
             live_orders_enabled: false,
+            halted: false,
+            max_inflight: 256,
             server_auth_secret: Some("secret".to_string()),
             allow_unauthenticated: false,
             database_url: None,
@@ -2666,6 +2892,7 @@ mod tests {
             platform_config: Arc::new(RwLock::new(default_platform_config())),
             nats: None,
             metrics: Arc::new(Metrics::default()),
+            inflight: Arc::new(tokio::sync::Semaphore::new(8)),
         };
         let descriptor = service_descriptor(&state);
         let descriptor_text = descriptor.to_string();
@@ -2674,5 +2901,87 @@ mod tests {
         assert!(!descriptor_text.contains("credentialKeys"));
         assert!(!descriptor_text.contains("credentialSecret"));
         assert!(!descriptor_text.contains("IBKR_ACCOUNT_ID"));
+    }
+
+    #[test]
+    fn halt_kill_switch_forces_hold() {
+        let mut config = test_config("paper");
+        config.halted = true;
+        let platforms = default_platform_config();
+        let response =
+            evaluate_decision(&config, &platforms, positive_request()).expect("decision ok");
+
+        assert_eq!(response.recommended_action, "buy");
+        assert_eq!(response.final_action, "hold");
+        assert_eq!(response.execution_status, "blocked_by_safety_gate");
+        assert!(response.order_intent.is_none());
+        assert!(response
+            .safety_checks
+            .iter()
+            .any(|check| check.name == "tradingNotHalted" && !check.ok));
+    }
+
+    #[test]
+    fn zero_cash_account_is_accepted_not_rejected() {
+        let mut request = positive_request();
+        request.portfolio.as_mut().unwrap().cash = Some(0.0);
+        request.portfolio.as_mut().unwrap().equity = Some(0.0);
+        let platforms = default_platform_config();
+        // Previously this returned a validation error ("must be positive");
+        // a flat account is valid input and should evaluate to a decision.
+        let response =
+            evaluate_decision(&test_config("paper"), &platforms, request).expect("decision ok");
+        // With zero cash the buy cap collapses, so no buy intent is emitted.
+        assert!(response.order_intent.is_none());
+    }
+
+    #[test]
+    fn loopback_url_validation_rejects_lookalike_hosts() {
+        assert!(validate_local_or_https_url("https://api.example.com", "u").is_ok());
+        assert!(validate_local_or_https_url("http://localhost:5000/v1", "u").is_ok());
+        assert!(validate_local_or_https_url("http://127.0.0.1/api", "u").is_ok());
+        assert!(validate_local_or_https_url("http://[::1]:8080", "u").is_ok());
+        // Look-alike authorities that a naive starts_with would accept.
+        assert!(validate_local_or_https_url("http://localhost.evil.com", "u").is_err());
+        assert!(validate_local_or_https_url("http://127.0.0.1.evil.com", "u").is_err());
+        assert!(validate_local_or_https_url("http://example.com", "u").is_err());
+    }
+
+    #[test]
+    fn request_id_strips_control_characters() {
+        let dirty = "abc\ndef\tghi".to_string();
+        let cleaned = request_id(Some(&dirty), "fallback");
+        assert_eq!(cleaned, "abcdefghi");
+        assert!(!cleaned.chars().any(|c| c.is_control()));
+    }
+
+    #[test]
+    fn catalog_ships_at_least_fifteen_active_platforms() {
+        let platforms = default_platform_config();
+        let active = platforms
+            .platforms
+            .iter()
+            .filter(|platform| platform.status == "active")
+            .count();
+        assert!(
+            active >= 15,
+            "expected >= 15 active platforms, found {active}"
+        );
+        // Commodity/futures coverage must be present, not just equities/crypto.
+        let commodity_capable = platforms
+            .platforms
+            .iter()
+            .filter(|platform| {
+                platform.status == "active"
+                    && platform
+                        .asset_classes
+                        .iter()
+                        .any(|class| class == "commodities" || class == "futures")
+            })
+            .count();
+        assert!(
+            commodity_capable >= 8,
+            "expected >= 8 active commodity/futures venues, found {commodity_capable}"
+        );
     }
 }

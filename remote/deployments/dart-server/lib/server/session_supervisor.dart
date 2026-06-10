@@ -115,6 +115,17 @@ const int kDefaultMaxOutboundRatePerSecond = 200;
 /// `WS_SLOW_CLIENT_WINDOWS`.
 const int kDefaultSlowClientWindows = 5;
 
+/// Hard ceiling on distinct conversations one shard's [ConversationRegistry]
+/// will create. The conversation metadata / member / reverse-index maps are
+/// otherwise unbounded: a single unauthenticated connection can drive
+/// `open-conv` / `join-conv` / `say-conv` with an endless stream of fresh
+/// ids and grow them without limit (the recent-message *cache* is LRU-capped
+/// at 1024, but the metadata maps are not). At the ceiling the supervisor
+/// refuses to create *new* conversations (existing ones still work) and
+/// counts `dart_conv_create_refused_total`. 100K rows is generous for the
+/// demo workload while keeping the worst-case heap bounded.
+const int kMaxConversationsPerShard = 100000;
+
 class SessionSupervisor {
   SessionSupervisor({
     required this.metrics,
@@ -837,6 +848,11 @@ class SessionSupervisor {
   ) {
     final userId = presence.userIdFor(sessionId) ?? sessionId;
     final created = conversations.get(conversationId) == null;
+    if (created &&
+        conversations.conversationCount >= kMaxConversationsPerShard) {
+      metrics.inc('dart_conv_create_refused_total');
+      return;
+    }
     final meta = conversations.upsert(
       conversationId: conversationId,
       title: title,
@@ -861,6 +877,10 @@ class SessionSupervisor {
     // Auto-create on first join so the typical "join this room" UX
     // doesn't require a separate Open call.
     if (conversations.get(conversationId) == null) {
+      if (conversations.conversationCount >= kMaxConversationsPerShard) {
+        metrics.inc('dart_conv_create_refused_total');
+        return;
+      }
       conversations.upsert(
         conversationId: conversationId,
         title: conversationId,

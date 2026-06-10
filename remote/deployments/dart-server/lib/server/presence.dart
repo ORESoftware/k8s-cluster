@@ -113,14 +113,25 @@ class Presence {
   String? unbind(String sessionId) {
     final user = _sessionToUser.remove(sessionId);
     if (user == null) return null;
+    final name = displayNameFor(user);
     final set = _userToSessions[user];
     if (set != null) {
       set.remove(sessionId);
       if (set.isEmpty) {
         _userToSessions.remove(user);
+        // Release the display-name entry once the user has no live
+        // sessions. Otherwise `_displayNames` grows by one entry per
+        // connection for the shard's whole lifetime: every session is
+        // auto-bound to a distinct `anon-<sessionId>` user on adopt (which
+        // records a name) and never reconnects, so the map leaks ~one entry
+        // per WebSocket ever accepted. An identified user that reconnects
+        // re-publishes their name on the next Identify, so dropping it here
+        // only means an *offline* user renders as their raw id (which
+        // `displayNameFor` already falls back to) until they return.
+        _displayNames.remove(user);
       }
     }
-    _changes.add(PresenceChange.unbind(sessionId, user, displayNameFor(user)));
+    _changes.add(PresenceChange.unbind(sessionId, user, name));
     return user;
   }
 
