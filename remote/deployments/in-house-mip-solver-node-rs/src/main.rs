@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     env,
     error::Error,
     net::SocketAddr,
@@ -41,6 +41,10 @@ const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
 const MAX_STREAM_COMMANDS: usize = 2_000;
+// Live streaming sessions are created on first contact by client-chosen id, so
+// the map is attacker-influenced; cap it and evict the least-recently-used to
+// keep an unbounded stream of fresh session ids from exhausting memory.
+const MAX_SESSIONS: usize = 1_024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -95,6 +99,7 @@ struct Metrics {
 struct LiveSession {
     problem: Option<MipProblemSpec>,
     revision: u64,
+    last_touched_ms: u128,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -298,6 +303,18 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+/// Lock the sessions map, recovering the guard if a previous holder panicked.
+/// A poisoned mutex would otherwise turn a single panic into a permanent 500 on
+/// every session endpoint; the protected state is plain data, so it is safe to
+/// keep using after recovery.
+fn lock_sessions(
+    sessions: &Mutex<HashMap<String, LiveSession>>,
+) -> std::sync::MutexGuard<'_, HashMap<String, LiveSession>> {
+    sessions
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn request_id(input: Option<String>) -> String {
@@ -916,7 +933,10 @@ fn aggregate_results(
     let maximize = sense_of(&problem.sense) == Sense::Max;
     let mut feasible: Vec<&SubproblemResult> = results
         .iter()
-        .filter(|result| result.ok && result.z.is_some() && !result.x.is_empty())
+        // Require the worker's solution vector to match the problem dimension so
+        // a malformed/buggy worker reply can never be returned to the client as
+        // a "solution" of the wrong length.
+        .filter(|result| result.ok && result.z.is_some() && result.x.len() == problem.c.len())
         .collect();
     feasible.sort_by(|left, right| {
         let lz = left.z.unwrap_or(f64::NAN);
@@ -1030,8 +1050,18 @@ async fn solve_problem_distributed(
     }
 
     let Some(nats) = state.nats.clone() else {
+        let total_jobs = jobs.len();
+        let deadline =
+            Instant::now() + Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
         let mut results = Vec::new();
+        let mut timed_out = false;
         for job in jobs {
+            if Instant::now() >= deadline {
+                timed_out = true;
+                warnings
+                    .push("local solve timed out before every subproblem completed".to_string());
+                break;
+            }
             let node = state.node_id.clone();
             let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
                 .await
@@ -1043,9 +1073,9 @@ async fn solve_problem_distributed(
             request_id,
             revision,
             &problem,
-            results.len(),
+            total_jobs,
             results,
-            false,
+            timed_out,
             false,
             &state,
             warnings,
@@ -1078,18 +1108,23 @@ async fn solve_problem_distributed(
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
+    // JetStream delivers jobs at-least-once (redelivery after ack_wait / NAK), so
+    // the same job_id can produce several result messages. Track which job_ids we
+    // have already accepted so duplicates can't inflate the completion count and
+    // make the master stop before every *distinct* subproblem has reported.
+    let mut seen_jobs: HashSet<String> = HashSet::new();
     let mut timed_out = false;
-    while results.len() < jobs.len() {
+    while seen_jobs.len() < jobs.len() {
         let now = Instant::now();
         if now >= deadline {
             timed_out = true;
             break;
         }
         match tokio::time::timeout(deadline - now, result_sub.next()).await {
-            Ok(Some(message)) => match message {
-                Ok(message) => {
-                    let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
-                    if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
+            Ok(Some(message)) => {
+                let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
+                if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
+                    if seen_jobs.insert(result.job_id.clone()) {
                         results.push(result);
                         state
                             .metrics
@@ -1097,12 +1132,7 @@ async fn solve_problem_distributed(
                             .fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                Err(error) => {
-                    warnings.push(format!("NATS result subscription error: {error}"));
-                    timed_out = true;
-                    break;
-                }
-            },
+            }
             Ok(None) => {
                 warnings.push("NATS result subscription closed".to_string());
                 timed_out = true;
@@ -1283,11 +1313,24 @@ async fn stream_session(
             json!({"ok":false,"error":"too many stream commands"}),
         );
     }
-    let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
-    let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
-        problem: None,
-        revision: 0,
-    });
+    let mut sessions = lock_sessions(&state.sessions);
+    if !sessions.contains_key(&session_id) && sessions.len() >= MAX_SESSIONS {
+        if let Some(stale) = sessions
+            .iter()
+            .min_by_key(|(_, session)| session.last_touched_ms)
+            .map(|(key, _)| key.clone())
+        {
+            sessions.remove(&stale);
+        }
+    }
+    let session = sessions
+        .entry(session_id.clone())
+        .or_insert_with(|| LiveSession {
+            problem: None,
+            revision: 0,
+            last_touched_ms: now_ms(),
+        });
+    session.last_touched_ms = now_ms();
     let mut frames = Vec::new();
     for command in &commands {
         if let Err(error) = apply_stream_command(
@@ -1320,17 +1363,20 @@ async fn get_session(
     State(state): State<AppState>,
     AxumPath(session_id): AxumPath<String>,
 ) -> Response {
-    let sessions = state.sessions.lock().expect("sessions mutex poisoned");
-    match sessions.get(&session_id) {
-        Some(session) => response_json(
-            StatusCode::OK,
-            json!({
-                "ok": true,
-                "sessionId": session_id,
-                "revision": session.revision,
-                "problem": session.problem,
-            }),
-        ),
+    let mut sessions = lock_sessions(&state.sessions);
+    match sessions.get_mut(&session_id) {
+        Some(session) => {
+            session.last_touched_ms = now_ms();
+            response_json(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "sessionId": session_id,
+                    "revision": session.revision,
+                    "problem": session.problem,
+                }),
+            )
+        }
         None => response_json(
             StatusCode::NOT_FOUND,
             json!({"ok":false,"error":"session not found"}),
@@ -1358,13 +1404,14 @@ async fn solve_session(
         );
     }
     let (problem, revision) = {
-        let sessions = state.sessions.lock().expect("sessions mutex poisoned");
-        let Some(session) = sessions.get(&session_id) else {
+        let mut sessions = lock_sessions(&state.sessions);
+        let Some(session) = sessions.get_mut(&session_id) else {
             return response_json(
                 StatusCode::NOT_FOUND,
                 json!({"ok":false,"error":"session not found"}),
             );
         };
+        session.last_touched_ms = now_ms();
         let Some(problem) = session.problem.clone() else {
             return response_json(
                 StatusCode::BAD_REQUEST,
@@ -1468,9 +1515,28 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                     continue;
                 }
             };
-        let payload = serde_json::to_vec(&result)?;
-        nats.publish(state.results_subject.clone(), payload.into())
-            .await?;
+        // A transient serialize/publish failure must not tear down the whole
+        // worker loop: NAK for redelivery to another worker and keep consuming.
+        let payload = match serde_json::to_vec(&result) {
+            Ok(payload) => payload,
+            Err(error) => {
+                eprintln!("mip solver result serialize failed: {error}");
+                let _ = message
+                    .ack_with(async_nats::jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
+                    .await;
+                continue;
+            }
+        };
+        if let Err(error) = nats
+            .publish(state.results_subject.clone(), payload.into())
+            .await
+        {
+            eprintln!("mip solver result publish failed: {error}");
+            let _ = message
+                .ack_with(async_nats::jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
+                .await;
+            continue;
+        }
         state
             .metrics
             .slave_jobs_processed_total
@@ -1512,12 +1578,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
 
     if state.role == NodeRole::Slave {
-        let worker_state = state.clone();
-        tokio::spawn(async move {
-            if let Err(error) = run_slave(worker_state).await {
-                eprintln!("mip solver slave loop stopped: {error}");
-            }
-        });
+        if state.nats.is_some() {
+            // run_slave returns whenever the JetStream message stream ends (e.g.
+            // a NATS disconnect) or errors; supervise it so the worker reconnects
+            // and resumes consuming instead of going permanently silent.
+            let worker_state = state.clone();
+            tokio::spawn(async move {
+                loop {
+                    match run_slave(worker_state.clone()).await {
+                        Ok(()) => eprintln!("{SERVICE_NAME} slave loop ended; reconnecting in 3s"),
+                        Err(error) => eprintln!(
+                            "{SERVICE_NAME} slave loop error: {error}; reconnecting in 3s"
+                        ),
+                    }
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                }
+            });
+        } else {
+            eprintln!("{SERVICE_NAME} slave role requires NATS_URL; worker disabled");
+        }
     }
 
     let app = Router::new()
