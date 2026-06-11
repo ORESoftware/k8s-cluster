@@ -108,6 +108,9 @@
     fabrication_requests_subject/0,
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
+    func_approx_fit_requests_subject/0,
+    func_approx_fit_requests_queue_group/0,
+    func_approx_fit_results_subject/0,
     git_repos_changes_subject/0,
     gpu_job_requests_subject/0,
     gpu_job_requests_queue_group/0,
@@ -151,6 +154,9 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    quantum_solve_requests_subject/0,
+    quantum_solve_requests_queue_group/0,
+    quantum_solve_results_subject/0,
     raft_consensus_events_subject/0,
     raft_consensus_results_subject/0,
     raft_propose_requests_subject/0,
@@ -230,6 +236,7 @@
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
+    func_approx_queue_group/0,
     gpu_scheduler_queue_group/0,
     knowledge_graph_workers_queue_group/0,
     lambda_runner_queue_group/0,
@@ -237,6 +244,7 @@
     monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    quantum_queue_group/0,
     raft_consensus_queue_group/0,
     route_optimizer_queue_group/0,
     routing_workers_queue_group/0,
@@ -352,6 +360,9 @@ fabrication_release_readiness_results_subject() -> <<"dd.remote.fabrication.rele
 fabrication_requests_subject() -> <<"dd.remote.fabrication.requests"/utf8>>.
 fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
 fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
+func_approx_fit_requests_subject() -> <<"dd.remote.funcapprox.fit.requests"/utf8>>.
+func_approx_fit_requests_queue_group() -> <<"dd-func-approx-rs"/utf8>>.
+func_approx_fit_results_subject() -> <<"dd.remote.funcapprox.fit.results"/utf8>>.
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
 gpu_job_requests_subject() -> <<"dd.remote.gpu.jobs.requests"/utf8>>.
 gpu_job_requests_queue_group() -> <<"dd-gpu-rs"/utf8>>.
@@ -395,6 +406,9 @@ public_data_ingest_requests_queue_group() -> <<"dd-public-data-server"/utf8>>.
 public_data_ingest_results_subject() -> <<"dd.remote.public_data.ingest.results"/utf8>>.
 public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/utf8>>.
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
+quantum_solve_requests_subject() -> <<"dd.remote.quantum.solve.requests"/utf8>>.
+quantum_solve_requests_queue_group() -> <<"dd-quantum-compute-rs"/utf8>>.
+quantum_solve_results_subject() -> <<"dd.remote.quantum.solve.results"/utf8>>.
 raft_consensus_events_subject() -> <<"dd.remote.raft.consensus.events"/utf8>>.
 raft_consensus_results_subject() -> <<"dd.remote.raft.consensus.results"/utf8>>.
 raft_propose_requests_subject() -> <<"dd.remote.raft.propose.requests"/utf8>>.
@@ -474,6 +488,7 @@ dataset_labeling_workers_queue_group() -> <<"dd-dataset-labeling"/utf8>>.
 data_viz_notification_dispatch_queue_group() -> <<"dd-data-viz-notifiers"/utf8>>.
 economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
+func_approx_queue_group() -> <<"dd-func-approx-rs"/utf8>>.
 gpu_scheduler_queue_group() -> <<"dd-gpu-rs"/utf8>>.
 knowledge_graph_workers_queue_group() -> <<"dd-knowledge-graph-builder"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
@@ -481,6 +496,7 @@ mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8
 monte_carlo_server_queue_group() -> <<"dd-monte-carlo-server"/utf8>>.
 music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
+quantum_queue_group() -> <<"dd-quantum-compute-rs"/utf8>>.
 raft_consensus_queue_group() -> <<"dd-raft-consensus"/utf8>>.
 route_optimizer_queue_group() -> <<"dd-route-optimizer"/utf8>>.
 routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
