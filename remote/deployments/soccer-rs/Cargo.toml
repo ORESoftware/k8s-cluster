@@ -19,4 +19,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # soccer-sim-game-engine.rs and discrete-event-system.rs adjacently (exactly as
 # dd-des-rs already clones the engine) and resolves this path; for local dev it
 # points at the sibling checkout under ores/.
-soccer_sim_game_engine = { package = "soccer-sim-game-engine", path = "../../../../soccer-sim-game-engine.rs" }
+soccer_sim_game_engine = { package = "soccer_engine", path = "../../submodules/soccer-sim-game-engine.rs" }

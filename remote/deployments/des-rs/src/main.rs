@@ -76,7 +76,7 @@ use des_engine::des::general::music_production::{
     analyze_music_sample_prompt, derive_music_sample_seed_from_mp4, generate_microtonal_song,
     song_spec_from_music_sample_seed_with_prompt, ArrangementSummary,
 };
-use des_engine::des::general::soccer::{
+use soccer_engine::des::general::soccer::{
     try_write_soccer_playback_artifacts, SoccerLiveHttpBridge, SoccerLiveHttpReply,
     SoccerLiveServerConfig,
 };
@@ -86,7 +86,7 @@ use des_engine::des::service::{
     ServiceDescriptor, ServiceInfo, DD_API_DOCS_HEADER,
 };
 use des_engine::des::simulations::{run_simulations_matching, simulation_catalogue, SimOutcome};
-use des_engine::des::soccer_planner::{
+use soccer_engine::des::soccer_planner::{
     planner_page_html, planner_response_to_json, solve_planner, PlannerRequest,
 };
 use des_engine::des::streaming::{run_named_jsonl, streaming_contracts, streaming_model_names};

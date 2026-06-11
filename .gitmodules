@@ -42,3 +42,6 @@
 	path = remote/submodules/live-mutex.distributed
 	url = git@github.com:ORESoftware/live-mutex.distributed.git
 	branch = main
+[submodule "remote/submodules/soccer-sim-game-engine.rs"]
+	path = remote/submodules/soccer-sim-game-engine.rs
+	url = https://github.com/ORESoftware/soccer-sim-game-engine.rs.git

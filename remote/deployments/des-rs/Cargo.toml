@@ -17,3 +17,4 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # This is the whole point of the deployment: run the real Rust DES engine
 # in-process and serve the HTML/JSON artifacts its simulations render.
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
+soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs" }
