@@ -249,8 +249,9 @@ impl QuestionChartSpec {
             mark.as_str(),
             "bar" | "line" | "area" | "scatter" | "stem" | "histogram" | "box" | "violin"
                 | "ecdf" | "map" | "choropleth" | "funnel" | "waterfall" | "treemap" | "sunburst"
-                | "sankey" | "candlestick" | "bubble" | "gauge" | "table" | "metric" | "pie"
-                | "heatmap"
+                | "sankey" | "candlestick" | "bubble" | "gauge" | "density-contour"
+                | "density-heatmap" | "contour" | "radar" | "polar-bar" | "ohlc" | "icicle"
+                | "funnelarea" | "scatter3d" | "bullet" | "table" | "metric" | "pie" | "heatmap"
         ) {
             return Err(format!("unsupported chart mark `{mark}`"));
         }

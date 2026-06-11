@@ -373,6 +373,14 @@ fn verify_plotly(
         "sankey",
         "candlestick",
         "indicator",
+        "histogram2dcontour",
+        "histogram2d",
+        "contour",
+        "barpolar",
+        "ohlc",
+        "icicle",
+        "funnelarea",
+        "scatter3d",
     ];
     let mut traces_with_points = 0usize;
     let mut unknown_trace_types = Vec::new();
