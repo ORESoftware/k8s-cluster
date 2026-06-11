@@ -126,7 +126,7 @@ pub fn train_val_split(n: usize, val_fraction: f64, rng: &mut Rng) -> Split {
 }
 
 /// Regression goodness-of-fit on the original units.
-#[derive(Clone, Copy, Serialize, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FitMetrics {
     pub rmse: f64,
@@ -146,6 +146,11 @@ pub fn metrics(actual: &[f64], predicted: &[f64]) -> FitMetrics {
     let mut sse = 0.0;
     let mut sae = 0.0;
     let mut sst = 0.0;
+    // Clamp each residual/deviation so the accumulated sums stay finite even when
+    // a model predicts a huge-but-finite value (|term| ≤ 1e150 ⇒ term² ≤ 1e300,
+    // and n·1e300 < f64::MAX). Without this an unstable model yields Inf/NaN
+    // metrics, which serialise as `null`.
+    const CLAMP: f64 = 1e150;
     for i in 0..n {
         let p = if predicted[i].is_finite() {
             predicted[i]
@@ -153,10 +158,11 @@ pub fn metrics(actual: &[f64], predicted: &[f64]) -> FitMetrics {
             // Penalise non-finite output rather than poisoning the sums.
             actual[i] + 1e6
         };
-        let err = actual[i] - p;
+        let err = (actual[i] - p).clamp(-CLAMP, CLAMP);
+        let dev = (actual[i] - mean).clamp(-CLAMP, CLAMP);
         sse += err * err;
         sae += err.abs();
-        sst += (actual[i] - mean) * (actual[i] - mean);
+        sst += dev * dev;
     }
     let rmse = (sse / n as f64).sqrt();
     let mae = sae / n as f64;
@@ -171,4 +177,33 @@ pub fn metrics(actual: &[f64], predicted: &[f64]) -> FitMetrics {
         1.0 - sse / sst
     };
     FitMetrics { rmse, mae, r2 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metrics_stay_finite_for_huge_finite_predictions() {
+        // A model that predicts 1e300 must not overflow the sums into Inf/NaN.
+        let actual = vec![1.0, 2.0, 3.0, 4.0];
+        let predicted = vec![1e300, -1e300, 3.0, 4.0];
+        let m = metrics(&actual, &predicted);
+        assert!(m.rmse.is_finite() && m.mae.is_finite() && m.r2.is_finite());
+    }
+
+    #[test]
+    fn metrics_finite_for_nonfinite_predictions() {
+        let actual = vec![1.0, 2.0, 3.0];
+        let predicted = vec![f64::NAN, f64::INFINITY, 3.0];
+        let m = metrics(&actual, &predicted);
+        assert!(m.rmse.is_finite() && m.mae.is_finite() && m.r2.is_finite());
+    }
+
+    #[test]
+    fn metrics_perfect_fit() {
+        let actual = vec![1.0, 2.0, 3.0];
+        let m = metrics(&actual, &actual.clone());
+        assert!(m.rmse < 1e-9 && (m.r2 - 1.0).abs() < 1e-9);
+    }
 }

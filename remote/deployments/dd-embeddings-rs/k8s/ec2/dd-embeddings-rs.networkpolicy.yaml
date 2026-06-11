@@ -81,3 +81,15 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # RDS Postgres (search subsystem) on the private network. The internet rule
+    # above deliberately excludes private ranges, so the DB needs its own rule.
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432

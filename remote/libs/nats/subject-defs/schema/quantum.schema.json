@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/quantum.schema.json",
+  "title": "QuantumNats",
+  "description": "NATS subjects owned by dd-quantum-compute-rs (a pure-Rust state-vector quantum circuit simulator: arbitrary gate circuits with measurement sampling, Grover search, QAOA MaxCut, and a variational quantum eigensolver). The server subscribes to solve requests under the dd-quantum-compute-rs queue group, publishes the simulation result — measurement distribution, amplitudes, and per-mode outputs (amplified item, best bitstring/cut, ground-state energy) — plus runtime events. Payloads carry a quantum.solve.v1 schemaVersion envelope and must not contain secrets.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-quantum-compute-rs",
+    "summary": "Quantum-simulation (circuit / Grover / QAOA / VQE) request/result pipeline.",
+    "subjects": [
+      {
+        "name": "QuantumSolveRequests",
+        "description": "Inbound quantum-simulation requests (a mode plus a circuit, oracle, graph, or Hamiltonian and optional config) consumed by the simulator. Subscribed with the dd-quantum-compute-rs queue group so requests load-balance across replicas. Default for QUANTUM_SOLVE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.quantum.solve.requests",
+        "queueGroup": "dd-quantum-compute-rs",
+        "direction": "both"
+      },
+      {
+        "name": "QuantumSolveResults",
+        "description": "Simulation results emitted by the quantum simulator: a measurement distribution and final-state amplitudes plus the per-mode answer (Grover's amplified item and success probability, QAOA's best bitstring and cut value, or the VQE ground-state energy estimate). Carries a quantum.solve.v1 envelope. Default for QUANTUM_SOLVE_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.quantum.solve.results",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "QuantumQueueGroup",
+        "value": "dd-quantum-compute-rs",
+        "description": "Shared queue group used by dd-quantum-compute-rs replicas consuming solve requests."
+      }
+    ]
+  }
+}

@@ -22,6 +22,12 @@ pub enum ApiError {
     /// Server is at its concurrency limit; caller should retry later.
     #[error("service overloaded")]
     Overloaded,
+    /// The Postgres search subsystem is not configured (no DATABASE_URL).
+    #[error("search subsystem is not configured")]
+    SearchDisabled,
+    /// Database failure. Detail is logged, never returned to the caller.
+    #[error("database error: {0}")]
+    Db(String),
     /// Caller-input validation failure. The message is safe to return.
     #[error("{0}")]
     Invalid(String),
@@ -36,6 +42,8 @@ impl ApiError {
         match self {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             ApiError::Overloaded => (StatusCode::SERVICE_UNAVAILABLE, "overloaded"),
+            ApiError::SearchDisabled => (StatusCode::SERVICE_UNAVAILABLE, "search_not_configured"),
+            ApiError::Db(_) => (StatusCode::BAD_GATEWAY, "database_error"),
             ApiError::Invalid(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
             ApiError::Provider(e) => provider_status_kind(e),
             ApiError::Rag(RagError::Provider(e)) => provider_status_kind(e),
@@ -52,6 +60,9 @@ impl ApiError {
         match self {
             ApiError::Unauthorized => "unauthorized".into(),
             ApiError::Overloaded => "service overloaded, retry later".into(),
+            ApiError::SearchDisabled => {
+                "search subsystem is not configured (no database)".into()
+            }
             ApiError::Invalid(m) => m.clone(),
             ApiError::Provider(ProviderError::Unknown(p)) => format!("unknown provider `{p}`"),
             ApiError::Provider(ProviderError::NotConfigured(p)) => {

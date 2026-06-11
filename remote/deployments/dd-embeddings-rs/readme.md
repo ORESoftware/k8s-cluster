@@ -120,6 +120,73 @@ curl -s localhost:8090/api/rag/delete -H "Authorization: Bearer $TOK" \
 Caller-supplied ids are normalized the same way on index and delete, so the id
 you indexed with is the id you delete with.
 
+## Multi-signal search (Postgres)
+
+A search engine over Postgres that fuses the five retrieval signals — think a
+small Elasticsearch built on `tsvector` + `pg_trgm` + `pgvector` + JSONB + a
+graph table:
+
+| Signal | Question | Mechanism |
+|--------|----------|-----------|
+| Lexical | "Did they say the same thing?" | `tsvector` / `ts_rank` |
+| Trigram | "Did they type the same thing?" | `pg_trgm` `<->` |
+| Semantic | "Did they mean the same thing?" | `pgvector` cosine `<=>` |
+| Structured | "Does it satisfy the constraints?" | JSONB / typed predicate filters |
+| Graph | "Is it connected to the same things?" | `search_edges` + recursive CTE |
+
+The text signals each produce a ranked candidate list; they're merged with
+**Reciprocal Rank Fusion**, structured filters are hard constraints on every
+signal, the graph contributes an additional ranked list from seed documents,
+and an optional **rerank** stage reorders the fused top-N.
+
+This subsystem is **optional** and **owns its own database** (separate from the
+shared `pg-defs` contract, like `billing-server-rs`). It activates only when
+`DATABASE_URL` is set; otherwise `/api/search/*` returns 503
+`search_not_configured` and the rest of the service is unaffected. Migrations
+(`migrations/0001_init.sql`) run on boot when `SEARCH_RUN_MIGRATIONS=true` and
+require the DB user to `CREATE EXTENSION vector, pg_trgm` (pgvector ≥ 0.5 for
+HNSW). The embedding column is fixed at `EMBEDDINGS_SEARCH_DIM` (default 1536).
+
+```bash
+# Index documents (content + structured attributes + graph edges)
+curl -s localhost:8090/api/search/index -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{
+    "collection": "products", "provider": "openai",
+    "documents": [
+      { "external_id": "p1", "content": "waterproof hiking boots",
+        "attributes": { "price": 129, "waterproof": true, "type": "boots" },
+        "edges": [ { "to": "p2", "relation": "related" } ] },
+      { "external_id": "p2", "content": "wool hiking socks",
+        "attributes": { "price": 18, "type": "socks" } }
+    ]
+  }'
+
+# Hybrid query: all signals + structured filter + graph seed + rerank
+curl -s localhost:8090/api/search -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{
+    "collection": "products", "provider": "openai",
+    "query": "cheap waterproof hiking boots",
+    "signals": { "lexical": 1.0, "trigram": 0.5, "semantic": 1.0 },
+    "filters": { "price": { "lt": 150 }, "waterproof": true },
+    "graph": { "seeds": ["p1"], "max_hops": 2 },
+    "top_k": 10,
+    "rerank": { "provider": "cohere" }
+  }'
+# → { "collection": "products", "signals_used": ["lexical","semantic","graph"],
+#     "hits": [ { "external_id": "p1", "score": ..., "signals": {"lexical":1,"semantic":1}, ... } ] }
+```
+
+**Structured-filter DSL** (over the `attributes` JSONB) — every value is a bound
+parameter, field names are charset-validated, so no SQL injection:
+`{ "field": value }` (eq) or `{ "field": { "op": value } }` with
+`eq/ne/gt/gte/lt/lte/in/contains/exists`.
+
+Also: `POST /api/search/edges` (bulk edges), `POST /api/search/delete` (by
+external_id), `GET /api/search/collections`, `DELETE /api/search/collections/{c}`.
+
+Behavioral (collaborative-filtering) and generative retrieval are out of scope;
+the fusion layer is built so another signal can be added without reworking the rest.
+
 ## Caching & metrics
 
 Identical embeddings are served from a bounded in-memory cache
@@ -148,6 +215,11 @@ for the cluster scraper.
 | `EMBEDDINGS_MAX_CONCURRENCY`     | `32` — in-flight cost-bearing requests; excess → 503 |
 | `EMBEDDINGS_CACHE_MAX_ENTRIES`   | `50000` — embedding cache size (0 disables)          |
 | `EMBEDDINGS_CACHE_MAX_ITEM_BYTES`| `8192` — only cache texts at or below this length    |
+| `DATABASE_URL`                   | unset — enables the Postgres search subsystem        |
+| `SEARCH_RUN_MIGRATIONS`          | `true` — run search migrations on boot               |
+| `EMBEDDINGS_SEARCH_DIM`          | `1536` — search index embedding dim (matches migration) |
+| `EMBEDDINGS_SEARCH_CANDIDATE_K`  | `200` — per-signal candidate pool before fusion      |
+| `EMBEDDINGS_SEARCH_MAX_HOPS`     | `4` — graph traversal hop cap                        |
 
 ## Security posture
 

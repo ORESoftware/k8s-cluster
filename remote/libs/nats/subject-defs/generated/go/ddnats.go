@@ -313,6 +313,15 @@ const FabricationRequestsQueueGroup = "dd-fabrication-server"
 // Service: dd-fabrication-server
 const FabricationResultsSubject = "dd.remote.fabrication.results"
 
+// Inbound function-approximation requests (a dataset plus an optional method and config) consumed by the approximator. Subscribed with the dd-func-approx-rs queue group so requests load-balance across replicas. Default for FUNC_APPROX_FIT_SUBJECT.
+// Service: dd-func-approx-rs
+const FuncApproxFitRequestsSubject = "dd.remote.funcapprox.fit.requests"
+const FuncApproxFitRequestsQueueGroup = "dd-func-approx-rs"
+
+// Discovered models emitted by the approximator: an analytic equation with its accuracy/complexity Pareto front and symbolic derivatives, or an MLP / polynomial specification, with train/validation metrics. Carries a funcapprox.fit.v1 envelope. Default for FUNC_APPROX_RESULT_SUBJECT.
+// Service: dd-func-approx-rs
+const FuncApproxFitResultsSubject = "dd.remote.funcapprox.fit.results"
+
 // Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 // Service: shared
 const GitReposChangesSubject = "dd.remote.git-repos.changes"
@@ -448,6 +457,15 @@ const PublicDataPipelineJobsSubject = "dd.remote.public_data.pipeline.jobs"
 // Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.
 // Service: dd-public-data-server
 const PublicDataWebhookEventsSubject = "dd.remote.public_data.webhooks.events"
+
+// Inbound quantum-simulation requests (a mode plus a circuit, oracle, graph, or Hamiltonian and optional config) consumed by the simulator. Subscribed with the dd-quantum-compute-rs queue group so requests load-balance across replicas. Default for QUANTUM_SOLVE_SUBJECT.
+// Service: dd-quantum-compute-rs
+const QuantumSolveRequestsSubject = "dd.remote.quantum.solve.requests"
+const QuantumSolveRequestsQueueGroup = "dd-quantum-compute-rs"
+
+// Simulation results emitted by the quantum simulator: a measurement distribution and final-state amplitudes plus the per-mode answer (Grover's amplified item and success probability, QAOA's best bitstring and cut value, or the VQE ground-state energy estimate). Carries a quantum.solve.v1 envelope. Default for QUANTUM_SOLVE_RESULT_SUBJECT.
+// Service: dd-quantum-compute-rs
+const QuantumSolveResultsSubject = "dd.remote.quantum.solve.results"
 
 // Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.
 // Service: dd-raft-consensus
@@ -1108,6 +1126,10 @@ const EconomicsServerQueueGroup = "dd-economics-server"
 // Service: dd-evolution-optimizer
 const EvolutionIslandsQueueGroup = "dd-evolution-optimizer-islands"
 
+// Shared queue group used by dd-func-approx-rs replicas consuming fit requests.
+// Service: dd-func-approx-rs
+const FuncApproxQueueGroup = "dd-func-approx-rs"
+
 // Shared queue group used by dd-gpu-rs replicas consuming GPU job requests.
 // Service: dd-gpu-rs
 const GpuSchedulerQueueGroup = "dd-gpu-rs"
@@ -1135,6 +1157,10 @@ const MusicGenerationQueueGroup = "dd-music-rs"
 // Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 // Service: dd-public-data-server
 const PublicDataWorkersQueueGroup = "dd-public-data-server"
+
+// Shared queue group used by dd-quantum-compute-rs replicas consuming solve requests.
+// Service: dd-quantum-compute-rs
+const QuantumQueueGroup = "dd-quantum-compute-rs"
 
 // Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests.
 // Service: dd-raft-consensus

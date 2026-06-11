@@ -101,6 +101,9 @@
     fabrication_requests_subject/0,
     fabrication_requests_queue_group/0,
     fabrication_results_subject/0,
+    func_approx_fit_requests_subject/0,
+    func_approx_fit_requests_queue_group/0,
+    func_approx_fit_results_subject/0,
     git_repos_changes_subject/0,
     gpu_job_requests_subject/0,
     gpu_job_requests_queue_group/0,
@@ -144,6 +147,9 @@
     public_data_ingest_results_subject/0,
     public_data_pipeline_jobs_subject/0,
     public_data_webhook_events_subject/0,
+    quantum_solve_requests_subject/0,
+    quantum_solve_requests_queue_group/0,
+    quantum_solve_results_subject/0,
     raft_consensus_events_subject/0,
     raft_consensus_results_subject/0,
     raft_propose_requests_subject/0,
@@ -249,6 +255,7 @@
     data_viz_notification_dispatch_queue_group/0,
     economics_server_queue_group/0,
     evolution_islands_queue_group/0,
+    func_approx_queue_group/0,
     gpu_scheduler_queue_group/0,
     knowledge_graph_workers_queue_group/0,
     lambda_runner_queue_group/0,
@@ -256,6 +263,7 @@
     monte_carlo_server_queue_group/0,
     music_generation_queue_group/0,
     public_data_workers_queue_group/0,
+    quantum_queue_group/0,
     raft_consensus_queue_group/0,
     route_optimizer_queue_group/0,
     routing_workers_queue_group/0,
@@ -608,6 +616,15 @@ fabrication_requests_queue_group() -> <<"dd-fabrication-server"/utf8>>.
 %% Service: dd-fabrication-server
 fabrication_results_subject() -> <<"dd.remote.fabrication.results"/utf8>>.
 
+%% Inbound function-approximation requests (a dataset plus an optional method and config) consumed by the approximator. Subscribed with the dd-func-approx-rs queue group so requests load-balance across replicas. Default for FUNC_APPROX_FIT_SUBJECT.
+%% Service: dd-func-approx-rs
+func_approx_fit_requests_subject() -> <<"dd.remote.funcapprox.fit.requests"/utf8>>.
+func_approx_fit_requests_queue_group() -> <<"dd-func-approx-rs"/utf8>>.
+
+%% Discovered models emitted by the approximator: an analytic equation with its accuracy/complexity Pareto front and symbolic derivatives, or an MLP / polynomial specification, with train/validation metrics. Carries a funcapprox.fit.v1 envelope. Default for FUNC_APPROX_RESULT_SUBJECT.
+%% Service: dd-func-approx-rs
+func_approx_fit_results_subject() -> <<"dd.remote.funcapprox.fit.results"/utf8>>.
+
 %% Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
 %% Service: shared
 git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
@@ -743,6 +760,15 @@ public_data_pipeline_jobs_subject() -> <<"dd.remote.public_data.pipeline.jobs"/u
 %% Raw-but-redacted webhook receipt events from public/primary data providers. Consumers should use this as an audit/event source, not the canonical dataset store.
 %% Service: dd-public-data-server
 public_data_webhook_events_subject() -> <<"dd.remote.public_data.webhooks.events"/utf8>>.
+
+%% Inbound quantum-simulation requests (a mode plus a circuit, oracle, graph, or Hamiltonian and optional config) consumed by the simulator. Subscribed with the dd-quantum-compute-rs queue group so requests load-balance across replicas. Default for QUANTUM_SOLVE_SUBJECT.
+%% Service: dd-quantum-compute-rs
+quantum_solve_requests_subject() -> <<"dd.remote.quantum.solve.requests"/utf8>>.
+quantum_solve_requests_queue_group() -> <<"dd-quantum-compute-rs"/utf8>>.
+
+%% Simulation results emitted by the quantum simulator: a measurement distribution and final-state amplitudes plus the per-mode answer (Grover's amplified item and success probability, QAOA's best bitstring and cut value, or the VQE ground-state energy estimate). Carries a quantum.solve.v1 envelope. Default for QUANTUM_SOLVE_RESULT_SUBJECT.
+%% Service: dd-quantum-compute-rs
+quantum_solve_results_subject() -> <<"dd.remote.quantum.solve.results"/utf8>>.
 
 %% Fan-out of per-step consensus state transitions (role changes, elections won/lost, entries appended/committed, dropped/partitioned messages) for live observation and chaos-test assertions. Broadcast with no queue group. Default for RAFT_EVENT_SUBJECT.
 %% Service: dd-raft-consensus
@@ -1254,6 +1280,10 @@ economics_server_queue_group() -> <<"dd-economics-server"/utf8>>.
 %% Service: dd-evolution-optimizer
 evolution_islands_queue_group() -> <<"dd-evolution-optimizer-islands"/utf8>>.
 
+%% Shared queue group used by dd-func-approx-rs replicas consuming fit requests.
+%% Service: dd-func-approx-rs
+func_approx_queue_group() -> <<"dd-func-approx-rs"/utf8>>.
+
 %% Shared queue group used by dd-gpu-rs replicas consuming GPU job requests.
 %% Service: dd-gpu-rs
 gpu_scheduler_queue_group() -> <<"dd-gpu-rs"/utf8>>.
@@ -1281,6 +1311,10 @@ music_generation_queue_group() -> <<"dd-music-rs"/utf8>>.
 %% Shared queue group used by dd-public-data-server replicas so each queued ingest/scrape request is processed once.
 %% Service: dd-public-data-server
 public_data_workers_queue_group() -> <<"dd-public-data-server"/utf8>>.
+
+%% Shared queue group used by dd-quantum-compute-rs replicas consuming solve requests.
+%% Service: dd-quantum-compute-rs
+quantum_queue_group() -> <<"dd-quantum-compute-rs"/utf8>>.
 
 %% Shared queue group used by dd-raft-consensus replicas consuming propose/scenario requests.
 %% Service: dd-raft-consensus

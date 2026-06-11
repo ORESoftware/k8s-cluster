@@ -64,6 +64,17 @@ spec:
             # Vector store: the dd-qdrant Helm release in the ai-ml namespace.
             - name: QDRANT_URL
               value: http://dd-qdrant.ai-ml.svc.cluster.local:6333
+            # Postgres multi-signal search (tsvector/pg_trgm/pgvector/structured/
+            # graph). Optional: when database_url is absent the /api/search/*
+            # routes return 503 and the rest of the service runs unchanged.
+            # The search DB user needs CREATE EXTENSION vector + pg_trgm.
+            - name: SEARCH_RUN_MIGRATIONS
+              value: 'true'
+            - name: EMBEDDINGS_SEARCH_DIM
+              value: '1536'
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: database_url, optional: true }
             # The JSON API is gated by a bearer token in addition to any
             # upstream gateway. Without this set the functional API is open to
             # anyone who can reach the listener.

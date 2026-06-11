@@ -29,6 +29,12 @@ const ROUTES: &[RouteDoc] = &[
     RouteDoc { method: "POST", path: "/api/rag/delete", auth: true, summary: "Delete points by id from a collection. Body: { collection, ids[] }." },
     RouteDoc { method: "GET", path: "/api/rag/collections", auth: true, summary: "List vector-store collections." },
     RouteDoc { method: "DELETE", path: "/api/rag/collections/{collection}", auth: true, summary: "Delete an entire collection." },
+    RouteDoc { method: "POST", path: "/api/search/index", auth: true, summary: "Index documents into the Postgres search engine (content + attributes + edges). Body: { collection, provider, model?, documents[] }." },
+    RouteDoc { method: "POST", path: "/api/search", auth: true, summary: "Multi-signal search: lexical+trigram+semantic fused (RRF) with structured filters and graph expansion, optional rerank. Body: { collection, query, provider, signals?, filters?, graph?, top_k?, rerank? }." },
+    RouteDoc { method: "POST", path: "/api/search/edges", auth: true, summary: "Add graph edges by external_id. Body: { collection, edges:[{from,to,relation?,weight?}] }." },
+    RouteDoc { method: "POST", path: "/api/search/delete", auth: true, summary: "Delete documents by external_id. Body: { collection, external_ids[] }." },
+    RouteDoc { method: "GET", path: "/api/search/collections", auth: true, summary: "List search collections." },
+    RouteDoc { method: "DELETE", path: "/api/search/collections/{collection}", auth: true, summary: "Delete an entire search collection." },
 ];
 
 fn doc_value() -> serde_json::Value {

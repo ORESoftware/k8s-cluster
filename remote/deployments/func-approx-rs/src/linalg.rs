@@ -4,6 +4,9 @@
 //! basis columns), and an exact solve is what makes the linear/polynomial method
 //! and the genetic-programming linear scaling analytic rather than iterative.
 
+// Matrix/vector kernels index by row/column; range loops are the clear idiom.
+#![allow(clippy::needless_range_loop)]
+
 /// Solve `A x = b` for a square `n × n` system using partial pivoting.
 /// Returns `None` if the matrix is singular to working precision.
 pub fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
@@ -56,30 +59,38 @@ pub fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
     Some(x)
 }
 
-/// Ridge least squares: minimise `||design·w - y||² + lambda·||w||²`.
+/// Ridge least squares via the normal equations, *streamed*: minimise
+/// `||X·w - y||² + lambda·||w||²`.
 ///
-/// `design` is `n × m` (each row is the feature/basis vector for one sample).
-/// Solves the `m × m` normal equations `(XᵀX + lambdaI) w = Xᵀy` exactly.
-pub fn least_squares(design: &[Vec<f64>], y: &[f64], lambda: f64) -> Option<Vec<f64>> {
-    let n = design.len();
-    if n == 0 || y.len() != n {
+/// Pulls `(features, target)` rows from an iterator and accumulates the `m × m`
+/// normal matrix `XᵀX + lambdaI` and right-hand side `Xᵀy` without ever
+/// materialising the full `n × m` design matrix — memory is O(m²) regardless of
+/// row count. `m` is the number of basis columns. Returns `None` if the system
+/// is empty, ragged, or singular to working precision.
+pub fn least_squares<I>(rows: I, m: usize, lambda: f64) -> Option<Vec<f64>>
+where
+    I: IntoIterator<Item = (Vec<f64>, f64)>,
+{
+    if m == 0 {
         return None;
     }
-    let m = design[0].len();
-    if m == 0 || design.iter().any(|row| row.len() != m) {
-        return None;
-    }
-
-    // Normal matrix XᵀX (+ ridge) and right-hand side Xᵀy.
     let mut ata = vec![vec![0.0; m]; m];
     let mut atb = vec![0.0; m];
-    for (row, &target) in design.iter().zip(y.iter()) {
+    let mut count = 0usize;
+    for (row, target) in rows {
+        if row.len() != m {
+            return None;
+        }
+        count += 1;
         for i in 0..m {
             atb[i] += row[i] * target;
             for j in 0..m {
                 ata[i][j] += row[i] * row[j];
             }
         }
+    }
+    if count == 0 {
+        return None;
     }
     for i in 0..m {
         ata[i][i] += lambda;

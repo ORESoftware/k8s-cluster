@@ -28,7 +28,9 @@ resources:
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
   # Fun compute servers (scaled to 0 by default): SAT/SMT, constraint scheduling,
-  # routing, agent/CA simulation, Monte Carlo, and Raft consensus simulation.
+  # routing, agent/CA simulation, Monte Carlo, Raft consensus simulation, the
+  # Eureqa-style symbolic-regression function approximator, and a state-vector
+  # quantum simulator (circuit / Grover / QAOA / VQE).
   - dd-sat-smt-server.deployment.yaml
   - dd-sat-smt-server.service.yaml
   - dd-constraint-scheduler.deployment.yaml
@@ -41,6 +43,10 @@ resources:
   - dd-monte-carlo-server.service.yaml
   - dd-raft-consensus.deployment.yaml
   - dd-raft-consensus.service.yaml
+  - dd-func-approx-rs.deployment.yaml
+  - dd-func-approx-rs.service.yaml
+  - dd-quantum-compute-rs.deployment.yaml
+  - dd-quantum-compute-rs.service.yaml
   - dd-gpu-rs.deployment.yaml
   - dd-gpu-rs.networkpolicy.yaml
   - dd-gpu-rs.service.yaml

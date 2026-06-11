@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-func-approx-rs
+  namespace: default
+  labels:
+    app: dd-func-approx-rs
+spec:
+  selector:
+    app: dd-func-approx-rs
+  ports:
+    - name: http
+      port: 8139
+      targetPort: http

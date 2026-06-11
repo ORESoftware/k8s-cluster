@@ -8,12 +8,14 @@
 
 mod cache;
 mod config;
+mod db;
 mod docs;
 mod embedder;
 mod error;
 mod metrics;
 mod providers;
 mod rag;
+mod search;
 mod state;
 mod validate;
 
@@ -43,6 +45,10 @@ use crate::providers::rerank::{RerankRegistry, RerankRequest};
 use crate::providers::{EmbedRequest, Registry};
 use crate::rag::qdrant::Qdrant;
 use crate::rag::{DeletePointsRequest, IndexRequest, RagService, SearchRequest};
+use crate::search::{
+    AddEdgesRequest as SearchAddEdgesRequest, DeleteRequest as SearchDeleteRequest,
+    IndexRequest as SearchIndexRequest, SearchRequest as SearchQueryRequest, SearchService,
+};
 use crate::state::AppState;
 use crate::validate::{
     check_dimensions, clamp_top_k, constant_time_eq, enforce_input_limits, validate_collection,
@@ -79,6 +85,23 @@ async fn main() -> anyhow::Result<()> {
     let qdrant = Arc::new(Qdrant::new(cfg.qdrant_url.clone(), cfg.qdrant_api_key.clone(), http.clone()));
     let rag = Arc::new(RagService::new(embedder.clone(), qdrant.clone()));
 
+    // Optional Postgres search subsystem — only when DATABASE_URL is set.
+    let search = if let Some(url) = &cfg.database_url {
+        let pool = db::connect(url, cfg.run_migrations).await?;
+        tracing::info!(search_dim = cfg.search_dim, "postgres search subsystem enabled");
+        Some(Arc::new(SearchService::new(
+            pool,
+            embedder.clone(),
+            rerank.clone(),
+            cfg.search_dim,
+            cfg.search_candidate_k,
+            cfg.search_max_hops,
+        )))
+    } else {
+        tracing::info!("postgres search subsystem disabled (no DATABASE_URL) — /api/search/* will 503");
+        None
+    };
+
     let provider_ids: Vec<&str> = registry.iter().map(|p| p.id()).collect();
     let rerank_ids: Vec<&str> = rerank.iter().map(|p| p.id()).collect();
     tracing::info!(
@@ -108,6 +131,7 @@ async fn main() -> anyhow::Result<()> {
         embedder,
         rerank,
         rag,
+        search,
         metrics,
         api_auth_bearer: cfg.api_auth_bearer.clone().map(Arc::new),
         limits: cfg.limits,
@@ -135,6 +159,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/rag/delete", post(rag_delete))
         .route("/api/rag/collections", get(rag_list_collections))
         .route("/api/rag/collections/{collection}", delete(rag_delete_collection))
+        // Postgres multi-signal search.
+        .route("/api/search", post(search_query))
+        .route("/api/search/index", post(search_index))
+        .route("/api/search/edges", post(search_edges))
+        .route("/api/search/delete", post(search_delete))
+        .route("/api/search/collections", get(search_list_collections))
+        .route("/api/search/collections/{collection}", delete(search_delete_collection))
         .layer(middleware::from_fn_with_state(state.clone(), auth));
 
     let app = public
@@ -236,17 +267,19 @@ async fn healthz() -> impl IntoResponse {
 /// external SaaS and intentionally not probed (they'd make readiness flap on
 /// third-party hiccups).
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    match state.rag.qdrant_health().await {
-        Ok(()) => (StatusCode::OK, Json(json!({ "status": "ready" }))),
-        Err(e) => {
-            // /readyz is unauthenticated — log the internal detail, don't return it.
-            tracing::warn!(error = %e, "readiness check failed: qdrant unreachable");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({ "status": "degraded" })),
-            )
+    // /readyz is unauthenticated — log internal detail, don't return it.
+    if let Err(e) = state.rag.qdrant_health().await {
+        tracing::warn!(error = %e, "readiness: qdrant unreachable");
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "status": "degraded" })));
+    }
+    // When the search subsystem is enabled, its database must be reachable too.
+    if let Some(search) = &state.search {
+        if let Err(e) = search.health().await {
+            tracing::warn!(error = %e, "readiness: search database unreachable");
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "status": "degraded" })));
         }
     }
+    (StatusCode::OK, Json(json!({ "status": "ready" })))
 }
 
 /// Acquire a slot from the global in-flight limiter, or shed with 503. Held
@@ -434,6 +467,105 @@ async fn rag_delete_collection(
         validate_collection(&collection)?;
         state.rag.delete_collection(&collection).await?;
         Ok(Json(json!({ "collection": collection, "deleted": true })).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+/// Fetch the search service or fail with 503 if no DB is configured.
+fn search_svc(state: &AppState) -> Result<&Arc<SearchService>, ApiError> {
+    state.search.as_ref().ok_or(ApiError::SearchDisabled)
+}
+
+async fn search_index(
+    State(state): State<AppState>,
+    Json(body): Json<SearchIndexRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_index");
+    let out = async {
+        validate_collection(&body.collection)?;
+        validate_model(body.model.as_deref())?;
+        let texts: Vec<String> = body.documents.iter().map(|d| d.content.clone()).collect();
+        enforce_input_limits(&texts, &state.limits)?;
+        let svc = search_svc(&state)?;
+        let _permit = acquire_slot(&state)?;
+        Ok(Json(svc.index(body).await?).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn search_query(
+    State(state): State<AppState>,
+    Json(mut body): Json<SearchQueryRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_query");
+    let out = async {
+        validate_collection(&body.collection)?;
+        validate_model(body.model.as_deref())?;
+        enforce_input_limits(std::slice::from_ref(&body.query), &state.limits)?;
+        body.top_k = clamp_top_k(body.top_k, &state.limits);
+        if let Some(rc) = &body.rerank {
+            validate_model(rc.model.as_deref())?;
+        }
+        let svc = search_svc(&state)?;
+        let _permit = acquire_slot(&state)?;
+        Ok(Json(svc.query(body).await?).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn search_edges(
+    State(state): State<AppState>,
+    Json(body): Json<SearchAddEdgesRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_edges");
+    let out = async {
+        validate_collection(&body.collection)?;
+        let svc = search_svc(&state)?;
+        let added = svc.add_edges(body).await?;
+        Ok(Json(json!({ "added": added })).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn search_delete(
+    State(state): State<AppState>,
+    Json(body): Json<SearchDeleteRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_delete");
+    let out = async {
+        validate_collection(&body.collection)?;
+        let svc = search_svc(&state)?;
+        let deleted = svc.delete(body).await?;
+        Ok(Json(json!({ "deleted": deleted })).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn search_list_collections(State(state): State<AppState>) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_collections");
+    let out = async {
+        let svc = search_svc(&state)?;
+        Ok(Json(json!({ "collections": svc.list_collections().await? })).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn search_delete_collection(
+    State(state): State<AppState>,
+    Path(collection): Path<String>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("search_delete_collection");
+    let out = async {
+        validate_collection(&collection)?;
+        let svc = search_svc(&state)?;
+        let deleted = svc.delete_collection(&collection).await?;
+        Ok(Json(json!({ "collection": collection, "deleted": deleted })).into_response())
     }
     .await;
     track(&state, out)

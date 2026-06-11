@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-quantum-compute-rs
+  namespace: default
+  labels:
+    app: dd-quantum-compute-rs
+spec:
+  # Scaled to 0 by default (like the other fun compute servers) to spare the
+  # single-node cluster a cold-start rustc build storm; scale up to exercise it.
+  replicas: 0
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-quantum-compute-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-11-quantum'
+      labels:
+        app: dd-quantum-compute-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: quantum-compute-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/quantum-compute-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8140'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: QUANTUM_SOLVE_SUBJECT
+              value: dd.remote.quantum.solve.requests
+            - name: QUANTUM_QUEUE_GROUP
+              value: dd-quantum-compute-rs
+            - name: QUANTUM_RESULT_SUBJECT
+              value: dd.remote.quantum.solve.results
+            - name: QUANTUM_EVENT_SUBJECT
+              value: dd.remote.events
+            # Bounds concurrent state-vector simulations (memory- and CPU-heavy).
+            - name: QUANTUM_MAX_INFLIGHT
+              value: '4'
+            # Optional app-level auth: populate this secret key to require an
+            # 'x-server-auth: <secret>' header on the solve endpoint (open if unset).
+            - name: QUANTUM_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: QUANTUM_AUTH_SECRET
+                  optional: true
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-quantum-compute-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-quantum-compute-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-quantum-compute-rs.default.svc.cluster.local:8140/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8140
+          resources:
+            requests:
+              cpu: 150m
+              memory: 192Mi
+            limits:
+              # The variational optimiser (QAOA/VQE) re-simulates the circuit
+              # thousands of times; give it two cores.
+              cpu: '2'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

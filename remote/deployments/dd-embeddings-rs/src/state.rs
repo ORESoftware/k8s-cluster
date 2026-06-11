@@ -10,6 +10,7 @@ use crate::metrics::Metrics;
 use crate::providers::rerank::RerankRegistry;
 use crate::providers::Registry;
 use crate::rag::RagService;
+use crate::search::SearchService;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -18,6 +19,8 @@ pub struct AppState {
     pub embedder: Arc<Embedder>,
     pub rerank: Arc<RerankRegistry>,
     pub rag: Arc<RagService>,
+    /// Postgres multi-signal search. `None` when no DATABASE_URL is configured.
+    pub search: Option<Arc<SearchService>>,
     pub metrics: Arc<Metrics>,
     /// Optional API bearer token. `None` means the API is unauthenticated at
     /// this layer (an upstream gateway may still gate it).

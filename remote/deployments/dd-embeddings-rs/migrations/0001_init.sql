@@ -1,0 +1,64 @@
+-- dd-embeddings-rs search index — owned by this service (separate from the
+-- shared pg-defs contract). Hand-authored migration, run via sqlx::migrate!
+-- when SEARCH_RUN_MIGRATIONS=true.
+--
+-- Prereqs: the database user must be able to CREATE EXTENSION `vector` and
+-- `pg_trgm` (rds_superuser, or have an operator pre-create them). HNSW indexing
+-- needs pgvector >= 0.5.
+--
+-- The embedding column dimension (1536) is fixed here and must match the
+-- service's EMBEDDINGS_SEARCH_DIM. Changing it requires a new migration + a
+-- re-index of all rows.
+
+create extension if not exists vector;
+create extension if not exists pg_trgm;
+
+create table if not exists search_documents (
+  id           uuid primary key default gen_random_uuid(),
+  collection   text not null,
+  external_id  text,
+  content      text not null,
+  attributes   jsonb not null default '{}'::jsonb,
+  embedding    vector(1536),
+  -- Lexical vector maintained by Postgres, not the app.
+  content_tsv  tsvector generated always as (to_tsvector('english', coalesce(content, ''))) stored,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  constraint search_documents_attrs_object_chk check (jsonb_typeof(attributes) = 'object')
+);
+
+-- One logical document per (collection, external_id) so re-indexing upserts.
+create unique index if not exists search_documents_collection_extid_uq
+  on search_documents (collection, external_id)
+  where external_id is not null;
+
+create index if not exists search_documents_collection_idx
+  on search_documents (collection);
+
+-- 1. Lexical (same words).
+create index if not exists search_documents_tsv_idx
+  on search_documents using gin (content_tsv);
+
+-- 2. Trigram (same characters).
+create index if not exists search_documents_trgm_idx
+  on search_documents using gin (content gin_trgm_ops);
+
+-- 4. Structured (same attributes) — containment-optimized JSONB index.
+create index if not exists search_documents_attrs_idx
+  on search_documents using gin (attributes jsonb_path_ops);
+
+-- 3. Semantic (same meaning) — cosine HNSW.
+create index if not exists search_documents_embedding_idx
+  on search_documents using hnsw (embedding vector_cosine_ops);
+
+-- 5. Graph (same relationships).
+create table if not exists search_edges (
+  src_id   uuid not null references search_documents(id) on delete cascade,
+  dst_id   uuid not null references search_documents(id) on delete cascade,
+  relation text not null default 'related',
+  weight   double precision not null default 1.0,
+  primary key (src_id, dst_id, relation)
+);
+
+create index if not exists search_edges_dst_idx
+  on search_edges (dst_id, relation);
