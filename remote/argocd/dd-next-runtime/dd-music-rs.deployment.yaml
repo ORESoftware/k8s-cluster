@@ -108,7 +108,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 61bd09c6c86df1ffe55ac7b9c6b52ead81cb129c
+              value: main
             - name: MUSIC_GENERATOR_ENABLED
               value: 'true'
             - name: MUSIC_GENERATOR_INTERVAL_SECONDS

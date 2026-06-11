@@ -150,7 +150,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: f694d98170a3efb4459c6c92778a9715d1e61c50
+              value: main
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

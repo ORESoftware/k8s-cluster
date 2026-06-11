@@ -82,7 +82,7 @@ spec:
             - name: LMX_RS_GIT_URL
               value: https://github.com/ORESoftware/live-mutex-rs.git
             - name: LMX_RS_GIT_REF
-              value: 7f104183811170694b0e55fa6771b035fb09ea83
+              value: dev
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
