@@ -994,12 +994,37 @@ export function parseIndexLeadingColumn(definition) {
     return null;
   }
   // Walk balanced parens from the opening `(` to capture the column list.
+  // Quote-aware (like splitTopLevelComma): a `(`/`)` inside a quoted column
+  // name (`"weird)col"`) or string literal must NOT move the depth, otherwise
+  // the list closes early and the wrong leading column is reported — which
+  // would falsely mark an FK as covered and drop a needed index.
   const open = def.indexOf("(", head[0].length - 1);
   let depth = 0;
   let end = -1;
+  let singleQuoted = false;
+  let doubleQuoted = false;
   for (let i = open; i < def.length; i += 1) {
-    if (def[i] === "(") depth += 1;
-    else if (def[i] === ")") {
+    const ch = def[i];
+    if (ch === "'" && !doubleQuoted) {
+      // Skip an escaped doubled quote (`''`) so it doesn't toggle state.
+      if (singleQuoted && def[i + 1] === "'") {
+        i += 1;
+        continue;
+      }
+      singleQuoted = !singleQuoted;
+      continue;
+    }
+    if (ch === '"' && !singleQuoted) {
+      if (doubleQuoted && def[i + 1] === '"') {
+        i += 1;
+        continue;
+      }
+      doubleQuoted = !doubleQuoted;
+      continue;
+    }
+    if (singleQuoted || doubleQuoted) continue;
+    if (ch === "(") depth += 1;
+    else if (ch === ")") {
       depth -= 1;
       if (depth === 0) {
         end = i;
