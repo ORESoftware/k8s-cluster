@@ -89,8 +89,15 @@ fn load_mesh(payload: &GeometryPayload) -> Result<(Mesh, Vec<u8>), String> {
     Ok((mesh, bytes))
 }
 
-fn weld_tol(payload: &GeometryPayload) -> f64 {
-    payload.weld_tolerance_mm.filter(|t| *t > 0.0).unwrap_or(1e-3)
+/// Resolve the weld tolerance: default when omitted, but reject an explicitly
+/// supplied non-finite or non-positive value rather than silently substituting
+/// a default. `weld` still clamps into a safe range as defense-in-depth.
+fn weld_tol(payload: &GeometryPayload) -> Result<f64, String> {
+    match payload.weld_tolerance_mm {
+        None => Ok(1e-3),
+        Some(t) if t.is_finite() && t > 0.0 => Ok(t),
+        Some(_) => Err("weldToleranceMm must be a finite number greater than 0".into()),
+    }
 }
 
 const MAX_REQUEST_ID_LEN: usize = 128;
@@ -183,7 +190,8 @@ pub struct MeshRepairPlanRequest {
 pub fn mesh_repair_plan_response(req: MeshRepairPlanRequest) -> Result<Value, String> {
     let (input, bytes) = load_mesh(&req.geometry)?;
     let request_id = derive_request_id(&req.request_id, &bytes, "mesh-repair-plan")?;
-    let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
+    let weld = weld_tol(&req.geometry)?;
+    let (repaired, report) = repair::repair(&input, weld);
 
     let mut blockers: Vec<String> = Vec::new();
     if report.non_manifold_edges > 0 {
@@ -213,7 +221,7 @@ pub fn mesh_repair_plan_response(req: MeshRepairPlanRequest) -> Result<Value, St
         "capability": "mesh-repair",
         "status": status,
         "machineReady": machine_ready,
-        "weldToleranceMm": weld_tol(&req.geometry),
+        "weldToleranceMm": weld,
         "repair": report_json(&report),
         "metricsBefore": metrics_json(&input),
         "metricsAfter": metrics_json(&repaired),
@@ -260,9 +268,10 @@ pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value,
     let request_id = derive_request_id(&req.request_id, &bytes, "toolpath-generate")?;
     let layer_height = require_positive("layerHeightMm", req.layer_height_mm.unwrap_or(0.2))?;
     let feedrate = require_positive("feedrateMmPerMin", req.feedrate_mm_per_min.unwrap_or(3000.0))?;
+    let weld = weld_tol(&req.geometry)?;
 
     // Heal first so slicing operates on a watertight shell.
-    let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
+    let (repaired, report) = repair::repair(&input, weld);
     let slice = toolpath::slice(&repaired, layer_height)?;
 
     let mut blockers: Vec<String> = Vec::new();
@@ -353,8 +362,9 @@ pub fn cost_estimate_response(req: CostEstimateRequest) -> Result<Value, String>
     let (input, bytes) = load_mesh(&req.geometry)?;
     let request_id = derive_request_id(&req.request_id, &bytes, "cost-estimate")?;
     let layer_height = require_positive("layerHeightMm", req.layer_height_mm.unwrap_or(0.2))?;
+    let weld = weld_tol(&req.geometry)?;
 
-    let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
+    let (repaired, report) = repair::repair(&input, weld);
     let slice = toolpath::slice(&repaired, layer_height)?;
 
     let defaults = CostInputs::default();

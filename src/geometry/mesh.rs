@@ -20,6 +20,21 @@ pub const MAX_TRIANGLES: usize = 2_000_000;
 pub const MIN_WELD_TOL: f64 = 1e-6;
 pub const MAX_WELD_TOL: f64 = 5.0;
 
+/// Maximum absolute coordinate (mm) accepted on any axis — a 10 km envelope,
+/// far beyond any real mm-scale part. Bounding magnitude keeps the weld
+/// quantizer from saturating `i64` (which would alias distant vertices), keeps
+/// volume/area/bbox math from overflowing to non-finite, and rejects random
+/// binary blobs whose bytes decode to absurd floats.
+pub const MAX_ABS_COORD: f64 = 1.0e7;
+
+/// True when a vertex is finite and inside the accepted coordinate envelope.
+fn coord_ok(v: Vec3) -> bool {
+    v.is_finite()
+        && v.x.abs() <= MAX_ABS_COORD
+        && v.y.abs() <= MAX_ABS_COORD
+        && v.z.abs() <= MAX_ABS_COORD
+}
+
 /// A 3D point / vector in millimetres (the service's canonical unit).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec3 {
@@ -221,8 +236,11 @@ fn parse_binary_stl(bytes: &[u8]) -> Result<Mesh, String> {
         for (k, slot) in tri.iter_mut().enumerate() {
             let off = base + k * 12;
             let v = Vec3::new(read_f32(off), read_f32(off + 4), read_f32(off + 8));
-            if !v.is_finite() {
-                return Err(format!("binary stl triangle {} has non-finite vertex", i));
+            if !coord_ok(v) {
+                return Err(format!(
+                    "binary stl triangle {} has a non-finite or out-of-range vertex (limit {:e} mm)",
+                    i, MAX_ABS_COORD
+                ));
             }
             *slot = mesh.vertices.len();
             mesh.vertices.push(v);
@@ -273,8 +291,11 @@ fn parse_ascii_stl(bytes: &[u8]) -> Result<Mesh, String> {
         for (k, slot) in tri.iter_mut().enumerate() {
             let o = i * 9 + k * 3;
             let v = Vec3::new(coords[o], coords[o + 1], coords[o + 2]);
-            if !v.is_finite() {
-                return Err(format!("ascii stl triangle {} has non-finite vertex", i));
+            if !coord_ok(v) {
+                return Err(format!(
+                    "ascii stl triangle {} has a non-finite or out-of-range vertex (limit {:e} mm)",
+                    i, MAX_ABS_COORD
+                ));
             }
             *slot = mesh.vertices.len();
             mesh.vertices.push(v);
@@ -371,15 +392,42 @@ pub(crate) fn weld(mesh: &Mesh, tol: f64) -> (Mesh, usize) {
     } else {
         1e-3
     };
-    let mut map: HashMap<(i64, i64, i64), usize> = HashMap::new();
+    // Bucket welded vertices by grid cell (cell size = tol). For each incoming
+    // vertex, search the 3x3x3 neighborhood so a pair within `tol` but split
+    // across a cell boundary still merges — exact-cell hashing alone would leave
+    // such seams as spurious boundary edges and report a closed mesh as open.
+    let mut cells: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
     let mut welded = Mesh::default();
     let mut remap: Vec<usize> = Vec::with_capacity(mesh.vertices.len());
+    let tol_sq = tol * tol;
     for v in &mesh.vertices {
         let key = (quantize(v.x, tol), quantize(v.y, tol), quantize(v.z, tol));
-        let idx = *map.entry(key).or_insert_with(|| {
-            welded.vertices.push(*v);
-            welded.vertices.len() - 1
-        });
+        let mut found: Option<usize> = None;
+        'search: for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(list) = cells.get(&(key.0 + dx, key.1 + dy, key.2 + dz)) {
+                        for &wi in list {
+                            let w = welded.vertices[wi];
+                            let d = w.sub(*v);
+                            if d.dot(d) <= tol_sq {
+                                found = Some(wi);
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let idx = match found {
+            Some(wi) => wi,
+            None => {
+                welded.vertices.push(*v);
+                let ni = welded.vertices.len() - 1;
+                cells.entry(key).or_default().push(ni);
+                ni
+            }
+        };
         remap.push(idx);
     }
     for tri in &mesh.triangles {
