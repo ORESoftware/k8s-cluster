@@ -93,6 +93,11 @@ const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
 const DEFAULT_OAUTH_STATE_TTL_SECONDS: u64 = 600;
 const DEFAULT_CLOUD_COPY_BATCH_SIZE: i64 = 25;
 const MAX_CLOUD_COPY_BATCH_SIZE: i64 = 100;
+/// How long a device's reported transfer pause is honored before the drain
+/// resumes its server-managed copies. A live paused client re-affirms well
+/// within this window; a vanished one stops blocking after it (server copies
+/// don't use the phone battery, so resuming once the client is gone is safe).
+const TRANSFER_PAUSE_LEASE: &str = "6 hours";
 const DEFAULT_CLOUD_COPY_MAX_ATTEMPTS: i32 = 3;
 const DEFAULT_CLOUD_COPY_MAX_BYTES: i64 = 25 * 1024 * 1024;
 const MAX_CLOUD_COPY_MAX_BYTES: i64 = 200 * 1024 * 1024;
@@ -295,6 +300,24 @@ struct RegisterDeviceResponse {
     device_id: String,
     device_token: String,
     policy: MobilePolicy,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateTransferStateRequest {
+    paused: bool,
+    reason: Option<String>,
+    network_policy: Option<String>,
+    battery_level: Option<i32>,
+    charging: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateTransferStateResponse {
+    ok: bool,
+    transfer_paused: bool,
+    network_policy: String,
 }
 
 #[derive(Serialize)]
@@ -1498,6 +1521,35 @@ fn normalize_platform(value: &str) -> Result<String, ServiceError> {
     }
 }
 
+fn validate_network_policy(value: Option<String>) -> Result<String, ServiceError> {
+    let policy = clean_string(value, 20)
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_else(|| "any".to_string());
+    if matches!(policy.as_str(), "any" | "wifi_only" | "cellular_only") {
+        Ok(policy)
+    } else {
+        Err(ServiceError::BadRequest(
+            "networkPolicy must be any, wifi_only, or cellular_only".to_string(),
+        ))
+    }
+}
+
+fn validate_pause_reason(value: Option<String>) -> Result<Option<String>, ServiceError> {
+    let Some(reason) = clean_string(value, 40).map(|value| value.to_ascii_lowercase()) else {
+        return Ok(None);
+    };
+    if matches!(
+        reason.as_str(),
+        "low_battery" | "network_constraint" | "offline" | "manual"
+    ) {
+        Ok(Some(reason))
+    } else {
+        Err(ServiceError::BadRequest(
+            "reason must be low_battery, network_constraint, offline, or manual".to_string(),
+        ))
+    }
+}
+
 fn validate_legal_region(value: Option<String>) -> Result<Option<String>, ServiceError> {
     let Some(value) = clean_string(value, 64) else {
         return Ok(None);
@@ -2391,6 +2443,80 @@ async fn register_device(
         device_id,
         device_token: token,
         policy: policy(&state.config, retention_hours),
+    }))
+}
+
+/// Records the device's current transfer gate: whether it is pausing cloud
+/// streaming (low battery / network policy) and its network preference. Paused
+/// devices have their server-managed (Google Drive / OneDrive) copies held by
+/// [drain_cloud_copy_jobs] until they report unpaused, keeping server delivery
+/// consistent with the device's intent. Local capture is never affected.
+async fn update_transfer_state(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<UpdateTransferStateRequest>,
+) -> Result<Json<UpdateTransferStateResponse>, ServiceError> {
+    let (auth, client) = authenticate_device(&state, &headers).await?;
+    let network_policy = validate_network_policy(req.network_policy)?;
+    // A paused device must give a reason so the drain and audit trail are
+    // meaningful; default an unlabeled pause to an explicit manual one. An
+    // unpaused device clears any prior reason.
+    let reason = if req.paused {
+        Some(validate_pause_reason(req.reason)?.unwrap_or_else(|| "manual".to_string()))
+    } else {
+        None
+    };
+    let battery_level: Option<i16> = req
+        .battery_level
+        .filter(|value| (0..=100).contains(value))
+        .map(|value| value as i16);
+    let charging = req.charging;
+    let row = client
+        .query_one(
+            "update sound_recorder_devices
+             set transfer_paused = $2,
+                 transfer_pause_reason = $3,
+                 network_policy = $4,
+                 battery_level = $5,
+                 charging = $6,
+                 transfer_state_updated_at = now(),
+                 updated_at = now()
+             where id = $1::uuid
+             returning transfer_paused, network_policy",
+            &[
+                &auth.device_id,
+                &req.paused,
+                &reason,
+                &network_policy,
+                &battery_level,
+                &charging,
+            ],
+        )
+        .await
+        .map_err(db_error)?;
+    audit_event(
+        &client,
+        Some(&auth.account_id),
+        Some(&auth.device_id),
+        "sound_recorder.device.transfer_state",
+        json!({
+            "paused": req.paused,
+            "reason": reason,
+            "networkPolicy": network_policy,
+            "batteryLevel": battery_level,
+            "charging": charging
+        }),
+    )
+    .await;
+    record_request(
+        "POST",
+        "/api/mobile/v1/devices/transfer-state",
+        StatusCode::OK,
+    );
+    Ok(Json(UpdateTransferStateResponse {
+        ok: true,
+        transfer_paused: row.get("transfer_paused"),
+        network_policy: row.get("network_policy"),
     }))
 }
 
@@ -3935,9 +4061,24 @@ async fn drain_cloud_copy_jobs(
                and c.status = 'active'
                and c.link_mode = 'server_oauth'
                and s.status = 'uploaded'
+               -- Hold server-managed copies for any segment whose source device
+               -- is currently pausing cloud streaming, so server delivery stays
+               -- consistent with the device's battery/network intent. The pause
+               -- is lease-based: only a *fresh* pause is honored, so a device
+               -- that reported paused and then vanished (app killed/uninstalled)
+               -- cannot strand its already-uploaded segments forever — server
+               -- copies don't use the phone battery, so resuming once the client
+               -- is gone is safe. A live paused client re-affirms within the lease.
+               and not exists (
+                 select 1 from sound_recorder_devices d
+                 where d.id = s.device_id
+                   and d.transfer_paused = true
+                   and d.transfer_state_updated_at is not null
+                   and d.transfer_state_updated_at > now() - $2::interval
+               )
              order by j.updated_at asc
              limit $1",
-            &[&limit],
+            &[&limit, &TRANSFER_PAUSE_LEASE],
         )
         .await
         .map_err(db_error)?;
@@ -5164,6 +5305,10 @@ fn app(state: AppState) -> Router {
         .route("/download/ios", get(download_ios))
         .route("/download/android", get(download_android))
         .route("/api/mobile/v1/devices/register", post(register_device))
+        .route(
+            "/api/mobile/v1/devices/transfer-state",
+            post(update_transfer_state),
+        )
         .route(
             "/api/mobile/v1/upload-sessions",
             post(create_upload_session),

@@ -248,10 +248,23 @@ create table if not exists sound_recorder_devices (
   consent_accepted_at timestamptz not null,
   recording_indicator_acknowledged boolean default false not null,
   last_seen_at timestamptz,
+  transfer_paused boolean default false not null,
+  transfer_pause_reason varchar(40),
+  network_policy varchar(20) default 'any' not null,
+  battery_level smallint,
+  charging boolean,
+  transfer_state_updated_at timestamptz,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   constraint sound_recorder_devices_platform_chk
     check (platform in ('ios', 'android')),
+  constraint sound_recorder_devices_network_policy_chk
+    check (network_policy in ('any', 'wifi_only', 'cellular_only')),
+  constraint sound_recorder_devices_pause_reason_chk
+    check (transfer_pause_reason is null
+      or transfer_pause_reason in ('low_battery', 'network_constraint', 'offline', 'manual')),
+  constraint sound_recorder_devices_battery_level_chk
+    check (battery_level is null or battery_level between 0 and 100),
   constraint sound_recorder_devices_status_chk
     check (status in ('active', 'revoked', 'lost', 'replaced', 'deleted')),
   constraint sound_recorder_devices_install_id_size_chk
@@ -278,6 +291,10 @@ create unique index if not exists sound_recorder_devices_account_install_uq
 
 create index if not exists sound_recorder_devices_account_status_idx
   on sound_recorder_devices (account_id, status, updated_at desc);
+
+create index if not exists sound_recorder_devices_transfer_paused_idx
+  on sound_recorder_devices (id)
+  where transfer_paused = true;
 
 alter table if exists sound_recorder_devices
   add constraint sound_recorder_devices_account_fk

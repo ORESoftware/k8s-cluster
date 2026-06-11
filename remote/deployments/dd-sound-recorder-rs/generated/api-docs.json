@@ -202,6 +202,23 @@
       "notes": ""
     },
     {
+      "path": "/api/mobile/v1/devices/transfer-state",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Records the device transfer gate (pause + reason, network policy, battery) so server-managed cloud copies defer while the device pauses cloud streaming.",
+      "handlers": [
+        "update_transfer_state"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/api/mobile/v1/evidence-exports",
       "methods": [
         "POST"
