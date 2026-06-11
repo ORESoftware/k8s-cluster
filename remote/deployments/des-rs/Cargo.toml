@@ -17,3 +17,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # This is the whole point of the deployment: run the real Rust DES engine
 # in-process and serve the HTML/JSON artifacts its simulations render.
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
+
+# Soccer was extracted out of des_engine into the `soccer_engine` crate
+# (soccer-sim-game-engine.rs), checked out adjacently as a submodule. Its own
+# `des_engine = { path = "../discrete-event-system.rs" }` resolves to the SAME
+# engine submodule above, so there is exactly one des_engine in the graph.
+soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs" }

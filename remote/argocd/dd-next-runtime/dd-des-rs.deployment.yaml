@@ -124,12 +124,30 @@ spec:
                   echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
                 fi
               fi
+              # Resolve the soccer_engine source (soccer-sim-game-engine.rs),
+              # extracted out of des_engine. Same clone-or-fallback pattern; its
+              # own `des_engine = { path = "../discrete-event-system.rs" }`
+              # resolves to the engine copy placed beside it under submodules/.
+              soccer_src="/opt/dd-next-1/remote/submodules/soccer-sim-game-engine.rs"
+              soccer_clone="${build_root}/soccer-engine-source"
+              if [ -n "${SOCCER_ENGINE_GIT_URL:-}" ]; then
+                if git clone --depth 1 --no-checkout "${SOCCER_ENGINE_GIT_URL}" "${soccer_clone}" \
+                  && git -C "${soccer_clone}" fetch --depth 1 origin "${SOCCER_ENGINE_GIT_REF:-main}" \
+                  && git -C "${soccer_clone}" switch --detach FETCH_HEAD; then
+                  soccer_src="${soccer_clone}"
+                  echo "[dd-des-rs] soccer_engine: cloned ${SOCCER_ENGINE_GIT_URL}@${SOCCER_ENGINE_GIT_REF:-main} ($(git -C "${soccer_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] soccer_engine clone failed; using pinned submodule at ${soccer_src}" >&2
+                fi
+              fi
               # Build from a writable copy so the engine path dependency can be
               # resolved and Cargo.lock stays writable under the read-only root fs.
               build_src="${build_root}/remote/deployments/des-rs"
               build_engine="${build_root}/remote/submodules/discrete-event-system.rs"
+              build_soccer="${build_root}/remote/submodules/soccer-sim-game-engine.rs"
               copy_source_tree "${server_src}" "${build_src}"
               copy_source_tree "${engine_src}" "${build_engine}"
+              copy_source_tree "${soccer_src}" "${build_soccer}"
               cd "${build_src}"
               exec /usr/local/cargo/bin/cargo run --release
           env:
@@ -150,6 +168,13 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
+              value: main
+            # Soccer engine source: soccer was extracted out of des_engine into
+            # the soccer_engine crate. Cloned at pod start the same way; pinned to
+            # main so it tracks the engine. Set URL to "" to use the submodule.
+            - name: SOCCER_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+            - name: SOCCER_ENGINE_GIT_REF
               value: main
             - name: HOME
               value: /tmp

@@ -359,7 +359,7 @@ dependencies = [
  "axum",
  "serde",
  "serde_json",
- "soccer-sim-game-engine",
+ "soccer_engine",
  "tokio",
  "uuid",
 ]
@@ -1553,10 +1553,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
-name = "soccer-sim-game-engine"
+name = "soccer_engine"
 version = "0.0.1"
 dependencies = [
  "des_engine",
+ "native-tls",
+ "postgres",
+ "postgres-native-tls",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
