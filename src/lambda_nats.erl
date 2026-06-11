@@ -144,6 +144,9 @@ init() ->
         queue_group => env_binary("NATS_LAMBDA_QUEUE_GROUP", dd_nats_subject_consts:lambda_runner_queue_group()),
         result_subject => env_binary("NATS_LAMBDA_RESULT_SUBJECT", dd_nats_subject_consts:lambdas_results_subject()),
         functions_subject => env_binary("NATS_LAMBDA_FUNCTIONS_SUBJECT", dd_nats_subject_consts:lambdas_functions_subject()),
+        workflow_start_subject => env_binary("NATS_WORKFLOW_START_SUBJECT", dd_nats_subject_consts:workflows_start_subject()),
+        workflow_signal_subject => env_binary("NATS_WORKFLOW_SIGNAL_SUBJECT", dd_nats_subject_consts:workflows_signal_wildcard()),
+        workflow_queue_group => env_binary("NATS_WORKFLOW_QUEUE_GROUP", dd_nats_subject_consts:workflow_engine_queue_group()),
         nats_username => env_binary("NATS_USERNAME", <<>>),
         nats_password => env_binary("NATS_PASSWORD", <<>>),
         nats_token => env_binary("NATS_TOKEN", <<>>),
@@ -151,9 +154,10 @@ init() ->
         max_payload_bytes => env_int("NATS_LAMBDA_MAX_PAYLOAD_BYTES", 5242880),
         buffer => <<>>,
         %% Outstanding request/reply correlations: InboxSubject => {From, Ref, Sid, TimerRef}.
-        %% Sids 1 (invoke) and 2 (functions) are reserved by connect/1.
+        %% Sids 1 (invoke), 2 (functions), 3 (workflow start), and 4 (workflow
+        %% signal) are reserved by connect/1; request/reply inboxes start at 5.
         inboxes => #{},
-        next_sid => 3
+        next_sid => 5
     },
     connect(State).
 
@@ -170,6 +174,8 @@ connect(State) ->
                         ok ->
                             subscribe(Socket, maps:get(invoke_subject, State), maps:get(queue_group, State), 1),
                             subscribe(Socket, maps:get(functions_subject, State), <<>>, 2),
+                            subscribe(Socket, maps:get(workflow_start_subject, State), maps:get(workflow_queue_group, State), 3),
+                            subscribe(Socket, maps:get(workflow_signal_subject, State), maps:get(workflow_queue_group, State), 4),
                             io:format(
                                 "lambda nats connected invoke=~s functions=~s result=~s~n",
                                 [
@@ -392,15 +398,61 @@ is_connected() ->
 handle_message(State, Subject, ReplyTo, Payload) ->
     InvokeSubject = maps:get(invoke_subject, State),
     FunctionsSubject = maps:get(functions_subject, State),
+    WorkflowStartSubject = maps:get(workflow_start_subject, State),
+    WorkflowSignalSubject = maps:get(workflow_signal_subject, State),
     case subject_matches(Subject, InvokeSubject) of
         true ->
             handle_invoke(State, Subject, ReplyTo, Payload);
         false ->
             case subject_matches(Subject, FunctionsSubject) of
-                true -> handle_function_update(State, Payload);
-                false -> ok
+                true ->
+                    handle_function_update(State, Payload);
+                false ->
+                    case subject_matches(Subject, WorkflowStartSubject) of
+                        true ->
+                            handle_workflow_start(ReplyTo, Payload);
+                        false ->
+                            case subject_matches(Subject, WorkflowSignalSubject) of
+                                true -> handle_workflow_signal(Subject, ReplyTo, Payload);
+                                false -> ok
+                            end
+                    end
             end
     end.
+
+%% Start a workflow run from a NATS request. Replies with the created run JSON
+%% (or an error envelope) when the producer used request/reply.
+handle_workflow_start(ReplyTo, Payload) ->
+    Result = workflow_engine:start_run_from_body(request_payload(Payload)),
+    maybe_reply(ReplyTo, workflow_result_json(<<"run">>, Result)).
+
+%% Deliver an external signal addressed to a specific run via the subject token
+%% dd.remote.workflows.signal.<run_id>.
+handle_workflow_signal(Subject, ReplyTo, Payload) ->
+    case workflow_run_id_from_subject(Subject) of
+        {ok, RunId} ->
+            Result = workflow_engine:signal_from_body(RunId, request_payload(Payload)),
+            maybe_reply(ReplyTo, workflow_result_json(<<"run">>, Result));
+        error ->
+            maybe_reply(ReplyTo, workflow_result_json(<<"run">>, {error, <<"invalid signal subject">>}))
+    end.
+
+%% Extract the run-id token from the trailing element of a signal subject.
+workflow_run_id_from_subject(Subject) ->
+    case lists:reverse(binary:split(Subject, <<".">>, [global])) of
+        [RunId | _] when RunId =/= <<>> -> {ok, RunId};
+        _ -> error
+    end.
+
+maybe_reply(undefined, _Json) ->
+    ok;
+maybe_reply(ReplyTo, Json) ->
+    publish(ReplyTo, Json).
+
+workflow_result_json(Key, {ok, BodyJson}) ->
+    iolist_to_binary(["{\"ok\":true,\"", Key, "\":", BodyJson, "}"]);
+workflow_result_json(_Key, {error, Reason}) ->
+    iolist_to_binary(["{\"ok\":false,\"error\":\"", json_escape(Reason), "\"}"]).
 
 handle_invoke(State, Subject, ReplyTo, Payload0) ->
     InvokeSubject = maps:get(invoke_subject, State),
