@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.95-bookworm AS build
 
 WORKDIR /app
@@ -11,7 +12,11 @@ COPY remote/deployments/dd-benefactor-marketing-rs/src /app/remote/deployments/d
 COPY remote/deployments/dd-benefactor-marketing-rs/generated /app/remote/deployments/dd-benefactor-marketing-rs/generated
 
 WORKDIR /app/remote/deployments/dd-benefactor-marketing-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/dd-benefactor-marketing-rs/target,id=dd-benefactor-marketing-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-benefactor-marketing-rs /usr/local/bin/dd-benefactor-marketing-rs
 
 FROM debian:bookworm-slim
 
@@ -20,7 +25,7 @@ RUN apt-get update \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/remote/deployments/dd-benefactor-marketing-rs/target/release/dd-benefactor-marketing-rs /usr/local/bin/dd-benefactor-marketing-rs
+COPY --from=build /usr/local/bin/dd-benefactor-marketing-rs /usr/local/bin/dd-benefactor-marketing-rs
 
 ENV BENEFACTOR_MARKETING_HOST=0.0.0.0
 ENV BENEFACTOR_MARKETING_PORT=8134

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage build for dd-embeddings-rs.
 #
 # Stage 1: build the release binary against a pinned Rust toolchain.
@@ -8,14 +9,15 @@ FROM rust:1.95-bookworm AS build
 
 WORKDIR /app
 
-# Cache deps separately from src to keep rebuilds fast.
+# Dependency downloads + compiled artifacts are cached across builds via the
+# BuildKit cargo cache mounts on the build RUN below.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs \
-  && cargo build --release \
-  && rm -rf src
-
 COPY src ./src
-RUN cargo build --release --bin dd-embeddings-rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/target,id=dd-embeddings-rs-target,sharing=locked \
+    cargo build --release --bin dd-embeddings-rs \
+ && cp target/release/dd-embeddings-rs /usr/local/bin/dd-embeddings-rs
 
 FROM debian:bookworm-slim
 
@@ -24,7 +26,7 @@ RUN apt-get update \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/target/release/dd-embeddings-rs /usr/local/bin/dd-embeddings-rs
+COPY --from=build /usr/local/bin/dd-embeddings-rs /usr/local/bin/dd-embeddings-rs
 
 ENV EMBEDDINGS_HOST=0.0.0.0
 ENV EMBEDDINGS_PORT=8090

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 
 WORKDIR /app
@@ -15,13 +16,17 @@ COPY remote/deployments/rust-vapi-phone-rs/src /app/remote/deployments/rust-vapi
 COPY remote/deployments/rust-vapi-phone-rs/generated /app/remote/deployments/rust-vapi-phone-rs/generated
 
 WORKDIR /app/remote/deployments/rust-vapi-phone-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/rust-vapi-phone-rs/target,id=rust-vapi-phone-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-rust-vapi-phone /usr/local/bin/dd-rust-vapi-phone
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean
-COPY --from=build /app/remote/deployments/rust-vapi-phone-rs/target/release/dd-rust-vapi-phone /usr/local/bin/dd-rust-vapi-phone
+COPY --from=build /usr/local/bin/dd-rust-vapi-phone /usr/local/bin/dd-rust-vapi-phone
 
 ENV HOST=0.0.0.0
 ENV PORT=8113

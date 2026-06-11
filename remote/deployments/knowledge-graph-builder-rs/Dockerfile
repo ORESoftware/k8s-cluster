@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 
 WORKDIR /app
@@ -11,13 +12,17 @@ COPY remote/deployments/knowledge-graph-builder-rs/src /app/remote/deployments/k
 COPY remote/deployments/knowledge-graph-builder-rs/generated /app/remote/deployments/knowledge-graph-builder-rs/generated
 
 WORKDIR /app/remote/deployments/knowledge-graph-builder-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/knowledge-graph-builder-rs/target,id=knowledge-graph-builder-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-knowledge-graph-builder /usr/local/bin/dd-knowledge-graph-builder
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean
-COPY --from=build /app/remote/deployments/knowledge-graph-builder-rs/target/release/dd-knowledge-graph-builder /usr/local/bin/dd-knowledge-graph-builder
+COPY --from=build /usr/local/bin/dd-knowledge-graph-builder /usr/local/bin/dd-knowledge-graph-builder
 
 ENV HOST=0.0.0.0
 ENV PORT=8137
