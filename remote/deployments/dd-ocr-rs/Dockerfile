@@ -48,7 +48,12 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # Where the tesseract-ocr-eng package drops eng.traineddata.
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+# Default HOME for the non-root user (k8s also mounts an emptyDir at /tmp).
+ENV HOME=/tmp
 COPY --from=rust-build /src/deployments/dd-ocr-rs/target/release/dd-ocr-rs \
      /usr/local/bin/dd-ocr-rs
+# Run as a non-root, no-shell uid even outside the k8s securityContext. The
+# binary is world-readable/executable; the rootfs is read-only at runtime.
+USER 1000:1000
 EXPOSE 8123
 ENTRYPOINT ["/usr/local/bin/dd-ocr-rs"]

@@ -93,6 +93,8 @@ spec:
               value: '128'
             - name: SCRAPER_MAX_TIMEOUT_MS
               value: '60000'
+            - name: SCRAPER_DNS_TIMEOUT_MS
+              value: '5000'
             - name: SCRAPER_MAX_REDIRECTS
               value: '5'
             - name: SCRAPER_MAX_HTML_CHARS

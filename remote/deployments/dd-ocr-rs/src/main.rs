@@ -122,6 +122,7 @@ struct AppState {
     azure: Option<AzureConfig>,
     ocr_semaphore: Arc<Semaphore>,
     nats_inflight: Arc<Semaphore>,
+    http_inflight: Arc<Semaphore>,
     metrics: Arc<Metrics>,
 }
 
@@ -153,6 +154,7 @@ struct Metrics {
     azure_total: AtomicU64,
     engine_unavailable_total: AtomicU64,
     image_rejected_total: AtomicU64,
+    http_shed_total: AtomicU64,
     preprocess_errors_total: AtomicU64,
     nats_messages_total: AtomicU64,
     nats_payload_rejected_total: AtomicU64,
@@ -739,7 +741,25 @@ fn options_from_request(
     }
 }
 
+/// Admission control: cap total concurrent HTTP OCR requests so waiters can't
+/// pile up each holding a decoded image in memory. Returns a 503 when full; the
+/// permit is held for the request's lifetime.
+fn admit_http(state: &AppState) -> Result<tokio::sync::OwnedSemaphorePermit, Box<Response>> {
+    state.http_inflight.clone().try_acquire_owned().map_err(|_| {
+        state.metrics.http_shed_total.fetch_add(1, Ordering::Relaxed);
+        Box::new(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server is at capacity; retry shortly",
+            json!({}),
+        ))
+    })
+}
+
 async fn ocr_http(State(state): State<AppState>, Json(req): Json<OcrRequest>) -> Response {
+    let _permit = match admit_http(&state) {
+        Ok(permit) => permit,
+        Err(response) => return *response,
+    };
     let rid = request_id(req.request_id.as_deref(), "ocr-http");
     // Resolve the engine before decoding the (potentially large) base64 body so
     // a bad/unavailable engine is rejected without the allocation.
@@ -791,6 +811,10 @@ async fn ocr_stream_http(
     Query(query): Query<StreamQuery>,
     body: Bytes,
 ) -> Response {
+    let _permit = match admit_http(&state) {
+        Ok(permit) => permit,
+        Err(response) => return *response,
+    };
     let rid = request_id(query.request_id.as_deref(), "ocr-stream");
     let engine = match resolve_engine(&state, query.engine.as_deref()) {
         Ok(engine) => engine,
@@ -853,7 +877,8 @@ fn metrics_body(state: &AppState) -> String {
     line("ddocr_engine_aws_total", "OCR requests routed to AWS Textract.", g(&m.aws_total));
     line("ddocr_engine_azure_total", "OCR requests routed to Azure Read.", g(&m.azure_total));
     line("ddocr_engine_unavailable_total", "Requests rejected for an unavailable engine.", g(&m.engine_unavailable_total));
-    line("ddocr_image_rejected_total", "Images rejected (empty/too large).", g(&m.image_rejected_total));
+    line("ddocr_image_rejected_total", "Images rejected (empty/too large/disallowed format).", g(&m.image_rejected_total));
+    line("ddocr_http_shed_total", "HTTP requests shed at the admission cap (503).", g(&m.http_shed_total));
     line("ddocr_preprocess_errors_total", "Image decode/preprocess failures.", g(&m.preprocess_errors_total));
     line("ddocr_nats_messages_total", "NATS request messages received.", g(&m.nats_messages_total));
     line("ddocr_nats_payload_rejected_total", "NATS payloads rejected.", g(&m.nats_payload_rejected_total));
@@ -1126,26 +1151,62 @@ fn load_google() -> Option<GoogleConfig> {
     env_opt("GOOGLE_VISION_API_KEY").map(|api_key| GoogleConfig { api_key })
 }
 
+/// A valid AWS region is lowercase alphanumerics + hyphens (e.g. `us-east-1`).
+/// Validated because it is interpolated into the Textract hostname and the
+/// SigV4 scope; a malformed value could otherwise redirect the signed request.
+fn is_valid_aws_region(region: &str) -> bool {
+    !region.is_empty()
+        && region.len() <= 32
+        && region
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 fn load_aws() -> Option<AwsConfig> {
     let access_key_id = env_opt("AWS_ACCESS_KEY_ID")?;
     let secret_access_key = env_opt("AWS_SECRET_ACCESS_KEY")?;
+    let region = env_value("AWS_REGION", "us-east-1");
+    if !is_valid_aws_region(&region) {
+        log_warn(
+            "ocr-aws-region-rejected",
+            "AWS_REGION is malformed; the aws-textract engine stays disabled.",
+            json!({}),
+        );
+        return None;
+    }
     Some(AwsConfig {
         access_key_id,
         secret_access_key,
         session_token: env_opt("AWS_SESSION_TOKEN"),
-        region: env_value("AWS_REGION", "us-east-1"),
+        region,
     })
+}
+
+/// The Azure endpoint is operator-supplied and interpolated into the request
+/// URL; require a clean `https://host` with no path/query/fragment or
+/// whitespace so it can't be steered to an attacker-chosen target.
+fn is_safe_azure_endpoint(endpoint: &str) -> bool {
+    let lower = endpoint.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("https://") else {
+        return false;
+    };
+    endpoint.len() <= 256
+        && !rest.is_empty()
+        && !endpoint.chars().any(|c| c.is_whitespace() || c.is_control())
+        // Only scheme://host[:port] — reject anything that adds a path, query,
+        // fragment, userinfo, or extra scheme.
+        && !rest.contains(['/', '?', '#', '@', '\\'])
 }
 
 fn load_azure() -> Option<AzureConfig> {
     let endpoint = env_opt("AZURE_VISION_ENDPOINT")?;
     let key = env_opt("AZURE_VISION_KEY")?;
-    // The endpoint is operator-supplied; require TLS so the subscription key is
-    // never sent in clear text or to a plain-HTTP redirect target.
-    if !endpoint.to_ascii_lowercase().starts_with("https://") {
+    // Require a clean https host so the subscription key is never sent in clear
+    // text and the request can't be steered off a plain-HTTP/redirect/path trick.
+    if !is_safe_azure_endpoint(&endpoint) {
         log_warn(
             "ocr-azure-endpoint-rejected",
-            "AZURE_VISION_ENDPOINT is not https; the azure engine stays disabled.",
+            "AZURE_VISION_ENDPOINT is not a clean https host; the azure engine stays disabled.",
             json!({}),
         );
         return None;
@@ -1168,6 +1229,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap_or(4)
         .clamp(2, 16);
     let ocr_concurrency = env_usize("OCR_CONCURRENCY", default_concurrency.max(DEFAULT_OCR_CONCURRENCY));
+    // Total concurrent in-flight HTTP OCR requests (running + queued on the
+    // engine semaphore). Bounds buffered decoded-image memory; excess sheds 503.
+    let max_inflight = env_usize("OCR_MAX_INFLIGHT", ocr_concurrency.saturating_mul(8).max(16));
     let request_timeout = env_usize("OCR_HTTP_TIMEOUT_SECS", 30) as u64;
 
     // Decode guards for the local path: cap pixel dimensions and the decoder's
@@ -1252,6 +1316,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // Cap queued NATS jobs (and therefore buffered decoded-image memory) at
         // a few times the active concurrency; excess messages are shed.
         nats_inflight: Arc::new(Semaphore::new(ocr_concurrency.saturating_mul(4).max(4))),
+        http_inflight: Arc::new(Semaphore::new(max_inflight)),
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -1351,5 +1416,29 @@ mod tests {
     fn auto_order_prefers_local_then_cloud() {
         assert_eq!(Engine::AUTO_ORDER[0], Engine::Tesseract);
         assert_eq!(Engine::AUTO_ORDER.last().copied(), Some(Engine::AwsTextract));
+    }
+
+    #[test]
+    fn aws_region_validation() {
+        assert!(is_valid_aws_region("us-east-1"));
+        assert!(is_valid_aws_region("ap-southeast-2"));
+        assert!(!is_valid_aws_region(""));
+        assert!(!is_valid_aws_region("us-east-1.evil.com"));
+        assert!(!is_valid_aws_region("us east 1"));
+        assert!(!is_valid_aws_region("US-EAST-1"));
+        assert!(!is_valid_aws_region(&"a".repeat(33)));
+    }
+
+    #[test]
+    fn azure_endpoint_validation() {
+        assert!(is_safe_azure_endpoint("https://my-vision.cognitiveservices.azure.com"));
+        assert!(is_safe_azure_endpoint("https://host:443"));
+        assert!(!is_safe_azure_endpoint("http://my-vision.cognitiveservices.azure.com"));
+        assert!(!is_safe_azure_endpoint("https://evil.com/redirect?x=1"));
+        assert!(!is_safe_azure_endpoint("https://user@evil.com"));
+        assert!(!is_safe_azure_endpoint("https://host/path"));
+        assert!(!is_safe_azure_endpoint("https://host\n"));
+        assert!(!is_safe_azure_endpoint("ftp://host"));
+        assert!(!is_safe_azure_endpoint("https://"));
     }
 }

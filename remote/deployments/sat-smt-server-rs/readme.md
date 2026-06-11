@@ -39,3 +39,7 @@ HTTP-only. `PORT` defaults to `8130`.
 ## Limits & hardening
 
 Requests are bounded by an inflight-concurrency cap (`SAT_MAX_INFLIGHT`, default 16): HTTP returns `503` when saturated and the NATS loop applies backpressure. Instances are capped at 2 000 variables / 100 000 clauses; DPLL enforces a per-solve work ceiling (returns `unknown` rather than spinning) and runs on a dedicated large-stack thread so deep search cannot overflow the worker stack. `conflictBudget` is request-tunable.
+
+## Authentication
+
+Optional and **off by default** (matching the sibling compute services). Set `SAT_AUTH_SECRET` (or the shared `SERVER_AUTH_SECRET`) to require callers of `/solve` to present a matching `x-server-auth: <secret>` (or `auth: <secret>`) header; the comparison is constant-time. When the secret is unset the endpoint is open. `/healthz` and `/metrics` are always open (for probes and Prometheus). Rejections return `401` and increment `*_auth_failures_total`. The deployment manifest wires `SAT_AUTH_SECRET` from the `dd-agent-secrets` secret with `optional: true`, so enabling auth is a one-key secret edit.

@@ -82,7 +82,9 @@ impl EmbeddingProvider for Gemini {
         let resp = self
             .http
             .post(&url)
-            .query(&[("key", &self.api_key)])
+            // Pass the key as a header, not a `?key=` query param, so it can't
+            // leak through URL-level logging, proxies, or error surfaces.
+            .header("x-goog-api-key", &self.api_key)
             .json(&json!({ "requests": requests }))
             .send()
             .await

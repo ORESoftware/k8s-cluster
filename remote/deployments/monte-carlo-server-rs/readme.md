@@ -42,3 +42,7 @@ curl -s localhost:8134/simulate -H 'content-type: application/json' -d '{
 ## Limits & hardening
 
 Inflight-concurrency cap (`MONTE_CARLO_MAX_INFLIGHT`, default 16); HTTP returns `503` when saturated, NATS applies backpressure. `samples` is clamped to 20 000 000 per request. Option inputs are bounded (`spot`/`strike ≤ 1e12`, `volatility ≤ 5`, `maturity ≤ 100`, `|rate| ≤ 1`) so the GBM exponent stays in a range where `exp()` is finite, and any residual non-finite result is reported as `0` with a warning rather than serialised as `null`. The M/M/1 `L`/`Lq` figures are derived from the measured wait via Little's law.
+
+## Authentication
+
+Optional and **off by default** (matching the sibling compute services). Set `MONTE_CARLO_AUTH_SECRET` (or the shared `SERVER_AUTH_SECRET`) to require callers of `/simulate` to present a matching `x-server-auth: <secret>` (or `auth: <secret>`) header; the comparison is constant-time. When the secret is unset the endpoint is open. `/healthz` and `/metrics` are always open (for probes and Prometheus). Rejections return `401` and increment `*_auth_failures_total`. The deployment manifest wires `MONTE_CARLO_AUTH_SECRET` from the `dd-agent-secrets` secret with `optional: true`, so enabling auth is a one-key secret edit.

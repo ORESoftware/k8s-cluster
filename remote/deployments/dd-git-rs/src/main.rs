@@ -132,6 +132,7 @@ struct Config {
     max_repo_bytes: u64,
     allow_file_urls: bool,
     block_private_remotes: bool,
+    git_fsck_objects: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -237,6 +238,10 @@ fn config_from_env() -> Config {
         // networks are off by default: both are SSRF / file-disclosure vectors.
         allow_file_urls: env_bool("GIT_RS_ALLOW_FILE_URLS", false),
         block_private_remotes: env_bool("GIT_RS_BLOCK_PRIVATE_REMOTES", false),
+        // Validate object integrity on clone/fetch. Defends against malformed
+        // objects that exploit git parser bugs in untrusted remotes; can reject
+        // legitimately-malformed legacy repos, so it is toggleable.
+        git_fsck_objects: env_bool("GIT_RS_GIT_FSCK_OBJECTS", true),
     }
 }
 
@@ -338,6 +343,36 @@ impl AppState {
             .map(|entry| entry.available)
             .unwrap_or(false)
     }
+
+    /// Per-process config injected into every VCS command via git's
+    /// `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` mechanism.
+    /// These keys harden git against the untrusted remote content this server
+    /// mirrors; hg/svn/fossil ignore the `GIT_*` variables.
+    ///
+    ///  - `protocol.ext.allow=never` — the `ext::` transport runs arbitrary
+    ///    shell commands; it has no legitimate use here and is pure RCE surface.
+    ///  - `protocol.git.allow=never` would be too strict (git:// is supported),
+    ///    so we leave it; the URL scheme allowlist already gates transports.
+    ///  - `transfer/fetch.fsckObjects=true` — reject malformed objects on
+    ///    receipt so a crafted repo can't reach a vulnerable object parser.
+    fn git_command_env(&self) -> BTreeMap<String, String> {
+        git_config_env(self.config.git_fsck_objects)
+    }
+}
+
+fn git_config_env(fsck_objects: bool) -> BTreeMap<String, String> {
+    let mut entries: Vec<(&str, &str)> = vec![("protocol.ext.allow", "never")];
+    if fsck_objects {
+        entries.push(("transfer.fsckObjects", "true"));
+        entries.push(("fetch.fsckObjects", "true"));
+    }
+    let mut env = BTreeMap::new();
+    env.insert("GIT_CONFIG_COUNT".to_string(), entries.len().to_string());
+    for (index, (key, value)) in entries.iter().enumerate() {
+        env.insert(format!("GIT_CONFIG_KEY_{index}"), key.to_string());
+        env.insert(format!("GIT_CONFIG_VALUE_{index}"), value.to_string());
+    }
+    env
 }
 
 fn record_request(method: &str, path: &str, status: StatusCode) {
@@ -443,7 +478,9 @@ fn is_authenticated(headers: &HeaderMap, config: &Config) -> bool {
 
 /// Read-side authorization (defense in depth on top of the gateway): `public`
 /// repositories are readable by anyone; `private`/`internal` ones require the
-/// server-auth header.
+/// server-auth header. An unauthorized caller gets `404`, not `401`, so the
+/// existence of a private repository is never revealed (it is indistinguishable
+/// from a missing id).
 fn authorize_read(
     headers: &HeaderMap,
     config: &Config,
@@ -453,6 +490,7 @@ fn authorize_read(
         Ok(())
     } else {
         require_server_auth(headers, config)
+            .map_err(|_| ServiceError::NotFound("repository not found".to_string()))
     }
 }
 
@@ -595,6 +633,21 @@ fn host_is_blocked(host: &str, block_private: bool) -> bool {
 }
 
 fn ip_is_blocked(ip: &std::net::IpAddr, block_private: bool) -> bool {
+    // Collapse IPv4-mapped/compatible IPv6 (e.g. ::ffff:127.0.0.1) to the
+    // embedded IPv4 first, so a mapped loopback/metadata/private address can't
+    // slip past the V6 branch's reserved-prefix checks.
+    if let std::net::IpAddr::V6(v6) = ip {
+        if let Some(v4) = v6.to_ipv4_mapped().or_else(|| {
+            // Also fold the deprecated ::a.b.c.d compatible form, but never the
+            // bare ::1 / :: sentinels (handled below as loopback/unspecified).
+            match v6.to_ipv4() {
+                Some(v4) if !v6.is_loopback() && !v6.is_unspecified() => Some(v4),
+                _ => None,
+            }
+        }) {
+            return ip_is_blocked(&std::net::IpAddr::V4(v4), block_private);
+        }
+    }
     // Always block loopback, link-local (incl. the 169.254.169.254 metadata
     // endpoint), and unspecified addresses.
     if ip.is_loopback() || ip.is_unspecified() {
@@ -1203,6 +1256,7 @@ async fn run_sync(
         "dest": sanitize_message(dest, &state.config.storage_root),
         "remoteUrl": redact_url(&repo.remote_url),
     });
+    let git_env = state.git_command_env();
     let started = Instant::now();
     let result = {
         let _permit = acquire_op_permit(state)?;
@@ -1210,7 +1264,7 @@ async fn run_sync(
             kind.binary(),
             &args,
             None,
-            &BTreeMap::new(),
+            &git_env,
             state.config.mirror_timeout,
             state.config.max_output_bytes,
         )
@@ -1345,13 +1399,14 @@ async fn refresh_refs(
     dest: &str,
 ) -> Result<i32, ServiceError> {
     let args = vcs::refs_args(kind, dest);
+    let git_env = state.git_command_env();
     let output = {
         let _permit = acquire_op_permit(state)?;
         vcs::run(
             kind.binary(),
             &args,
             None,
-            &BTreeMap::new(),
+            &git_env,
             state.config.read_timeout,
             state.config.max_output_bytes,
         )
@@ -1617,11 +1672,12 @@ async fn run_read(
     kind: VcsKind,
     args: &[String],
 ) -> Result<vcs::CmdOutput, VcsError> {
+    let git_env = state.git_command_env();
     vcs::run(
         kind.binary(),
         args,
         None,
-        &BTreeMap::new(),
+        &git_env,
         state.config.read_timeout,
         state.config.max_output_bytes,
     )
@@ -1882,6 +1938,18 @@ mod tests {
     }
 
     #[test]
+    fn ssrf_guard_blocks_ipv4_mapped_ipv6() {
+        // IPv4-mapped / compatible IPv6 must fold to the embedded V4 and block.
+        assert!(host_is_blocked("::ffff:127.0.0.1", false));
+        assert!(host_is_blocked("::ffff:169.254.169.254", false)); // metadata
+        assert!(host_is_blocked("::127.0.0.1", false)); // deprecated compat form
+        assert!(host_is_blocked("::ffff:10.0.0.5", true)); // private when flag on
+        assert!(!host_is_blocked("::ffff:10.0.0.5", false)); // allowed by default
+        // A genuine global IPv6 is not folded and stays allowed.
+        assert!(!host_is_blocked("2606:4700:4700::1111", false));
+    }
+
+    #[test]
     fn ssrf_guard_blocks_alternate_ip_encodings() {
         // Decimal, hex, and octal encodings of 127.0.0.1 and friends.
         assert!(host_is_blocked("2130706433", false)); // 127.0.0.1
@@ -1920,6 +1988,28 @@ mod tests {
         assert!(validate_revision("-x").is_err());
         assert!(validate_revision("a b").is_err());
         assert!(validate_revision("rev;rm -rf").is_err());
+    }
+
+    #[test]
+    fn git_config_env_disables_ext_transport() {
+        // ext:: (arbitrary command execution) is always blocked.
+        let on = git_config_env(true);
+        assert_eq!(on.get("GIT_CONFIG_COUNT").map(String::as_str), Some("3"));
+        let keys: Vec<&str> = (0..3)
+            .filter_map(|i| on.get(&format!("GIT_CONFIG_KEY_{i}")).map(String::as_str))
+            .collect();
+        assert!(keys.contains(&"protocol.ext.allow"));
+        assert!(keys.contains(&"transfer.fsckObjects"));
+        assert!(keys.contains(&"fetch.fsckObjects"));
+
+        // With fsck disabled, only the ext-transport block remains.
+        let off = git_config_env(false);
+        assert_eq!(off.get("GIT_CONFIG_COUNT").map(String::as_str), Some("1"));
+        assert_eq!(
+            off.get("GIT_CONFIG_KEY_0").map(String::as_str),
+            Some("protocol.ext.allow")
+        );
+        assert_eq!(off.get("GIT_CONFIG_VALUE_0").map(String::as_str), Some("never"));
     }
 
     #[test]

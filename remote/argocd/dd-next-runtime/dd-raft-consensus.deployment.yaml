@@ -67,6 +67,14 @@ spec:
               value: dd.remote.events
             - name: RAFT_MAX_INFLIGHT
               value: '16'
+            # Optional app-level auth: populate this secret key to require an
+            # 'x-server-auth: <secret>' header on the compute endpoint (open if unset).
+            - name: RAFT_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: RAFT_AUTH_SECRET
+                  optional: true
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.

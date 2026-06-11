@@ -110,7 +110,10 @@ automatically: `document` on index, `query` on search.
   `top_k`, and `dimensions` are all bounded (see the limits above) to cap
   memory use and third-party spend. Qdrant collection names are charset- and
   length-validated before they reach a REST path; the distance metric is
-  allow-listed; caller-supplied document ids are normalized to valid Qdrant
+  allow-listed; model names are charset-validated (they're interpolated into
+  the Gemini request URL, so this blocks path/query injection there) and the
+  Gemini API key is sent as a header, never a URL query param; blank input
+  items are rejected; caller-supplied document ids are normalized to valid Qdrant
   point ids (UUID/uint passthrough, else a stable UUIDv5) with the original
   preserved as `source_id` in the payload.
 - **Load shedding**: a global semaphore bounds concurrent cost-bearing

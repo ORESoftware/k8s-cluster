@@ -93,6 +93,7 @@ const config = {
   parserWorkerMemoryMb: readNumberEnv('SCRAPER_PARSER_WORKER_MEMORY_MB', 128),
   maxTimeoutMs: readNumberEnv('SCRAPER_MAX_TIMEOUT_MS', 60_000),
   defaultTimeoutMs: readNumberEnv('SCRAPER_DEFAULT_TIMEOUT_MS', 30_000),
+  dnsTimeoutMs: readNumberEnv('SCRAPER_DNS_TIMEOUT_MS', 5_000),
   maxRedirects: readNumberEnv('SCRAPER_MAX_REDIRECTS', 5),
   maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
   maxTextChars: readNumberEnv('SCRAPER_MAX_TEXT_CHARS', 40_000),
@@ -909,6 +910,34 @@ function parseRequestProxy(raw: string): ProxyEntry {
   }
 }
 
+/**
+ * DNS resolution with a hard ceiling. The pre-flight SSRF checks run before any
+ * fetch timeout applies, so an un-bounded `lookup` of an attacker-chosen hostname
+ * whose authoritative server stalls would pin an in-flight slot for the full libc
+ * `getaddrinfo` timeout. Racing against `SCRAPER_DNS_TIMEOUT_MS` bounds that.
+ */
+async function lookupAllWithTimeout(
+  hostname: string,
+): Promise<Array<{ address: string; family: number }>> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      lookup(hostname, { all: true, verbatim: true }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`DNS resolution for ${hostname} timed out`)),
+          config.dnsTimeoutMs,
+        );
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 /** SSRF guard for caller-supplied proxies; pooled proxies are operator-trusted. */
 async function validateProxyEntry(entry: ProxyEntry): Promise<void> {
   if (config.allowPrivateNetworks) {
@@ -924,7 +953,7 @@ async function validateProxyEntry(entry: ProxyEntry): Promise<void> {
     }
     return;
   }
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  const addresses = await lookupAllWithTimeout(hostname);
   const blocked = addresses.find((address) => isPrivateIp(address.address));
   if (blocked) {
     throw new Error(
@@ -1448,7 +1477,7 @@ async function validateTargetUrl(rawUrl: string): Promise<URL> {
     return url;
   }
 
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  const addresses = await lookupAllWithTimeout(hostname);
   const blocked = addresses.find((entry) => isPrivateIp(entry.address));
   if (blocked) {
     throw new Error(

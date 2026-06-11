@@ -1,0 +1,19 @@
+# Internal ClusterIP service for the image builder. No gateway route is added
+# for this service — it is reachable only in-cluster (and restricted further by
+# dd-image-builder.networkpolicy.yaml). Not in kustomization until cutover.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-image-builder
+  namespace: default
+  labels:
+    app: dd-image-builder
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-image-builder
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+      protocol: TCP

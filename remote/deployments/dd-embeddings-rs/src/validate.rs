@@ -20,8 +20,13 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// Enforce batch/size guardrails on a set of input texts. Runs before any
 /// upstream call so an oversized request is rejected for free.
 pub fn enforce_input_limits(inputs: &[String], limits: &Limits) -> Result<(), ApiError> {
-    if inputs.is_empty() || inputs.iter().all(|s| s.trim().is_empty()) {
-        return Err(ApiError::Invalid("input must contain at least one non-empty string".into()));
+    if inputs.is_empty() {
+        return Err(ApiError::Invalid("input must contain at least one string".into()));
+    }
+    // Reject blank items outright rather than spending a paid provider call on
+    // them (many providers also 400 on empty strings).
+    if inputs.iter().any(|s| s.trim().is_empty()) {
+        return Err(ApiError::Invalid("input items must be non-empty (no blank strings)".into()));
     }
     if inputs.len() > limits.max_batch_size {
         return Err(ApiError::Invalid(format!(
@@ -65,6 +70,30 @@ pub fn check_dimensions(dimensions: Option<u32>, limits: &Limits) -> Result<(), 
 /// Clamp a requested top_k into `[1, max_top_k]`.
 pub fn clamp_top_k(top_k: usize, limits: &Limits) -> usize {
     top_k.clamp(1, limits.max_top_k)
+}
+
+/// Validate a caller-supplied model name. Most providers put the model in a
+/// JSON body (where serde escaping makes it inert), but the Gemini provider
+/// interpolates it into the request URL path. Restricting the charset to
+/// `[A-Za-z0-9._/-]` keeps it from escaping the path: no `:`/`?`/`#`/`@`/`%`
+/// or whitespace means a model name can't change the scheme/host or inject a
+/// query string. `/` is allowed because HuggingFace-style ids (`org/model`)
+/// are legitimate for the body-based providers and stay within the path.
+pub fn validate_model(model: Option<&str>) -> Result<(), ApiError> {
+    let Some(m) = model else { return Ok(()) };
+    const MAX: usize = 256;
+    if m.is_empty() || m.len() > MAX {
+        return Err(ApiError::Invalid(format!("model name must be 1..={MAX} characters")));
+    }
+    if !m.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/')) {
+        return Err(ApiError::Invalid(
+            "model name may contain only [A-Za-z0-9._/-]".into(),
+        ));
+    }
+    if m.contains("..") {
+        return Err(ApiError::Invalid("model name may not contain `..`".into()));
+    }
+    Ok(())
 }
 
 /// Validate the Qdrant distance metric. Body-only (no injection risk), but a
