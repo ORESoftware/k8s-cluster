@@ -536,6 +536,13 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             refresh: "cached query snapshot",
         },
         DashboardPanel {
+            id: "financial-and-kpi",
+            product_analog: "Tableau / Power BI finance and KPI tiles",
+            data_shape: "OHLC series, sized scatter, or a single gauge measure",
+            visualization_families: vec!["candlestick", "bubble", "gauge"],
+            refresh: "cached query snapshot",
+        },
+        DashboardPanel {
             id: "hyper-dimensional-scene",
             product_analog: "D3 / Plotly",
             data_shape: "n-dimensional encoded records",

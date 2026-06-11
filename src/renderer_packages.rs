@@ -350,6 +350,9 @@ const TRACE_BY_MARK: Record<string, string> = {
   treemap: "treemap",
   sunburst: "sunburst",
   sankey: "sankey",
+  candlestick: "candlestick",
+  bubble: "scatter",
+  gauge: "indicator",
   surface: "surface",
   "volume-cloud": "volume",
   "parallel-coordinates": "parcoords",
@@ -427,6 +430,33 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
       layout.showlegend = false;
       data = [sankeyTrace(rows, spec)];
       break;
+    case "candlestick": {
+      // Financial OHLC: each row carries open/high/low/close for an x period.
+      const open = fieldValues(rows, fieldFor(spec, "open"));
+      const high = fieldValues(rows, fieldFor(spec, "high"));
+      const low = fieldValues(rows, fieldFor(spec, "low"));
+      const close = fieldValues(rows, fieldFor(spec, "close"));
+      data = [{ type: "candlestick", x, open, high, low, close }];
+      break;
+    }
+    case "bubble": {
+      // Scatter sized by a third measure (area-scaled markers).
+      const size = fieldValues(rows, fieldFor(spec, "size"));
+      data = [
+        { type: "scatter", mode: "markers", x, y, marker: size.length > 0 ? { size, sizemode: "area" } : { size: 8 } }
+      ];
+      break;
+    }
+    case "gauge": {
+      // KPI indicator: a single value on a gauge scaled to the observed range.
+      const measure = fieldValues(rows, fieldFor(spec, "value") ?? fieldFor(spec, "y"))
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry));
+      const value = measure.length > 0 ? measure[measure.length - 1] : 0;
+      const upper = measure.length > 0 ? Math.max(...measure, value) : 1;
+      data = [{ type: "indicator", mode: "gauge+number", value, gauge: { axis: { range: [0, upper] } } }];
+      break;
+    }
     default: {
       const traceType = TRACE_BY_MARK[spec.mark] ?? "scatter";
       const trace: Record<string, unknown> = { type: traceType, x, y };
@@ -703,6 +733,16 @@ mod tests {
         assert!(PLOTLY_TS.contains("case \"treemap\""));
         assert!(PLOTLY_TS.contains("case \"sunburst\""));
         assert!(PLOTLY_TS.contains("case \"sankey\""));
+    }
+
+    #[test]
+    fn plotly_renderer_supports_financial_and_kpi_marks() {
+        for entry in ["candlestick: \"candlestick\"", "bubble: \"scatter\"", "gauge: \"indicator\""] {
+            assert!(PLOTLY_TS.contains(entry), "missing trace mapping: {entry}");
+        }
+        assert!(PLOTLY_TS.contains("case \"candlestick\""));
+        assert!(PLOTLY_TS.contains("case \"bubble\""));
+        assert!(PLOTLY_TS.contains("case \"gauge\""));
     }
 
     #[test]
