@@ -770,7 +770,9 @@ mod tests {
     fn chart_accepts_statistical_marks() {
         for mark in [
             "histogram", "box", "violin", "ecdf", "map", "choropleth", "funnel", "waterfall",
-            "treemap", "sunburst", "sankey", "candlestick", "bubble", "gauge",
+            "treemap", "sunburst", "sankey", "candlestick", "bubble", "gauge", "density-contour",
+            "density-heatmap", "contour", "radar", "polar-bar", "ohlc", "icicle", "funnelarea",
+            "scatter3d", "bullet",
         ] {
             let chart = QuestionChartSpec {
                 chart_id: None,
