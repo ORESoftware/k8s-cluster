@@ -16,6 +16,11 @@ use crate::{
 /// advisory text) echoed back into a finding.
 const MAX_ECHO_CHARS: usize = 200;
 
+/// Maximum caller-supplied indicators/advisories scanned per request. Each is
+/// matched against every source's full text, so this bounds the worst-case
+/// `list_len × total_bytes` cost independently of the larger `max_files` limit.
+const MAX_CALLER_LIST: usize = 512;
+
 /// Iterate inline text plus named artifacts as `(evidence_ref, cleaned_text)`.
 ///
 /// The number of artifacts is capped at `config.max_files`; the returned flag
@@ -135,7 +140,7 @@ pub fn scan_malware(config: &Config, request: ArtifactScanRequest) -> ArtifactSc
     let (sources, sources_truncated) =
         collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
     let (indicators, indicators_truncated) =
-        cap_caller_list(&request.indicators, config.max_files);
+        cap_caller_list(&request.indicators, config.max_files.min(MAX_CALLER_LIST));
     let mut scanned_bytes = 0usize;
     let mut findings = Vec::new();
     for (evidence_ref, text) in &sources {
@@ -291,7 +296,7 @@ pub fn audit_dependencies(config: &Config, request: DependencyAuditRequest) -> A
     let (sources, sources_truncated) =
         collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
     let (advisories, advisories_truncated) =
-        cap_caller_list(&request.advisories, config.max_files);
+        cap_caller_list(&request.advisories, config.max_files.min(MAX_CALLER_LIST));
     let mut scanned_bytes = 0usize;
     let mut findings = Vec::new();
     let mut saw_manifest = false;
@@ -644,6 +649,7 @@ mod tests {
             max_files: 100,
             max_file_bytes: 1024 * 1024,
             max_findings_per_job: 200,
+            max_concurrent_analyses: 4,
         }
     }
 

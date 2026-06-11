@@ -60,15 +60,23 @@ curl -sS 'http://dd-git-rs:8137/api/v1/repos/<id>/log?limit=20'
   terminators are used where the CLI supports them.
 - **No path escape.** On-disk mirror paths are derived solely from the
   validated slug + kind, so they cannot escape `GIT_RS_STORAGE_ROOT`.
-- **SSRF / file-disclosure guard.** `file://` remotes are rejected unless
-  `GIT_RS_ALLOW_FILE_URLS=true`; remotes that resolve to loopback, link-local,
-  the unspecified address, or the cloud metadata endpoint (`169.254.169.254`)
-  are always blocked, and private networks too when
-  `GIT_RS_BLOCK_PRIVATE_REMOTES=true`.
-- **Bounded resource use.** A global semaphore (`GIT_RS_MAX_CONCURRENT_OPS`)
-  caps concurrent VCS subprocesses and sheds excess load with `503`; commands
-  run under timeouts and capture at most `GIT_RS_MAX_OUTPUT_BYTES` per stream;
-  request bodies are capped at `GIT_RS_MAX_BODY_BYTES`.
+- **SSRF / file-disclosure guard (two layers).** At the app layer, `file://`
+  remotes are rejected unless `GIT_RS_ALLOW_FILE_URLS=true`; remotes that resolve
+  to loopback, link-local, the unspecified address, or the cloud metadata
+  endpoint (`169.254.169.254`) are always blocked (including alternate
+  decimal/hex/octal IP encodings such as `2130706433` or `0x7f000001`), and
+  private networks too when `GIT_RS_BLOCK_PRIVATE_REMOTES=true`. At the network
+  layer, the `NetworkPolicy` egress `except` list drops packets to those same
+  reserved ranges — the backstop for DNS rebinding once the URL is handed to the
+  VCS CLI (which the app cannot IP-pin).
+- **Bounded resource use.** Global semaphores cap concurrent VCS subprocesses
+  (`GIT_RS_MAX_CONCURRENT_OPS`) and Postgres connections
+  (`GIT_RS_MAX_DB_CONNECTIONS`), each shedding excess load with `503` rather than
+  exhausting node CPU or the shared RDS connection pool. Per-repo disk use is
+  capped (`GIT_RS_MAX_REPO_BYTES`; an overflowing mirror is deleted and marked
+  failed). Commands run under timeouts and capture at most
+  `GIT_RS_MAX_OUTPUT_BYTES` per stream; request bodies are capped at
+  `GIT_RS_MAX_BODY_BYTES`.
 - **No secret/path leakage.** URL credentials (`user:pass@`) are stripped from
   API responses, audit rows, logs, and NATS events; the storage root is scrubbed
   from VCS error text before it is returned or stored; the absolute `mirror_path`
@@ -94,6 +102,8 @@ curl -sS 'http://dd-git-rs:8137/api/v1/repos/<id>/log?limit=20'
 | `GIT_RS_REFS_CACHE_TTL_SECONDS`  | `60`                                       | Redis refs TTL.                        |
 | `GIT_RS_MAX_OUTPUT_BYTES`        | `4194304`                                  | Per-stream output cap.                 |
 | `GIT_RS_MAX_CONCURRENT_OPS`      | `4`                                        | Concurrent VCS subprocess cap (503 over). |
+| `GIT_RS_MAX_DB_CONNECTIONS`      | `16`                                       | Concurrent Postgres connection cap (503 over). |
+| `GIT_RS_MAX_REPO_BYTES`          | `5368709120`                               | Per-repo disk budget; overflow is deleted + failed. |
 | `GIT_RS_MAX_BODY_BYTES`          | `65536`                                    | Max request body size.                 |
 | `GIT_RS_ALLOW_FILE_URLS`         | `false`                                    | Permit `file://` remotes (disclosure risk). |
 | `GIT_RS_BLOCK_PRIVATE_REMOTES`   | `false`                                    | Also reject private-network remotes.   |
@@ -110,3 +120,21 @@ cargo run --release --locked
 Requires `git`, `hg`, `svn`, and `fossil` on `PATH` for full functionality; the
 service starts and reports per-kind availability at `/api/v1/vcs/kinds` even if
 some binaries are missing. Readiness only requires `git`.
+
+## Container image
+
+The deployment runs a prebuilt image rather than the cargo-run-from-hostPath
+pattern, so the container is **non-root with a read-only root filesystem** and
+ships the four VCS CLIs baked in (no apt-as-root at startup). Build it from the
+repo's `remote/` dir (the `.dockerignore` scopes the context to this crate plus
+the `pg-defs` path dependency):
+
+```sh
+docker build -f deployments/dd-git-rs/Dockerfile -t dd-git-rs .
+```
+
+The pod references `dd-git-rs:latest` with `imagePullPolicy: IfNotPresent`, so
+the image must be present on the node (built locally or pulled from a registry
+the node can reach), matching the `dd-document-rs` image workflow. Only the
+mounted repo-storage volume and `/tmp` are writable; everything else is
+read-only, all Linux capabilities are dropped, and the process runs as UID 1000.

@@ -91,8 +91,32 @@ pub struct SearchResponse {
     pub matches: Vec<ScoredPoint>,
 }
 
-/// Namespace for deriving stable point ids from document text.
+/// Namespace for deriving stable point ids from document text or caller ids.
 const DOC_NAMESPACE: Uuid = Uuid::from_u128(0x7e1d_2b40_9c3a_4f88_b6e2_0a51_77c4_d901);
+
+/// Map a caller-supplied id (or, absent one, the document text) onto a valid
+/// Qdrant point id. Returns `(point_id_value, source_id)` where `source_id` is
+/// the caller's original id if any. A UUID or unsigned-int id passes through;
+/// anything else is hashed into a stable UUIDv5 so the same id always lands on
+/// the same point.
+fn normalize_point_id(id: Option<&str>, text: &str) -> (Value, Option<String>) {
+    match id {
+        Some(raw) => {
+            let point = if Uuid::parse_str(raw).is_ok() {
+                json!(raw)
+            } else if let Ok(n) = raw.parse::<u64>() {
+                json!(n)
+            } else {
+                json!(Uuid::new_v5(&DOC_NAMESPACE, raw.as_bytes()).to_string())
+            };
+            (point, Some(raw.to_string()))
+        }
+        None => (
+            json!(Uuid::new_v5(&DOC_NAMESPACE, text.as_bytes()).to_string()),
+            None,
+        ),
+    }
+}
 
 pub struct RagService {
     registry: Arc<Registry>,
@@ -135,16 +159,18 @@ impl RagService {
             .iter()
             .zip(result.embeddings.iter())
             .map(|(doc, emb)| {
-                let id = doc
-                    .id
-                    .clone()
-                    .unwrap_or_else(|| Uuid::new_v5(&DOC_NAMESPACE, doc.text.as_bytes()).to_string());
+                // Qdrant only accepts unsigned-int or UUID point ids. Normalize
+                // whatever the caller gave us into one of those (deterministically,
+                // so re-indexing the same id updates in place) and keep the
+                // original id in the payload as `source_id` for round-tripping.
+                let (id, source_id) = normalize_point_id(doc.id.as_deref(), &doc.text);
                 json!({
                     "id": id,
                     "vector": emb.vector,
                     "payload": {
                         "text": doc.text,
                         "metadata": doc.metadata,
+                        "source_id": source_id,
                         "provider": result.provider,
                         "model": result.model,
                     }

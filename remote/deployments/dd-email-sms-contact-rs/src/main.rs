@@ -424,6 +424,18 @@ fn validate_webpush_endpoint(endpoint: &str, policy: &WebPushHostPolicy) -> Opti
     if url.scheme() != "https" {
         return Some("webpush endpoint must use https".into());
     }
+    // Embedded credentials are never part of a real push endpoint and can be used to obscure the
+    // true target; reject them outright.
+    if !url.username().is_empty() || url.password().is_some() {
+        return Some("webpush endpoint must not embed credentials".into());
+    }
+    // Push services always listen on 443; pinning the port stops an allowlisted host from being
+    // used to reach a non-TLS/admin port on that same host.
+    if let Some(port) = url.port() {
+        if port != 443 {
+            return Some("webpush endpoint must use port 443".into());
+        }
+    }
     let Some(host_raw) = url.host_str() else {
         return Some("webpush endpoint missing host".into());
     };
@@ -473,6 +485,52 @@ fn ip_is_blocked(ip: &IpAddr) -> bool {
                 || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
                 || v6.to_ipv4_mapped().map(|m| ip_is_blocked(&IpAddr::V4(m))).unwrap_or(false)
         }
+    }
+}
+
+// Device tokens are interpolated into provider request paths (APNs) and bodies; reject anything that
+// could break out of a URL path segment or carry control characters, and bound the length. The
+// allowed set still covers FCM (`:-_` + alnum), Expo (`ExponentPushToken[…]`), and APNs (hex).
+fn validate_push_token(token: &str) -> Option<&'static str> {
+    if token.len() > 4096 {
+        return Some("device token too long");
+    }
+    if token.chars().any(|c| c.is_control() || c.is_whitespace() || matches!(c, '/' | '?' | '#' | '\\' | '%')) {
+        return Some("device token contains invalid characters");
+    }
+    None
+}
+
+// SSRF defense-in-depth for WEBPUSH_ALLOWED_HOSTS=*: resolve the (non-literal) host and reject if any
+// answer is a private/internal address — this is what catches `metadata.google.internal` and other
+// names that point inward. It does not close DNS rebinding (the resolver could return a different
+// answer when reqwest connects); the host allowlist is the real boundary, and the open mode is opt-in.
+async fn endpoint_resolves_to_public(endpoint: &str) -> Option<String> {
+    let Ok(url) = reqwest::Url::parse(endpoint) else {
+        return None; // already shape-validated; nothing more to check here
+    };
+    let host = url.host_str()?.trim_start_matches('[').trim_end_matches(']').to_string();
+    if host.parse::<IpAddr>().is_ok() {
+        return None; // literal IPs are vetted synchronously
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    // Owned "host:port" so nothing is borrowed across the resolver await.
+    match tokio::net::lookup_host(format!("{host}:{port}")).await {
+        Ok(addrs) => {
+            let mut any = false;
+            for a in addrs {
+                any = true;
+                if ip_is_blocked(&a.ip()) {
+                    return Some("webpush endpoint resolves to a non-public address".into());
+                }
+            }
+            if any {
+                None
+            } else {
+                Some("webpush endpoint host did not resolve".into())
+            }
+        }
+        Err(e) => Some(cap(format!("webpush endpoint host resolution failed: {e}"))),
     }
 }
 
@@ -852,7 +910,7 @@ fn validate_sms(to: &str, body: &str) -> Option<&'static str> {
     None
 }
 
-fn validate_push(req: &PushReq, webpush_policy: &WebPushHostPolicy) -> Option<String> {
+async fn validate_push(req: &PushReq, webpush_policy: &WebPushHostPolicy) -> Option<String> {
     match req.transport.as_str() {
         "webpush" => {
             let Some(sub) = &req.subscription else {
@@ -865,10 +923,21 @@ fn validate_push(req: &PushReq, webpush_policy: &WebPushHostPolicy) -> Option<St
             if let Some(e) = validate_webpush_endpoint(&sub.endpoint, webpush_policy) {
                 return Some(e);
             }
+            // In the open-host mode there is no allowlist to lean on, so additionally vet the
+            // resolved address (closes hostnames that point at internal/metadata IPs).
+            if matches!(webpush_policy, WebPushHostPolicy::AnyPublic) {
+                if let Some(e) = endpoint_resolves_to_public(&sub.endpoint).await {
+                    return Some(e);
+                }
+            }
         }
         "fcm" | "expo" | "apns" => {
-            if req.token.as_deref().unwrap_or_default().is_empty() {
+            let token = req.token.as_deref().unwrap_or_default();
+            if token.is_empty() {
                 return Some(format!("{} requires a device 'token'", req.transport));
+            }
+            if let Some(e) = validate_push_token(token) {
+                return Some(e.to_string());
             }
         }
         other => return Some(format!("unknown push transport '{other}' (expected webpush|fcm|expo|apns)")),
@@ -922,7 +991,7 @@ async fn http_send_push(State(s): State<AppState>, headers: HeaderMap, Json(req)
     if !check_auth(&s, &headers) {
         return (StatusCode::UNAUTHORIZED, Json(json!({"ok": false, "error": "unauthorized"})));
     }
-    if let Some(e) = validate_push(&req, &s.webpush_policy) {
+    if let Some(e) = validate_push(&req, &s.webpush_policy).await {
         return (StatusCode::BAD_REQUEST, Json(json!({"ok": false, "error": e})));
     }
     let o = push_send(&s, &req).await;
@@ -1006,7 +1075,7 @@ async fn handle_push_msg(s: &AppState, client: &async_nats::Client, payload: &[u
         publish_result(client, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
         return;
     };
-    if let Some(e) = validate_push(&req, &s.webpush_policy) {
+    if let Some(e) = validate_push(&req, &s.webpush_policy).await {
         publish_result(client, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
         return;
     }

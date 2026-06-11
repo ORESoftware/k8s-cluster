@@ -8,9 +8,11 @@
 
 !deployments/dd-document-rs/**
 !deployments/dd-ocr-rs/**
+!deployments/dd-git-rs/**
 !libs/nats/subject-defs/generated/rust/**
 !libs/runtime-config-client-rs/**
 !libs/interfaces/shared/generated/rust/**
+!libs/pg-defs/generated/rust/**
 
 # Drop build artifacts back out of the re-included trees.
 **/target/**

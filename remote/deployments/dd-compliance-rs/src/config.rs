@@ -27,6 +27,7 @@ pub struct Config {
     pub max_files: usize,
     pub max_file_bytes: u64,
     pub max_findings_per_job: usize,
+    pub max_concurrent_analyses: usize,
 }
 
 impl Config {
@@ -61,6 +62,7 @@ impl Config {
             max_files: env_usize("COMPLIANCE_MAX_FILES", 1200),
             max_file_bytes: env_u64("COMPLIANCE_MAX_FILE_BYTES", 256 * 1024),
             max_findings_per_job: env_usize("COMPLIANCE_MAX_FINDINGS_PER_JOB", 5000),
+            max_concurrent_analyses: env_usize("COMPLIANCE_MAX_CONCURRENT_ANALYSES", 8),
         }
     }
 }

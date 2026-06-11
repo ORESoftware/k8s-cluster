@@ -58,6 +58,9 @@ spec:
               value: info,hyper=warn,reqwest=warn,tower_http=info
             - name: EMBEDDINGS_REQUEST_TIMEOUT_SECS
               value: '30'
+            # Max concurrent cost-bearing requests; excess is shed with 503.
+            - name: EMBEDDINGS_MAX_CONCURRENCY
+              value: '32'
             # Vector store: the dd-qdrant Helm release in the ai-ml namespace.
             - name: QDRANT_URL
               value: http://dd-qdrant.ai-ml.svc.cluster.local:6333

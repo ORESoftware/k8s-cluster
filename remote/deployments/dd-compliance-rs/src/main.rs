@@ -43,6 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         metrics: Arc::new(Metrics::default()),
         jobs,
         http,
+        analysis_gate: Arc::new(tokio::sync::Semaphore::new(config.max_concurrent_analyses)),
     };
     let app = router(state);
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());

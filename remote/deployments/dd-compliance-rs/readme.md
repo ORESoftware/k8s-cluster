@@ -67,7 +67,12 @@ secret-scanning, anti-fraud, bot-management, or identity-protection products.
   velocity, and missing-MFA scoring.
 
 The scanner and behavioral routes are stateless and synchronous; the durable job ledger is used only
-by the async `/audits` flow.
+by the async `/audits` flow. Each runs bounded heuristics over caller-submitted evidence: artifact
+count, caller-supplied indicator/advisory lists, event batches, and emitted findings are all capped,
+echoed caller strings are sanitized and length-limited, and the analysis itself runs on a blocking
+thread pool behind a concurrency gate (`COMPLIANCE_MAX_CONCURRENT_ANALYSES`, default 8) so a burst of
+expensive requests cannot saturate the CPU-limited container or stall health probes — over-limit
+requests get `503` with `Retry-After`.
 
 ## Standards
 

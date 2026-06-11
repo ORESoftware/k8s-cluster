@@ -16,6 +16,7 @@ pub struct Metrics {
     pub bot_checks_total: Counter,
     pub login_anomaly_checks_total: Counter,
     pub risk_findings_total: Counter,
+    pub analyses_rejected_total: Counter,
     pub auth_failures_total: Counter,
     pub errors_total: Counter,
 }
@@ -105,6 +106,11 @@ impl Metrics {
                 "dd_compliance_risk_findings_total",
                 "Risk findings emitted across scanner and behavioral analyzers.",
                 self.risk_findings_total.get(),
+            ),
+            (
+                "dd_compliance_analyses_rejected_total",
+                "Scanner/behavioral analysis requests rejected because the concurrency gate was saturated.",
+                self.analyses_rejected_total.get(),
             ),
             (
                 "dd_compliance_auth_failures_total",

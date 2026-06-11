@@ -38,14 +38,23 @@ is always live). `/readyz` reports per-transport readiness under `push`.
 ### Hardening
 
 The `webpush` `endpoint` is caller-supplied and the NATS lane has no auth gate, so an unrestricted
-client would be an **SSRF** primitive into the cluster. The endpoint is therefore validated before any
-network call or rate-limit token is spent: it must be `https`, must not be an IP literal in a
-private/loopback/link-local/CGNAT range (this blocks `169.254.169.254` and friends even when the
-allowlist is open), and its host must match `WEBPUSH_ALLOWED_HOSTS` (default: the known browser push
-services — FCM, Mozilla autopush, WNS, Apple). Other controls: the `/send/push` route caps the request
-body at 64 KiB; payloads are capped at 8 KiB; upstream error text is truncated to 1 KiB before it is
-returned or published; and result summaries carry only a redacted target (token prefix or
-`scheme://host/…`) — never the full device token or per-subscription endpoint path.
+client would be an **SSRF** primitive into the cluster. The endpoint is validated before any network
+call or rate-limit token is spent: it must be `https` on port 443, must carry no embedded credentials,
+must not be an IP literal in a private/loopback/link-local/CGNAT range (blocks `169.254.169.254` and
+friends even when the allowlist is open), and its host must match `WEBPUSH_ALLOWED_HOSTS` (default: the
+known browser push services — FCM, Mozilla autopush, WNS, Apple). In the opt-in open mode
+(`WEBPUSH_ALLOWED_HOSTS=*`) the host is additionally **resolved** and rejected if any answer is an
+internal address (this catches names like `metadata.google.internal` or a domain pointed at
+`127.0.0.1`); note that pure DNS rebinding is not fully closed in open mode, so the default host
+allowlist remains the real boundary.
+
+Other controls:
+- Device tokens (FCM/Expo/APNs) are validated — bounded length and no URL-significant or control
+  characters — so a token can't break out of the APNs request path (`/3/device/{token}`).
+- The `/send/push` route caps the request body at 64 KiB; payloads are capped at 8 KiB.
+- Upstream error text is truncated to 1 KiB before it is returned or published onto the results bus.
+- Result summaries carry only a redacted target (token prefix or `scheme://host/…`) — never the full
+  device token or per-subscription endpoint path.
 
 ## Env
 

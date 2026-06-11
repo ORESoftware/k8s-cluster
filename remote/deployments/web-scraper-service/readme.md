@@ -124,6 +124,17 @@ and `type`.
   time limits. The DOM parsers are inert by construction: jsdom and linkedom are
   invoked without script execution or subresource loading, so untrusted HTML
   cannot run JS or fetch URLs out of the parser.
+- **Network-layer egress lockdown.** `dd-web-scraper.networkpolicy.yaml` is the
+  authoritative backstop: it denies all ingress except the gateway and the
+  observability scrapers, and restricts egress to cluster DNS plus the public
+  internet on any port *except* the private/link-local/cloud-metadata ranges. This
+  is what protects the browser strategies — which the app cannot IP-pin — against
+  DNS-rebinding to internal services or `169.254.169.254`, since the kernel drops
+  the packet regardless of what Chromium resolves. The in-app `isPrivateIp` guard
+  and the connect-time DNS check are the first two layers; this is the third.
+- **Solver response is bounded.** The CAPTCHA solver client caps the provider
+  response body (64 KiB) so a compromised or misconfigured `SCRAPER_CAPTCHA_PROVIDER_URL`
+  can't stream an unbounded body into memory.
 
 ## Browser mode and failure screenshots
 
