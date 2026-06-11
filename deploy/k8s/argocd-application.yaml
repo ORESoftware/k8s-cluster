@@ -1,0 +1,25 @@
+# ArgoCD Application for the 3FA sync server. Mirrors the cluster's existing
+# remote/argocd/apps/*.application.yaml pattern. The repoURL/path point at this
+# repo once it is wired into k8s-cluster as a submodule (see deploy/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: threefa-sync-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/3fa-backend.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: threefa
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

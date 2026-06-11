@@ -1,0 +1,36 @@
+# Default-deny with explicit allows. The sync server only needs: ingress from
+# the ingress controller, egress to Postgres and DNS. It never makes outbound
+# calls to the public internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: threefa-sync-server
+  namespace: threefa
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: threefa-sync-server
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
