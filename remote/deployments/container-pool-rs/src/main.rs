@@ -200,6 +200,10 @@ struct PoolConfig {
     user: String,
     labels: Value,
     mounts: Vec<Mount>,
+    // Opt out of the automatic cap-drop/no-new-privileges applied to pools that
+    // mount external code. Does NOT grant `--privileged` or add capabilities; it
+    // only falls back to the service-level security flags.
+    unconfined: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -1005,6 +1009,7 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
             .unwrap_or_else(|| "10001:10001".to_string()),
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
         mounts: mounts_from_json(value, &slug)?,
+        unconfined: json_bool_field(value, "unconfined", "unconfined").unwrap_or(false),
     })
 }
 
@@ -1322,6 +1327,7 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         user: "10001:10001".to_string(),
         labels: row_value(row, "labels", json!([])),
         mounts,
+        unconfined: false,
     })
 }
 
@@ -1628,11 +1634,17 @@ fn build_run_args(
         "--ulimit".to_string(),
         format!("nofile={limit}:{limit}", limit = config.nofile_limit),
     ]);
-    if config.cap_drop_all {
+    // Pools that mount external code (the generic shared-volume case) are confined
+    // by default — `--cap-drop ALL` + no-new-privileges — even when the service
+    // defaults leave them off, since they run code the image did not bake in. A
+    // pool can opt out with `unconfined: true` (falls back to the service flags;
+    // does not grant extra privileges). Mount-less pools keep prior behavior.
+    let mount_hardened = !pool.mounts.is_empty() && !pool.unconfined;
+    if config.cap_drop_all || mount_hardened {
         args.push("--cap-drop".to_string());
         args.push("ALL".to_string());
     }
-    if config.no_new_privileges {
+    if config.no_new_privileges || mount_hardened {
         args.push("--security-opt".to_string());
         args.push("no-new-privileges".to_string());
     }
@@ -3727,6 +3739,68 @@ mod tests {
         // Parser still falls back to nerdctl for unknown values.
         assert_eq!(EngineKind::parse("dcoker"), EngineKind::Nerdctl);
         assert_eq!(EngineKind::parse("podman"), EngineKind::Podman);
+    }
+
+    #[test]
+    fn mounted_code_pools_are_confined_even_when_service_defaults_are_off() {
+        // Service leaves the strict flags off (the current default).
+        let mut config = test_service_config();
+        config.cap_drop_all = false;
+        config.no_new_privileges = false;
+
+        // A pool that mounts external code must still be confined.
+        let pool = code_pool("svc", "docker.io/library/x:dev", &["/opt/code/app"]);
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--cap-drop", "ALL"), "mounted pool must drop caps: {args:?}");
+        assert!(
+            contains_pair(&args, "--security-opt", "no-new-privileges"),
+            "mounted pool must set no-new-privileges: {args:?}"
+        );
+    }
+
+    #[test]
+    fn unconfined_pool_opts_out_of_mount_hardening() {
+        let mut config = test_service_config();
+        config.cap_drop_all = false;
+        config.no_new_privileges = false;
+
+        let pool = pool_config_from_json(&json!({
+            "slug": "svc",
+            "image": "docker.io/library/x:dev",
+            "mounts": [{ "source": "dd-code", "target": "/opt/code" }],
+            "unconfined": true,
+            "command": ["/opt/code/app"],
+        }))
+        .unwrap();
+        let args = build_run_args(&config, &pool, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|a| a == "--cap-drop"), "unconfined opts out of cap-drop: {args:?}");
+        assert!(
+            !args.iter().any(|a| a == "--security-opt"),
+            "unconfined opts out of no-new-privileges: {args:?}"
+        );
+    }
+
+    #[test]
+    fn mountless_pools_follow_service_security_defaults() {
+        let mountless = pool_config_from_json(&json!({
+            "slug": "svc",
+            "image": "docker.io/library/x:dev",
+            "command": ["/app"],
+        }))
+        .unwrap();
+
+        // Service flags off => no strict flags (unchanged prior behavior).
+        let mut off = test_service_config();
+        off.cap_drop_all = false;
+        off.no_new_privileges = false;
+        let args = build_run_args(&off, &mountless, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(!args.iter().any(|a| a == "--cap-drop"));
+        assert!(!args.iter().any(|a| a == "--security-opt"));
+
+        // Service flags on => strict flags, exactly as before.
+        let args = build_run_args(&test_service_config(), &mountless, "c1", 1, &BTreeMap::new()).unwrap();
+        assert!(contains_pair(&args, "--cap-drop", "ALL"));
+        assert!(contains_pair(&args, "--security-opt", "no-new-privileges"));
     }
 
     #[test]

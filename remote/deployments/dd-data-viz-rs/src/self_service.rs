@@ -249,7 +249,8 @@ impl QuestionChartSpec {
             mark.as_str(),
             "bar" | "line" | "area" | "scatter" | "stem" | "histogram" | "box" | "violin"
                 | "ecdf" | "map" | "choropleth" | "funnel" | "waterfall" | "treemap" | "sunburst"
-                | "sankey" | "table" | "metric" | "pie" | "heatmap"
+                | "sankey" | "candlestick" | "bubble" | "gauge" | "table" | "metric" | "pie"
+                | "heatmap"
         ) {
             return Err(format!("unsupported chart mark `{mark}`"));
         }
@@ -768,7 +769,7 @@ mod tests {
     fn chart_accepts_statistical_marks() {
         for mark in [
             "histogram", "box", "violin", "ecdf", "map", "choropleth", "funnel", "waterfall",
-            "treemap", "sunburst", "sankey",
+            "treemap", "sunburst", "sankey", "candlestick", "bubble", "gauge",
         ] {
             let chart = QuestionChartSpec {
                 chart_id: None,

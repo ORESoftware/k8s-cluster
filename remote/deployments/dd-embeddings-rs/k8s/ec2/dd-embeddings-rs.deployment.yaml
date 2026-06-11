@@ -116,6 +116,29 @@ spec:
             - name: AZURE_BASE_URL
               valueFrom:
                 secretKeyRef: { name: dd-embeddings-rs-secrets, key: azure_base_url, optional: true }
+            - name: UPSTAGE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: upstage_api_key, optional: true }
+            - name: SILICONFLOW_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: siliconflow_api_key, optional: true }
+            - name: GITHUB_MODELS_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: github_models_token, optional: true }
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: cloudflare_api_token, optional: true }
+            - name: CLOUDFLARE_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: cloudflare_base_url, optional: true }
+            - name: DATABRICKS_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: databricks_token, optional: true }
+            - name: DATABRICKS_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: databricks_base_url, optional: true }
+            # Rerank providers reuse the Cohere/Jina/Voyage keys above — no new
+            # secrets needed.
           ports:
             - name: http
               containerPort: 8090

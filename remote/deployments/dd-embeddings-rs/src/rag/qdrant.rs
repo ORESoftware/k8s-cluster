@@ -146,4 +146,54 @@ impl Qdrant {
         Self::check(resp).await?;
         Ok(())
     }
+
+    /// List collection names.
+    pub async fn list_collections(&self) -> Result<Vec<String>, QdrantError> {
+        let resp = self.req(reqwest::Method::GET, "/collections").send().await?;
+        let resp = Self::check(resp).await?;
+        let parsed: ListCollectionsResponse = resp.json().await?;
+        Ok(parsed.result.collections.into_iter().map(|c| c.name).collect())
+    }
+
+    /// Delete an entire collection. Idempotent: a missing collection is fine.
+    pub async fn delete_collection(&self, collection: &str) -> Result<(), QdrantError> {
+        let resp = self
+            .req(reqwest::Method::DELETE, &format!("/collections/{collection}"))
+            .send()
+            .await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        Self::check(resp).await?;
+        Ok(())
+    }
+
+    /// Delete points by id from a collection.
+    pub async fn delete_points(&self, collection: &str, ids: Vec<Value>) -> Result<(), QdrantError> {
+        let resp = self
+            .req(
+                reqwest::Method::POST,
+                &format!("/collections/{collection}/points/delete?wait=true"),
+            )
+            .json(&json!({ "points": ids }))
+            .send()
+            .await?;
+        Self::check(resp).await?;
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct CollectionDescription {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct CollectionsList {
+    collections: Vec<CollectionDescription>,
+}
+
+#[derive(Deserialize)]
+struct ListCollectionsResponse {
+    result: CollectionsList,
 }

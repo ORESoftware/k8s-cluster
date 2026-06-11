@@ -18,12 +18,17 @@ struct RouteDoc {
 const ROUTES: &[RouteDoc] = &[
     RouteDoc { method: "GET", path: "/healthz", auth: false, summary: "Liveness probe (no dependencies)." },
     RouteDoc { method: "GET", path: "/readyz", auth: false, summary: "Readiness probe; checks Qdrant reachability." },
+    RouteDoc { method: "GET", path: "/metrics", auth: false, summary: "Prometheus metrics (text exposition)." },
     RouteDoc { method: "GET", path: "/api/docs.json", auth: false, summary: "This document, as JSON." },
     RouteDoc { method: "GET", path: "/api/docs", auth: false, summary: "Human-readable API docs." },
-    RouteDoc { method: "GET", path: "/api/providers", auth: true, summary: "List configured embedding providers, default models, and aliases." },
+    RouteDoc { method: "GET", path: "/api/providers", auth: true, summary: "List configured embedding + rerank providers, default models, and aliases." },
     RouteDoc { method: "POST", path: "/api/embeddings", auth: true, summary: "Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }." },
+    RouteDoc { method: "POST", path: "/api/rerank", auth: true, summary: "Rerank documents against a query. Body: { provider, query, documents[], model?, top_n? }." },
     RouteDoc { method: "POST", path: "/api/rag/index", auth: true, summary: "Embed documents and upsert into a Qdrant collection. Body: { collection, provider, documents[], model?, dimensions?, distance? }." },
     RouteDoc { method: "POST", path: "/api/rag/search", auth: true, summary: "Embed a query and retrieve nearest neighbors. Body: { collection, provider, query, top_k?, model?, dimensions? }." },
+    RouteDoc { method: "POST", path: "/api/rag/delete", auth: true, summary: "Delete points by id from a collection. Body: { collection, ids[] }." },
+    RouteDoc { method: "GET", path: "/api/rag/collections", auth: true, summary: "List vector-store collections." },
+    RouteDoc { method: "DELETE", path: "/api/rag/collections/{collection}", auth: true, summary: "Delete an entire collection." },
 ];
 
 fn doc_value() -> serde_json::Value {

@@ -226,6 +226,23 @@ async fn collect_target_corpus(
     corpus
 }
 
+/// Read a response body into memory, aborting as soon as it exceeds `max` bytes
+/// so a large or unbounded (chunked) body cannot exhaust memory before the size
+/// check. Returns `Ok(None)` when the body crosses the limit.
+async fn read_bounded_body(
+    mut response: reqwest::Response,
+    max: usize,
+) -> Result<Option<Vec<u8>>, reqwest::Error> {
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if buf.len().saturating_add(chunk.len()) > max {
+            return Ok(None);
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(Some(buf))
+}
+
 async fn collect_external_artifact(
     config: &Config,
     http: reqwest::Client,
@@ -277,8 +294,23 @@ async fn collect_external_artifact(
                 ));
                 return;
             }
-            match response.bytes().await {
-                Ok(bytes) if bytes.len() <= config.max_artifact_bytes => {
+            // Fail fast when the server declares an over-limit body...
+            if let Some(declared) = response.content_length() {
+                if declared > config.max_artifact_bytes as u64 {
+                    corpus.findings.push(policy_finding(
+                        &format!(
+                            "external artifact declared {declared} bytes, above the {} byte scan limit",
+                            config.max_artifact_bytes
+                        ),
+                        "Reduce artifact size or raise COMPLIANCE_MAX_ARTIFACT_BYTES after review.",
+                    ));
+                    return;
+                }
+            }
+            // ...and bound the streamed read so a chunked/under-declared body cannot
+            // exhaust memory: we stop as soon as it crosses the limit.
+            match read_bounded_body(response, config.max_artifact_bytes).await {
+                Ok(Some(bytes)) => {
                     let text = String::from_utf8_lossy(&bytes).to_string();
                     corpus.artifacts.push(CollectedArtifact {
                         kind: "externalArtifact".to_string(),
@@ -289,11 +321,10 @@ async fn collect_external_artifact(
                     });
                     corpus.items.push((url.to_string(), text));
                 }
-                Ok(bytes) => corpus.findings.push(policy_finding(
+                Ok(None) => corpus.findings.push(policy_finding(
                     &format!(
-                        "external artifact exceeded {} byte scan limit with {} bytes",
-                        config.max_artifact_bytes,
-                        bytes.len()
+                        "external artifact exceeded the {} byte scan limit",
+                        config.max_artifact_bytes
                     ),
                     "Reduce artifact size or raise COMPLIANCE_MAX_ARTIFACT_BYTES after review.",
                 )),
@@ -350,7 +381,21 @@ async fn collect_codebase(
     }
     let repo_dir = config.work_root.join(job_id).join("repo");
     let mut command = Command::new(&config.git_bin);
-    command.arg("clone").arg("--depth").arg("1");
+    // Hardening: never block on a credential prompt (fail fast instead), and refuse
+    // the local/ext transports outright as defense-in-depth behind the scheme
+    // allowlist in validate_repo_url. Submodules and tags are never fetched, so a
+    // malicious repo cannot pull in additional remote URLs.
+    command
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .arg("-c")
+        .arg("protocol.ext.allow=never")
+        .arg("-c")
+        .arg("protocol.file.allow=never")
+        .arg("clone")
+        .arg("--depth")
+        .arg("1")
+        .arg("--no-recurse-submodules")
+        .arg("--no-tags");
     command
         .arg("--filter")
         .arg(format!("blob:limit={}", config.max_file_bytes));
@@ -780,6 +825,28 @@ pub fn validate_repo_url(config: &Config, repo_url: &str) -> Result<(), String> 
                 "target.repoUrl points at a private, local, or in-cluster host".to_string(),
             );
         }
+    } else if !config.allow_private_targets {
+        // scp-style `git@host:path` skips URL parsing above, so apply the same
+        // private/local-host guard by lifting the host into an ssh:// URL.
+        if let Some(rest) = value.strip_prefix("git@") {
+            let host = rest
+                .split(':')
+                .next()
+                .unwrap_or("")
+                .split('/')
+                .next()
+                .unwrap_or("");
+            if host.is_empty() {
+                return Err("target.repoUrl is missing a host".to_string());
+            }
+            if let Ok(url) = Url::parse(&format!("ssh://{host}")) {
+                if is_private_or_local_url(&url) {
+                    return Err(
+                        "target.repoUrl points at a private, local, or in-cluster host".to_string(),
+                    );
+                }
+            }
+        }
     }
     if !config.allowed_repo_prefixes.is_empty()
         && !config
@@ -867,6 +934,18 @@ mod tests {
         let config = test_config();
         let error = validate_repo_url(&config, "https://localhost/repo.git").unwrap_err();
         assert!(error.contains("private"));
+    }
+
+    #[test]
+    fn validate_blocks_scp_syntax_private_host() {
+        let config = test_config();
+        // scp-style git@ URLs skip URL parsing; the host must still be SSRF-checked.
+        let error = validate_repo_url(&config, "git@169.254.169.254:org/repo.git").unwrap_err();
+        assert!(error.contains("private"), "got {error}");
+        let error = validate_repo_url(&config, "git@10.0.0.5:org/repo.git").unwrap_err();
+        assert!(error.contains("private"), "got {error}");
+        // A public scp-style host remains acceptable.
+        assert!(validate_repo_url(&config, "git@github.com:org/repo.git").is_ok());
     }
 
     #[test]

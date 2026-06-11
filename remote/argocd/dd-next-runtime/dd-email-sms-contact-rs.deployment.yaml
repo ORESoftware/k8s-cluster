@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/source-revision: '2026-06-10-email-sms-contact-push'
+        dd.dev/source-revision: '2026-06-11-email-sms-contact-push-natsauth'
       labels:
         app: dd-email-sms-contact-rs
     spec:
@@ -102,6 +102,15 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+                  optional: true
+            # Optional per-message auth for the NATS send-lanes. When present, every
+            # dd.remote.contact.* request must carry a matching `auth` field. Left unset, the lane is
+            # open and relies on NATS subject ACLs (trusted bus). Publishers read the same key.
+            - name: NATS_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: NATS_SHARED_SECRET
                   optional: true
             # The send credentials live in dd-email-sms-contact-secrets (External Secrets ->
             # AWS Secrets Manager dd/remote-dev/email-sms-contact-secrets). Marked optional so the

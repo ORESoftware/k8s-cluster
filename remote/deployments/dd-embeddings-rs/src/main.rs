@@ -6,9 +6,12 @@
 //! providers and report that on `/api/providers`, so you can add keys to the
 //! backing secret incrementally without redeploying.
 
+mod cache;
 mod config;
 mod docs;
+mod embedder;
 mod error;
+mod metrics;
 mod providers;
 mod rag;
 mod state;
@@ -17,10 +20,10 @@ mod validate;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::{Html, IntoResponse};
-use axum::routing::{get, post};
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::{delete, get, post};
 use axum::{middleware, Json, Router};
 use serde::Deserialize;
 use serde_json::json;
@@ -31,11 +34,15 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use crate::cache::EmbeddingCache;
 use crate::config::Config;
+use crate::embedder::Embedder;
 use crate::error::ApiError;
+use crate::metrics::Metrics;
+use crate::providers::rerank::{RerankRegistry, RerankRequest};
 use crate::providers::{EmbedRequest, Registry};
 use crate::rag::qdrant::Qdrant;
-use crate::rag::{IndexRequest, RagService, SearchRequest};
+use crate::rag::{DeletePointsRequest, IndexRequest, RagService, SearchRequest};
 use crate::state::AppState;
 use crate::validate::{
     check_dimensions, clamp_top_k, constant_time_eq, enforce_input_limits, validate_collection,
@@ -65,15 +72,22 @@ async fn main() -> anyhow::Result<()> {
         .build()?;
 
     let registry = Arc::new(Registry::from_config(&cfg, http.clone()));
+    let rerank = Arc::new(RerankRegistry::from_config(&cfg, http.clone()));
+    let metrics = Arc::new(Metrics::default());
+    let cache = Arc::new(EmbeddingCache::new(cfg.cache_max_entries, cfg.cache_max_item_bytes));
+    let embedder = Arc::new(Embedder::new(registry.clone(), cache.clone(), metrics.clone()));
     let qdrant = Arc::new(Qdrant::new(cfg.qdrant_url.clone(), cfg.qdrant_api_key.clone(), http.clone()));
-    let rag = Arc::new(RagService::new(registry.clone(), qdrant.clone()));
+    let rag = Arc::new(RagService::new(embedder.clone(), qdrant.clone()));
 
     let provider_ids: Vec<&str> = registry.iter().map(|p| p.id()).collect();
+    let rerank_ids: Vec<&str> = rerank.iter().map(|p| p.id()).collect();
     tracing::info!(
         providers = registry.len(),
         ids = ?provider_ids,
         aliases = ?registry.aliases(),
-        "embedding providers registered"
+        rerank_providers = rerank.len(),
+        rerank_ids = ?rerank_ids,
+        "providers registered"
     );
     if registry.is_empty() {
         tracing::warn!(
@@ -91,17 +105,21 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         registry,
+        embedder,
+        rerank,
         rag,
+        metrics,
         api_auth_bearer: cfg.api_auth_bearer.clone().map(Arc::new),
         limits: cfg.limits,
         // `.max(1)` guards against a `0` typo turning into a total outage.
         inflight: Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency.max(1))),
     };
 
-    // Public, unauthenticated surface: probes + API docs.
+    // Public, unauthenticated surface: probes, metrics (prometheus scrape) + docs.
     let public = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics_endpoint))
         .route("/api/docs.json", get(docs::docs_json))
         .route("/api/docs", get(docs_html))
         .route("/docs/api", get(docs_html));
@@ -111,8 +129,12 @@ async fn main() -> anyhow::Result<()> {
     let api = Router::new()
         .route("/api/providers", get(list_providers))
         .route("/api/embeddings", post(embed))
+        .route("/api/rerank", post(rerank_handler))
         .route("/api/rag/index", post(rag_index))
         .route("/api/rag/search", post(rag_search))
+        .route("/api/rag/delete", post(rag_delete))
+        .route("/api/rag/collections", get(rag_list_collections))
+        .route("/api/rag/collections/{collection}", delete(rag_delete_collection))
         .layer(middleware::from_fn_with_state(state.clone(), auth));
 
     let app = public
@@ -238,22 +260,37 @@ fn acquire_slot(state: &AppState) -> Result<tokio::sync::OwnedSemaphorePermit, A
         .map_err(|_| ApiError::Overloaded)
 }
 
+/// Prometheus scrape endpoint (text exposition). Public, like the probes.
+async fn metrics_endpoint(State(state): State<AppState>) -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        state.metrics.render(),
+    )
+}
+
+/// Record an error against metrics if the result is an `Err`, then return it.
+fn track<T>(state: &AppState, r: Result<T, ApiError>) -> Result<T, ApiError> {
+    if r.is_err() {
+        state.metrics.record_error();
+    }
+    r
+}
+
 async fn list_providers(State(state): State<AppState>) -> impl IntoResponse {
-    let providers: Vec<_> = state
+    state.metrics.record_request("providers");
+    let embed: Vec<_> = state
         .registry
         .iter()
-        .map(|p| {
-            json!({
-                "id": p.id(),
-                "default_model": p.default_model(),
-                "models": p.known_models(),
-            })
-        })
+        .map(|p| json!({ "id": p.id(), "default_model": p.default_model(), "models": p.known_models() }))
+        .collect();
+    let rerank: Vec<_> = state
+        .rerank
+        .iter()
+        .map(|p| json!({ "id": p.id(), "default_model": p.default_model(), "models": p.known_models() }))
         .collect();
     Json(json!({
-        "count": providers.len(),
-        "providers": providers,
-        "aliases": state.registry.aliases(),
+        "embedding": { "count": embed.len(), "providers": embed, "aliases": state.registry.aliases() },
+        "rerank": { "count": rerank.len(), "providers": rerank, "aliases": state.rerank.aliases() },
     }))
 }
 
@@ -268,45 +305,138 @@ struct EmbedApiRequest {
 async fn embed(
     State(state): State<AppState>,
     Json(body): Json<EmbedApiRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    enforce_input_limits(&body.req.input, &state.limits)?;
-    check_dimensions(body.req.dimensions, &state.limits)?;
-    validate_model(body.req.model.as_deref())?;
-    let _permit = acquire_slot(&state)?;
-    let provider = state.registry.resolve(&body.provider)?;
-    let result = provider.embed(&body.req).await?;
-    Ok(Json(result))
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("embed");
+    let out = async {
+        enforce_input_limits(&body.req.input, &state.limits)?;
+        check_dimensions(body.req.dimensions, &state.limits)?;
+        validate_model(body.req.model.as_deref())?;
+        let _permit = acquire_slot(&state)?;
+        let result = state.embedder.embed(&body.provider, &body.req).await?;
+        Ok(Json(result).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+#[derive(Deserialize)]
+struct RerankApiRequest {
+    /// Rerank provider id or alias (`cohere`, `jina`, `voyage`, `anthropic`).
+    provider: String,
+    #[serde(flatten)]
+    req: RerankRequest,
+}
+
+async fn rerank_handler(
+    State(state): State<AppState>,
+    Json(body): Json<RerankApiRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("rerank");
+    let out = async {
+        let RerankApiRequest { provider, mut req } = body;
+        enforce_input_limits(std::slice::from_ref(&req.query), &state.limits)?;
+        enforce_input_limits(&req.documents, &state.limits)?;
+        validate_model(req.model.as_deref())?;
+        if let Some(n) = req.top_n {
+            req.top_n = Some(clamp_top_k(n, &state.limits));
+        }
+        let _permit = acquire_slot(&state)?;
+        let p = state.rerank.resolve(&provider)?;
+        let result = p.rerank(&req).await?;
+        state.metrics.record_provider(&format!("rerank:{}", result.provider));
+        Ok(Json(result).into_response())
+    }
+    .await;
+    track(&state, out)
 }
 
 async fn rag_index(
     State(state): State<AppState>,
     Json(body): Json<IndexRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    validate_collection(&body.collection)?;
-    validate_distance(&body.distance)?;
-    validate_model(body.model.as_deref())?;
-    check_dimensions(body.dimensions, &state.limits)?;
-    // Validate the document texts under the same batch/size guardrails as the
-    // raw embedding endpoint before we embed-and-upsert them.
-    let texts: Vec<String> = body.documents.iter().map(|d| d.text.clone()).collect();
-    enforce_input_limits(&texts, &state.limits)?;
-    let _permit = acquire_slot(&state)?;
-    let result = state.rag.index(body).await?;
-    Ok(Json(result))
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("rag_index");
+    let out = async {
+        validate_collection(&body.collection)?;
+        validate_distance(&body.distance)?;
+        validate_model(body.model.as_deref())?;
+        check_dimensions(body.dimensions, &state.limits)?;
+        // Validate the document texts under the same batch/size guardrails as
+        // the raw embedding endpoint before we embed-and-upsert them.
+        let texts: Vec<String> = body.documents.iter().map(|d| d.text.clone()).collect();
+        enforce_input_limits(&texts, &state.limits)?;
+        let _permit = acquire_slot(&state)?;
+        let result = state.rag.index(body).await?;
+        Ok(Json(result).into_response())
+    }
+    .await;
+    track(&state, out)
 }
 
 async fn rag_search(
     State(state): State<AppState>,
     Json(mut body): Json<SearchRequest>,
-) -> Result<impl IntoResponse, ApiError> {
-    validate_collection(&body.collection)?;
-    validate_model(body.model.as_deref())?;
-    check_dimensions(body.dimensions, &state.limits)?;
-    enforce_input_limits(std::slice::from_ref(&body.query), &state.limits)?;
-    body.top_k = clamp_top_k(body.top_k, &state.limits);
-    let _permit = acquire_slot(&state)?;
-    let result = state.rag.search(body).await?;
-    Ok(Json(result))
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("rag_search");
+    let out = async {
+        validate_collection(&body.collection)?;
+        validate_model(body.model.as_deref())?;
+        check_dimensions(body.dimensions, &state.limits)?;
+        enforce_input_limits(std::slice::from_ref(&body.query), &state.limits)?;
+        body.top_k = clamp_top_k(body.top_k, &state.limits);
+        let _permit = acquire_slot(&state)?;
+        let result = state.rag.search(body).await?;
+        Ok(Json(result).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn rag_delete(
+    State(state): State<AppState>,
+    Json(body): Json<DeletePointsRequest>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("rag_delete");
+    let out = async {
+        validate_collection(&body.collection)?;
+        if body.ids.is_empty() {
+            return Err(ApiError::Invalid("ids must be non-empty".into()));
+        }
+        if body.ids.len() > state.limits.max_batch_size {
+            return Err(ApiError::Invalid(format!(
+                "id count {} exceeds limit of {}",
+                body.ids.len(),
+                state.limits.max_batch_size
+            )));
+        }
+        let result = state.rag.delete_points(body).await?;
+        Ok(Json(result).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn rag_list_collections(State(state): State<AppState>) -> Result<Response, ApiError> {
+    state.metrics.record_request("rag_collections");
+    let out = async {
+        let collections = state.rag.list_collections().await?;
+        Ok(Json(json!({ "collections": collections })).into_response())
+    }
+    .await;
+    track(&state, out)
+}
+
+async fn rag_delete_collection(
+    State(state): State<AppState>,
+    Path(collection): Path<String>,
+) -> Result<Response, ApiError> {
+    state.metrics.record_request("rag_delete_collection");
+    let out = async {
+        validate_collection(&collection)?;
+        state.rag.delete_collection(&collection).await?;
+        Ok(Json(json!({ "collection": collection, "deleted": true })).into_response())
+    }
+    .await;
+    track(&state, out)
 }
 
 async fn docs_html() -> impl IntoResponse {

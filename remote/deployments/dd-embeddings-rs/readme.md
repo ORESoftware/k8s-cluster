@@ -32,6 +32,13 @@ fine with zero providers and `/api/providers` reports what's live.
 | `azure`     | Azure OpenAI                     | OpenAI (`api-key`)| `AZURE_OPENAI_API_KEY` + `AZURE_BASE_URL` |
 | `tei`       | self-hosted HF TEI (`ai-ml` ns)  | OpenAI            | none                    |
 | `ollama`    | self-hosted Ollama (`ai-ml` ns)  | OpenAI            | none                    |
+| `upstage`   | Upstage (Solar)                  | OpenAI            | `UPSTAGE_API_KEY`       |
+| `siliconflow`| SiliconFlow                     | OpenAI            | `SILICONFLOW_API_KEY`   |
+| `github`    | GitHub Models                    | OpenAI            | `GITHUB_MODELS_TOKEN`   |
+| `cloudflare`| Cloudflare Workers AI            | OpenAI            | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_BASE_URL` |
+| `databricks`| Databricks serving endpoints     | OpenAI            | `DATABRICKS_TOKEN` + `DATABRICKS_BASE_URL` |
+| `vllm`      | self-hosted vLLM (`ai-ml` ns)    | OpenAI            | none                    |
+| `infinity`  | self-hosted Infinity (`ai-ml` ns)| OpenAI            | none                    |
 
 ### About "Anthropic"
 
@@ -82,6 +89,45 @@ curl -s localhost:8090/api/rag/search -H "Authorization: Bearer $TOK" \
 asymmetric models (Voyage, Cohere, Gemini, Nomic). The RAG layer sets it
 automatically: `document` on index, `query` on search.
 
+## Reranking
+
+Second-stage relevance scoring for RAG — a cross-encoder ranks candidates far
+more accurately than embedding cosine alone. Providers: `cohere`, `jina`,
+`voyage` (and `anthropic` → `voyage`); they reuse the same API keys as the
+embedding side, so no extra secrets.
+
+```bash
+curl -s localhost:8090/api/rerank -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{
+    "provider": "cohere",
+    "query": "how do vector databases work?",
+    "documents": ["Qdrant stores vectors.", "Bananas are yellow.", "ANN search finds neighbors."],
+    "top_n": 2
+  }'
+# → { "provider": "cohere", "model": "rerank-v3.5",
+#     "results": [ { "index": 0, "score": 0.98 }, { "index": 2, "score": 0.81 } ] }
+```
+
+## RAG collection management
+
+```bash
+curl -s localhost:8090/api/rag/collections -H "Authorization: Bearer $TOK"          # list
+curl -s -X DELETE localhost:8090/api/rag/collections/kb -H "Authorization: Bearer $TOK"  # drop a collection
+curl -s localhost:8090/api/rag/delete -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{ "collection": "kb", "ids": ["doc-1"] }'  # delete points
+```
+
+Caller-supplied ids are normalized the same way on index and delete, so the id
+you indexed with is the id you delete with.
+
+## Caching & metrics
+
+Identical embeddings are served from a bounded in-memory cache
+(`EMBEDDINGS_CACHE_MAX_ENTRIES` / `EMBEDDINGS_CACHE_MAX_ITEM_BYTES`), so
+repeated text and re-indexing cost nothing and make no provider call. Prometheus
+metrics (request/error/cache/per-provider counters) are exposed at `/metrics`
+for the cluster scraper.
+
 ## Configuration
 
 | env                              | default                                              |
@@ -100,6 +146,8 @@ automatically: `document` on index, `query` on search.
 | `EMBEDDINGS_MAX_TOP_K`           | `100` — search results are clamped to this           |
 | `EMBEDDINGS_MAX_DIMENSIONS`      | `8192` — max requested dimensionality                |
 | `EMBEDDINGS_MAX_CONCURRENCY`     | `32` — in-flight cost-bearing requests; excess → 503 |
+| `EMBEDDINGS_CACHE_MAX_ENTRIES`   | `50000` — embedding cache size (0 disables)          |
+| `EMBEDDINGS_CACHE_MAX_ITEM_BYTES`| `8192` — only cache texts at or below this length    |
 
 ## Security posture
 

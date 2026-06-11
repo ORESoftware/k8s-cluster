@@ -371,6 +371,8 @@ fn verify_plotly(
         "treemap",
         "sunburst",
         "sankey",
+        "candlestick",
+        "indicator",
     ];
     let mut traces_with_points = 0usize;
     let mut unknown_trace_types = Vec::new();

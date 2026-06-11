@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::providers::{EmbedRequest, InputType, ProviderError, Registry};
+use crate::embedder::Embedder;
+use crate::providers::{EmbedRequest, InputType, ProviderError};
 use qdrant::{Qdrant, QdrantError, ScoredPoint};
 
 #[derive(Debug, thiserror::Error)]
@@ -119,29 +120,28 @@ fn normalize_point_id(id: Option<&str>, text: &str) -> (Value, Option<String>) {
 }
 
 pub struct RagService {
-    registry: Arc<Registry>,
+    embedder: Arc<Embedder>,
     qdrant: Arc<Qdrant>,
 }
 
 impl RagService {
-    pub fn new(registry: Arc<Registry>, qdrant: Arc<Qdrant>) -> Self {
-        Self { registry, qdrant }
+    pub fn new(embedder: Arc<Embedder>, qdrant: Arc<Qdrant>) -> Self {
+        Self { embedder, qdrant }
     }
 
     pub async fn index(&self, req: IndexRequest) -> Result<IndexResponse, RagError> {
         if req.documents.is_empty() {
             return Err(RagError::NoDocuments);
         }
-        let provider = self.registry.resolve(&req.provider)?;
 
-        // Documents are embedded as documents, not queries.
+        // Documents are embedded as documents, not queries (cache-aware).
         let embed_req = EmbedRequest {
             input: req.documents.iter().map(|d| d.text.clone()).collect(),
             model: req.model.clone(),
             dimensions: req.dimensions,
             input_type: InputType::Document,
         };
-        let result = provider.embed(&embed_req).await?;
+        let result = self.embedder.embed(&req.provider, &embed_req).await?;
 
         if result.embeddings.len() != req.documents.len() {
             return Err(RagError::CountMismatch {
@@ -196,8 +196,6 @@ impl RagService {
     }
 
     pub async fn search(&self, req: SearchRequest) -> Result<SearchResponse, RagError> {
-        let provider = self.registry.resolve(&req.provider)?;
-
         // The query side must use query intent so asymmetric models line up.
         let embed_req = EmbedRequest {
             input: vec![req.query.clone()],
@@ -205,7 +203,7 @@ impl RagService {
             dimensions: req.dimensions,
             input_type: InputType::Query,
         };
-        let result = provider.embed(&embed_req).await?;
+        let result = self.embedder.embed(&req.provider, &embed_req).await?;
         let vector = result
             .embeddings
             .into_iter()
@@ -222,4 +220,40 @@ impl RagService {
             matches,
         })
     }
+
+    /// List the vector-store collections.
+    pub async fn list_collections(&self) -> Result<Vec<String>, RagError> {
+        Ok(self.qdrant.list_collections().await?)
+    }
+
+    /// Delete an entire collection (idempotent).
+    pub async fn delete_collection(&self, collection: &str) -> Result<(), RagError> {
+        self.qdrant.delete_collection(collection).await?;
+        Ok(())
+    }
+
+    /// Delete points by caller-supplied id. Ids are normalized with the same
+    /// rule used at index time so `"doc-1"` deletes the point `"doc-1"` created.
+    pub async fn delete_points(&self, req: DeletePointsRequest) -> Result<DeletePointsResponse, RagError> {
+        let ids: Vec<Value> = req
+            .ids
+            .iter()
+            .map(|raw| normalize_point_id(Some(raw), "").0)
+            .collect();
+        let deleted = ids.len();
+        self.qdrant.delete_points(&req.collection, ids).await?;
+        Ok(DeletePointsResponse { collection: req.collection, deleted })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeletePointsRequest {
+    pub collection: String,
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeletePointsResponse {
+    pub collection: String,
+    pub deleted: usize,
 }

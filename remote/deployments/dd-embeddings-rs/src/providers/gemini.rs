@@ -55,6 +55,16 @@ impl EmbeddingProvider for Gemini {
     async fn embed(&self, req: &EmbedRequest) -> Result<EmbedResponse, ProviderError> {
         validate_input(req)?;
         let model = req.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        // Gemini is the one provider that puts the model in the request URL
+        // path, so it gets a strict charset check the loose global validator
+        // doesn't enforce — no `/`, `:`, `?`, `#`, etc. that could alter the
+        // path or inject a query string.
+        if !model.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+            return Err(ProviderError::InvalidModel(
+                "gemini".into(),
+                "Gemini model names may contain only [A-Za-z0-9._-]".into(),
+            ));
+        }
         let task_type = match req.input_type {
             InputType::Query => "RETRIEVAL_QUERY",
             InputType::Document => "RETRIEVAL_DOCUMENT",

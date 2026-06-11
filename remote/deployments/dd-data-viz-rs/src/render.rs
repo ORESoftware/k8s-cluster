@@ -18,6 +18,10 @@ const DEFAULT_HEIGHT: u32 = 480;
 const MAX_WIDTH: u32 = 4000;
 const MAX_HEIGHT: u32 = 4000;
 const MAX_ROWS: usize = 20_000;
+// Hardening: cap how many marks a single render emits. Above this we stride-
+// sample so a large result set can't inflate the SVG into a multi-megabyte
+// payload or a pathological render cost.
+const MAX_RENDER_POINTS: usize = 2_000;
 const HIST_BINS: usize = 12;
 const MARGIN_LEFT: f64 = 64.0;
 const MARGIN_RIGHT: f64 = 24.0;
@@ -141,9 +145,11 @@ pub fn render(request: RenderRequest) -> Result<RenderResponse, String> {
 }
 
 fn render_bar(request: &RenderRequest, area: &Area) -> Result<String, String> {
-    let labels = category_column(request, area_len(request));
     let values = numeric_column(request, request.y.as_deref())
         .ok_or("bar render requires a numeric `y` field")?;
+    // Downsample labels and values with the same stride so they stay aligned.
+    let labels = downsample(&category_column(request, area_len(request)), MAX_RENDER_POINTS);
+    let values = downsample(&values, MAX_RENDER_POINTS);
     let max = values.iter().copied().fold(0.0_f64, f64::max).max(1.0);
 
     let count = values.len().max(1);
@@ -182,6 +188,10 @@ fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String,
     let xs = numeric_column(request, request.x.as_deref())
         .filter(|values| values.len() == ys.len())
         .unwrap_or_else(|| (0..ys.len()).map(|index| index as f64).collect());
+
+    // Same-stride downsample keeps the (x, y) pairs aligned.
+    let xs = downsample(&xs, MAX_RENDER_POINTS);
+    let ys = downsample(&ys, MAX_RENDER_POINTS);
 
     let (x_min, x_max) = bounds(&xs, false);
     let (y_min, y_max) = bounds(&ys, true);
@@ -346,6 +356,17 @@ fn bounds(values: &[f64], include_zero: bool) -> (f64, f64) {
     (min, max)
 }
 
+/// Stride-sample a series down to at most `cap` elements, preserving order and
+/// keeping the first element. Paired series sampled with the same `cap` stay
+/// index-aligned because the stride depends only on length.
+fn downsample<T: Clone>(values: &[T], cap: usize) -> Vec<T> {
+    if cap == 0 || values.len() <= cap {
+        return values.to_vec();
+    }
+    let stride = values.len().div_ceil(cap);
+    values.iter().step_by(stride).cloned().collect()
+}
+
 fn as_f64(value: &Value) -> Option<f64> {
     match value {
         Value::Number(number) => number.as_f64(),
@@ -468,6 +489,25 @@ mod tests {
         };
         let response = render(request).expect("histogram renders");
         assert!(response.svg.matches("<rect").count() > 1);
+    }
+
+    #[test]
+    fn large_series_is_downsampled() {
+        let values: Vec<i64> = (0..15_000).collect();
+        let request = RenderRequest {
+            mark: "scatter".to_string(),
+            format: None,
+            title: None,
+            width: None,
+            height: None,
+            x: None,
+            y: Some("v".to_string()),
+            rows: rows("v", &values),
+        };
+        let response = render(request).expect("scatter renders");
+        // Marks are capped well below the row count so the SVG stays bounded.
+        let circles = response.svg.matches("<circle").count();
+        assert!(circles > 0 && circles <= MAX_RENDER_POINTS, "circles={circles}");
     }
 
     #[test]

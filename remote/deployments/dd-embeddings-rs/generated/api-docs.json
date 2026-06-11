@@ -9,11 +9,16 @@
   "routes": [
     { "method": "GET", "path": "/healthz", "auth": false, "summary": "Liveness probe (no dependencies)." },
     { "method": "GET", "path": "/readyz", "auth": false, "summary": "Readiness probe; checks Qdrant reachability." },
+    { "method": "GET", "path": "/metrics", "auth": false, "summary": "Prometheus metrics (text exposition)." },
     { "method": "GET", "path": "/api/docs.json", "auth": false, "summary": "This document, as JSON." },
     { "method": "GET", "path": "/api/docs", "auth": false, "summary": "Human-readable API docs." },
-    { "method": "GET", "path": "/api/providers", "auth": true, "summary": "List configured embedding providers, default models, and aliases." },
+    { "method": "GET", "path": "/api/providers", "auth": true, "summary": "List configured embedding + rerank providers, default models, and aliases." },
     { "method": "POST", "path": "/api/embeddings", "auth": true, "summary": "Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }." },
+    { "method": "POST", "path": "/api/rerank", "auth": true, "summary": "Rerank documents against a query. Body: { provider, query, documents[], model?, top_n? }." },
     { "method": "POST", "path": "/api/rag/index", "auth": true, "summary": "Embed documents and upsert into a Qdrant collection. Body: { collection, provider, documents[], model?, dimensions?, distance? }." },
-    { "method": "POST", "path": "/api/rag/search", "auth": true, "summary": "Embed a query and retrieve nearest neighbors. Body: { collection, provider, query, top_k?, model?, dimensions? }." }
+    { "method": "POST", "path": "/api/rag/search", "auth": true, "summary": "Embed a query and retrieve nearest neighbors. Body: { collection, provider, query, top_k?, model?, dimensions? }." },
+    { "method": "POST", "path": "/api/rag/delete", "auth": true, "summary": "Delete points by id from a collection. Body: { collection, ids[] }." },
+    { "method": "GET", "path": "/api/rag/collections", "auth": true, "summary": "List vector-store collections." },
+    { "method": "DELETE", "path": "/api/rag/collections/{collection}", "auth": true, "summary": "Delete an entire collection." }
   ]
 }

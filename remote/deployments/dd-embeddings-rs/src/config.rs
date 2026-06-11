@@ -21,6 +21,10 @@ pub struct Config {
     /// once. Excess requests are shed with 503 rather than queued, so a flood
     /// can't exhaust file descriptors/memory or run up unbounded provider spend.
     pub max_concurrency: usize,
+    /// Embedding-cache entry budget (0 disables the cache).
+    pub cache_max_entries: usize,
+    /// Only texts at or below this byte length are cached.
+    pub cache_max_item_bytes: usize,
     pub limits: Limits,
 }
 
@@ -55,6 +59,8 @@ impl Config {
             qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),
             request_timeout_secs: env_or("EMBEDDINGS_REQUEST_TIMEOUT_SECS", "30").parse()?,
             max_concurrency: env_or("EMBEDDINGS_MAX_CONCURRENCY", "32").parse()?,
+            cache_max_entries: env_or("EMBEDDINGS_CACHE_MAX_ENTRIES", "50000").parse()?,
+            cache_max_item_bytes: env_or("EMBEDDINGS_CACHE_MAX_ITEM_BYTES", "8192").parse()?,
             limits: Limits {
                 max_batch_size: env_or("EMBEDDINGS_MAX_BATCH_SIZE", "256").parse()?,
                 max_total_chars: env_or("EMBEDDINGS_MAX_TOTAL_CHARS", "1000000").parse()?,

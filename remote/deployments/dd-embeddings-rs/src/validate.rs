@@ -72,22 +72,23 @@ pub fn clamp_top_k(top_k: usize, limits: &Limits) -> usize {
     top_k.clamp(1, limits.max_top_k)
 }
 
-/// Validate a caller-supplied model name. Most providers put the model in a
-/// JSON body (where serde escaping makes it inert), but the Gemini provider
-/// interpolates it into the request URL path. Restricting the charset to
-/// `[A-Za-z0-9._/-]` keeps it from escaping the path: no `:`/`?`/`#`/`@`/`%`
-/// or whitespace means a model name can't change the scheme/host or inject a
-/// query string. `/` is allowed because HuggingFace-style ids (`org/model`)
-/// are legitimate for the body-based providers and stay within the path.
+/// Loose validation of a caller-supplied model name. Model names go into JSON
+/// request bodies for every provider except Gemini, and serde escaping makes
+/// them inert there — so we only reject control characters and whitespace
+/// (log/header-injection hygiene) and cap the length. This intentionally
+/// allows `:` (Ollama tags like `nomic-embed-text:latest`), `@` and `/`
+/// (Cloudflare `@cf/baai/...`, HuggingFace `org/model`). The Gemini provider,
+/// which interpolates the model into a URL path, applies its own strict check
+/// (see `providers::gemini`).
 pub fn validate_model(model: Option<&str>) -> Result<(), ApiError> {
     let Some(m) = model else { return Ok(()) };
     const MAX: usize = 256;
     if m.is_empty() || m.len() > MAX {
         return Err(ApiError::Invalid(format!("model name must be 1..={MAX} characters")));
     }
-    if !m.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/')) {
+    if m.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(ApiError::Invalid(
-            "model name may contain only [A-Za-z0-9._/-]".into(),
+            "model name may not contain whitespace or control characters".into(),
         ));
     }
     if m.contains("..") {

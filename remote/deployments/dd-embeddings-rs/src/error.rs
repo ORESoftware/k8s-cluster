@@ -60,6 +60,7 @@ impl ApiError {
             ApiError::Provider(ProviderError::EmptyInput) => {
                 "input must contain at least one non-empty string".into()
             }
+            ApiError::Provider(ProviderError::InvalidModel(_, m)) => format!("invalid model name: {m}"),
             ApiError::Rag(RagError::NoDocuments) => "at least one document is required".into(),
             // Upstream transport/decode/5xx, Qdrant, count mismatch: don't leak detail.
             _ => format!("{kind} (see server logs for detail)"),
@@ -71,6 +72,7 @@ fn provider_status_kind(e: &ProviderError) -> (StatusCode, &'static str) {
     match e {
         ProviderError::Unknown(_) => (StatusCode::NOT_FOUND, "unknown_provider"),
         ProviderError::NotConfigured(_) => (StatusCode::SERVICE_UNAVAILABLE, "provider_not_configured"),
+        ProviderError::InvalidModel(..) => (StatusCode::BAD_REQUEST, "invalid_model"),
         ProviderError::EmptyInput => (StatusCode::BAD_REQUEST, "empty_input"),
         ProviderError::Transport { .. } => (StatusCode::BAD_GATEWAY, "upstream_transport"),
         ProviderError::Upstream { .. } => (StatusCode::BAD_GATEWAY, "upstream_error"),

@@ -96,3 +96,14 @@ but fail closed unless enabled at the service level:
 When repo cloning is enabled, use `COMPLIANCE_ALLOWED_REPO_PREFIXES` to restrict trusted sources.
 The scanner uses shallow clones, a blob-size filter, allowlisted file extensions, and byte/file
 limits.
+
+Even with these gates enabled, the collectors are hardened against an attacker-controlled endpoint:
+
+- External fetch follows **no HTTP redirects** (the private/local-target guard only validates the
+  supplied URL, so a redirect can't bounce the request to an internal service or cloud metadata),
+  enforces a connect and overall timeout, rejects an over-declared `Content-Length`, and **streams
+  the body with a hard byte cap** so a chunked or under-declared response can't exhaust memory.
+- Repo URLs are restricted to `https://`, `ssh://`, or `git@` (scp-style hosts are SSRF-checked too);
+  `git clone` runs with `GIT_TERMINAL_PROMPT=0`, the `ext`/`file` transports disabled, and
+  `--no-recurse-submodules --no-tags`, so a malicious repo can't prompt for credentials or pull in
+  additional remote URLs.

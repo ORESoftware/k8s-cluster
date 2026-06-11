@@ -43,6 +43,9 @@ use web_push::{ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPush
 struct AppState {
     http: reqwest::Client,
     auth_secret: Option<String>,
+    // Optional shared secret required in the `auth` field of NATS send-requests. When unset the lane
+    // is open (trusted bus); when set, handlers reject messages whose `auth` does not match.
+    nats_secret: Option<String>,
     sendgrid_key: Option<String>,
     email_from: String,
     twilio_sid: Option<String>,
@@ -150,6 +153,8 @@ struct Outcome {
     rate_limited: bool,
 }
 
+// `auth` carries the optional NATS shared secret (see AppState::nats_secret); it is ignored on the
+// HTTP path, which is gated by the x-server-auth header instead.
 #[derive(Deserialize)]
 struct EmailReq {
     to: String,
@@ -157,11 +162,13 @@ struct EmailReq {
     html: String,
     text: Option<String>,
     from: Option<String>,
+    auth: Option<String>,
 }
 #[derive(Deserialize)]
 struct SmsReq {
     to: String,
     body: String,
+    auth: Option<String>,
 }
 #[derive(Deserialize)]
 struct PushReq {
@@ -171,6 +178,7 @@ struct PushReq {
     data: Option<Value>,
     token: Option<String>,                  // fcm / expo / apns device token
     subscription: Option<PushSubscription>, // webpush
+    auth: Option<String>,
 }
 #[derive(Deserialize)]
 struct PushSubscription {
@@ -209,6 +217,7 @@ async fn main() {
     let state = AppState {
         http: reqwest::Client::builder().timeout(Duration::from_secs(20)).build().expect("http client"),
         auth_secret: non_empty(env::var("SERVER_AUTH_SECRET").ok()),
+        nats_secret: non_empty(env::var("NATS_SHARED_SECRET").ok()),
         sendgrid_key: non_empty(env::var("SENDGRID_API_KEY").ok()).filter(|k| !k.contains("REPLACE")),
         email_from: env::var("EMAIL_FROM").unwrap_or_else(|_| "outreach@dancingdragons.cc".to_string()),
         twilio_sid: non_empty(env::var("TWILIO_ACCOUNT_SID").ok()),
@@ -875,7 +884,10 @@ async fn readyz(State(s): State<AppState>) -> Json<Value> {
             "expo_configured": true,
             "apns_configured": s.apns.is_some(),
         },
-        "nats": {"consumer_enabled": env::var("NATS_URL").map(|v| !v.is_empty()).unwrap_or(false)},
+        "nats": {
+            "consumer_enabled": env::var("NATS_URL").map(|v| !v.is_empty()).unwrap_or(false),
+            "auth_required": s.nats_secret.is_some(),
+        },
     }))
 }
 
@@ -1078,11 +1090,24 @@ async fn publish_result(client: &async_nats::Client, value: Value) {
     }
 }
 
+// Enforces the optional NATS shared secret. Open (returns true) when no secret is configured;
+// otherwise the message's `auth` must match in constant time.
+fn nats_authorized(s: &AppState, auth: Option<&str>) -> bool {
+    match &s.nats_secret {
+        None => true,
+        Some(secret) => auth.map(|got| constant_time_eq(got.as_bytes(), secret.as_bytes())).unwrap_or(false),
+    }
+}
+
 async fn handle_email_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
     let Ok(req) = serde_json::from_slice::<EmailReq>(payload) else {
         publish_result(client, json!({"ok": false, "channel": "email", "error": "invalid payload"})).await;
         return;
     };
+    if !nats_authorized(s, req.auth.as_deref()) {
+        publish_result(client, json!({"ok": false, "channel": "email", "error": "unauthorized"})).await;
+        return;
+    }
     if let Some(e) = validate_email(&req.to, &req.subject, &req.html) {
         publish_result(client, json!({"ok": false, "channel": "email", "to": req.to, "error": e})).await;
         return;
@@ -1096,6 +1121,10 @@ async fn handle_sms_msg(s: &AppState, client: &async_nats::Client, payload: &[u8
         publish_result(client, json!({"ok": false, "channel": "sms", "error": "invalid payload"})).await;
         return;
     };
+    if !nats_authorized(s, req.auth.as_deref()) {
+        publish_result(client, json!({"ok": false, "channel": "sms", "error": "unauthorized"})).await;
+        return;
+    }
     if let Some(e) = validate_sms(&req.to, &req.body) {
         publish_result(client, json!({"ok": false, "channel": "sms", "to": req.to, "error": e})).await;
         return;
@@ -1109,6 +1138,10 @@ async fn handle_push_msg(s: &AppState, client: &async_nats::Client, payload: &[u
         publish_result(client, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
         return;
     };
+    if !nats_authorized(s, req.auth.as_deref()) {
+        publish_result(client, json!({"ok": false, "channel": "push", "error": "unauthorized"})).await;
+        return;
+    }
     if let Some(e) = validate_push(&req, &s.webpush_policy).await {
         publish_result(client, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
         return;

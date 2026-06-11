@@ -98,6 +98,9 @@ The dedicated fallback table shape is the `container_pool_configs` block in
 - `nats_subject`: optional per-pool subject for NATS request routing.
 - `mounts` (alias `volumes`): optional array of `{source|volume, target|mountPath, readOnly?}`
   entries mounted into every warm container of the pool. See "Shared-volume code/binaries" below.
+- `unconfined`: optional bool (default false). Opts a mounted-code pool out of the automatic
+  `--cap-drop ALL`/`--security-opt no-new-privileges` hardening (see below). It does **not** grant
+  `--privileged` or add capabilities — it only falls back to the service-level security flags.
 
 The service also accepts `CONTAINER_POOL_CONFIG_JSON` as a development fallback. Production should
 use Postgres so pool definitions can be changed without a pod rollout.
@@ -130,6 +133,16 @@ unambiguous. Up to 16 mounts per pool. Policy violations fail the container star
 (visible in reconcile logs) rather than silently dropping the mount. Mounts are surfaced per pool in
 `GET /pools`. The `command`/`mounts` shape still comes only from trusted Postgres config — never from
 dispatch requests — so this stays a control-plane capability, not a shell-exec API.
+
+Because a mounted-code pool runs code the image did not bake in, such pools are **confined by
+default**: the manager applies `--cap-drop ALL` and `--security-opt no-new-privileges` to them even
+when the service-level `CONTAINER_POOL_CAP_DROP_ALL` / `CONTAINER_POOL_NO_NEW_PRIVILEGES` are off
+(those default off and govern mount-less pools). A normal server running as uid `10001` on the
+injected high `$PORT` needs no capabilities, so this is transparent; set `unconfined: true` on the
+pool only for the rare binary that genuinely needs one (it then falls back to the service flags and
+still does not get `--privileged`). On SELinux-enforcing hosts, host-path bind mounts may need a
+relabel (`:z`/`:Z`) to be readable — prefer named volumes there, since `:Z` relabels the host path
+and can disrupt other consumers.
 
 ## Runtime images
 

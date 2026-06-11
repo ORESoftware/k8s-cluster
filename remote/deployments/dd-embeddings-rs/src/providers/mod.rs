@@ -9,6 +9,7 @@
 pub mod cohere;
 pub mod gemini;
 pub mod openai;
+pub mod rerank;
 pub mod voyage;
 
 use std::collections::BTreeMap;
@@ -25,6 +26,8 @@ pub enum ProviderError {
     NotConfigured(String),
     #[error("unknown provider `{0}`")]
     Unknown(String),
+    #[error("invalid model name for {0}: {1}")]
+    InvalidModel(String, String),
     #[error("empty input: at least one non-empty string is required")]
     EmptyInput,
     #[error("transport error talking to {provider}: {source}")]

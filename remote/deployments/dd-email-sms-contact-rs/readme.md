@@ -22,6 +22,9 @@ across replicas):
 - `dd.remote.contact.push.send` (subscribe) — `{ transport, [title], [body], [data], [token], [subscription] }`
 - `dd.remote.contact.results` (publish) — per-send result summary `{ ok, channel, to, transport, upstreamStatus, error, rateLimited }`
 
+When `NATS_SHARED_SECRET` is set, each subscribe-lane payload must include a matching `auth` string or
+the handler rejects it with `{ ok: false, error: "unauthorized" }` (see Hardening).
+
 ### Push payload
 
 `transport` selects the backend; the target shape depends on it. At least one of `title`/`body` is
@@ -71,6 +74,7 @@ Other controls:
 | `APNS_KEY_P8` / `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_TOPIC` / `APNS_USE_SANDBOX` | Apple APNs token auth (.p8 PEM, key id, team id, app bundle id; `APNS_USE_SANDBOX=1` for the sandbox host) |
 | `EXPO_ACCESS_TOKEN` | Expo: optional, only if push security is enabled on the project |
 | `SERVER_AUTH_SECRET` | shared secret for the HTTP `/send/*` gate |
+| `NATS_SHARED_SECRET` | when set, every NATS send-request must carry a matching `auth` field (constant-time check); unset = open lane (trusted bus) |
 | `EMAIL_RATE_PER_MIN` / `SMS_RATE_PER_MIN` / `PUSH_RATE_PER_MIN` | token-bucket caps (default 60 / 30 / 60) |
 | `HOST` / `PORT` | bind (default `0.0.0.0:8120`) |
 
@@ -107,11 +111,14 @@ Hardened in code:
 - **Secrets never logged/echoed**; reqwest uses rustls (TLS verify on) + a 20s timeout;
   webpush endpoint is SSRF-guarded (https-only, blocks localhost/private/CGNAT/etc.).
 
+NATS lane authentication:
+- **Optional per-message shared secret** — set `NATS_SHARED_SECRET` and every `dd.remote.contact.*`
+  send-request must carry a matching `auth` field (constant-time check in `handle_*_msg`), else it is
+  rejected `unauthorized`. When unset the lane stays open ("trusted bus"), in which case NATS
+  account/subject ACLs must restrict who can publish to `dd.remote.contact.*` — otherwise any
+  in-cluster publisher can send mail/SMS/push. `/readyz` reports `nats.auth_required`.
+
 Accepted / deployment-enforced (NOT in code):
-- **NATS lane has no per-message auth** — `handle_*_msg` send without a secret, by design
-  ("trusted bus"). **Requirement:** NATS account/subject ACLs must restrict who can publish
-  to `dd.remote.contact.*`, otherwise any in-cluster publisher can send mail/SMS/push. If the
-  bus is not ACL'd, add a shared-secret field to the payload and verify it in the handlers.
 - **Rate limiter is per-process.** This deployment runs `replicas: 1`, so the per-pod token
   bucket IS the global limit. If you scale replicas, move the limiter to a shared store (Redis)
   or the effective rate becomes `replicas × limit`.

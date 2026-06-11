@@ -29,6 +29,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .user_agent(format!(
             "{SERVICE_NAME}/0.1 (+https://github.com/ORESoftware/k8s-cluster)"
         ))
+        // SSRF hardening: never follow redirects. The private/local-target guard
+        // only validates the operator-supplied URL, so a 3xx could otherwise bounce
+        // the fetch to an internal service or the cloud metadata endpoint.
+        .redirect(reqwest::redirect::Policy::none())
+        // Bound connect and total request time so a slow or stalled endpoint cannot
+        // pin an analysis/job worker (the body read inherits this overall deadline).
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(config.job_timeout)
         .build()?;
     let jobs = Arc::new(
         JobStore::load(

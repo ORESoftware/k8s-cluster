@@ -148,6 +148,82 @@ pub fn default_specs() -> Vec<OpenAiSpec> {
             supports_dimensions: false,
             keyless: true,
         },
+        OpenAiSpec {
+            id: "upstage",
+            base_url: "https://api.upstage.ai/v1/solar",
+            default_model: "embedding-query",
+            models: &["embedding-query", "embedding-passage"],
+            key_env: "UPSTAGE_API_KEY",
+            auth: Auth::Bearer,
+            supports_dimensions: false,
+            keyless: false,
+        },
+        OpenAiSpec {
+            id: "siliconflow",
+            base_url: "https://api.siliconflow.cn/v1",
+            default_model: "BAAI/bge-large-en-v1.5",
+            models: &["BAAI/bge-large-en-v1.5", "BAAI/bge-m3"],
+            key_env: "SILICONFLOW_API_KEY",
+            auth: Auth::Bearer,
+            supports_dimensions: false,
+            keyless: false,
+        },
+        OpenAiSpec {
+            id: "github",
+            // GitHub Models (OpenAI-compatible inference endpoint).
+            base_url: "https://models.inference.ai.azure.com",
+            default_model: "text-embedding-3-small",
+            models: &["text-embedding-3-small", "text-embedding-3-large", "cohere-embed-v3-english"],
+            key_env: "GITHUB_MODELS_TOKEN",
+            auth: Auth::Bearer,
+            supports_dimensions: true,
+            keyless: false,
+        },
+        OpenAiSpec {
+            id: "cloudflare",
+            // Workers AI OpenAI-compatible gateway; account id is in the path,
+            // so configure CLOUDFLARE_BASE_URL with the full account-scoped URL.
+            base_url: "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/v1",
+            default_model: "@cf/baai/bge-large-en-v1.5",
+            models: &["@cf/baai/bge-large-en-v1.5", "@cf/baai/bge-m3"],
+            key_env: "CLOUDFLARE_API_TOKEN",
+            auth: Auth::Bearer,
+            supports_dimensions: false,
+            keyless: false,
+        },
+        OpenAiSpec {
+            id: "databricks",
+            // Workspace-scoped serving endpoint; set DATABRICKS_BASE_URL.
+            base_url: "https://YOUR-WORKSPACE.cloud.databricks.com/serving-endpoints",
+            default_model: "databricks-bge-large-en",
+            models: &["databricks-bge-large-en", "databricks-gte-large-en"],
+            key_env: "DATABRICKS_TOKEN",
+            auth: Auth::Bearer,
+            supports_dimensions: false,
+            keyless: false,
+        },
+        OpenAiSpec {
+            id: "vllm",
+            // Self-hosted vLLM OpenAI-compatible server, in-cluster.
+            base_url: "http://dd-vllm.ai-ml.svc.cluster.local:8000/v1",
+            default_model: "intfloat/e5-mistral-7b-instruct",
+            models: &["intfloat/e5-mistral-7b-instruct", "BAAI/bge-large-en-v1.5"],
+            key_env: "VLLM_API_KEY",
+            auth: Auth::None,
+            supports_dimensions: false,
+            keyless: true,
+        },
+        OpenAiSpec {
+            id: "infinity",
+            // Self-hosted Infinity embedding server, in-cluster.
+            base_url: "http://dd-infinity.ai-ml.svc.cluster.local:7997/v1",
+            default_model: "BAAI/bge-large-en-v1.5",
+            models: &["BAAI/bge-large-en-v1.5", "BAAI/bge-m3"],
+            key_env: "INFINITY_API_KEY",
+            auth: Auth::None,
+            supports_dimensions: false,
+            keyless: true,
+        },
     ]
 }
 
