@@ -46,3 +46,7 @@
 	path = remote/submodules/soccer-sim-game-engine.rs
 	url = https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
 	branch = main
+[submodule "remote/deployments/dd-sound-recorder-rs"]
+	path = remote/deployments/dd-sound-recorder-rs
+	url = git@github.com:sonus-auris/sonus-auris-backend.rs.git
+	branch = main

@@ -52,17 +52,40 @@ spec:
               export CARGO_TARGET_DIR=/var/cache/dd-sound-recorder-rs/target
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              # The backend code lives in its own private repo, sonus-auris/sonus-auris-backend.rs,
+              # wired into this superproject as a git submodule at
+              # remote/deployments/dd-sound-recorder-rs. We procure it by cloning the superproject
+              # with --recurse-submodules. GH_PAT (dd-agent-secrets) authenticates the private fetch;
+              # the rewrites below live only in this pod's ephemeral $HOME/.gitconfig (emptyDir /tmp),
+              # so the token never lands on shared storage, and cover both the SSH url recorded in
+              # .gitmodules and the HTTPS superproject url.
+              if [ -n "${GH_PAT:-}" ]; then
+                git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "git@github.com:"
+                git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
+              fi
               source_root=/opt/dd-next-1
               if [ -n "${SOUND_RECORDER_GIT_URL:-}" ]; then
                 clone_root="$(mktemp -d /tmp/dd-sound-recorder-rs-source.XXXXXX)"
-                if git clone --depth 1 --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root"; then
+                if git clone --depth 1 --recurse-submodules \
+                     --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root"; then
                   source_root="$clone_root"
-                  echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+                  sub_sha="$(git -C "$clone_root/remote/deployments/dd-sound-recorder-rs" rev-parse --short HEAD 2>/dev/null || echo '?')"
+                  echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD)); backend submodule ${sub_sha}"
                 else
                   echo "[dd-sound-recorder-rs] source clone failed; using mounted source at ${source_root}" >&2
                 fi
               fi
-              cd "$source_root/remote/deployments/dd-sound-recorder-rs"
+              app_dir="$source_root/remote/deployments/dd-sound-recorder-rs"
+              # When we fall back to the read-only mounted superproject, the host must have already run
+              # `git submodule update --init` for this path. Fail loudly with a fix hint instead of a
+              # confusing cargo "could not find Cargo.toml" error.
+              if [ ! -f "$app_dir/Cargo.toml" ]; then
+                echo "[dd-sound-recorder-rs] FATAL: backend submodule not populated at $app_dir." >&2
+                echo "[dd-sound-recorder-rs] If using mounted source, run on the host: git -C \"$source_root\" submodule update --init remote/deployments/dd-sound-recorder-rs" >&2
+                echo "[dd-sound-recorder-rs] If using the git clone path, ensure GH_PAT (private-repo read) is set." >&2
+                exit 1
+              fi
+              cd "$app_dir"
               exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOME
@@ -75,6 +98,14 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: SOUND_RECORDER_GIT_REF
               value: dev
+            # Read access for the private backend submodule (sonus-auris/sonus-auris-backend.rs)
+            # pulled in by `git clone --recurse-submodules`. Same token used by dd-next-1-js.
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_PAT
+                  optional: true
             - name: HOST
               value: 0.0.0.0
             - name: PORT
