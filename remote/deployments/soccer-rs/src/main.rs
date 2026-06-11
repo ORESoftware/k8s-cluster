@@ -123,10 +123,13 @@ async fn game_api(
         Err(resp) => return resp,
     };
     let body = String::from_utf8_lossy(&body).into_owned();
+    // Routes are nested under /soccer so a single gateway prefix covers the whole
+    // server; the engine bridge speaks the un-prefixed /api/* paths, so strip it.
+    let bridge_path = uri.path().strip_prefix("/soccer").unwrap_or(uri.path());
     bridge_reply(
         session
             .bridge
-            .handle_request(method.as_str(), uri.path(), &body),
+            .handle_request(method.as_str(), bridge_path, &body),
     )
 }
 
@@ -180,9 +183,9 @@ fn live_html(id: Uuid) -> String {
          <script>\
            const id={id:?};\
            async function tick(){{\
-             const r=await fetch('/api/state?id='+id);\
+             const r=await fetch('/soccer/api/state?id='+id);\
              document.getElementById('state').textContent=await r.text();\
-             await fetch('/api/step?id='+id,{{method:'POST'}});\
+             await fetch('/soccer/api/step?id='+id,{{method:'POST',headers:{{'content-type':'application/json'}},body:'{{}}'}});\
              setTimeout(tick,100);\
            }}\
            tick();\
@@ -213,7 +216,7 @@ async fn main() {
         .route("/soccer/game", post(create_game).get(game_meta))
         .route("/soccer/live", get(live_ui))
         .route("/soccer/sim", get(sim_view))
-        .route("/api/*rest", any(game_api))
+        .route("/soccer/api/*rest", any(game_api))
         .with_state(state);
 
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());

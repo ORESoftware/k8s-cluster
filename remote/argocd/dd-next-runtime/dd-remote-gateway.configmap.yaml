@@ -1507,6 +1507,39 @@ data:
         proxy_pass http://dd-des-rs.default.svc.cluster.local:8112/;
       }
 
+      # New root soccer game server (dd-soccer-rs): uuid-keyed games. All of its
+      # routes live under /soccer (/soccer/game|live|sim, /soccer/api/*), so the
+      # prefix is PRESERVED (proxy_pass with no path) rather than stripped. SSE/WS
+      # friendly: buffering off + long timeouts + upgrade headers for live frames.
+      location = /soccer {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /soccer/;
+      }
+
+      location /soccer/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|HEAD|POST)$) {
+          return 405;
+        }
+        client_max_body_size 2m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-soccer-rs.default.svc.cluster.local:8113;
+      }
+
       location = /contracts {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
