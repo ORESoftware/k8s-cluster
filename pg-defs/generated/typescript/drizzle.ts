@@ -2156,6 +2156,244 @@ export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
 
+export const workflowDefinitionsStatusValues = ["draft","active","paused","archived"] as const;
+export const workflowDefinitionsStatusSchema = z.enum(workflowDefinitionsStatusValues);
+export type WorkflowDefinitionsStatus = z.infer<typeof workflowDefinitionsStatusSchema>;
+
+export const workflowDefinitions = pgTable(
+  "workflow_definitions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 200 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    steps: jsonb("steps").notNull(),
+    defaultRetry: jsonb("default_retry").default(sql`'{}'::jsonb`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    workflowDefinitionsSlugFormatChk: check("workflow_definitions_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
+    workflowDefinitionsStepsArrayChk: check("workflow_definitions_steps_array_chk", sql.raw("jsonb_typeof(steps) = 'array'")),
+    workflowDefinitionsStepsSizeChk: check("workflow_definitions_steps_size_chk", sql.raw("octet_length(steps::text) <= 262144")),
+    workflowDefinitionsDefaultRetryObjectChk: check("workflow_definitions_default_retry_object_chk", sql.raw("jsonb_typeof(default_retry) = 'object'")),
+    workflowDefinitionsLabelsArrayChk: check("workflow_definitions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    workflowDefinitionsMetaObjectChk: check("workflow_definitions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    workflowDefinitionsStatusChk: check("workflow_definitions_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'archived')")),
+    workflowDefinitionsSlugActiveUq: uniqueIndex("workflow_definitions_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    workflowDefinitionsStatusIdx: index("workflow_definitions_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    workflowDefinitionsUpdatedAtIdx: index("workflow_definitions_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const workflowDefinitionsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  displayName: z.string().max(200),
+  description: z.string(),
+  steps: jsonArraySchema,
+  defaultRetry: jsonObjectSchema,
+  status: workflowDefinitionsStatusSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const workflowDefinitionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
+  displayName: z.string().max(200),
+  description: z.string().optional().default(""),
+  steps: jsonArraySchema,
+  defaultRetry: jsonObjectSchema.optional().default({}),
+  status: workflowDefinitionsStatusSchema.optional().default("draft"),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const workflowDefinitionsUpdateSchema = workflowDefinitionsInsertSchema.partial();
+export type WorkflowDefinitionsRow = z.infer<typeof workflowDefinitionsRowSchema>;
+export type WorkflowDefinitionsInsert = z.infer<typeof workflowDefinitionsInsertSchema>;
+export type WorkflowDefinitionsUpdate = z.infer<typeof workflowDefinitionsUpdateSchema>;
+
+export const workflowRunsStatusValues = ["pending","running","sleeping","waiting","completed","failed","canceled"] as const;
+export const workflowRunsStatusSchema = z.enum(workflowRunsStatusValues);
+export type WorkflowRunsStatus = z.infer<typeof workflowRunsStatusSchema>;
+
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    definitionId: uuid("definition_id").notNull(),
+    definitionSlug: varchar("definition_slug", { length: 120 }).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'pending'`).notNull(),
+    currentStepIndex: integer("current_step_index").default(sql`0`).notNull(),
+    attempt: integer("attempt").default(sql`0`).notNull(),
+    input: jsonb("input").default(sql`'null'::jsonb`).notNull(),
+    context: jsonb("context").default(sql`'{}'::jsonb`).notNull(),
+    output: jsonb("output"),
+    lastError: text("last_error"),
+    wakeAt: timestamp("wake_at", { withTimezone: true, mode: "string" }),
+    waitDeadline: timestamp("wait_deadline", { withTimezone: true, mode: "string" }),
+    leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "string" }),
+    signals: jsonb("signals").default(sql`'[]'::jsonb`).notNull(),
+    idempotencyKey: varchar("idempotency_key", { length: 200 }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+  },
+  (table) => ({
+    workflowRunsStatusChk: check("workflow_runs_status_chk", sql.raw("status in ('pending', 'running', 'sleeping', 'waiting', 'completed', 'failed', 'canceled')")),
+    workflowRunsCurrentStepIndexChk: check("workflow_runs_current_step_index_chk", sql.raw("current_step_index >= 0")),
+    workflowRunsAttemptChk: check("workflow_runs_attempt_chk", sql.raw("attempt >= 0")),
+    workflowRunsContextObjectChk: check("workflow_runs_context_object_chk", sql.raw("jsonb_typeof(context) = 'object'")),
+    workflowRunsSignalsArrayChk: check("workflow_runs_signals_array_chk", sql.raw("jsonb_typeof(signals) = 'array'")),
+    workflowRunsLastErrorSizeChk: check("workflow_runs_last_error_size_chk", sql.raw("last_error is null or octet_length(last_error) <= 8192")),
+    workflowRunsDefinitionIdIdx: index("workflow_runs_definition_id_idx").on(table.definitionId),
+    workflowRunsStatusIdx: index("workflow_runs_status_idx").on(table.status),
+    workflowRunsDueIdx: index("workflow_runs_due_idx").on(table.wakeAt).where(sql.raw("status in ('pending', 'running', 'sleeping', 'waiting')")),
+    workflowRunsIdempotencyKeyUq: uniqueIndex("workflow_runs_idempotency_key_uq").on(table.definitionId, table.idempotencyKey).where(sql.raw("idempotency_key is not null")),
+  }),
+);
+
+export const workflowRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  definitionId: z.string().uuid(),
+  definitionSlug: z.string().max(120),
+  status: workflowRunsStatusSchema,
+  currentStepIndex: z.number().int().min(0),
+  attempt: z.number().int().min(0),
+  input: jsonObjectSchema,
+  context: jsonObjectSchema,
+  output: jsonObjectSchema.nullable(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  wakeAt: z.string().datetime().nullable(),
+  waitDeadline: z.string().datetime().nullable(),
+  leaseUntil: z.string().datetime().nullable(),
+  signals: jsonArraySchema,
+  idempotencyKey: z.string().max(200).nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+});
+
+export const workflowRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  definitionId: z.string().uuid(),
+  definitionSlug: z.string().max(120),
+  status: workflowRunsStatusSchema.optional().default("pending"),
+  currentStepIndex: z.number().int().min(0).optional().default(0),
+  attempt: z.number().int().min(0).optional().default(0),
+  input: jsonObjectSchema.optional(),
+  context: jsonObjectSchema.optional().default({}),
+  output: jsonObjectSchema.nullable().optional(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  wakeAt: z.string().datetime().nullable().optional(),
+  waitDeadline: z.string().datetime().nullable().optional(),
+  leaseUntil: z.string().datetime().nullable().optional(),
+  signals: jsonArraySchema.optional().default([]),
+  idempotencyKey: z.string().max(200).nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+});
+
+export const workflowRunsUpdateSchema = workflowRunsInsertSchema.partial();
+export type WorkflowRunsRow = z.infer<typeof workflowRunsRowSchema>;
+export type WorkflowRunsInsert = z.infer<typeof workflowRunsInsertSchema>;
+export type WorkflowRunsUpdate = z.infer<typeof workflowRunsUpdateSchema>;
+
+export const workflowStepRunsStatusValues = ["running","succeeded","failed"] as const;
+export const workflowStepRunsStatusSchema = z.enum(workflowStepRunsStatusValues);
+export type WorkflowStepRunsStatus = z.infer<typeof workflowStepRunsStatusSchema>;
+
+export const workflowStepRuns = pgTable(
+  "workflow_step_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    stepIndex: integer("step_index").notNull(),
+    stepName: varchar("step_name", { length: 200 }).notNull(),
+    stepType: varchar("step_type", { length: 32 }).default(sql`'activity'`).notNull(),
+    functionRef: varchar("function_ref", { length: 200 }).default(sql`''`).notNull(),
+    attempt: integer("attempt").notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    input: jsonb("input"),
+    output: jsonb("output"),
+    error: text("error"),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    workflowStepRunsStatusChk: check("workflow_step_runs_status_chk", sql.raw("status in ('running', 'succeeded', 'failed')")),
+    workflowStepRunsStepIndexChk: check("workflow_step_runs_step_index_chk", sql.raw("step_index >= 0")),
+    workflowStepRunsAttemptChk: check("workflow_step_runs_attempt_chk", sql.raw("attempt >= 0")),
+    workflowStepRunsErrorSizeChk: check("workflow_step_runs_error_size_chk", sql.raw("error is null or octet_length(error) <= 8192")),
+    workflowStepRunsRunIdIdx: index("workflow_step_runs_run_id_idx").on(table.runId, table.stepIndex, table.attempt),
+  }),
+);
+
+export const workflowStepRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  stepIndex: z.number().int().min(0),
+  stepName: z.string().max(200),
+  stepType: z.string().max(32),
+  functionRef: z.string().max(200),
+  attempt: z.number().int().min(0),
+  status: workflowStepRunsStatusSchema,
+  input: jsonObjectSchema.nullable(),
+  output: jsonObjectSchema.nullable(),
+  error: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  durationMs: z.number().int().nullable(),
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+});
+
+export const workflowStepRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  stepIndex: z.number().int().min(0),
+  stepName: z.string().max(200),
+  stepType: z.string().max(32).optional().default("activity"),
+  functionRef: z.string().max(200).optional().default(""),
+  attempt: z.number().int().min(0),
+  status: workflowStepRunsStatusSchema,
+  input: jsonObjectSchema.nullable().optional(),
+  output: jsonObjectSchema.nullable().optional(),
+  error: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  durationMs: z.number().int().nullable().optional(),
+  startedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+});
+
+export const workflowStepRunsUpdateSchema = workflowStepRunsInsertSchema.partial();
+export type WorkflowStepRunsRow = z.infer<typeof workflowStepRunsRowSchema>;
+export type WorkflowStepRunsInsert = z.infer<typeof workflowStepRunsInsertSchema>;
+export type WorkflowStepRunsUpdate = z.infer<typeof workflowStepRunsUpdateSchema>;
+
 export const containerPoolImageRevisionsSourceValues = ["disk-default","user","system"] as const;
 export const containerPoolImageRevisionsSourceSchema = z.enum(containerPoolImageRevisionsSourceValues);
 export type ContainerPoolImageRevisionsSource = z.infer<typeof containerPoolImageRevisionsSourceSchema>;

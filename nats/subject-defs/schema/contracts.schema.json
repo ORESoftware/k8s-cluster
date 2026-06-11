@@ -45,6 +45,27 @@
         "kind": "static",
         "subject": "dd.remote.contracts.solana.settlement.results",
         "direction": "both"
+      },
+      {
+        "name": "BlockchainIndexEvents",
+        "description": "Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.",
+        "kind": "static",
+        "subject": "dd.remote.blockchain.index.events",
+        "direction": "publish"
+      },
+      {
+        "name": "BlockchainMevAlerts",
+        "description": "Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.",
+        "kind": "static",
+        "subject": "dd.remote.blockchain.mev.alerts",
+        "direction": "publish"
+      },
+      {
+        "name": "BlockchainBridgeAttestations",
+        "description": "Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.",
+        "kind": "static",
+        "subject": "dd.remote.blockchain.bridge.attestations",
+        "direction": "publish"
       }
     ]
   }

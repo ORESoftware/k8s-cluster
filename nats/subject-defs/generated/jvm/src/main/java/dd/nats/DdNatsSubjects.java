@@ -70,6 +70,24 @@ public final class DdNatsSubjects {
     public static final String BILLING_WEBHOOK_RECEIPTS_SUBJECT = "dd.remote.billing.webhooks.receipts";
 
     /**
+     * Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.
+     * Service: dd-contract-service
+     */
+    public static final String BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT = "dd.remote.blockchain.bridge.attestations";
+
+    /**
+     * Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.
+     * Service: dd-contract-service
+     */
+    public static final String BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.events";
+
+    /**
+     * Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
+     * Service: dd-contract-service
+     */
+    public static final String BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts";
+
+    /**
      * Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
      * Service: dd-chaos
      */
@@ -759,6 +777,19 @@ public final class DdNatsSubjects {
     public static final String WEBSOCKET_EVENTS_SUBJECT = "dd.remote.websocket.events";
 
     /**
+     * Run lifecycle and step events fanned out by the engine (run started/step succeeded/step failed/run completed/run failed/run canceled). Fan-out telemetry for visibility and downstream subscribers; not the durable source of truth. Default for NATS_WORKFLOW_EVENT_SUBJECT.
+     * Service: dd-gleam-lambda-runner
+     */
+    public static final String WORKFLOWS_EVENTS_SUBJECT = "dd.remote.workflows.events";
+
+    /**
+     * Start a new workflow run. Request/reply: payload is {"definitionId"|"definitionSlug", "input"?, "idempotencyKey"?}; the reply carries the created run id and status. Consumed by the runner's queue group so exactly one replica creates the run. Default for NATS_WORKFLOW_START_SUBJECT='dd.remote.workflows.start'.
+     * Service: dd-gleam-lambda-runner
+     */
+    public static final String WORKFLOWS_START_SUBJECT = "dd.remote.workflows.start";
+    public static final String WORKFLOWS_START_QUEUE_GROUP = "dd-gleam-workflow-engine";
+
+    /**
      * Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
      * Service: dd-wal-gateway
      */
@@ -1173,6 +1204,40 @@ public final class DdNatsSubjects {
     }
 
     /**
+     * Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {"name": "approved", "payload"?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'.
+     * Service: dd-gleam-lambda-runner
+     */
+    public static final String WORKFLOWS_SIGNAL_PATTERN = "dd.remote.workflows.signal.{run_id}";
+    public static final String WORKFLOWS_SIGNAL_WILDCARD = "dd.remote.workflows.signal.*";
+    public static final String WORKFLOWS_SIGNAL_QUEUE_GROUP = "dd-gleam-workflow-engine";
+    public record WorkflowsSignalSubjectParts(String runId) {}
+
+    public static String workflowsSignalSubject(String runId) {
+        return "dd.remote.workflows.signal." + runId;
+    }
+
+    public static Optional<WorkflowsSignalSubjectParts> parseWorkflowsSignalSubject(String subject) {
+        List<String> patternTokens = List.of("dd", "remote", "workflows", "signal", "{run_id}");
+        String[] subjectTokens = subject.split("\\.");
+        if (patternTokens.size() != subjectTokens.length) return Optional.empty();
+        String runId = null;
+        for (int i = 0; i < patternTokens.size(); i += 1) {
+            String p = patternTokens.get(i);
+            String s = subjectTokens[i];
+            if (p.startsWith("{") && p.endsWith("}")) {
+                String name = p.substring(1, p.length() - 1);
+                switch (name) {
+                    case "run_id" -> runId = s;
+                    default -> { return Optional.empty(); }
+                }
+            } else if (!p.equals(s)) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(new WorkflowsSignalSubjectParts(runId));
+    }
+
+    /**
      * Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
      * Service: dd-agent-sim-server
      */
@@ -1297,6 +1362,12 @@ public final class DdNatsSubjects {
      * Service: dd-remote-rest-api
      */
     public static final String THREAD_PREPARER_QUEUE_GROUP = "dd-remote-thread-preparer";
+
+    /**
+     * Shared queue group used by workflow-engine replicas for run start and signal delivery.
+     * Service: dd-gleam-lambda-runner
+     */
+    public static final String WORKFLOW_ENGINE_QUEUE_GROUP = "dd-gleam-workflow-engine";
 
     /**
      * Default JetStream stream for the wal-gateway publish path. Overridable via WAL_GATEWAY_STREAM_NAME.

@@ -30,6 +30,7 @@
     "runtime-events.schema.json",
     "sat-smt.schema.json",
     "trading.schema.json",
-    "wal-cdc.schema.json"
+    "wal-cdc.schema.json",
+    "workflows.schema.json"
   ]
 }

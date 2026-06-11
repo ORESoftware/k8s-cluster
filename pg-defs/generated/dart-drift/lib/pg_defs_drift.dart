@@ -762,6 +762,93 @@ class LambdaFunctionTable extends Table {
   };
 }
 
+@DataClassName("WorkflowDefinitionsData")
+class WorkflowDefinitionsTable extends Table {
+  @override String get tableName => "workflow_definitions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 200)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get steps => text().named("steps").customConstraint("JSONB")();
+  TextColumn get defaultRetry => text().named("default_retry").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get status => text().named("status").clientDefault(() => 'draft')();
+  TextColumn get labels => text().named("labels").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("WorkflowRunsData")
+class WorkflowRunsTable extends Table {
+  @override String get tableName => "workflow_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get definitionId => text().named("definition_id").customConstraint("UUID")();
+  TextColumn get definitionSlug => text().named("definition_slug").withLength(max: 120)();
+  TextColumn get status => text().named("status").clientDefault(() => 'pending')();
+  IntColumn get currentStepIndex => integer().named("current_step_index").clientDefault(() => 0)();
+  IntColumn get attempt => integer().named("attempt").clientDefault(() => 0)();
+  TextColumn get input => text().named("input").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get context => text().named("context").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get output => text().named("output").nullable().customConstraint("JSONB")();
+  TextColumn get lastError => text().named("last_error").nullable()();
+  DateTimeColumn get wakeAt => dateTime().named("wake_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get waitDeadline => dateTime().named("wait_deadline").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get leaseUntil => dateTime().named("lease_until").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get signals => text().named("signals").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get idempotencyKey => text().named("idempotency_key").withLength(max: 200).nullable()();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("WorkflowStepRunsData")
+class WorkflowStepRunsTable extends Table {
+  @override String get tableName => "workflow_step_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  IntColumn get stepIndex => integer().named("step_index")();
+  TextColumn get stepName => text().named("step_name").withLength(max: 200)();
+  TextColumn get stepType => text().named("step_type").withLength(max: 32).clientDefault(() => 'activity')();
+  TextColumn get functionRef => text().named("function_ref").withLength(max: 200).clientDefault(() => '')();
+  IntColumn get attempt => integer().named("attempt")();
+  TextColumn get status => text().named("status")();
+  TextColumn get input => text().named("input").nullable().customConstraint("JSONB")();
+  TextColumn get output => text().named("output").nullable().customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  IntColumn get durationMs => integer().named("duration_ms").nullable()();
+  DateTimeColumn get startedAt => dateTime().named("started_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("ContainerPoolImageRevisionsData")
 class ContainerPoolImageRevisionsTable extends Table {
   @override String get tableName => "container_pool_image_revisions";
@@ -2911,6 +2998,9 @@ const List<Type> registeredDriftTables = <Type>[
   MipSolverJobsTable,
   MipSolverEventsTable,
   LambdaFunctionTable,
+  WorkflowDefinitionsTable,
+  WorkflowRunsTable,
+  WorkflowStepRunsTable,
   ContainerPoolImageRevisionsTable,
   ContainerPoolBuildRunsTable,
   PresenceConvsTable,

@@ -1400,6 +1400,170 @@ export class LambdaFunctionEntity {
 
 }
 
+@Index("workflow_definitions_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
+@Index("workflow_definitions_status_idx", ["status"], { where: "is_soft_deleted = false" })
+// workflow_definitions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "workflow_definitions" })
+export class WorkflowDefinitionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 200 })
+  displayName!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "steps", type: "jsonb" })
+  steps!: unknown[];
+
+  @Column({ name: "default_retry", type: "jsonb", default: () => "'{}'::jsonb" })
+  defaultRetry!: Record<string, unknown>;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'draft'" })
+  status!: string;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("workflow_runs_definition_id_idx", ["definitionId"])
+@Index("workflow_runs_status_idx", ["status"])
+@Index("workflow_runs_due_idx", ["wakeAt"], { where: "status in ('pending', 'running', 'sleeping', 'waiting')" })
+@Index("workflow_runs_idempotency_key_uq", ["definitionId", "idempotencyKey"], { unique: true, where: "idempotency_key is not null" })
+@Entity({ name: "workflow_runs" })
+export class WorkflowRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "definition_id", type: "uuid" })
+  definitionId!: string;
+
+  @Column({ name: "definition_slug", type: "varchar", length: 120 })
+  definitionSlug!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'pending'" })
+  status!: string;
+
+  @Column({ name: "current_step_index", type: "integer", default: () => "0" })
+  currentStepIndex!: number;
+
+  @Column({ name: "attempt", type: "integer", default: () => "0" })
+  attempt!: number;
+
+  @Column({ name: "input", type: "jsonb", default: () => "'null'::jsonb" })
+  input!: Record<string, unknown>;
+
+  @Column({ name: "context", type: "jsonb", default: () => "'{}'::jsonb" })
+  context!: Record<string, unknown>;
+
+  @Column({ name: "output", type: "jsonb", nullable: true })
+  output!: Record<string, unknown> | null;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "wake_at", type: "timestamptz", nullable: true })
+  wakeAt!: Date | null;
+
+  @Column({ name: "wait_deadline", type: "timestamptz", nullable: true })
+  waitDeadline!: Date | null;
+
+  @Column({ name: "lease_until", type: "timestamptz", nullable: true })
+  leaseUntil!: Date | null;
+
+  @Column({ name: "signals", type: "jsonb", default: () => "'[]'::jsonb" })
+  signals!: unknown[];
+
+  @Column({ name: "idempotency_key", type: "varchar", length: 200, nullable: true })
+  idempotencyKey!: string | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+}
+
+@Index("workflow_step_runs_run_id_idx", ["runId", "stepIndex", "attempt"])
+@Entity({ name: "workflow_step_runs" })
+export class WorkflowStepRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "step_index", type: "integer" })
+  stepIndex!: number;
+
+  @Column({ name: "step_name", type: "varchar", length: 200 })
+  stepName!: string;
+
+  @Column({ name: "step_type", type: "varchar", length: 32, default: () => "'activity'" })
+  stepType!: string;
+
+  @Column({ name: "function_ref", type: "varchar", length: 200, default: () => "''" })
+  functionRef!: string;
+
+  @Column({ name: "attempt", type: "integer" })
+  attempt!: number;
+
+  @Column({ name: "status", type: "varchar", length: 32 })
+  status!: string;
+
+  @Column({ name: "input", type: "jsonb", nullable: true })
+  input!: Record<string, unknown> | null;
+
+  @Column({ name: "output", type: "jsonb", nullable: true })
+  output!: Record<string, unknown> | null;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "duration_ms", type: "integer", nullable: true })
+  durationMs!: number | null;
+
+  @Column({ name: "started_at", type: "timestamptz", default: () => "now()" })
+  startedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+}
+
 // container_pool_image_revisions_slug_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Index("container_pool_image_revisions_slug_sha_uq", ["imageSlug", "dockerfileSha256"], { unique: true, where: "is_soft_deleted = false" })
 @Entity({ name: "container_pool_image_revisions" })

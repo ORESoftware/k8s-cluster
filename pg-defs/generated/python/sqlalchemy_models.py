@@ -2796,6 +2796,251 @@ class LambdaFunctionInsert(BaseModel):
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
 
+WorkflowDefinitionsStatus = Literal["draft", "active", "paused", "archived"]
+
+class WorkflowDefinitions(Base):
+    __tablename__ = "workflow_definitions"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="workflow_definitions_slug_format_chk"),
+        CheckConstraint("jsonb_typeof(steps) = 'array'", name="workflow_definitions_steps_array_chk"),
+        CheckConstraint("octet_length(steps::text) <= 262144", name="workflow_definitions_steps_size_chk"),
+        CheckConstraint("jsonb_typeof(default_retry) = 'object'", name="workflow_definitions_default_retry_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="workflow_definitions_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="workflow_definitions_meta_object_chk"),
+        CheckConstraint("status in ('draft', 'active', 'paused', 'archived')", name="workflow_definitions_status_chk"),
+        Index("workflow_definitions_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("workflow_definitions_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("workflow_definitions_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    steps: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    default_retry: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'draft'"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class WorkflowDefinitionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    displayName: str = Field(..., max_length=200)
+    description: str
+    steps: list[Any]
+    defaultRetry: dict[str, Any]
+    status: WorkflowDefinitionsStatus
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class WorkflowDefinitionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
+    displayName: str = Field(..., max_length=200)
+    description: str | None = ""
+    steps: list[Any]
+    defaultRetry: dict[str, Any] | None = Field(default_factory=dict)
+    status: WorkflowDefinitionsStatus | None = "draft"
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+WorkflowRunsStatus = Literal["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"]
+
+class WorkflowRuns(Base):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        CheckConstraint("status in ('pending', 'running', 'sleeping', 'waiting', 'completed', 'failed', 'canceled')", name="workflow_runs_status_chk"),
+        CheckConstraint("current_step_index >= 0", name="workflow_runs_current_step_index_chk"),
+        CheckConstraint("attempt >= 0", name="workflow_runs_attempt_chk"),
+        CheckConstraint("jsonb_typeof(context) = 'object'", name="workflow_runs_context_object_chk"),
+        CheckConstraint("jsonb_typeof(signals) = 'array'", name="workflow_runs_signals_array_chk"),
+        CheckConstraint("last_error is null or octet_length(last_error) <= 8192", name="workflow_runs_last_error_size_chk"),
+        Index("workflow_runs_definition_id_idx", "definition_id"),
+        Index("workflow_runs_status_idx", "status"),
+        Index("workflow_runs_due_idx", "wake_at", postgresql_where=text("status in ('pending', 'running', 'sleeping', 'waiting')")),
+        Index("workflow_runs_idempotency_key_uq", "definition_id", "idempotency_key", unique=True, postgresql_where=text("idempotency_key is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    definition_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    definition_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'pending'"))
+    current_step_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    attempt: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    input: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'null'::jsonb"))
+    context: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    wake_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    wait_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    signals: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class WorkflowRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    definitionId: UUID
+    definitionSlug: str = Field(..., max_length=120)
+    status: WorkflowRunsStatus
+    currentStepIndex: int = Field(..., ge=0)
+    attempt: int = Field(..., ge=0)
+    input: dict[str, Any]
+    context: dict[str, Any]
+    output: dict[str, Any] | None = None
+    lastError: str | None = None
+    wakeAt: datetime | None = None
+    waitDeadline: datetime | None = None
+    leaseUntil: datetime | None = None
+    signals: list[Any]
+    idempotencyKey: str | None = Field(None, max_length=200)
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("workflow_runs.last_error exceeds 8192 bytes")
+        return value
+
+class WorkflowRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    definitionId: UUID
+    definitionSlug: str = Field(..., max_length=120)
+    status: WorkflowRunsStatus | None = "pending"
+    currentStepIndex: int | None = Field(0, ge=0)
+    attempt: int | None = Field(0, ge=0)
+    input: dict[str, Any] | None = Field(default_factory=dict)
+    context: dict[str, Any] | None = Field(default_factory=dict)
+    output: dict[str, Any] | None = None
+    lastError: str | None = None
+    wakeAt: datetime | None = None
+    waitDeadline: datetime | None = None
+    leaseUntil: datetime | None = None
+    signals: list[Any] | None = Field(default_factory=list)
+    idempotencyKey: str | None = Field(None, max_length=200)
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("workflow_runs.last_error exceeds 8192 bytes")
+        return value
+
+WorkflowStepRunsStatus = Literal["running", "succeeded", "failed"]
+
+class WorkflowStepRuns(Base):
+    __tablename__ = "workflow_step_runs"
+    __table_args__ = (
+        CheckConstraint("status in ('running', 'succeeded', 'failed')", name="workflow_step_runs_status_chk"),
+        CheckConstraint("step_index >= 0", name="workflow_step_runs_step_index_chk"),
+        CheckConstraint("attempt >= 0", name="workflow_step_runs_attempt_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 8192", name="workflow_step_runs_error_size_chk"),
+        Index("workflow_step_runs_run_id_idx", "run_id", "step_index", "attempt"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    step_index: Mapped[int] = mapped_column(Integer(), nullable=False)
+    step_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    step_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'activity'"))
+    function_ref: Mapped[str] = mapped_column(String(200), nullable=False, server_default=text("''"))
+    attempt: Mapped[int] = mapped_column(Integer(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    input: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class WorkflowStepRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    stepIndex: int = Field(..., ge=0)
+    stepName: str = Field(..., max_length=200)
+    stepType: str = Field(..., max_length=32)
+    functionRef: str = Field(..., max_length=200)
+    attempt: int = Field(..., ge=0)
+    status: WorkflowStepRunsStatus
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    error: str | None = None
+    durationMs: int | None = None
+    startedAt: datetime
+    finishedAt: datetime | None = None
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("workflow_step_runs.error exceeds 8192 bytes")
+        return value
+
+class WorkflowStepRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    stepIndex: int = Field(..., ge=0)
+    stepName: str = Field(..., max_length=200)
+    stepType: str | None = Field("activity", max_length=32)
+    functionRef: str | None = Field("", max_length=200)
+    attempt: int = Field(..., ge=0)
+    status: WorkflowStepRunsStatus
+    input: dict[str, Any] | None = None
+    output: dict[str, Any] | None = None
+    error: str | None = None
+    durationMs: int | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("workflow_step_runs.error exceeds 8192 bytes")
+        return value
+
 ContainerPoolImageRevisionsSource = Literal["disk-default", "user", "system"]
 ContainerPoolImageRevisionsStatus = Literal["candidate", "active", "archived"]
 

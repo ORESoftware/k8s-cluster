@@ -50,6 +50,7 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
@@ -1657,6 +1658,177 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const WorkflowDefinitionsTable = "workflow_definitions"
+const WorkflowDefinitionsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      steps,
+      default_retry,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from workflow_definitions`
+
+var WorkflowDefinitionsStatusValues = []string{"draft", "active", "paused", "archived"}
+
+type WorkflowDefinitionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Steps datatypes.JSON `gorm:"column:steps;type:jsonb;not null" json:"steps"`
+	DefaultRetry datatypes.JSON `gorm:"column:default_retry;type:jsonb;default:'{}'::jsonb;not null" json:"defaultRetry"`
+	Status string `gorm:"column:status;type:varchar(32);default:'draft';not null" json:"status"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (WorkflowDefinitionsGorm) TableName() string { return WorkflowDefinitionsTable }
+
+func (value WorkflowDefinitionsGorm) Validate() error {
+	if !workflowDefinitionsSlugPattern.MatchString(value.Slug) { return errors.New("workflow_definitions.slug does not match the required pattern") }
+	if !validateJSONString(value.Steps) { return errors.New("workflow_definitions.steps must be valid JSON") }
+	if !validateJSONString(value.DefaultRetry) { return errors.New("workflow_definitions.default_retry must be valid JSON") }
+	if !containsString(WorkflowDefinitionsStatusValues, value.Status) { return errors.New("unsupported workflow_definitions.status") }
+	if !validateJSONString(value.Labels) { return errors.New("workflow_definitions.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("workflow_definitions.meta_data must be valid JSON") }
+	return nil
+}
+
+const WorkflowRunsTable = "workflow_runs"
+const WorkflowRunsSelectSQL = `select
+      id::text as id,
+      definition_id::text as definition_id,
+      definition_slug,
+      status,
+      current_step_index,
+      attempt,
+      input,
+      context,
+      output,
+      last_error,
+      to_char(wake_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wake_at,
+      to_char(wait_deadline at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wait_deadline,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      signals,
+      idempotency_key,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by
+    from workflow_runs`
+
+var WorkflowRunsStatusValues = []string{"pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"}
+
+type WorkflowRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	DefinitionId uuid.UUID `gorm:"column:definition_id;type:uuid;not null" json:"definitionId"`
+	DefinitionSlug string `gorm:"column:definition_slug;type:varchar(120);not null" json:"definitionSlug"`
+	Status string `gorm:"column:status;type:varchar(32);default:'pending';not null" json:"status"`
+	CurrentStepIndex int32 `gorm:"column:current_step_index;type:integer;default:0;not null" json:"currentStepIndex"`
+	Attempt int32 `gorm:"column:attempt;type:integer;default:0;not null" json:"attempt"`
+	Input datatypes.JSON `gorm:"column:input;type:jsonb;default:'null'::jsonb;not null" json:"input"`
+	Context datatypes.JSON `gorm:"column:context;type:jsonb;default:'{}'::jsonb;not null" json:"context"`
+	Output *datatypes.JSON `gorm:"column:output;type:jsonb" json:"output,omitempty"`
+	LastError *string `gorm:"column:last_error;type:text" json:"lastError,omitempty"`
+	WakeAt *time.Time `gorm:"column:wake_at;type:timestamptz" json:"wakeAt,omitempty"`
+	WaitDeadline *time.Time `gorm:"column:wait_deadline;type:timestamptz" json:"waitDeadline,omitempty"`
+	LeaseUntil *time.Time `gorm:"column:lease_until;type:timestamptz" json:"leaseUntil,omitempty"`
+	Signals datatypes.JSON `gorm:"column:signals;type:jsonb;default:'[]'::jsonb;not null" json:"signals"`
+	IdempotencyKey *string `gorm:"column:idempotency_key;type:varchar(200)" json:"idempotencyKey,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+}
+
+func (WorkflowRunsGorm) TableName() string { return WorkflowRunsTable }
+
+func (value WorkflowRunsGorm) Validate() error {
+	if !containsString(WorkflowRunsStatusValues, value.Status) { return errors.New("unsupported workflow_runs.status") }
+	if value.CurrentStepIndex < 0 { return errors.New("workflow_runs.current_step_index is below the minimum") }
+	if value.Attempt < 0 { return errors.New("workflow_runs.attempt is below the minimum") }
+	if !validateJSONString(value.Input) { return errors.New("workflow_runs.input must be valid JSON") }
+	if !validateJSONString(value.Context) { return errors.New("workflow_runs.context must be valid JSON") }
+	if value.Output != nil {
+		if !validateJSONString(*value.Output) { return errors.New("workflow_runs.output must be valid JSON") }
+	}
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 8192 { return errors.New("workflow_runs.last_error exceeds 8192 bytes") }
+	}
+	if !validateJSONString(value.Signals) { return errors.New("workflow_runs.signals must be valid JSON") }
+	return nil
+}
+
+const WorkflowStepRunsTable = "workflow_step_runs"
+const WorkflowStepRunsSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      step_index,
+      step_name,
+      step_type,
+      function_ref,
+      attempt,
+      status,
+      input,
+      output,
+      error,
+      duration_ms,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from workflow_step_runs`
+
+var WorkflowStepRunsStatusValues = []string{"running", "succeeded", "failed"}
+
+type WorkflowStepRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	StepIndex int32 `gorm:"column:step_index;type:integer;not null" json:"stepIndex"`
+	StepName string `gorm:"column:step_name;type:varchar(200);not null" json:"stepName"`
+	StepType string `gorm:"column:step_type;type:varchar(32);default:'activity';not null" json:"stepType"`
+	FunctionRef string `gorm:"column:function_ref;type:varchar(200);default:'';not null" json:"functionRef"`
+	Attempt int32 `gorm:"column:attempt;type:integer;not null" json:"attempt"`
+	Status string `gorm:"column:status;type:varchar(32);not null" json:"status"`
+	Input *datatypes.JSON `gorm:"column:input;type:jsonb" json:"input,omitempty"`
+	Output *datatypes.JSON `gorm:"column:output;type:jsonb" json:"output,omitempty"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	DurationMs *int32 `gorm:"column:duration_ms;type:integer" json:"durationMs,omitempty"`
+	StartedAt time.Time `gorm:"column:started_at;type:timestamptz;default:now();not null" json:"startedAt"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+}
+
+func (WorkflowStepRunsGorm) TableName() string { return WorkflowStepRunsTable }
+
+func (value WorkflowStepRunsGorm) Validate() error {
+	if value.StepIndex < 0 { return errors.New("workflow_step_runs.step_index is below the minimum") }
+	if value.Attempt < 0 { return errors.New("workflow_step_runs.attempt is below the minimum") }
+	if !containsString(WorkflowStepRunsStatusValues, value.Status) { return errors.New("unsupported workflow_step_runs.status") }
+	if value.Input != nil {
+		if !validateJSONString(*value.Input) { return errors.New("workflow_step_runs.input must be valid JSON") }
+	}
+	if value.Output != nil {
+		if !validateJSONString(*value.Output) { return errors.New("workflow_step_runs.output must be valid JSON") }
+	}
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 8192 { return errors.New("workflow_step_runs.error exceeds 8192 bytes") }
+	}
 	return nil
 }
 

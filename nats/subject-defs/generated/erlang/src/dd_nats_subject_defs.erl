@@ -14,6 +14,9 @@
     billing_sync_commands_subject/0,
     billing_sync_commands_queue_group/0,
     billing_webhook_receipts_subject/0,
+    blockchain_bridge_attestations_subject/0,
+    blockchain_index_events_subject/0,
+    blockchain_mev_alerts_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -173,6 +176,9 @@
     trading_signals_subject/0,
     trading_signals_queue_group/0,
     websocket_events_subject/0,
+    workflows_events_subject/0,
+    workflows_start_subject/0,
+    workflows_start_queue_group/0,
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_subject/4,
@@ -229,6 +235,11 @@
     parse_thread_tasks_subject/1,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    workflows_signal_pattern/0,
+    workflows_signal_wildcard/0,
+    workflows_signal_subject/1,
+    parse_workflows_signal_subject/1,
+    workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
     constraint_scheduler_queue_group/0,
@@ -250,6 +261,7 @@
     routing_workers_queue_group/0,
     sat_smt_server_queue_group/0,
     thread_preparer_queue_group/0,
+    workflow_engine_queue_group/0,
     cdc_stream_name/0,
     cdc_stream_subjects/0,
     cdc_stream_retention/0,
@@ -334,6 +346,18 @@ billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
 %% Redacted provider webhook receipt audit feed. Carries provider, external event id, event type, signature_ok, tenant/connection ids, and the payload sha256 prefix only. The raw webhook body and verification error detail are deliberately NOT published. Mirrors dd.remote.public_data.webhooks.events as an audit source, not a canonical store.
 %% Service: dd-billing-server
 billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
+
+%% Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.
+%% Service: dd-contract-service
+blockchain_bridge_attestations_subject() -> <<"dd.remote.blockchain.bridge.attestations"/utf8>>.
+
+%% Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.
+%% Service: dd-contract-service
+blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>>.
+
+%% Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
+%% Service: dd-contract-service
+blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
 
 %% Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 %% Service: dd-chaos
@@ -812,6 +836,15 @@ trading_signals_queue_group() -> <<"dd-trading-server"/utf8>>.
 %% Service: shared
 websocket_events_subject() -> <<"dd.remote.websocket.events"/utf8>>.
 
+%% Run lifecycle and step events fanned out by the engine (run started/step succeeded/step failed/run completed/run failed/run canceled). Fan-out telemetry for visibility and downstream subscribers; not the durable source of truth. Default for NATS_WORKFLOW_EVENT_SUBJECT.
+%% Service: dd-gleam-lambda-runner
+workflows_events_subject() -> <<"dd.remote.workflows.events"/utf8>>.
+
+%% Start a new workflow run. Request/reply: payload is {"definitionId"|"definitionSlug", "input"?, "idempotencyKey"?}; the reply carries the created run id and status. Consumed by the runner's queue group so exactly one replica creates the run. Default for NATS_WORKFLOW_START_SUBJECT='dd.remote.workflows.start'.
+%% Service: dd-gleam-lambda-runner
+workflows_start_subject() -> <<"dd.remote.workflows.start"/utf8>>.
+workflows_start_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
+
 %% Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 %% Service: dd-wal-gateway
 cdc_row_change_pattern() -> <<"{prefix}.{schema}.{table}.{op}"/utf8>>.
@@ -1156,6 +1189,35 @@ parse_thread_tasks_subject(Subject) ->
             end
     end.
 
+%% Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {"name": "approved", "payload"?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'.
+%% Service: dd-gleam-lambda-runner
+workflows_signal_pattern() -> <<"dd.remote.workflows.signal.{run_id}"/utf8>>.
+workflows_signal_wildcard() -> <<"dd.remote.workflows.signal.*"/utf8>>.
+workflows_signal_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
+workflows_signal_subject(RunId) ->
+    iolist_to_binary([<<"dd.remote.workflows.signal."/utf8>>, to_bin(RunId)]).
+
+parse_workflows_signal_subject(Subject) ->
+    SubjectBin = to_bin(Subject),
+    Tokens = binary:split(SubjectBin, <<".">>, [global]),
+    PatternTokens = [<<"dd"/utf8>>, <<"remote"/utf8>>, <<"workflows"/utf8>>, <<"signal"/utf8>>, <<"{run_id}"/utf8>>],
+    case length(Tokens) =:= length(PatternTokens) of
+        false -> error;
+        true ->
+            Pairs = lists:zip(PatternTokens, Tokens),
+            LiteralsOk = lists:all(fun({P, S}) ->
+                case is_placeholder(P) of
+                    true -> true;
+                    false -> P =:= S
+                end
+            end, Pairs),
+            case LiteralsOk of
+                false -> error;
+                true ->
+                    {ok, #{run_id => extract_param(Pairs, <<"{run_id}"/utf8>>)}}
+            end
+    end.
+
 %% Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
 %% Service: dd-agent-sim-server
 agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
@@ -1239,6 +1301,10 @@ sat_smt_server_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
 %% Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 %% Service: dd-remote-rest-api
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
+
+%% Shared queue group used by workflow-engine replicas for run start and signal delivery.
+%% Service: dd-gleam-lambda-runner
+workflow_engine_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 
 %% Default JetStream stream for the wal-gateway publish path. Overridable via WAL_GATEWAY_STREAM_NAME.
 %% Service: dd-wal-gateway

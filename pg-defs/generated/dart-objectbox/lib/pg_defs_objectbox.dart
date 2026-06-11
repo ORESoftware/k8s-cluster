@@ -2572,6 +2572,313 @@ class LambdaFunctionObjectBox {
 }
 
 @Entity()
+class WorkflowDefinitionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String displayName;
+
+  String description;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String steps;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String defaultRetry;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String labels;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  WorkflowDefinitionsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.description,
+    required this.steps,
+    required this.defaultRetry,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "description": description,
+    "steps": jsonDecode(steps),
+    "defaultRetry": jsonDecode(defaultRetry),
+    "status": status,
+    "labels": jsonDecode(labels),
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static WorkflowDefinitionsObjectBox fromJson(Map<String, Object?> json) {
+    return WorkflowDefinitionsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      displayName: json["displayName"] as String,
+      description: json["description"] as String,
+      steps: json["steps"] is String ? json["steps"] as String : jsonEncode(json["steps"]),
+      defaultRetry: json["defaultRetry"] is String ? json["defaultRetry"] as String : jsonEncode(json["defaultRetry"]),
+      status: json["status"] as String,
+      labels: json["labels"] is String ? json["labels"] as String : jsonEncode(json["labels"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class WorkflowRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String definitionId;
+
+  String definitionSlug;
+
+  String status;
+
+  int currentStepIndex;
+
+  int attempt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String input;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String context;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? output;
+
+  String? lastError;
+
+  String? wakeAt;
+
+  String? waitDeadline;
+
+  String? leaseUntil;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String signals;
+
+  String? idempotencyKey;
+
+  String? startedAt;
+
+  String? finishedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+
+  WorkflowRunsObjectBox({
+    required this.id,
+    required this.definitionId,
+    required this.definitionSlug,
+    required this.status,
+    required this.currentStepIndex,
+    required this.attempt,
+    required this.input,
+    required this.context,
+    this.output,
+    this.lastError,
+    this.wakeAt,
+    this.waitDeadline,
+    this.leaseUntil,
+    required this.signals,
+    this.idempotencyKey,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "definitionId": definitionId,
+    "definitionSlug": definitionSlug,
+    "status": status,
+    "currentStepIndex": currentStepIndex,
+    "attempt": attempt,
+    "input": jsonDecode(input),
+    "context": jsonDecode(context),
+    "output": jsonDecode(output),
+    "lastError": lastError,
+    "wakeAt": wakeAt,
+    "waitDeadline": waitDeadline,
+    "leaseUntil": leaseUntil,
+    "signals": jsonDecode(signals),
+    "idempotencyKey": idempotencyKey,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+  };
+
+  static WorkflowRunsObjectBox fromJson(Map<String, Object?> json) {
+    return WorkflowRunsObjectBox(
+      id: json["id"] as String,
+      definitionId: json["definitionId"] as String,
+      definitionSlug: json["definitionSlug"] as String,
+      status: json["status"] as String,
+      currentStepIndex: (json["currentStepIndex"] as num).toInt(),
+      attempt: (json["attempt"] as num).toInt(),
+      input: json["input"] is String ? json["input"] as String : jsonEncode(json["input"]),
+      context: json["context"] is String ? json["context"] as String : jsonEncode(json["context"]),
+      output: json["output"] is String ? json["output"] as String : jsonEncode(json["output"]),
+      lastError: json["lastError"] as String?,
+      wakeAt: json["wakeAt"] as String?,
+      waitDeadline: json["waitDeadline"] as String?,
+      leaseUntil: json["leaseUntil"] as String?,
+      signals: json["signals"] is String ? json["signals"] as String : jsonEncode(json["signals"]),
+      idempotencyKey: json["idempotencyKey"] as String?,
+      startedAt: json["startedAt"] as String?,
+      finishedAt: json["finishedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class WorkflowStepRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String runId;
+
+  int stepIndex;
+
+  String stepName;
+
+  String stepType;
+
+  String functionRef;
+
+  int attempt;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? input;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? output;
+
+  String? error;
+
+  int? durationMs;
+
+  String startedAt;
+
+  String? finishedAt;
+
+
+  WorkflowStepRunsObjectBox({
+    required this.id,
+    required this.runId,
+    required this.stepIndex,
+    required this.stepName,
+    required this.stepType,
+    required this.functionRef,
+    required this.attempt,
+    required this.status,
+    this.input,
+    this.output,
+    this.error,
+    this.durationMs,
+    required this.startedAt,
+    this.finishedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "stepIndex": stepIndex,
+    "stepName": stepName,
+    "stepType": stepType,
+    "functionRef": functionRef,
+    "attempt": attempt,
+    "status": status,
+    "input": jsonDecode(input),
+    "output": jsonDecode(output),
+    "error": error,
+    "durationMs": durationMs,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+  };
+
+  static WorkflowStepRunsObjectBox fromJson(Map<String, Object?> json) {
+    return WorkflowStepRunsObjectBox(
+      id: json["id"] as String,
+      runId: json["runId"] as String,
+      stepIndex: (json["stepIndex"] as num).toInt(),
+      stepName: json["stepName"] as String,
+      stepType: json["stepType"] as String,
+      functionRef: json["functionRef"] as String,
+      attempt: (json["attempt"] as num).toInt(),
+      status: json["status"] as String,
+      input: json["input"] is String ? json["input"] as String : jsonEncode(json["input"]),
+      output: json["output"] is String ? json["output"] as String : jsonEncode(json["output"]),
+      error: json["error"] as String?,
+      durationMs: json["durationMs"] == null ? null : (json["durationMs"] as num).toInt(),
+      startedAt: json["startedAt"] as String,
+      finishedAt: json["finishedAt"] as String?,
+    );
+  }
+}
+
+@Entity()
 class ContainerPoolImageRevisionsObjectBox {
   @Id()
   int obxId = 0;

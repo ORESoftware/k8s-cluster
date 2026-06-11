@@ -1649,6 +1649,198 @@ pub struct LambdaFunctionDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    workflow_definitions (id) {
+        id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        description -> Text,
+        steps -> Jsonb,
+        default_retry -> Jsonb,
+        status -> Varchar,
+        labels -> Jsonb,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = workflow_definitions)]
+pub struct WorkflowDefinitionsDieselRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub steps: Value,
+    pub default_retry: Value,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = workflow_definitions)]
+pub struct WorkflowDefinitionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub steps: Option<Value>,
+    pub default_retry: Option<Value>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    workflow_runs (id) {
+        id -> Uuid,
+        definition_id -> Uuid,
+        definition_slug -> Varchar,
+        status -> Varchar,
+        current_step_index -> Int4,
+        attempt -> Int4,
+        input -> Jsonb,
+        context -> Jsonb,
+        output -> Nullable<Jsonb>,
+        last_error -> Nullable<Text>,
+        wake_at -> Nullable<Timestamptz>,
+        wait_deadline -> Nullable<Timestamptz>,
+        lease_until -> Nullable<Timestamptz>,
+        signals -> Jsonb,
+        idempotency_key -> Nullable<Varchar>,
+        started_at -> Nullable<Timestamptz>,
+        finished_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = workflow_runs)]
+pub struct WorkflowRunsDieselRow {
+    pub id: Uuid,
+    pub definition_id: Uuid,
+    pub definition_slug: String,
+    pub status: String,
+    pub current_step_index: i32,
+    pub attempt: i32,
+    pub input: Value,
+    pub context: Value,
+    pub output: Option<Value>,
+    pub last_error: Option<String>,
+    pub wake_at: Option<DateTime<Utc>>,
+    pub wait_deadline: Option<DateTime<Utc>>,
+    pub lease_until: Option<DateTime<Utc>>,
+    pub signals: Value,
+    pub idempotency_key: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = workflow_runs)]
+pub struct WorkflowRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub definition_id: Option<Uuid>,
+    pub definition_slug: Option<String>,
+    pub status: Option<String>,
+    pub current_step_index: Option<i32>,
+    pub attempt: Option<i32>,
+    pub input: Option<Value>,
+    pub context: Option<Value>,
+    pub output: Option<Value>,
+    pub last_error: Option<String>,
+    pub wake_at: Option<DateTime<Utc>>,
+    pub wait_deadline: Option<DateTime<Utc>>,
+    pub lease_until: Option<DateTime<Utc>>,
+    pub signals: Option<Value>,
+    pub idempotency_key: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    workflow_step_runs (id) {
+        id -> Uuid,
+        run_id -> Uuid,
+        step_index -> Int4,
+        step_name -> Varchar,
+        step_type -> Varchar,
+        function_ref -> Varchar,
+        attempt -> Int4,
+        status -> Varchar,
+        input -> Nullable<Jsonb>,
+        output -> Nullable<Jsonb>,
+        error -> Nullable<Text>,
+        duration_ms -> Nullable<Int4>,
+        started_at -> Timestamptz,
+        finished_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = workflow_step_runs)]
+pub struct WorkflowStepRunsDieselRow {
+    pub id: Uuid,
+    pub run_id: Uuid,
+    pub step_index: i32,
+    pub step_name: String,
+    pub step_type: String,
+    pub function_ref: String,
+    pub attempt: i32,
+    pub status: String,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = workflow_step_runs)]
+pub struct WorkflowStepRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub run_id: Option<Uuid>,
+    pub step_index: Option<i32>,
+    pub step_name: Option<String>,
+    pub step_type: Option<String>,
+    pub function_ref: Option<String>,
+    pub attempt: Option<i32>,
+    pub status: Option<String>,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     container_pool_image_revisions (id) {
         id -> Uuid,
         image_slug -> Varchar,
