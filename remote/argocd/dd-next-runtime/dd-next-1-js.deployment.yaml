@@ -71,13 +71,14 @@ spec:
               # WEBPACK, not turbopack (Next 16 default), and NOT output:'standalone' — both ballooned
               # RSS past 60Gi; webpack peaks ~22Gi.
               CUR=$(git -C "$src" rev-parse HEAD)
-              if [ "$(cat /cache/.built_sha 2>/dev/null)" = "$CUR" ] && [ -f "$src/.next/BUILD_ID" ]; then
-                echo "[build] reusing existing build for $CUR — skipping install + build"
+              SIG="$CUR:basePath=${DD_BASE_PATH:-none}"
+              if [ "$(cat /cache/.built_sig 2>/dev/null)" = "$SIG" ] && [ -f "$src/.next/BUILD_ID" ]; then
+                echo "[build] reusing existing build for $SIG — skipping install + build"
               else
                 pnpm install --frozen-lockfile --node-linker=hoisted --prod=false --store-dir /cache/pnpm-store
                 pnpm run prebuild
                 DD_APP_IS_BUILD=yes NEXT_NO_STATIC_GENERATION=1 SKIP_NEXT_SITEMAP=true NODE_OPTIONS="--max-old-space-size=12288" pnpm exec next build --webpack
-                echo "$CUR" > /cache/.built_sha
+                echo "$SIG" > /cache/.built_sig
               fi
               exec env DD_APP_IS_RUNNING=yes pnpm exec next start -H 0.0.0.0 -p "${PORT:-3000}"
           env:
@@ -93,6 +94,8 @@ spec:
             # (e.g. a re-exported route-segment config that breaks the turbopack build).
             - name: DD_REPO_REF
               value: prod
+            # Served at the /dd-next-1 subpath (web-home keeps the canonical /). The app's root-relative
+            # client /api fetches are handled by the gateway's Referer-based /api routing, not basePath.
             - name: DD_BASE_PATH
               value: /dd-next-1
             - name: NODE_OPTIONS
@@ -136,7 +139,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 10
             failureThreshold: 3
-          # Liveness is a cheap TCP check — a slow SSR of /dd-next-1 must NOT trigger a kill+rebuild.
+          # Liveness is a cheap TCP check — a slow SSR must NOT trigger a kill+rebuild.
           livenessProbe:
             tcpSocket:
               port: http

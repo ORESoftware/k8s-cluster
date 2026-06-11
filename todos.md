@@ -163,3 +163,70 @@ separate, contained follow-up; items are append-only per the file convention.
    `ssm:GetCommandInvocation`/`ssm:ListCommandInvocations`/
    `ssm:DescribeInstanceInformation`, `cloudwatch:GetMetricStatistics` — and
    rotate the pasted key.
+
+---
+
+## Multi-app subpath hosting on one machine (dd-next-1-js + future apps) — 2026-06-11
+
+**Goal:** serve N apps on the single EC2 cluster, each at its own *path*
+(`/dd-next-1`, `/app2`, …) — NOT each at `/` — **without editing application
+code** to add a path prefix. Keep dd-next-1 at `https://<host>/dd-next-1`.
+
+**The hard constraint (why this isn't a one-toggle infra feature):** a root-built
+SPA emits root-relative URLs (`/_next`, `fetch("/api")`). The browser sends those
+to the *domain root*, so a path-prefix proxy can't transparently serve it — infra
+would have to rewrite every URL in every response (fragile for JS-built URLs).
+The only robust prefix mechanism is the framework's `basePath`, which auto-prefixes
+links/assets/routing but NOT hand-written `fetch()`. Tried at the nginx gateway and
+proved unreliable: variable-upstream + `resolver` proxy_pass ignores a rewritten
+URI; `rewrite ... last` / `error_page` / static-upstream / concatenated-var
+proxy_pass all flapped or 400'd. Direct `/dd-next-1/*` is rock-solid; *adding* the
+prefix to root-relative calls at this gateway is not.
+
+**Chosen solution = `basePath` (deploy-time, NOT app code) + a Cloudflare Worker:**
+
+1. **Each app built with `basePath=/its-path`**, set at *deploy* via env
+   (`DD_BASE_PATH`, env-gated build sed in `dd-next-1-js.deployment.yaml`) — the
+   repo is untouched, no fetch calls edited. Handles links/assets/routing prefix.
+
+2. **One Cloudflare Worker** for all apps — path-routes pages, and Referer-routes
+   the leftover root-relative client calls to the owning app:
+   ```js
+   const ORIGIN = "https://98.90.186.114";
+   const APPS = ["/dd-next-1","/app2","/app3","/app4","/app5"]; // each app's basePath
+   const ROOT = ["/api/","/pub/","/data/"];                     // hand-written fetch roots
+   export default { async fetch(req) {
+     const u = new URL(req.url); let path = u.pathname;
+     const isAppPath = APPS.some(a => path === a || path.startsWith(a + "/"));
+     if (!isAppPath && ROOT.some(p => path.startsWith(p))) {
+       const ref = new URL(req.headers.get("Referer") || "http://x/").pathname;
+       const owner = APPS.find(a => ref === a || ref.startsWith(a + "/"));
+       if (owner) path = owner + path;            // /api/x -> /dd-next-1/api/x
+     }
+     const out = new Request(ORIGIN + path + u.search, req);
+     out.headers.set("Host", u.host);
+     return fetch(out);
+   }};
+   ```
+
+3. **Cloudflare routes:** attach the Worker to `<zone>/dd-next-1*` … `/app5*`
+   PLUS `/api*`, `/pub*`, `/data*` (so root fetches reach it).
+
+4. **One-time:** install a **Cloudflare Origin CA cert** on the gateway so CF→origin
+   TLS validates (replaces the self-signed/IP cert).
+
+**Single dependency:** keys on `Referer` to attribute a root `fetch` to its app.
+The app sends `Referrer-Policy: strict-origin-when-cross-origin` → same-origin
+requests carry the full path, so it works. The only Referer-free alternative is
+`basePath`-aware fetches = app code change (ruled out).
+
+**Cleanup owed on the cluster side (the nginx referer experiments are committed and
+should be reverted to a clean state):**
+- [ ] Revert `dd-remote-gateway.configmap.yaml` to: web-home at `location = /` and
+      catch-all `/`, plus the `/dd-next-1` location (32k proxy buffers) — and REMOVE
+      the referer map, `upstream ddn1_up`, `location /api/`, `location ~ ^/(pub|data)/`,
+      `@ddn1_proxy`, and the `sub_filter` injection. (Clean base = commit `e6e234c4`.)
+- [ ] Keep `dd-next-1-js.deployment.yaml` with `DD_BASE_PATH=/dd-next-1`, probes on
+      `/dd-next-1`, tcp liveness, and the `.built_sig` skip-rebuild cache.
+- [ ] Stand up the Cloudflare Worker + routes + Origin CA cert (Cloudflare account —
+      not doable from the cluster side).
