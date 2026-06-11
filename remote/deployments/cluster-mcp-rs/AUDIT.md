@@ -170,3 +170,15 @@ First supply-chain + build + pod-posture pass.
 
 The Gleam sibling was brought to non-root in the same pass (it previously ran as
 root while this server already ran as uid 1000) — see `../gleam-mcp-server/AUDIT.md`.
+
+## Pass 6 (2026-06-09)
+
+Secret least-privilege / parity. This server already mounted only the secret it
+uses (`SERVER_AUTH_SECRET` → runtime-config auth) — no unused-credential problem
+like the Gleam sibling's RDS mounts. But the `MCP_AUTH_SECRET` bearer gate added
+in pass 2 was **unwired**: the code reads `MCP_AUTH_SECRET`, the manifest comment
+said "supply it from a Secret", yet no mount existed — so flipping
+`MCP_REQUIRE_AUTH=true` would fail closed (deny all) with no way to authenticate.
+Added an explicit optional `MCP_AUTH_SECRET` key mount from
+`dd-cluster-mcp-rs-secrets`, matching the Gleam pod. Renders; `cargo build` +
+11 tests green.

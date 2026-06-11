@@ -79,6 +79,7 @@ jobs:
             general/local-k8s-cleanup.test.ts
             general/mdp-optimizer-config.test.ts
             general/nats-config.test.ts
+            general/nats-connect-resilience.test.ts
             general/nats-shadow-handoff.test.ts
             general/observability-config.test.ts
             general/redis-cache-config.test.ts

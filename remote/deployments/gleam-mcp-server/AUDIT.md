@@ -251,3 +251,52 @@ Manifest renders (`kubectl kustomize`); build + 14 tests still green. (No
 automated dependency-CVE scan exists for the Gleam/Erlang side the way
 `cargo audit` covers Rust; the dependency surface is much smaller — mist + a few
 gleam_* packages pinned in `manifest.toml`.)
+
+## Pass 5 (2026-06-09)
+
+Audited the newly-added `dd_cli_config_client` startup dependency and swept for
+dead code.
+
+- **Dead code removed.** `src/mcp_observability.erl` (375 lines) was an orphaned
+  earlier observability snapshotter — referenced **nowhere** repo-wide (the live
+  path is `gleam_mcp_observability.erl` via `observability.gleam`) and carrying
+  **none** of the hardening the live module got: no `{autoredirect, false}`, no
+  `gleam_mcp_redact` body redaction, no `safe_base_url` allowlist. Harmless while
+  unwired, but its generic `mcp_observability:snapshot()` name invited a future
+  dev to mount it and silently reintroduce the SSRF-redirect + unredacted-body
+  leak. `git rm`'d it. Build + 14 tests unaffected (proving it was dead).
+- **`dd_cli_config_client` (clean).** The server calls `load_once()` at boot and
+  reads specific keys via `getenv/2` (used by `gleam_mcp_redact`, `k8s`,
+  `observability`). Merge precedence is env-over-file-defaults (so a config file
+  can't override deployment env — no trust inversion), the config file is
+  node/operator-controlled (read-only rootfs blocks in-pod writes), and crucially
+  `snapshot_json()` — which serialises **every** env var including secrets — is
+  **not** wired to any route here. No issue for this server.
+  - *Shared-lib note (not changed):* `dd_cli_config_client_ffi:snapshot_json/0`
+    dumps all env values unredacted. Any consumer that routes it leaks secrets —
+    worth redacting at the source or never exposing it.
+
+Dependencies still clean (`cargo audit` green on the Rust sibling). After five
+passes the application code is solid; remaining items are cross-service infra
+(NATS TLS, fleet-wide rustls bump, prebuilt Rust image) rather than MCP bugs.
+
+## Pass 6 (2026-06-09)
+
+Least-privilege on mounted secrets.
+
+- **Unused DB credentials dropped.** The pod mounted `RDS_DATABASE_URL` and
+  `AGENT_TASKS_RDS_DATABASE_URL` (Postgres connection strings, with creds) for a
+  database-backed contract-metadata tool that was never built — **no code path
+  reads either**. Worse, a whole-secret `envFrom: secretRef:
+  dd-gleam-mcp-server-secrets` re-injected the same keys regardless. Mounting
+  unused DB creds into a read-only pod that is reachable unauthenticated on the
+  in-VPC ingress is needless blast radius. Removed both explicit mounts **and**
+  the `envFrom`, and replaced them with an explicit `MCP_AUTH_SECRET` key mount
+  (the one key the code actually reads, for the optional bearer gate). The pod's
+  secret-derived env is now exactly `MCP_AUTH_SECRET` + `RUNTIME_CONFIG_SERVER_SECRET`.
+  *Follow-up (secrets layer, out of this manifest):* have External Secrets stop
+  syncing the RDS keys into `dd-gleam-mcp-server-secrets`, and re-provision an
+  explicit key when a DB-reading tool actually lands.
+
+Renders (`kubectl kustomize`); build + 14 tests green. The Rust sibling got the
+parity fix (its `MCP_AUTH_SECRET` gate had no secret source) — see its `AUDIT.md`.

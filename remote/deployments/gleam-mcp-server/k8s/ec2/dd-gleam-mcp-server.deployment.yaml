@@ -211,18 +211,15 @@ spec:
               value: /work/cache
             - name: GLEAM_HOME
               value: /work/gleam-home
-            - name: RDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: dd-gleam-mcp-server-secrets
-                  key: RDS_DATABASE_URL
-                  optional: true
-            - name: AGENT_TASKS_RDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: dd-gleam-mcp-server-secrets
-                  key: AGENT_TASKS_RDS_DATABASE_URL
-                  optional: true
+            # NOTE: RDS_DATABASE_URL / AGENT_TASKS_RDS_DATABASE_URL were mounted
+            # here for a future database-backed contract-metadata tool that was
+            # never built — no code path reads them. Mounting unused DB
+            # credentials into a read-only pod that is reachable unauthenticated
+            # on the in-VPC ingress path is needless blast radius, so they are
+            # dropped (along with the whole-secret envFrom below). Re-add an
+            # explicit secretKeyRef for the specific key when such a tool lands,
+            # and have External Secrets stop syncing the RDS keys into
+            # dd-gleam-mcp-server-secrets in the meantime.
             - name: MCP_PROMETHEUS_URL
               value: http://dd-prometheus.observability.svc.cluster.local:9090
             - name: MCP_LOKI_URL
@@ -255,6 +252,17 @@ spec:
             # JSON-RPC call without changing the NetworkPolicy.
             - name: MCP_REQUIRE_AUTH
               value: 'false'
+            # The only key this pod actually consumes from
+            # dd-gleam-mcp-server-secrets. Mounted explicitly (rather than via a
+            # whole-secret envFrom) so the pod never inherits unrelated keys.
+            # Absent today; populate the secret + flip MCP_REQUIRE_AUTH=true to
+            # enable the in-pod bearer gate.
+            - name: MCP_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleam-mcp-server-secrets
+                  key: MCP_AUTH_SECRET
+                  optional: true
             - name: MCP_OBSERVABILITY_TIMEOUT_MS
               value: '1200'
             - name: MCP_OBSERVABILITY_BODY_LIMIT_BYTES
@@ -285,10 +293,9 @@ spec:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
                   optional: true
-          envFrom:
-            - secretRef:
-                name: dd-gleam-mcp-server-secrets
-                optional: true
+          # No envFrom: secrets are mounted by explicit key only (see
+          # MCP_AUTH_SECRET / RUNTIME_CONFIG_SERVER_SECRET above) so the pod's
+          # environment never carries unrelated keys from a shared secret.
           ports:
             - name: http
               containerPort: 8090

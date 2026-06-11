@@ -39,6 +39,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import '../shared/wire_messages.dart';
 import 'conversation_registry.dart';
@@ -467,12 +468,28 @@ Future<void> _plain(
   await req.response.close();
 }
 
-/// Short, URL-safe per-shard session id. Encodes the shard id so the
-/// coordinator's `/metrics` and any future cross-shard routing can
-/// tell which shard a session lives on.
+/// Monotonic per-shard sequence, mixed into every session id. Each gateway
+/// shard is its own isolate with its own copy of this counter, so combined
+/// with the shard-id prefix it makes the id **collision-free**: the previous
+/// scheme hashed only the microsecond clock, so two accepts in the same
+/// microsecond on one shard produced identical ids — which then cross-wired
+/// the presence / bus / supervisor maps (session confusion). At a 20–30K
+/// connection ramp with bursty accepts that collision is reachable.
+int _sessionSeq = 0;
+
+/// Cryptographically-seeded RNG for the entropy segment, so a session id is
+/// not predictable from the accept time (the old multiply-hash of the clock
+/// was fully derivable by anyone who knew roughly when a peer connected).
+final Random _sessionRng = Random.secure();
+
+/// Short, URL-safe per-shard session id of the form
+/// `<shardHex>-<seq36>-<rand36>`. The shard prefix locates the session for
+/// the coordinator's `/metrics` and any future cross-shard routing; the
+/// monotonic sequence guarantees per-shard uniqueness (hence global, with the
+/// prefix); the secure-random tail makes it unguessable.
 String _newSessionId(int shardId) {
-  final us = DateTime.now().microsecondsSinceEpoch;
-  final rnd = (us * 2654435761) & 0xffffffff;
   final shardHex = shardId.toRadixString(16).padLeft(2, '0');
-  return '$shardHex-${rnd.toRadixString(36).padLeft(7, '0')}';
+  final seq = (_sessionSeq++).toRadixString(36);
+  final rnd = _sessionRng.nextInt(1 << 32).toRadixString(36).padLeft(7, '0');
+  return '$shardHex-$seq-$rnd';
 }

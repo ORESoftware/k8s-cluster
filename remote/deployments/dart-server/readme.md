@@ -851,6 +851,24 @@ so every accepted peer is treated as hostile input and bounded:
   joined session — a cheap amplification vector.
 * **Outbound rate** — a session emitting over `WS_MAX_OUTBOUND_RATE_PER_SECOND`
   frames for `WS_SLOW_CLIENT_WINDOWS` consecutive seconds is force-closed.
+* **No decompression bomb** — WebSocket permessage-deflate is **off by
+  default** (`WS_PERMESSAGE_DEFLATE`): the WS layer inflates an inbound frame
+  *before* the `WS_MAX_INBOUND_BYTES` check sees it, so a small compressible
+  frame could otherwise decompress into a large buffer. Off also saves CPU at
+  the CPU-bound operating point.
+* **No needless header copy** — request headers (attacker-controlled, unused
+  by the session runtime) are no longer copied into the per-connection boot
+  message that crosses the isolate boundary.
+* **Collision-free, unguessable session ids** — ids are
+  `<shardHex>-<perShardSeq>-<secureRandom>`: a per-shard monotonic sequence
+  makes them collision-free (the old scheme hashed only the microsecond clock,
+  so two same-microsecond accepts on one shard produced identical ids and
+  cross-wired the presence/bus/supervisor maps — session confusion), and a
+  `Random.secure()` tail makes them unpredictable from the accept time.
+* **Scrape-safe `/metrics`** — a gauge closure that throws no longer takes the
+  whole exposition down (it is skipped), and a non-finite gauge value is
+  coerced to `0` instead of emitting Dart's `Infinity`/`NaN` spelling, which
+  Prometheus can't parse and which would otherwise break the entire scrape.
 * **Bounded server state** — the conversation registry caps distinct
   conversations per shard (`kMaxConversationsPerShard`, 100K →
   `dart_conv_create_refused_total`) and members per conversation
@@ -911,6 +929,33 @@ Run it as a two-config A/B: one pod (or rollout) with the flag on, one off, same
 offered load, and diff the two counters + `container_cpu_usage`. Because the
 fragment is session-independent the cache is always safe; the flag exists purely
 to quantify the win.
+
+### Perf A/B: host-level ticker (`WS_HOST_LEVEL_TICKER`, prototype)
+
+The second steady-state cost after the clock *render* is the clock *timer*
+itself: each session owns a `Timer.periodic(1s)`, so 30K connections means 30K
+timer callbacks firing every second plus their event-loop scheduling overhead.
+
+The prototype coalesces them: when `WS_HOST_LEVEL_TICKER=true`, each
+session-host isolate runs **one** timer that walks its live sessions and calls
+`onHostTick` on each — at 1000 sessions/host that's 1 timer replacing 1000. The
+1 Hz lifecycle gate (idle/age eviction) and the clock emit run identically; the
+only structural change is who owns the timer. Clock emits are phase-spread per
+session (`_assignClockPhase`) so a single host timer firing doesn't push 1000
+clock fragments in one event-loop turn — the per-second fan-out stays smooth.
+
+* **Flag** — `WS_HOST_LEVEL_TICKER` (default `false`, the proven
+  per-session-timer arm; the per-session path is preserved verbatim).
+* **Measure** — at fixed load, compare pod CPU and `dart_ws_adopt`/
+  `first_frame` p99 between the two arms. The win grows with sessions/host
+  (density), so pair this A/B with a high `WS_HOST_DENSITY_LEVELS` setting.
+* **Compose** — it stacks with the shared clock render: render-sharing cuts the
+  *render* cost, the host ticker cuts the *timer* cost. Run all four
+  combinations to attribute each independently.
+
+Both A/B knobs are output-equivalent to their control arm (identical bytes on
+the wire), so any CPU / latency delta is attributable purely to the mechanism
+under test.
 
 ---
 

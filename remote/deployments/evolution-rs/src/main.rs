@@ -46,10 +46,6 @@ const MAX_HTTP_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ISLANDS: usize = 64;
 const MAX_EPOCHS: usize = 500;
-/// Cap on `populationPerIsland * dimension`. One island job carries a full
-/// subpopulation as JSON floats, so this keeps a single job comfortably under the
-/// JetStream `MAX_NATS_PAYLOAD_BYTES` ceiling and bounds a worker's memory/CPU.
-const MAX_GENOME_CELLS: usize = 200_000;
 /// Most optimizations the master will run at once. Each holds a NATS subscription
 /// and orchestration state; bounding it prevents unbounded fan-out from clients.
 const MAX_CONCURRENT_OPTIMIZATIONS: usize = 8;
@@ -76,6 +72,7 @@ struct Metrics {
     jobs_published_total: AtomicU64,
     results_collected_total: AtomicU64,
     island_jobs_processed_total: AtomicU64,
+    rejected_requests_total: AtomicU64,
     errors_total: AtomicU64,
 }
 
@@ -88,6 +85,11 @@ struct AppState {
     results_subject: String,
     events_subject: String,
     metrics: Arc<Metrics>,
+    /// Optional shared secret. When set, `/optimize` requires a matching
+    /// `Authorization: Bearer <secret>` (or `X-DD-Auth`) header.
+    auth_secret: Option<String>,
+    /// Bounds concurrent in-flight optimizations on the master.
+    optimize_permits: Arc<Semaphore>,
 }
 
 // ---------------------------------------------------------------------------
@@ -192,12 +194,24 @@ fn normalize(request: OptimizeRequest) -> Result<SolveConfig, String> {
     if !(lower < upper) {
         return Err("problem.lowerBound must be < problem.upperBound".into());
     }
+    if !lower.is_finite() || !upper.is_finite() {
+        return Err("problem bounds must be finite".into());
+    }
 
     let islands = request.islands.unwrap_or(4).clamp(1, MAX_ISLANDS);
     let population_per_island = request
         .population_per_island
         .unwrap_or(60)
         .clamp(4, ga::MAX_POPULATION);
+    // A single island job serializes its whole subpopulation; keep it bounded so one
+    // job cannot exceed the JetStream message ceiling or pin a worker.
+    if population_per_island.saturating_mul(dimension) > ga::MAX_GENOME_CELLS {
+        return Err(format!(
+            "populationPerIsland * dimension ({}) exceeds max {}; reduce either",
+            population_per_island.saturating_mul(dimension),
+            ga::MAX_GENOME_CELLS
+        ));
+    }
     let generations = request
         .generations_per_epoch
         .unwrap_or(40)
@@ -254,6 +268,9 @@ async fn run_optimization(state: &AppState, config: SolveConfig) -> OptimizeResp
     let mut epoch_history = Vec::new();
     let distributed = state.nats.is_some() && config.islands > 0;
     let mut epochs_run = 0usize;
+    // `timeout` is the TOTAL wall-clock budget for the whole solve, not per-epoch, so a
+    // request can never run for `epochs * timeout` when islands are slow or absent.
+    let deadline = started + config.timeout;
 
     publish_event(
         state,
@@ -269,6 +286,10 @@ async fn run_optimization(state: &AppState, config: SolveConfig) -> OptimizeResp
     .await;
 
     for epoch in 0..config.epochs {
+        if Instant::now() >= deadline {
+            warnings.push(format!("overall {}ms budget exhausted after {epochs_run} epochs", config.timeout.as_millis()));
+            break;
+        }
         let jobs: Vec<IslandJob> = (0..config.islands)
             .map(|island_id| IslandJob {
                 solve_id: solve_id.clone(),
@@ -288,7 +309,7 @@ async fn run_optimization(state: &AppState, config: SolveConfig) -> OptimizeResp
             .collect();
 
         let (results, timed_out) = if distributed {
-            dispatch_epoch(state, &solve_id, epoch, &jobs, config.timeout).await
+            dispatch_epoch(state, &solve_id, epoch, &jobs, deadline).await
         } else {
             run_epoch_locally(state, jobs).await
         };
@@ -377,7 +398,7 @@ async fn dispatch_epoch(
     solve_id: &str,
     epoch: usize,
     jobs: &[IslandJob],
-    timeout: Duration,
+    deadline: Instant,
 ) -> (Vec<IslandResult>, bool) {
     let Some(nats) = state.nats.clone() else {
         return (Vec::new(), true);
@@ -412,7 +433,6 @@ async fn dispatch_epoch(
     }
     let _ = nats.flush().await;
 
-    let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
     let mut timed_out = false;
     while results.len() < jobs.len() {
@@ -534,8 +554,22 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                 continue;
             }
         };
+        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!(
+                "{SERVICE_NAME} rejected oversize island job: {} bytes",
+                message.payload.len()
+            );
+            let _ = message.ack().await;
+            continue;
+        }
         let job = match serde_json::from_slice::<IslandJob>(&message.payload) {
-            Ok(job) => job,
+            Ok(mut job) => {
+                // Clamp anything a direct publisher to the subject could over-set,
+                // so a hand-crafted job cannot pin a worker beyond the master's bounds.
+                job.clamp_for_safety();
+                job
+            }
             Err(error) => {
                 eprintln!("{SERVICE_NAME} invalid island job: {error}");
                 let _ = message.ack().await;
@@ -582,6 +616,7 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
 
 async fn optimize_http(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<OptimizeRequest>,
 ) -> Response {
     state.metrics.http_requests_total.fetch_add(1, Ordering::Relaxed);
@@ -589,21 +624,62 @@ async fn optimize_http(
         .metrics
         .optimize_requests_total
         .fetch_add(1, Ordering::Relaxed);
+    if !authorized(&state, &headers) {
+        state.metrics.rejected_requests_total.fetch_add(1, Ordering::Relaxed);
+        return error_response(StatusCode::UNAUTHORIZED, "missing or invalid auth token");
+    }
     if state.role != NodeRole::Master {
         return error_response(
-            axum::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             "this node runs the island role; submit /optimize to the master",
         );
     }
+    // Bound concurrent optimizations; shed load rather than fan out without limit.
+    let _permit = match state.optimize_permits.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            state.metrics.rejected_requests_total.fetch_add(1, Ordering::Relaxed);
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "optimizer at capacity; retry shortly",
+            );
+        }
+    };
     let config = match normalize(request) {
         Ok(config) => config,
         Err(message) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            return error_response(axum::http::StatusCode::BAD_REQUEST, &message);
+            return error_response(StatusCode::BAD_REQUEST, &message);
         }
     };
     let response = run_optimization(&state, config).await;
     Json(response).into_response()
+}
+
+/// Opt-in bearer auth: when `auth_secret` is unset every request is allowed; when set,
+/// the request must carry it in `Authorization: Bearer <secret>` or `X-DD-Auth`.
+fn authorized(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(secret) = state.auth_secret.as_deref() else {
+        return true;
+    };
+    let presented = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer ").or(Some(value)))
+        .or_else(|| headers.get("x-dd-auth").and_then(|value| value.to_str().ok()));
+    presented.is_some_and(|token| constant_time_eq(token.trim().as_bytes(), secret.as_bytes()))
+}
+
+/// Length-independent constant-time comparison to avoid leaking the secret by timing.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 async fn healthz() -> impl IntoResponse {
@@ -658,6 +734,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_evolution_island_jobs_processed_total Island jobs evolved by this worker.\n",
             "# TYPE dd_evolution_island_jobs_processed_total counter\n",
             "dd_evolution_island_jobs_processed_total {}\n",
+            "# HELP dd_evolution_rejected_requests_total Requests rejected by auth or capacity limits.\n",
+            "# TYPE dd_evolution_rejected_requests_total counter\n",
+            "dd_evolution_rejected_requests_total {}\n",
             "# HELP dd_evolution_errors_total Errors across HTTP and NATS paths.\n",
             "# TYPE dd_evolution_errors_total counter\n",
             "dd_evolution_errors_total {}\n",
@@ -667,6 +746,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         m.jobs_published_total.load(Ordering::Relaxed),
         m.results_collected_total.load(Ordering::Relaxed),
         m.island_jobs_processed_total.load(Ordering::Relaxed),
+        m.rejected_requests_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
     (
@@ -721,6 +801,51 @@ fn env_u64(key: &str, default: u64) -> u64 {
     env::var(key).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(default)
 }
 
+/// Connect to NATS with bounded retries. Workers are useless without it, and a master
+/// started moments before NATS is reachable would otherwise silently fall back to the
+/// local path; retrying avoids both. Returns `None` only after exhausting attempts.
+async fn connect_nats(url: &str) -> Option<async_nats::Client> {
+    let attempts = env_u64("EVOLUTION_NATS_CONNECT_ATTEMPTS", 30).max(1);
+    let retry = Duration::from_secs(env_u64("EVOLUTION_NATS_CONNECT_RETRY_SECONDS", 2).max(1));
+    for attempt in 1..=attempts {
+        match async_nats::connect(url).await {
+            Ok(client) => {
+                println!("{SERVICE_NAME} connected to NATS at {url}");
+                return Some(client);
+            }
+            Err(error) => {
+                eprintln!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
+                if attempt < attempts {
+                    tokio::time::sleep(retry).await;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Idempotently ensure the JetStream stream exists so the master's job publishes are
+/// captured even if no island pod has started yet.
+async fn ensure_stream(client: &async_nats::Client) {
+    let jetstream = async_nats::jetstream::new(client.clone());
+    if let Err(error) = jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: DD_REMOTE_EVOLUTION_STREAM_NAME.to_string(),
+            subjects: DD_REMOTE_EVOLUTION_STREAM_SUBJECTS
+                .iter()
+                .map(|subject| subject.to_string())
+                .collect(),
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            max_age: Duration::from_secs(60 * 60 * 24),
+            max_message_size: MAX_NATS_PAYLOAD_BYTES as i32,
+            ..Default::default()
+        })
+        .await
+    {
+        eprintln!("{SERVICE_NAME} ensure stream failed: {error}");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
@@ -735,18 +860,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .unwrap_or_else(|| format!("evo-{}", Uuid::new_v4()));
 
     let nats = match env::var("NATS_URL").ok().filter(|v| !v.trim().is_empty()) {
-        Some(url) => match async_nats::connect(&url).await {
-            Ok(client) => {
-                println!("{SERVICE_NAME} connected to NATS at {url}");
-                Some(client)
-            }
-            Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect failed ({error}); continuing without it");
-                None
-            }
-        },
+        Some(url) => connect_nats(&url).await,
         None => None,
     };
+    if let Some(client) = &nats {
+        ensure_stream(client).await;
+    } else if role == NodeRole::Island {
+        eprintln!("{SERVICE_NAME} island role has no NATS connection; it will idle until restarted");
+    }
+
+    let auth_secret = env::var("EVOLUTION_AUTH_SECRET")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    if auth_secret.is_some() {
+        println!("{SERVICE_NAME} /optimize requires a bearer token (EVOLUTION_AUTH_SECRET set)");
+    }
 
     let state = AppState {
         role,
@@ -756,6 +884,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         results_subject: env_value("EVOLUTION_RESULTS_SUBJECT", EVOLUTION_RESULTS_SUBJECT),
         events_subject: env_value("EVOLUTION_EVENTS_SUBJECT", EVOLUTION_EVENTS_SUBJECT),
         metrics: Arc::new(Metrics::default()),
+        auth_secret,
+        optimize_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_OPTIMIZATIONS)),
     };
 
     if role == NodeRole::Island {

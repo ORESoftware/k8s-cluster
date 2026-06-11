@@ -1232,52 +1232,57 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         "raft-consensus nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
-    let mut subscription = match nats.queue_subscribe(subject, queue_group).await {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("raft-consensus nats subscribe failed: {error}");
-            return;
-        }
-    };
-    while let Some(message) = subscription.next().await {
-        state
-            .metrics
-            .nats_messages_total
-            .fetch_add(1, Ordering::Relaxed);
-        let payload = message.payload.to_vec();
-        if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
-                "raft-consensus rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
-                payload.len()
-            );
-            continue;
-        }
-        // Backpressure: wait for an inflight slot before taking on more work so a
-        // NATS flood can't spawn unbounded simulations. NATS buffers/redelivers.
-        let Ok(permit) = state.inflight.clone().acquire_owned().await else {
-            continue;
+    loop {
+        let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("raft-consensus nats subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
         };
-        let task_state = state.clone();
-        tokio::spawn(async move {
-            let _permit = permit;
-            match serde_json::from_slice::<RaftRequest>(&payload) {
-                Ok(request) => match run_in_background(request).await {
-                    Ok(response) => {
-                        record_metrics(&task_state.metrics, &response);
-                        publish_result(&task_state, &response).await;
-                    }
+        while let Some(message) = subscription.next().await {
+            state
+                .metrics
+                .nats_messages_total
+                .fetch_add(1, Ordering::Relaxed);
+            let payload = message.payload.to_vec();
+            if payload.len() > MAX_NATS_PAYLOAD_BYTES {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!(
+                    "raft-consensus rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
+                    payload.len()
+                );
+                continue;
+            }
+            // Backpressure: wait for an inflight slot before taking on more work so a
+            // NATS flood can't spawn unbounded simulations. NATS buffers/redelivers.
+            let Ok(permit) = state.inflight.clone().acquire_owned().await else {
+                continue;
+            };
+            let task_state = state.clone();
+            tokio::spawn(async move {
+                let _permit = permit;
+                match serde_json::from_slice::<RaftRequest>(&payload) {
+                    Ok(request) => match run_in_background(request).await {
+                        Ok(response) => {
+                            record_metrics(&task_state.metrics, &response);
+                            publish_result(&task_state, &response).await;
+                        }
+                        Err(error) => {
+                            task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                            eprintln!("raft-consensus failed nats simulate: {error}");
+                        }
+                    },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("raft-consensus failed nats simulate: {error}");
+                        eprintln!("raft-consensus invalid nats request: {error}");
                     }
-                },
-                Err(error) => {
-                    task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("raft-consensus invalid nats request: {error}");
                 }
-            }
-        });
+            });
+        }
+        eprintln!("raft-consensus subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
@@ -1289,7 +1294,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
-        Some(url) => Some(async_nats::connect(url).await?),
+        Some(url) => match async_nats::connect(&url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("dd-raft-consensus NATS connect failed ({url}): {error}");
+                None
+            }
+        },
         None => None,
     };
     let max_inflight = env_usize("RAFT_MAX_INFLIGHT", DEFAULT_MAX_INFLIGHT);

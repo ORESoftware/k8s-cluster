@@ -226,9 +226,21 @@ class OptimizerClient {
         await resp.drain<void>();
         return null;
       }
-      final text =
-          await resp.transform(utf8.decoder).join().timeout(timeout);
-      final decoded = jsonDecode(text);
+      // Bound the reply we'll buffer. The optimizer is internal, but a
+      // misbehaving/compromised endpoint could stream an unbounded body and
+      // OOM the coordinator; `.join()` would buffer it all. Accumulate up to a
+      // hard ceiling and bail otherwise (treated as a miss, so the lever holds
+      // its previous setpoint).
+      const maxReplyBytes = 1 << 20; // 1 MiB
+      final bytes = <int>[];
+      await for (final chunk in resp.timeout(timeout)) {
+        bytes.addAll(chunk);
+        if (bytes.length > maxReplyBytes) {
+          unawaited(resp.drain<void>().catchError((_) {}));
+          return null;
+        }
+      }
+      final decoded = jsonDecode(utf8.decode(bytes, allowMalformed: true));
       if (decoded is! Map) return null;
       final action = decoded['recommendedAction'];
       if (action is! String) return null;

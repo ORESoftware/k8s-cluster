@@ -12,6 +12,10 @@ use serde::{Deserialize, Serialize};
 pub const MAX_DIMENSION: usize = 256;
 pub const MAX_POPULATION: usize = 4_000;
 pub const MAX_GENERATIONS: usize = 5_000;
+/// Cap on `population_size * dimension` for a single island job (mirrors the
+/// master's ceiling), so a job published straight to the subject cannot carry a
+/// genome grid large enough to exhaust a worker's memory/CPU.
+pub const MAX_GENOME_CELLS: usize = 200_000;
 
 /// Built-in continuous minimization benchmarks. All have a global minimum of 0;
 /// `sphere` is convex, the others are multimodal (good migration stress tests).
@@ -152,6 +156,29 @@ pub struct IslandResult {
 }
 
 impl IslandJob {
+    /// Clamp every attacker-influenceable knob to the same ceilings the master
+    /// enforces in `normalize`, so a job published straight to the jobs subject
+    /// (bypassing the master) cannot pin a worker with an oversized population,
+    /// dimension, or generation count.
+    pub fn clamp_for_safety(&mut self) {
+        self.problem.dimension = self.problem.dimension.clamp(1, MAX_DIMENSION);
+        self.params.population_size = self.params.population_size.clamp(2, MAX_POPULATION);
+        self.params.generations = self.params.generations.clamp(1, MAX_GENERATIONS);
+        self.params.tournament_size = self.params.tournament_size.clamp(1, 16);
+        self.params.elite_count = self.params.elite_count.min(self.params.population_size.saturating_sub(1));
+        self.params.mutation_rate = self.params.mutation_rate.clamp(0.0, 1.0);
+        self.params.mutation_scale = self.params.mutation_scale.clamp(0.0001, 1.0);
+        self.params.crossover_rate = self.params.crossover_rate.clamp(0.0, 1.0);
+        // Drop any carried-in population that exceeds the cell budget or whose genome
+        // width no longer matches the (clamped) dimension, forcing a fresh random seed.
+        let cells = self.params.population_size.saturating_mul(self.problem.dimension);
+        if cells > MAX_GENOME_CELLS
+            || self.population.iter().any(|genome| genome.len() != self.problem.dimension)
+        {
+            self.population.clear();
+        }
+    }
+
     /// Evolve this island's subpopulation for `params.generations` generations and
     /// return the fitness-sorted result. Deterministic given `seed`.
     pub fn run(&self, worker_node: &str) -> IslandResult {

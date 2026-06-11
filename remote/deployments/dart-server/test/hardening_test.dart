@@ -1,9 +1,41 @@
 import 'package:dd_dart_server/server/conversation_registry.dart';
 import 'package:dd_dart_server/server/isolate_session.dart';
+import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/presence.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('Metrics.render robustness', () {
+    test('a throwing gauge closure does not break the whole scrape', () {
+      final m = Metrics();
+      addTearDown(m.close);
+      m.inc('dart_good_total', 3);
+      m.registerGauge('dart_good_gauge', () => 7);
+      m.registerGauge('dart_bad_gauge', () => throw StateError('boom'));
+
+      final out = m.render(); // must not throw
+      expect(out, contains('dart_good_total 3'));
+      expect(out, contains('dart_good_gauge 7'));
+      // The faulty gauge is skipped, not emitted, and doesn't drop siblings.
+      expect(out, isNot(contains('dart_bad_gauge')));
+    });
+
+    test('a non-finite gauge is coerced to a Prometheus-parseable 0', () {
+      final m = Metrics();
+      addTearDown(m.close);
+      m.registerGauge('dart_inf_gauge', () => double.infinity);
+      m.registerGauge('dart_nan_gauge', () => double.nan);
+
+      final out = m.render();
+      // Dart spells these `Infinity` / `NaN`, which Prometheus rejects; we
+      // must never emit those tokens.
+      expect(out, isNot(contains('Infinity')));
+      expect(out, isNot(contains('NaN')));
+      expect(out, contains('dart_inf_gauge 0'));
+      expect(out, contains('dart_nan_gauge 0'));
+    });
+  });
+
   group('clockIsoForSecond', () {
     test('truncates to whole seconds so cache keys collide within a second',
         () {

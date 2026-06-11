@@ -125,6 +125,16 @@ spec:
             # dropping host-network pool-worker access.
             - name: MCP_REQUIRE_AUTH
               value: 'false'
+            # Secret backing the gate above. Mounted by explicit key (optional,
+            # absent today) so flipping MCP_REQUIRE_AUTH=true after populating
+            # dd-cluster-mcp-rs-secrets actually works — without this the gate
+            # would have no secret source and fail closed.
+            - name: MCP_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-cluster-mcp-rs-secrets
+                  key: MCP_AUTH_SECRET
+                  optional: true
             - name: OTEL_SERVICE_NAME
               value: dd-cluster-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

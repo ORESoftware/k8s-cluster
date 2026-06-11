@@ -453,20 +453,25 @@ async fn probe_responder(state: AppState) {
     let Some(nats) = state.nats.clone() else {
         return;
     };
-    let mut subscription = match nats
-        .queue_subscribe(state.probe_subject.clone(), CHAOS_PROBE_QUEUE_GROUP.to_string())
-        .await
-    {
-        Ok(subscription) => subscription,
-        Err(error) => {
-            eprintln!("{SERVICE_NAME} probe responder subscribe failed: {error}");
-            return;
+    loop {
+        let mut subscription = match nats
+            .queue_subscribe(state.probe_subject.clone(), CHAOS_PROBE_QUEUE_GROUP.to_string())
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(error) => {
+                eprintln!("{SERVICE_NAME} probe responder subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        while let Some(message) = subscription.next().await {
+            if let Some(reply) = message.reply {
+                let _ = nats.publish(reply, message.payload).await;
+            }
         }
-    };
-    while let Some(message) = subscription.next().await {
-        if let Some(reply) = message.reply {
-            let _ = nats.publish(reply, message.payload).await;
-        }
+        eprintln!("{SERVICE_NAME} probe responder subscription ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 

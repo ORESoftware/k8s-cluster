@@ -174,6 +174,22 @@ spec:
             # dart_clock_render_cache_hits_total.
             - name: WS_CLOCK_SHARED_RENDER
               value: 'true'
+            # Perf A/B (prototype). When true, one timer per session-host
+            # isolate drives every session's 1 Hz lifecycle tick + clock emit,
+            # instead of one Timer.periodic per session (30K conns → 30K timers
+            # → ~30 timers). Clock emits are phase-spread so the coalesced work
+            # doesn't burst. Off by default (proven per-session-timer arm); flip
+            # to 'true' to A/B the coalesced ticker against it under load.
+            - name: WS_HOST_LEVEL_TICKER
+              value: 'false'
+            # WebSocket per-message compression (permessage-deflate). Off by
+            # default: (1) security — an inbound compressed frame is inflated
+            # before the WS_MAX_INBOUND_BYTES check, a decompression-bomb
+            # surface; (2) perf — fragments are tiny, so deflate burns CPU for
+            # negligible bandwidth at the CPU-bound 20–30K operating point. Set
+            # 'true' to restore the prior implicit-on behaviour.
+            - name: WS_PERMESSAGE_DEFLATE
+              value: 'false'
             # How often each shard pushes a gauge snapshot to the
             # coordinator for /metrics aggregation. 1 s is plenty fresh
             # and the inter-isolate traffic stays trivial.
