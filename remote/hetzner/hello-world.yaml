@@ -1,0 +1,55 @@
+# Dummy hello-world workload for the single 3-node cluster.
+# replicas: 3 + a one-per-node topology spread => exactly one pod on each node.
+# nginxdemos/hello echoes the serving pod's hostname/address, and the Service
+# uses externalTrafficPolicy: Local so hitting each node's public IP on :30080
+# is answered by THAT node's own pod — proving one pod per node/region.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-world
+  labels:
+    app: hello-world
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: hello-world
+  template:
+    metadata:
+      labels:
+        app: hello-world
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: hello-world
+      containers:
+        - name: hello
+          image: nginxdemos/hello:plain-text
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-world
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app: hello-world
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30080
