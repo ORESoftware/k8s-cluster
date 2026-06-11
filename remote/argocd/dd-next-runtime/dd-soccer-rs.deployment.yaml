@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-soccer-rs
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-soccer-rs
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-soccer-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/soccer-server-revision: 'uuid-keyed-root-server'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@main'
+        dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
+      labels:
+        app: dd-soccer-rs
+    spec:
+      priorityClassName: system-cluster-critical
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: soccer-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # dd-soccer-rs depends on soccer_engine (soccer-sim-game-engine.rs),
+              # which in turn depends on des_engine (discrete-event-system.rs) via
+              # a sibling path dep. We assemble all THREE trees adjacent under one
+              # writable build root mirroring the repo layout so the chained
+              # `path = "../../submodules/…"` / `path = "../discrete-event-system.rs"`
+              # deps resolve, and build from there (the repo mount is read-only).
+              build_root="$(mktemp -d /tmp/dd-soccer-rs-build.XXXXXX)"
+              copy_source_tree() {
+                src="$1"; dst="$2"
+                mkdir -p "${dst}"
+                tar -C "${src}" --exclude=./.git --exclude=./target -cf - . | tar -C "${dst}" -xf -
+              }
+              fetch_git_ref() {
+                # fetch_git_ref <url> <ref> <dest> ; echo dest on success, empty on fail
+                url="$1"; ref="$2"; dest="$3"
+                if git clone --depth 1 --no-checkout "${url}" "${dest}" \
+                  && git -C "${dest}" fetch --depth 1 origin "${ref}" \
+                  && git -C "${dest}" switch --detach FETCH_HEAD; then
+                  echo "${dest}"
+                fi
+              }
+
+              # 1) Server source (this k8s repo @ dev), fall back to the mount.
+              server_src="/opt/dd-next-1/remote/deployments/soccer-rs"
+              server_clone="${build_root}/k8s-source"
+              if [ -n "${SOCCER_SERVER_GIT_URL:-}" ]; then
+                if git clone --depth 1 --branch "${SOCCER_SERVER_GIT_REF:-dev}" "${SOCCER_SERVER_GIT_URL}" "${server_clone}"; then
+                  server_src="${server_clone}/remote/deployments/soccer-rs"
+                  echo "[dd-soccer-rs] server: cloned ${SOCCER_SERVER_GIT_URL}@${SOCCER_SERVER_GIT_REF:-dev} ($(git -C "${server_clone}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-soccer-rs] server clone failed; using mounted source at ${server_src}" >&2
+                fi
+              fi
+
+              # 2) soccer_engine source (soccer-sim-game-engine.rs @ main).
+              soccer_src="/opt/dd-next-1/remote/submodules/soccer-sim-game-engine.rs"
+              if [ -n "${SOCCER_ENGINE_GIT_URL:-}" ]; then
+                if out="$(fetch_git_ref "${SOCCER_ENGINE_GIT_URL}" "${SOCCER_ENGINE_GIT_REF:-main}" "${build_root}/soccer-engine-source")" && [ -n "${out}" ]; then
+                  soccer_src="${out}"
+                  echo "[dd-soccer-rs] soccer engine: cloned ${SOCCER_ENGINE_GIT_URL}@${SOCCER_ENGINE_GIT_REF:-main} ($(git -C "${soccer_src}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-soccer-rs] soccer engine clone failed; using pinned submodule at ${soccer_src}" >&2
+                fi
+              fi
+
+              # 3) des_engine source (discrete-event-system.rs @ main).
+              engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                if out="$(fetch_git_ref "${DES_ENGINE_GIT_URL}" "${DES_ENGINE_GIT_REF:-main}" "${build_root}/engine-source")" && [ -n "${out}" ]; then
+                  engine_src="${out}"
+                  echo "[dd-soccer-rs] des engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C "${engine_src}" rev-parse --short HEAD))"
+                else
+                  echo "[dd-soccer-rs] des engine clone failed; using pinned submodule at ${engine_src}" >&2
+                fi
+              fi
+
+              # Assemble the adjacent layout and build.
+              build_src="${build_root}/remote/deployments/soccer-rs"
+              build_soccer="${build_root}/remote/submodules/soccer-sim-game-engine.rs"
+              build_engine="${build_root}/remote/submodules/discrete-event-system.rs"
+              copy_source_tree "${server_src}" "${build_src}"
+              copy_source_tree "${soccer_src}" "${build_soccer}"
+              copy_source_tree "${engine_src}" "${build_engine}"
+              cd "${build_src}"
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8113'
+            - name: SOCCER_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: SOCCER_SERVER_GIT_REF
+              value: dev
+            - name: SOCCER_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+            - name: SOCCER_ENGINE_GIT_REF
+              value: main
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: main
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/soccer-rs-target
+            # Keep rustc memory predictable during the cold in-pod release build —
+            # soccer_engine (the 115k-line soccer.rs) + des_engine + axum/tokio is a
+            # large build; serialize crate jobs so the pod does not OOM before the
+            # server binds.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+          ports:
+            - name: http
+              containerPort: 8113
+          resources:
+            requests:
+              cpu: 50m
+              memory: 4Gi
+            limits:
+              cpu: '2'
+              # Soccer_engine recompiles the full 115k-line soccer.rs plus des_engine
+              # from an empty /tmp on every (re)start, peaking higher than des-rs.
+              memory: 14Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build of two engines + the server from an empty /tmp can
+            # take several minutes on the 2-CPU node; allow ~50 min (5s * 600).
+            periodSeconds: 5
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 20Gi
