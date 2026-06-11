@@ -8,6 +8,18 @@
 
 use std::collections::HashMap;
 
+/// Hard ceiling on triangles accepted from a single STL payload. The global
+/// 512 KiB request-body limit already bounds binary STL to ~10k triangles; this
+/// is defense-in-depth so a raised body limit (or a hostile declared count)
+/// cannot drive an unbounded allocation or O(n) blow-up downstream.
+pub const MAX_TRIANGLES: usize = 2_000_000;
+
+/// Clamp range (mm) for the vertex-weld grid. Below the floor, welding is a
+/// no-op and float noise survives; above the ceiling, distinct features would
+/// collapse and corrupt topology.
+pub const MIN_WELD_TOL: f64 = 1e-6;
+pub const MAX_WELD_TOL: f64 = 5.0;
+
 /// A 3D point / vector in millimetres (the service's canonical unit).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec3 {
@@ -186,6 +198,12 @@ fn parse_binary_stl(bytes: &[u8]) -> Result<Mesh, String> {
             n, needed, bytes.len()
         ));
     }
+    if n > MAX_TRIANGLES {
+        return Err(format!(
+            "binary stl has {} triangles, exceeding the {} limit",
+            n, MAX_TRIANGLES
+        ));
+    }
     let read_f32 = |off: usize| -> f64 {
         f32::from_le_bytes([
             bytes[off],
@@ -242,8 +260,14 @@ fn parse_ascii_stl(bytes: &[u8]) -> Result<Mesh, String> {
             coords.len()
         ));
     }
-    let mut mesh = Mesh::default();
     let tri_count = coords.len() / 9;
+    if tri_count > MAX_TRIANGLES {
+        return Err(format!(
+            "ascii stl has {} triangles, exceeding the {} limit",
+            tri_count, MAX_TRIANGLES
+        ));
+    }
+    let mut mesh = Mesh::default();
     for i in 0..tri_count {
         let mut tri = [0usize; 3];
         for (k, slot) in tri.iter_mut().enumerate() {
@@ -340,7 +364,13 @@ pub(crate) fn quantize(value: f64, tol: f64) -> i64 {
 /// collapse to a single index. Returns the new mesh and the number of vertex
 /// references that were merged away.
 pub(crate) fn weld(mesh: &Mesh, tol: f64) -> (Mesh, usize) {
-    let tol = if tol > 0.0 { tol } else { 1e-5 };
+    // Reject NaN/Inf and clamp into a sane grid range so a hostile or fat-
+    // fingered tolerance cannot collapse the whole mesh or be a no-op.
+    let tol = if tol.is_finite() && tol > 0.0 {
+        tol.clamp(MIN_WELD_TOL, MAX_WELD_TOL)
+    } else {
+        1e-3
+    };
     let mut map: HashMap<(i64, i64, i64), usize> = HashMap::new();
     let mut welded = Mesh::default();
     let mut remap: Vec<usize> = Vec::with_capacity(mesh.vertices.len());
