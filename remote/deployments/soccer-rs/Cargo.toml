@@ -15,8 +15,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 
-# The soccer domain engine. At deploy the Argo build script clones
-# soccer-sim-game-engine.rs and discrete-event-system.rs adjacently (exactly as
-# dd-des-rs already clones the engine) and resolves this path; for local dev it
-# points at the sibling checkout under ores/.
-soccer_sim_game_engine = { package = "soccer_engine", path = "../../submodules/soccer-sim-game-engine.rs" }
+# The soccer domain engine (`soccer_engine` crate, from soccer-sim-game-engine.rs),
+# checked out as a submodule alongside the discrete-event-system.rs engine — same
+# layout dd-des-rs uses. soccer_engine's own `des_engine = { path =
+# "../discrete-event-system.rs" }` resolves to that same engine submodule.
+soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs" }

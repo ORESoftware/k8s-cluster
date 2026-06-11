@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # dd-document-rs ships as a built image (not the cargo-run-from-hostPath pattern
 # the sibling dd-*-rs services use) because it links two native bridges at build
 # time: the Pandoc Haskell SDK and the ImageMagick C++ SDK (Magick++).
@@ -9,7 +10,6 @@
 #
 # (The repo-root .dockerignore keeps the context to just this crate + its libs.)
 
-# syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
 # 1) Build the Pandoc Haskell bridge as a standalone shared library.
@@ -54,7 +54,12 @@ COPY libs/runtime-config-client-rs ./libs/runtime-config-client-rs
 COPY libs/interfaces/shared/generated/rust ./libs/interfaces/shared/generated/rust
 COPY deployments/dd-document-rs ./deployments/dd-document-rs
 WORKDIR /src/deployments/dd-document-rs
-RUN cargo build --release --locked && strip target/release/dd-document-rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-document-rs/target,id=dd-document-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && strip target/release/dd-document-rs \
+ && cp target/release/dd-document-rs /usr/local/bin/dd-document-rs
 
 # ---------------------------------------------------------------------------
 # 3) Runtime image.
@@ -97,7 +102,7 @@ ENV MAGICK_CONFIGURE_PATH=/etc/dd-imagemagick
 COPY deployments/dd-document-rs/cpp/policy.xml /etc/dd-imagemagick/policy.xml
 ENV LD_LIBRARY_PATH=/usr/local/lib/dd-document-rs
 COPY --from=haskell-bridge /out/ /usr/local/lib/dd-document-rs/
-COPY --from=rust-build /src/deployments/dd-document-rs/target/release/dd-document-rs \
+COPY --from=rust-build /usr/local/bin/dd-document-rs \
      /usr/local/bin/dd-document-rs
 EXPOSE 8122
 ENTRYPOINT ["/usr/local/bin/dd-document-rs"]

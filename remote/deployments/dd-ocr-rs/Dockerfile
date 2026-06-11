@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # dd-ocr-rs ships as a built image (not the cargo-run-from-hostPath pattern some
 # sibling dd-*-rs services use) because it compiles + links a native OCR bridge
 # at build time: the Tesseract C++ API + Leptonica (cpp/tesseract_bridge.cpp).
@@ -9,7 +10,6 @@
 #
 # (The repo-root .dockerignore keeps the context to just this crate + its libs.)
 
-# syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
 # 1) Build the Rust service: compile the Tesseract C++ shim + link it against
@@ -31,7 +31,12 @@ COPY libs/runtime-config-client-rs ./libs/runtime-config-client-rs
 COPY libs/interfaces/shared/generated/rust ./libs/interfaces/shared/generated/rust
 COPY deployments/dd-ocr-rs ./deployments/dd-ocr-rs
 WORKDIR /src/deployments/dd-ocr-rs
-RUN cargo build --release --locked && strip target/release/dd-ocr-rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-ocr-rs/target,id=dd-ocr-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && strip target/release/dd-ocr-rs \
+ && cp target/release/dd-ocr-rs /usr/local/bin/dd-ocr-rs
 
 # ---------------------------------------------------------------------------
 # 2) Runtime image. Ships the Tesseract + Leptonica shared libraries and the
@@ -50,7 +55,7 @@ RUN apt-get update \
 ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 # Default HOME for the non-root user (k8s also mounts an emptyDir at /tmp).
 ENV HOME=/tmp
-COPY --from=rust-build /src/deployments/dd-ocr-rs/target/release/dd-ocr-rs \
+COPY --from=rust-build /usr/local/bin/dd-ocr-rs \
      /usr/local/bin/dd-ocr-rs
 # Run as a non-root, no-shell uid even outside the k8s securityContext. The
 # binary is world-readable/executable; the rootfs is read-only at runtime.

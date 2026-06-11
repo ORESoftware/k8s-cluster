@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # dd-git-rs ships as a built image rather than the cargo-run-from-hostPath
 # pattern the sibling dd-*-rs services use, so the running container can be
 # non-root with a read-only root filesystem and ship the four VCS CLIs baked in
@@ -10,7 +11,6 @@
 #
 # (The repo-root .dockerignore keeps the context to just this crate + pg-defs.)
 
-# syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
 # 1) Build the Rust service. The repo layout is replicated under /src so the
@@ -22,7 +22,12 @@ WORKDIR /src
 COPY libs/pg-defs/generated/rust ./libs/pg-defs/generated/rust
 COPY deployments/dd-git-rs ./deployments/dd-git-rs
 WORKDIR /src/deployments/dd-git-rs
-RUN cargo build --release --locked && strip target/release/dd-git-rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-git-rs/target,id=dd-git-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && strip target/release/dd-git-rs \
+ && cp target/release/dd-git-rs /usr/local/bin/dd-git-rs
 
 # ---------------------------------------------------------------------------
 # 2) Runtime image: the four VCS CLIs the server drives, TLS roots, and an SSH
@@ -39,7 +44,7 @@ RUN groupadd -g 1000 ddgit \
   && useradd -u 1000 -g 1000 -m -d /home/ddgit -s /usr/sbin/nologin ddgit \
   && mkdir -p /var/lib/dd-git-rs/repos \
   && chown -R 1000:1000 /var/lib/dd-git-rs
-COPY --from=build /src/deployments/dd-git-rs/target/release/dd-git-rs \
+COPY --from=build /usr/local/bin/dd-git-rs \
      /usr/local/bin/dd-git-rs
 ENV GIT_RS_STORAGE_ROOT=/var/lib/dd-git-rs/repos \
     HOME=/tmp

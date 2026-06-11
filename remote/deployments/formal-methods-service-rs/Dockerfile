@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage build for remote/deployments/formal-methods-service-rs.
 #
 # The cluster's Argo CD deployment does not use this image today: the
@@ -15,17 +16,16 @@ WORKDIR /build
 
 COPY Cargo.toml ./Cargo.toml
 
-RUN mkdir -p src tests && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "// dep cache" > src/lib.rs && \
-    cargo build --release || true
-
 COPY src ./src
 COPY tests ./tests
 COPY rustfmt.toml ./rustfmt.toml
 
-RUN cargo build --release && \
-    strip target/release/dd-formal-methods-service
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/build/target,id=formal-methods-service-rs-target,sharing=locked \
+    cargo build --release \
+ && strip target/release/dd-formal-methods-service \
+ && cp target/release/dd-formal-methods-service /usr/local/bin/dd-formal-methods-service
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 
@@ -44,7 +44,7 @@ RUN groupadd --system --gid 1001 fmgroup && \
 
 WORKDIR /app
 
-COPY --from=builder /build/target/release/dd-formal-methods-service /usr/local/bin/dd-formal-methods-service
+COPY --from=builder /usr/local/bin/dd-formal-methods-service /usr/local/bin/dd-formal-methods-service
 
 RUN mkdir -p /app/.work && chown -R fmuser:fmgroup /app
 

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 
 WORKDIR /app
@@ -11,13 +12,17 @@ COPY remote/deployments/public-data-server-rs/src /app/remote/deployments/public
 COPY remote/deployments/public-data-server-rs/generated /app/remote/deployments/public-data-server-rs/generated
 
 WORKDIR /app/remote/deployments/public-data-server-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/public-data-server-rs/target,id=public-data-server-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-public-data-server /usr/local/bin/dd-public-data-server
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean
-COPY --from=build /app/remote/deployments/public-data-server-rs/target/release/dd-public-data-server /usr/local/bin/dd-public-data-server
+COPY --from=build /usr/local/bin/dd-public-data-server /usr/local/bin/dd-public-data-server
 
 ENV HOST=0.0.0.0
 ENV PORT=8115

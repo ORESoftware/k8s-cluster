@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 
 WORKDIR /app
@@ -11,14 +12,18 @@ COPY remote/deployments/patent-filing-rs/generated /app/remote/deployments/paten
 COPY remote/libs /app/remote/libs
 
 WORKDIR /app/remote/deployments/patent-filing-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/patent-filing-rs/target,id=patent-filing-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-patent-filing-rs /usr/local/bin/dd-patent-filing-rs
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/remote/deployments/patent-filing-rs/target/release/dd-patent-filing-rs /usr/local/bin/dd-patent-filing-rs
+COPY --from=build /usr/local/bin/dd-patent-filing-rs /usr/local/bin/dd-patent-filing-rs
 
 ENV HOST=0.0.0.0
 ENV PORT=8116

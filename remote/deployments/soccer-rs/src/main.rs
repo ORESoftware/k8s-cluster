@@ -32,11 +32,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // `SoccerRealtimeSession` is the agnostic game core (also driven directly by the
-// desktop client). `SoccerLiveHttpBridge` is HTTP glue that currently still
-// lives in the engine — TRANSITIONAL: when the engine is made fully agnostic the
-// bridge's method/path/body→session translation moves *into this server crate*
-// and drives `SoccerRealtimeSession` directly, so the engine carries no web deps.
-use soccer_sim_game_engine::soccer::{SoccerLiveHttpBridge, SoccerLiveServerConfig};
+// desktop client). `SoccerLiveHttpBridge` is HTTP glue that lives in the
+// `soccer_engine` crate today; when that crate is made fully agnostic (its bridge
+// moves behind the `web-bridge` feature / into the server layer) this server
+// drives `SoccerRealtimeSession` directly so the engine carries no web deps.
+use soccer_engine::soccer::{SoccerLiveHttpBridge, SoccerLiveServerConfig};
 
 /// How long an idle game lingers before the reaper drops it.
 const GAME_TTL: Duration = Duration::from_secs(60 * 30);
@@ -165,7 +165,7 @@ fn resolve(state: &AppState, id: Option<Uuid>) -> Result<Arc<GameSession>, Respo
 }
 
 /// Map the engine's `SoccerLiveHttpReply` onto an axum response.
-fn bridge_reply(reply: soccer_sim_game_engine::soccer::SoccerLiveHttpReply) -> Response {
+fn bridge_reply(reply: soccer_engine::soccer::SoccerLiveHttpReply) -> Response {
     let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (
         status,

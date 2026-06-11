@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 
 WORKDIR /app
@@ -11,14 +12,18 @@ COPY remote/deployments/cluster-mcp-rs/generated /app/remote/deployments/cluster
 COPY remote/deployments/cluster-mcp-rs/src /app/remote/deployments/cluster-mcp-rs/src
 
 WORKDIR /app/remote/deployments/cluster-mcp-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/cluster-mcp-rs/target,id=cluster-mcp-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-cluster-mcp-rs /usr/local/bin/dd-cluster-mcp-rs
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean
 
-COPY --from=build /app/remote/deployments/cluster-mcp-rs/target/release/dd-cluster-mcp-rs /usr/local/bin/dd-cluster-mcp-rs
+COPY --from=build /usr/local/bin/dd-cluster-mcp-rs /usr/local/bin/dd-cluster-mcp-rs
 
 ENV HOST=0.0.0.0
 ENV PORT=8091

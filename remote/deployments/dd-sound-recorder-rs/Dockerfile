@@ -12,13 +12,17 @@ COPY remote/deployments/dd-sound-recorder-rs/generated /app/remote/deployments/d
 COPY remote/deployments/dd-sound-recorder-rs/src /app/remote/deployments/dd-sound-recorder-rs/src
 
 WORKDIR /app/remote/deployments/dd-sound-recorder-rs
-RUN cargo build --release --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/dd-sound-recorder-rs/target,id=dd-sound-recorder-rs-target,sharing=locked \
+    cargo build --release --locked \
+ && cp target/release/dd-sound-recorder-rs /usr/local/bin/dd-sound-recorder-rs
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean
-COPY --from=build /app/remote/deployments/dd-sound-recorder-rs/target/release/dd-sound-recorder-rs /usr/local/bin/dd-sound-recorder-rs
+COPY --from=build /usr/local/bin/dd-sound-recorder-rs /usr/local/bin/dd-sound-recorder-rs
 
 ENV HOST=0.0.0.0
 ENV PORT=8126
