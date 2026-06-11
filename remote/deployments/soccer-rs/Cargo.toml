@@ -1,0 +1,22 @@
+[package]
+name = "dd-soccer-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Root soccer game server: UUID-keyed live games over soccer-sim-game-engine, serving /soccer/game, /soccer/live, /soccer/sim."
+
+[[bin]]
+name = "dd-soccer-rs"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# The soccer domain engine. At deploy the Argo build script clones
+# soccer-sim-game-engine.rs and discrete-event-system.rs adjacently (exactly as
+# dd-des-rs already clones the engine) and resolves this path; for local dev it
+# points at the sibling checkout under ores/.
+soccer_sim_game_engine = { package = "soccer-sim-game-engine", path = "../../../../soccer-sim-game-engine.rs" }
