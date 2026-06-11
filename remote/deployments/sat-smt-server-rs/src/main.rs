@@ -55,6 +55,9 @@ const SOLVER_STACK_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_INFLIGHT: usize = 16;
 /// Skip publishing a result larger than this (NATS default max_payload is ~1 MiB).
 const MAX_PUBLISH_BYTES: usize = 900_000;
+/// Max literals in a pairwise-encoded cardinality group (exactlyOne / atMostOne).
+/// The naive encoding emits k*(k-1)/2 clauses, so this bounds per-group blow-up.
+const MAX_CARDINALITY_GROUP: usize = 256;
 
 #[derive(Clone)]
 struct AppState {
@@ -230,6 +233,11 @@ fn build_cnf(request: &SolveRequest) -> Result<Cnf, String> {
         })
     };
 
+    // Fail fast on the raw clause count before materialising any of them.
+    if request.clauses.len() > MAX_CLAUSES {
+        return Err(format!("too many clauses; max {MAX_CLAUSES}"));
+    }
+
     let mut clauses: Vec<Vec<Lit>> = Vec::new();
 
     for clause in &request.clauses {
@@ -243,8 +251,17 @@ fn build_cnf(request: &SolveRequest) -> Result<Cnf, String> {
         clauses.push(lits);
     }
 
-    // exactlyOne = atLeastOne AND atMostOne.
+    // exactlyOne = atLeastOne AND atMostOne. The pairwise at-most-one encoding
+    // emits k*(k-1)/2 clauses, so the group size is bounded BEFORE expansion to
+    // prevent a small request from exploding into billions of clauses (OOM), and
+    // the running clause count is checked after every group.
     for group in &request.exactly_one {
+        if group.len() > MAX_CARDINALITY_GROUP {
+            return Err(format!(
+                "exactlyOne group has {} literals; max {MAX_CARDINALITY_GROUP}",
+                group.len()
+            ));
+        }
         let mut lits = Vec::with_capacity(group.len());
         for literal in group {
             lits.push(resolve(literal)?);
@@ -254,6 +271,9 @@ fn build_cnf(request: &SolveRequest) -> Result<Cnf, String> {
         }
         clauses.push(lits.clone()); // at-least-one
         push_at_most_one(&mut clauses, &lits);
+        if clauses.len() > MAX_CLAUSES {
+            return Err(format!("too many clauses; max {MAX_CLAUSES}"));
+        }
     }
     for group in &request.at_least_one {
         let mut lits = Vec::with_capacity(group.len());
@@ -264,13 +284,25 @@ fn build_cnf(request: &SolveRequest) -> Result<Cnf, String> {
             return Err("atLeastOne group must be non-empty".to_string());
         }
         clauses.push(lits);
+        if clauses.len() > MAX_CLAUSES {
+            return Err(format!("too many clauses; max {MAX_CLAUSES}"));
+        }
     }
     for group in &request.at_most_one {
+        if group.len() > MAX_CARDINALITY_GROUP {
+            return Err(format!(
+                "atMostOne group has {} literals; max {MAX_CARDINALITY_GROUP}",
+                group.len()
+            ));
+        }
         let mut lits = Vec::with_capacity(group.len());
         for literal in group {
             lits.push(resolve(literal)?);
         }
         push_at_most_one(&mut clauses, &lits);
+        if clauses.len() > MAX_CLAUSES {
+            return Err(format!("too many clauses; max {MAX_CLAUSES}"));
+        }
     }
 
     if clauses.len() > MAX_CLAUSES {
@@ -889,6 +921,22 @@ mod tests {
             exactly_one: Vec::new(),
             conflict_budget: None,
         };
+        assert!(solve(request).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_cardinality_group_without_blowup() {
+        // A single huge atMostOne group would expand to k*(k-1)/2 clauses; it
+        // must be rejected up front rather than allocating billions of clauses.
+        let big_group: Vec<LiteralInput> = (1..=20_000)
+            .map(|index| LiteralInput {
+                var: None,
+                index: Some(index),
+                negated: false,
+            })
+            .collect();
+        let mut request = base_request(Vec::new());
+        request.at_most_one = vec![big_group];
         assert!(solve(request).is_err());
     }
 

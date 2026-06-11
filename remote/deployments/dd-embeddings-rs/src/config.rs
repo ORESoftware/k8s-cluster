@@ -17,6 +17,10 @@ pub struct Config {
     pub qdrant_api_key: Option<String>,
     /// Outbound request timeout to provider APIs and Qdrant.
     pub request_timeout_secs: u64,
+    /// Max number of cost-bearing requests (embed/index/search) in flight at
+    /// once. Excess requests are shed with 503 rather than queued, so a flood
+    /// can't exhaust file descriptors/memory or run up unbounded provider spend.
+    pub max_concurrency: usize,
     pub limits: Limits,
 }
 
@@ -50,6 +54,7 @@ impl Config {
             qdrant_url: env_or("QDRANT_URL", "http://dd-qdrant.ai-ml.svc.cluster.local:6333"),
             qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),
             request_timeout_secs: env_or("EMBEDDINGS_REQUEST_TIMEOUT_SECS", "30").parse()?,
+            max_concurrency: env_or("EMBEDDINGS_MAX_CONCURRENCY", "32").parse()?,
             limits: Limits {
                 max_batch_size: env_or("EMBEDDINGS_MAX_BATCH_SIZE", "256").parse()?,
                 max_total_chars: env_or("EMBEDDINGS_MAX_TOTAL_CHARS", "1000000").parse()?,

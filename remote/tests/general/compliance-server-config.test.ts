@@ -105,6 +105,11 @@ test('rust compliance server is modular, deployed, documented, and guarded', asy
   assert.match(behavior, /haversine_km/);
   assert.match(behavior, /impossible travel/);
   assert.match(behavior, /DISPOSABLE_EMAIL_DOMAINS/);
+  // CPU-bound analyzers run behind a concurrency gate on the blocking pool.
+  assert.match(routes, /analysis_gate/);
+  assert.match(routes, /spawn_blocking/);
+  assert.match(routes, /analyses_rejected_total/);
+  assert.match(deployment, /COMPLIANCE_MAX_CONCURRENT_ANALYSES/);
   assert.match(routes, /include_str!\("\.\.\/generated\/api-docs\.json"\)/);
   assert.match(routes, /jobStoreWritable/);
   assert.match(audit, /COMPLIANCE_ALLOW_EXTERNAL_FETCH=false/);

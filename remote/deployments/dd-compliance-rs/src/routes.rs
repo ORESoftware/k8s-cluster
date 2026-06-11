@@ -8,6 +8,7 @@ use axum::{
     Json, Router,
 };
 use serde_json::json;
+use tokio::sync::Semaphore;
 
 use crate::{
     audit::{run_audit, validate_request},
@@ -36,6 +37,48 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     pub jobs: Arc<JobStore>,
     pub http: reqwest::Client,
+    /// Bounds concurrent CPU-bound scanner/behavioral analyses so a burst of
+    /// expensive requests cannot saturate the CPU-limited container or starve
+    /// the async workers handling health probes and the audit job queue.
+    pub analysis_gate: Arc<Semaphore>,
+}
+
+/// Run a CPU-bound analyzer under the concurrency gate and off the async
+/// reactor (via `spawn_blocking`). Returns the typed report, or a ready-made
+/// 503/500 response when the gate is saturated or the task fails.
+async fn run_gated<R, F>(state: &AppState, work: F) -> Result<R, Response>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let permit = match state.analysis_gate.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            state.metrics.analyses_rejected_total.fetch_add(1);
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                [(header::RETRY_AFTER, "1")],
+                Json(json!({
+                    "ok": false,
+                    "error": "analysis capacity reached; retry shortly"
+                })),
+            )
+                .into_response());
+        }
+    };
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| {
+        state.metrics.errors_total.fetch_add(1);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": "analysis task failed" })),
+        )
+            .into_response()
+    })
 }
 
 pub fn router(state: AppState) -> Router {
@@ -254,7 +297,11 @@ async fn malware_scan_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = scan_malware(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || scan_malware(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.malware_scans_total.fetch_add(1);
     state
         .metrics
@@ -276,7 +323,11 @@ async fn dependency_audit_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = audit_dependencies(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || audit_dependencies(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.dependency_audits_total.fetch_add(1);
     state
         .metrics
@@ -298,7 +349,11 @@ async fn secret_scan_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = scan_secrets(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || scan_secrets(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.secret_scans_total.fetch_add(1);
     state
         .metrics
@@ -320,7 +375,11 @@ async fn fraud_detection_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = detect_fraud(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || detect_fraud(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.fraud_checks_total.fetch_add(1);
     state
         .metrics
@@ -342,7 +401,11 @@ async fn bot_detection_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = detect_bots(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || detect_bots(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.bot_checks_total.fetch_add(1);
     state
         .metrics
@@ -364,7 +427,11 @@ async fn login_anomaly_route(
     if let Err(response) = require_auth(&headers, &state.config, &state.metrics) {
         return response;
     }
-    let report = detect_login_anomalies(&state.config, request);
+    let config = state.config.clone();
+    let report = match run_gated(&state, move || detect_login_anomalies(&config, request)).await {
+        Ok(report) => report,
+        Err(response) => return response,
+    };
     state.metrics.login_anomaly_checks_total.fetch_add(1);
     state
         .metrics

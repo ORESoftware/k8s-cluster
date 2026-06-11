@@ -93,6 +93,11 @@ impl Qdrant {
             }))
             .send()
             .await?;
+        // A concurrent first-index can race us to create the same collection;
+        // treat "already exists" (409) as success rather than a hard error.
+        if resp.status() == reqwest::StatusCode::CONFLICT {
+            return Ok(());
+        }
         Self::check(resp).await?;
         Ok(())
     }

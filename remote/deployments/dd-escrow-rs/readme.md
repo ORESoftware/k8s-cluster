@@ -61,6 +61,9 @@ a no-show or rule violation.
   convention (`stakeLamports`, `prizePoolLamports`, `showDateUnix`, `revenueSplitBps`, `rules[]`).
 - **Release modes:** `arbiter-decision` (disputes), `multi-sig` (both creators approve the happy
   path), `time-locked` (the show date), and `delivery-proof`.
+- **Required terms:** a future `terms.timeoutUnixSeconds` (the show date/deadline, so the escrow can
+  `expire`) and a non-zero `terms.disputeWindowSeconds` (the contestation window the arbiter acts
+  within) are mandatory — pinned in typed fields, not opaque `metadata`.
 - **Lifecycle / settlement actions:**
   - `fund` - each creator stakes and the pool is funded into the vault.
   - **success →** `split-release` - the pool is split between the creators per `payoutBps`.

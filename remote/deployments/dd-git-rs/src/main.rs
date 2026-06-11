@@ -54,6 +54,8 @@ const MAX_LIST_LIMIT: i64 = 500;
 const MIRROR_LOCK_TTL_SECONDS: usize = 1800;
 const DEFAULT_MAX_CONCURRENT_OPS: usize = 4;
 const DEFAULT_MAX_BODY_BYTES: usize = 64 * 1024;
+const DEFAULT_MAX_DB_CONNECTIONS: usize = 16;
+const DEFAULT_MAX_REPO_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -107,6 +109,10 @@ struct AppState {
     // gateway-fronted but otherwise unauthenticated, so this bounds the blast
     // radius of a request flood (no unbounded process fan-out).
     ops_semaphore: Arc<Semaphore>,
+    // Hard cap on concurrent Postgres connections. The service connects per
+    // request; this stops an endpoint flood from exhausting RDS connections
+    // (a cluster-shared resource).
+    db_semaphore: Arc<Semaphore>,
 }
 
 #[derive(Clone)]
@@ -122,6 +128,8 @@ struct Config {
     max_output_bytes: usize,
     max_body_bytes: usize,
     max_concurrent_ops: usize,
+    max_db_connections: usize,
+    max_repo_bytes: u64,
     allow_file_urls: bool,
     block_private_remotes: bool,
 }
@@ -219,6 +227,12 @@ fn config_from_env() -> Config {
             DEFAULT_MAX_CONCURRENT_OPS as u64,
         ) as usize)
             .max(1),
+        max_db_connections: (env_u64(
+            "GIT_RS_MAX_DB_CONNECTIONS",
+            DEFAULT_MAX_DB_CONNECTIONS as u64,
+        ) as usize)
+            .max(1),
+        max_repo_bytes: env_u64("GIT_RS_MAX_REPO_BYTES", DEFAULT_MAX_REPO_BYTES),
         // Local-file URLs (`file://`) and remotes that resolve to private
         // networks are off by default: both are SSRF / file-disclosure vectors.
         allow_file_urls: env_bool("GIT_RS_ALLOW_FILE_URLS", false),
@@ -244,6 +258,7 @@ async fn state_from_config(config: Config) -> AppState {
 
     let vcs_available = probe_vcs_kinds(Duration::from_secs(DEFAULT_PROBE_TIMEOUT_SECONDS)).await;
     let ops_semaphore = Arc::new(Semaphore::new(config.max_concurrent_ops));
+    let db_semaphore = Arc::new(Semaphore::new(config.max_db_connections));
 
     AppState {
         config: Arc::new(config),
@@ -252,6 +267,7 @@ async fn state_from_config(config: Config) -> AppState {
         nats,
         vcs_available: Arc::new(vcs_available),
         ops_semaphore,
+        db_semaphore,
     }
 }
 
@@ -330,11 +346,35 @@ fn record_request(method: &str, path: &str, status: StatusCode) {
         .inc();
 }
 
-async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
-    let database_url = config
+/// A live Postgres client paired with the semaphore permit that bounds total
+/// concurrent connections. Derefs to the client, so call sites and helpers that
+/// expect `&tokio_postgres::Client` keep working via deref coercion. The permit
+/// (and thus the slot) is released when this guard drops.
+struct PooledClient {
+    client: tokio_postgres::Client,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl std::ops::Deref for PooledClient {
+    type Target = tokio_postgres::Client;
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+async fn connect_postgres(state: &AppState) -> Result<PooledClient, ServiceError> {
+    let database_url = state
+        .config
         .database_url
         .as_deref()
         .ok_or_else(|| ServiceError::Unavailable("postgres is not configured".to_string()))?;
+    // Reserve a connection slot before dialing, shedding with 503 when the cap
+    // is reached so a flood can't exhaust RDS connections.
+    let permit = Arc::clone(&state.db_semaphore)
+        .try_acquire_owned()
+        .map_err(|_| {
+            ServiceError::Unavailable("server is busy: too many database connections".to_string())
+        })?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let tls_config = rustls::ClientConfig::builder()
@@ -352,7 +392,10 @@ async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, Ser
             tracing::warn!(%error, "postgres connection closed");
         }
     });
-    Ok(client)
+    Ok(PooledClient {
+        client,
+        _permit: permit,
+    })
 }
 
 fn db_error(error: tokio_postgres::Error) -> ServiceError {
@@ -543,33 +586,65 @@ fn host_is_blocked(host: &str, block_private: bool) -> bool {
         return true;
     }
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        // Always block loopback, link-local (incl. the 169.254.169.254 metadata
-        // endpoint), and unspecified addresses.
-        if ip.is_loopback() || ip.is_unspecified() {
-            return true;
-        }
-        match ip {
-            std::net::IpAddr::V4(v4) => {
-                if v4.is_link_local() {
-                    return true;
-                }
-                if block_private && v4.is_private() {
-                    return true;
-                }
+        return ip_is_blocked(&ip, block_private);
+    }
+    // Not a standard dotted/colon IP literal. Reject alternate numeric encodings
+    // (decimal, hex, octal) that libcurl/git still resolve to an address but that
+    // sail past a textual-IP blocklist — e.g. 2130706433 or 0x7f000001 == 127.0.0.1.
+    looks_like_numeric_host(host)
+}
+
+fn ip_is_blocked(ip: &std::net::IpAddr, block_private: bool) -> bool {
+    // Always block loopback, link-local (incl. the 169.254.169.254 metadata
+    // endpoint), and unspecified addresses.
+    if ip.is_loopback() || ip.is_unspecified() {
+        return true;
+    }
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            if v4.is_link_local() {
+                return true;
             }
-            std::net::IpAddr::V6(v6) => {
-                // fe80::/10 link-local.
-                if (v6.segments()[0] & 0xffc0) == 0xfe80 {
-                    return true;
-                }
-                // fc00::/7 unique-local treated as private.
-                if block_private && (v6.segments()[0] & 0xfe00) == 0xfc00 {
-                    return true;
-                }
+            if block_private && v4.is_private() {
+                return true;
+            }
+        }
+        std::net::IpAddr::V6(v6) => {
+            // fe80::/10 link-local.
+            if (v6.segments()[0] & 0xffc0) == 0xfe80 {
+                return true;
+            }
+            // fc00::/7 unique-local treated as private.
+            if block_private && (v6.segments()[0] & 0xfe00) == 0xfc00 {
+                return true;
             }
         }
     }
     false
+}
+
+/// True when a host string is an alternate numeric IP encoding rather than a DNS
+/// name: a hex form (`0x..` in any label) or an all-numeric form (a bare integer
+/// like `2130706433`, or dotted forms like `127.1` / `010.0.0.1`). Real domain
+/// names always carry at least one non-numeric label.
+fn looks_like_numeric_host(host: &str) -> bool {
+    let host = host.trim_end_matches('.');
+    if host.is_empty() {
+        return false;
+    }
+    let mut all_numeric = true;
+    for label in host.split('.') {
+        if label.is_empty() {
+            return false;
+        }
+        if label.to_ascii_lowercase().starts_with("0x") {
+            return true;
+        }
+        if !label.bytes().all(|b| b.is_ascii_digit()) {
+            all_numeric = false;
+        }
+    }
+    all_numeric
 }
 
 /// Strip `user:pass@` userinfo from a URL so credentials never land in logs,
@@ -756,7 +831,7 @@ async fn record_operation(
     VCS_OPERATIONS
         .with_label_values(&[kind.as_str(), op_type, status])
         .inc();
-    let client = match connect_postgres(&state.config).await {
+    let client = match connect_postgres(state).await {
         Ok(client) => client,
         Err(_) => return,
     };
@@ -897,7 +972,7 @@ async fn list_repos(
     } else {
         ""
     };
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let rows = if let Some(kind) = query.kind.as_deref() {
         let kind = VcsKind::parse(kind)
             .ok_or_else(|| ServiceError::BadRequest("unknown vcs kind".to_string()))?;
@@ -972,7 +1047,7 @@ async fn create_repo(
         }
     };
 
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let sql = format!(
         "insert into {} (slug, display_name, vcs_kind, remote_url, default_branch, visibility) \
          values ($1, $2, $3, $4, $5, $6) returning {REPO_COLUMNS}",
@@ -1018,7 +1093,7 @@ async fn get_repo(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ServiceError> {
     let id = parse_uuid(&id)?;
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1034,7 +1109,7 @@ async fn delete_repo(
 ) -> Result<Json<Value>, ServiceError> {
     require_server_auth(&headers, &state.config)?;
     let id = parse_uuid(&id)?;
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let sql = format!(
         "update {} set is_soft_deleted = true, mirror_status = 'disabled', updated_at = now() \
          where id = $1 and is_soft_deleted = false",
@@ -1061,7 +1136,7 @@ async fn sync_repo(
     let id = parse_uuid(&id)?;
     let requested_by = header_value(&headers, "X-Requested-By");
 
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1147,6 +1222,30 @@ async fn run_sync(
     match result {
         Ok(_) => {
             let size_bytes = directory_size(dest).await;
+            // Disk guard: a mirror that overflows the per-repo budget is removed
+            // and marked failed so one repo can't fill the node's storage volume.
+            if state.config.max_repo_bytes > 0 && size_bytes as u64 > state.config.max_repo_bytes {
+                remove_mirror(dest).await;
+                let message = format!(
+                    "mirror exceeds size limit ({} bytes > {} bytes); removed",
+                    size_bytes, state.config.max_repo_bytes
+                );
+                set_mirror_status(client, repo.id, "error", Some(&message)).await?;
+                record_operation(
+                    state,
+                    Some(repo.id),
+                    kind,
+                    op_type,
+                    "error",
+                    safe_params,
+                    json!({ "sizeBytes": size_bytes }),
+                    Some(&message),
+                    Some(duration_ms),
+                    None,
+                )
+                .await;
+                return Err(ServiceError::BadRequest(message));
+            }
             let ref_count = refresh_refs(state, client, repo, kind, dest).await.unwrap_or(0);
             update_after_sync(client, repo.id, dest, size_bytes, ref_count).await?;
             record_operation(
@@ -1308,7 +1407,7 @@ async fn list_refs(
 
     // Authorize against the repo's visibility first, so the Redis fast path can
     // never serve a private repo's refs to an unauthenticated caller.
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1359,7 +1458,7 @@ async fn get_log(
         validate_revision(rev)?;
     }
 
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1408,7 +1507,7 @@ async fn get_show(
     let rev = rev.trim_start_matches('/').to_string();
     validate_revision(&rev)?;
 
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1455,7 +1554,7 @@ async fn list_operations(
 ) -> Result<Json<Value>, ServiceError> {
     let id = parse_uuid(&id)?;
     let limit = query.limit.unwrap_or(50).clamp(1, MAX_LIST_LIMIT);
-    let client = connect_postgres(&state.config).await?;
+    let client = connect_postgres(&state).await?;
     let repo = fetch_repo(&client, id)
         .await?
         .ok_or_else(|| ServiceError::NotFound("repository not found".to_string()))?;
@@ -1618,6 +1717,24 @@ async fn storage_writable(root: &str) -> bool {
     true
 }
 
+/// Remove a mirror from disk, whether it is a directory (git/hg/svn) or a single
+/// file (fossil). Best-effort; failures are logged, not fatal.
+async fn remove_mirror(path: &str) {
+    match tokio::fs::metadata(path).await {
+        Ok(meta) if meta.is_dir() => {
+            if let Err(error) = tokio::fs::remove_dir_all(path).await {
+                tracing::warn!(%error, path, "failed to remove mirror directory");
+            }
+        }
+        Ok(_) => {
+            if let Err(error) = tokio::fs::remove_file(path).await {
+                tracing::warn!(%error, path, "failed to remove mirror file");
+            }
+        }
+        Err(_) => {}
+    }
+}
+
 /// Recursively sum file sizes under `path` in a blocking task. Best-effort:
 /// errors yield 0 rather than failing the sync.
 async fn directory_size(path: &str) -> i64 {
@@ -1762,6 +1879,19 @@ mod tests {
         // Public hosts are fine.
         assert!(!host_is_blocked("github.com", true));
         assert!(!host_is_blocked("140.82.112.3", true));
+    }
+
+    #[test]
+    fn ssrf_guard_blocks_alternate_ip_encodings() {
+        // Decimal, hex, and octal encodings of 127.0.0.1 and friends.
+        assert!(host_is_blocked("2130706433", false)); // 127.0.0.1
+        assert!(host_is_blocked("0x7f000001", false));
+        assert!(host_is_blocked("0177.0.0.1", false));
+        assert!(host_is_blocked("127.1", false));
+        assert!(host_is_blocked("127.0x0.0.1", false));
+        // Real domains with numeric labels are still allowed.
+        assert!(!host_is_blocked("api.v2.github.com", false));
+        assert!(!host_is_blocked("host123.example.com", false));
     }
 
     #[test]

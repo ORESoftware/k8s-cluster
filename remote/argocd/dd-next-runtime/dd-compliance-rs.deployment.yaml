@@ -209,6 +209,8 @@ spec:
               value: '200'
             - name: COMPLIANCE_MAX_CONCURRENT_JOBS
               value: '2'
+            - name: COMPLIANCE_MAX_CONCURRENT_ANALYSES
+              value: '8'
             - name: COMPLIANCE_MAX_ARTIFACT_BYTES
               value: '524288'
             - name: COMPLIANCE_MAX_FILES

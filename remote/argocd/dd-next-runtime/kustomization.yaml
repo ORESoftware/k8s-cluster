@@ -119,6 +119,7 @@ resources:
   - dd-redis-cache.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
+  - dd-web-scraper.networkpolicy.yaml
   - dd-browser-test-server.deployment.yaml
   - dd-browser-test-server.service.yaml
   - dd-selenium-server.deployment.yaml

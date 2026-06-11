@@ -18,13 +18,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::State;
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use axum::{middleware, Json, Router};
 use serde::Deserialize;
 use serde_json::json;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::normalize_path::NormalizePathLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -42,7 +44,10 @@ use crate::validate::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // .env is convenience for local runs; in-cluster config comes from the env.
+    // .env is a local-dev convenience only. In release builds (what runs
+    // in-cluster) we never read a dotfile — config + secrets come solely from
+    // the real environment, so a stray committed `.env` can't shadow them.
+    #[cfg(debug_assertions)]
     let _ = dotenvy::dotenv();
     let cfg = Config::from_env()?;
     init_tracing(cfg.log_format_json);
@@ -86,6 +91,8 @@ async fn main() -> anyhow::Result<()> {
         rag,
         api_auth_bearer: cfg.api_auth_bearer.clone().map(Arc::new),
         limits: cfg.limits,
+        // `.max(1)` guards against a `0` typo turning into a total outage.
+        inflight: Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency.max(1))),
     };
 
     // Public, unauthenticated surface: probes + API docs.
@@ -108,7 +115,16 @@ async fn main() -> anyhow::Result<()> {
     let app = public
         .merge(api)
         .with_state(state)
+        // Outermost: turn any handler/layer panic into a clean 500 instead of
+        // dropping the connection or leaking a backtrace.
+        .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
+        // Defense-in-depth header on every response (the only HTML surface is
+        // /api/docs; the rest is JSON).
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
         // No CORS layer: this is a service-to-service, bearer-authenticated API
         // reached through the gateway, not a browser-facing one. Add a tightly
         // scoped CorsLayer with explicit origins only if a browser caller ever
@@ -124,8 +140,36 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(cfg.addr).await?;
     tracing::info!(addr = %cfg.addr, "dd-embeddings-rs listening");
-    axum::serve(listener, app).await?;
+    // Graceful shutdown: on SIGTERM (rolling deploy) / SIGINT, stop accepting
+    // and let in-flight requests finish, so we don't abort already-paid
+    // provider calls mid-flight. Bounded by terminationGracePeriodSeconds.
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(e) => tracing::error!(error = %e, "failed to install SIGTERM handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+    tracing::info!("shutdown signal received — draining in-flight requests");
 }
 
 fn init_tracing(json: bool) {
@@ -169,11 +213,26 @@ async fn healthz() -> impl IntoResponse {
 async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     match state.rag.qdrant_health().await {
         Ok(()) => (StatusCode::OK, Json(json!({ "status": "ready" }))),
-        Err(e) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "status": "degraded", "qdrant": e.to_string() })),
-        ),
+        Err(e) => {
+            // /readyz is unauthenticated — log the internal detail, don't return it.
+            tracing::warn!(error = %e, "readiness check failed: qdrant unreachable");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "degraded" })),
+            )
+        }
     }
+}
+
+/// Acquire a slot from the global in-flight limiter, or shed with 503. Held
+/// for the duration of a cost-bearing handler so a flood can't fan out
+/// unbounded outbound calls.
+fn acquire_slot(state: &AppState) -> Result<tokio::sync::OwnedSemaphorePermit, ApiError> {
+    state
+        .inflight
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| ApiError::Overloaded)
 }
 
 async fn list_providers(State(state): State<AppState>) -> impl IntoResponse {
@@ -209,6 +268,7 @@ async fn embed(
 ) -> Result<impl IntoResponse, ApiError> {
     enforce_input_limits(&body.req.input, &state.limits)?;
     check_dimensions(body.req.dimensions, &state.limits)?;
+    let _permit = acquire_slot(&state)?;
     let provider = state.registry.resolve(&body.provider)?;
     let result = provider.embed(&body.req).await?;
     Ok(Json(result))
@@ -225,6 +285,7 @@ async fn rag_index(
     // raw embedding endpoint before we embed-and-upsert them.
     let texts: Vec<String> = body.documents.iter().map(|d| d.text.clone()).collect();
     enforce_input_limits(&texts, &state.limits)?;
+    let _permit = acquire_slot(&state)?;
     let result = state.rag.index(body).await?;
     Ok(Json(result))
 }
@@ -237,6 +298,7 @@ async fn rag_search(
     check_dimensions(body.dimensions, &state.limits)?;
     enforce_input_limits(std::slice::from_ref(&body.query), &state.limits)?;
     body.top_k = clamp_top_k(body.top_k, &state.limits);
+    let _permit = acquire_slot(&state)?;
     let result = state.rag.search(body).await?;
     Ok(Json(result))
 }

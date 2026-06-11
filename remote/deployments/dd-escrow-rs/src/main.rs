@@ -1430,6 +1430,23 @@ fn validate_terms(
             errors.push("terms.timeoutUnixSeconds must be in the future".to_string());
         }
     }
+    if request.kind == EscrowKind::CollabShow {
+        // A collab show is inherently date-bound and breach-adjudicated, so pin both in
+        // typed fields rather than opaque metadata: a future show deadline (so the escrow
+        // can `expire`) and a contestation window for the arbiter to act within.
+        if request.terms.timeout_unix_seconds.is_none() {
+            errors.push(
+                "collab-show escrow requires terms.timeoutUnixSeconds (the show date/deadline)"
+                    .to_string(),
+            );
+        }
+        if request.terms.dispute_window_seconds.unwrap_or(0) == 0 {
+            errors.push(
+                "collab-show escrow requires a non-zero terms.disputeWindowSeconds for breach adjudication"
+                    .to_string(),
+            );
+        }
+    }
     if request.terms.release_mode == ReleaseMode::MilestoneApproval {
         match &request.terms.milestones {
             Some(milestones) if !milestones.is_empty() => {}
@@ -4040,6 +4057,28 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.contains("payoutBps for the agreed revenue split")));
+    }
+
+    #[test]
+    fn collab_show_requires_show_deadline() {
+        let mut request = collab_show_example();
+        request.terms.timeout_unix_seconds = None;
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject a collab show with no deadline");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("timeoutUnixSeconds (the show date")));
+    }
+
+    #[test]
+    fn collab_show_requires_dispute_window() {
+        let mut request = collab_show_example();
+        request.terms.dispute_window_seconds = None;
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject a collab show with no dispute window");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("disputeWindowSeconds for breach adjudication")));
     }
 
     #[test]

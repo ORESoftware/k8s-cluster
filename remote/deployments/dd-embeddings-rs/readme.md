@@ -99,6 +99,7 @@ automatically: `document` on index, `query` on search.
 | `EMBEDDINGS_MAX_ITEM_CHARS`      | `100000` — max chars in any single text              |
 | `EMBEDDINGS_MAX_TOP_K`           | `100` — search results are clamped to this           |
 | `EMBEDDINGS_MAX_DIMENSIONS`      | `8192` — max requested dimensionality                |
+| `EMBEDDINGS_MAX_CONCURRENCY`     | `32` — in-flight cost-bearing requests; excess → 503 |
 
 ## Security posture
 
@@ -109,7 +110,19 @@ automatically: `document` on index, `query` on search.
   `top_k`, and `dimensions` are all bounded (see the limits above) to cap
   memory use and third-party spend. Qdrant collection names are charset- and
   length-validated before they reach a REST path; the distance metric is
-  allow-listed.
+  allow-listed; caller-supplied document ids are normalized to valid Qdrant
+  point ids (UUID/uint passthrough, else a stable UUIDv5) with the original
+  preserved as `source_id` in the payload.
+- **Load shedding**: a global semaphore bounds concurrent cost-bearing
+  requests (`EMBEDDINGS_MAX_CONCURRENCY`); a saturated server returns 503
+  immediately rather than fanning out unbounded outbound calls.
+- **Resilience**: handler panics are caught and returned as clean 500s (no
+  connection drop or backtrace leak); SIGTERM triggers a graceful drain so
+  rolling deploys don't abort already-paid provider calls mid-flight.
+- **Config hygiene**: `.env` is read only in debug builds — the in-cluster
+  release binary takes config and secrets solely from the real environment.
+  Every response carries `X-Content-Type-Options: nosniff`; the one HTML
+  surface (`/api/docs`) reflects no user input.
 - **No detail leakage**: upstream provider / Qdrant error bodies are logged
   server-side but never echoed to callers — responses carry a stable `kind`
   plus a generic message.

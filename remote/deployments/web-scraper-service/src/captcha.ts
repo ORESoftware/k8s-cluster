@@ -233,6 +233,10 @@ async function pollTask(
 
 type SolverResponse = { status?: number | string; request?: string };
 
+// Solver replies are tiny (a status + token); cap the body so a compromised or
+// misconfigured provider endpoint can't stream an unbounded response into memory.
+const MAX_SOLVER_RESPONSE_BYTES = 64 * 1024;
+
 async function postForJson(url: URL, method: 'GET' | 'POST' = 'POST'): Promise<SolverResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -241,7 +245,12 @@ async function postForJson(url: URL, method: 'GET' | 'POST' = 'POST'): Promise<S
     if (!response.ok) {
       throw new CaptchaSolveError(`solver HTTP ${response.status}`);
     }
-    return (await response.json()) as SolverResponse;
+    const text = await readCapped(response, MAX_SOLVER_RESPONSE_BYTES);
+    try {
+      return JSON.parse(text) as SolverResponse;
+    } catch {
+      throw new CaptchaSolveError('solver returned a non-JSON or oversized response');
+    }
   } catch (error) {
     if (error instanceof CaptchaSolveError) {
       throw error;
@@ -252,6 +261,31 @@ async function postForJson(url: URL, method: 'GET' | 'POST' = 'POST'): Promise<S
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function readCapped(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) {
+    return '';
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (!value) {
+      continue;
+    }
+    bytes += value.byteLength;
+    if (bytes > maxBytes) {
+      await reader.cancel();
+      throw new CaptchaSolveError(`solver response exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function methodFor(type: CaptchaType): string {

@@ -9,8 +9,8 @@ spec:
   replicas: 1
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
-  # Recreate: the pod owns a single hostPath build cache and repo-storage volume,
-  # so two pods must never run concurrently against them.
+  # Recreate: the pod owns a single hostPath repo-storage volume, so two pods
+  # must never run concurrently against it.
   strategy:
     type: Recreate
   selector:
@@ -19,46 +19,38 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-10-git-rs-bootstrap'
+        dd.dev/telemetry-revision: '2026-06-10-git-rs-image'
       labels:
         app: dd-git-rs
         dd.dev/redis-cache-client: 'true'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
-        # Built from the mounted source tree with the stock Rust image, like the
-        # other dd-*-rs services. Unlike them it also apt-installs the non-git
-        # VCS binaries (mercurial, subversion, fossil) at startup, so it runs as
-        # root with the default capability set and a writable rootfs. git is
-        # already present in the rust image.
+        # Prebuilt from deployments/dd-git-rs/Dockerfile (built from the repo's
+        # remote/ dir). The image bakes in git/mercurial/subversion/fossil, so —
+        # unlike the cargo-run-from-hostPath dd-*-rs services — this runs as a
+        # non-root user on a read-only root filesystem with no runtime apt step.
         - name: git-rs
-          image: docker.io/library/rust:1.91.1-bookworm
+          image: dd-git-rs:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              export DEBIAN_FRONTEND=noninteractive
-
-              # Install the non-git VCS CLIs. Skip the apt step if they are already
-              # present (warm pod restart on a node that still has them cached).
-              if ! command -v hg >/dev/null || ! command -v svn >/dev/null || ! command -v fossil >/dev/null; then
-                apt-get update
-                apt-get install -y --no-install-recommends mercurial subversion fossil ca-certificates openssh-client
-                rm -rf /var/lib/apt/lists/*
-              fi
-
-              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$GIT_RS_STORAGE_ROOT"
-              cd /opt/dd-next-1/remote/deployments/dd-git-rs
-              exec cargo run --release --locked
           env:
             - name: HOME
               value: /tmp
@@ -70,14 +62,6 @@ spec:
               value: json
             - name: RUST_LOG
               value: dd_git_rs=info,tower_http=info
-            - name: CARGO_HOME
-              value: /var/cache/dd-git-rs/cargo
-            - name: CARGO_TARGET_DIR
-              value: /var/cache/dd-git-rs/target
-            # Keep build parallelism to one job: the node has hit rustc build
-            # storms when several Rust pods cold-start at once.
-            - name: CARGO_BUILD_JOBS
-              value: '1'
             - name: GIT_RS_STORAGE_ROOT
               value: /var/lib/dd-git-rs/repos
             - name: GIT_RS_REDIS_URL
@@ -96,6 +80,14 @@ spec:
               value: '4'
             - name: GIT_RS_MAX_BODY_BYTES
               value: '65536'
+            # Cap concurrent Postgres connections so an endpoint flood can't
+            # exhaust the shared RDS connection pool.
+            - name: GIT_RS_MAX_DB_CONNECTIONS
+              value: '16'
+            # Per-repo disk budget; a mirror that overflows it is deleted and
+            # marked failed so one repo can't fill the node storage volume.
+            - name: GIT_RS_MAX_REPO_BYTES
+              value: '5368709120'
             # SSRF posture: never allow file:// remotes; loopback/link-local/
             # metadata hosts are always blocked. Flip this on to also reject
             # private-network remotes (no in-cluster/internal mirroring).
@@ -139,7 +131,7 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 600
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /readyz
@@ -156,30 +148,17 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
-              memory: 1Gi
+              cpu: 50m
+              memory: 128Mi
             limits:
               cpu: '2'
-              memory: 6Gi
+              memory: 2Gi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
-            - name: build-cache
-              mountPath: /var/cache/dd-git-rs
             - name: repo-storage
               mountPath: /var/lib/dd-git-rs
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
-        - name: build-cache
-          hostPath:
-            path: /var/cache/dd-git-rs
-            type: DirectoryOrCreate
         - name: repo-storage
           hostPath:
             path: /var/lib/dd-git-rs

@@ -19,6 +19,9 @@ use crate::rag::RagError;
 pub enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
+    /// Server is at its concurrency limit; caller should retry later.
+    #[error("service overloaded")]
+    Overloaded,
     /// Caller-input validation failure. The message is safe to return.
     #[error("{0}")]
     Invalid(String),
@@ -32,6 +35,7 @@ impl ApiError {
     fn status_kind(&self) -> (StatusCode, &'static str) {
         match self {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            ApiError::Overloaded => (StatusCode::SERVICE_UNAVAILABLE, "overloaded"),
             ApiError::Invalid(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
             ApiError::Provider(e) => provider_status_kind(e),
             ApiError::Rag(RagError::Provider(e)) => provider_status_kind(e),
@@ -47,6 +51,7 @@ impl ApiError {
     fn client_message(&self, kind: &str) -> String {
         match self {
             ApiError::Unauthorized => "unauthorized".into(),
+            ApiError::Overloaded => "service overloaded, retry later".into(),
             ApiError::Invalid(m) => m.clone(),
             ApiError::Provider(ProviderError::Unknown(p)) => format!("unknown provider `{p}`"),
             ApiError::Provider(ProviderError::NotConfigured(p)) => {

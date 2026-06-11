@@ -273,9 +273,9 @@ pub fn repair(input: &Mesh, weld_tol: f64) -> (Mesh, RepairReport) {
     let (mut mesh, merged) = weld(input, weld_tol);
     report.welded_vertices = merged;
 
-    let (boundary_before, nonmanifold) = count_boundary_and_nonmanifold(&mesh);
+    // Pre-repair diagnostic only: the welded-but-uncleaned boundary count.
+    let (boundary_before, _) = count_boundary_and_nonmanifold(&mesh);
     report.boundary_edges_before = boundary_before;
-    report.non_manifold_edges = nonmanifold;
 
     report.removed_degenerate = remove_degenerate(&mut mesh);
     report.removed_duplicate = remove_duplicate(&mut mesh);
@@ -291,6 +291,12 @@ pub fn repair(input: &Mesh, weld_tol: f64) -> (Mesh, RepairReport) {
     let flips2 = if added > 0 { unify_winding(&mut mesh) } else { 0 };
     report.flipped_for_consistency = flips1 + flips2;
 
+    // Fan fills over collinear boundary runs can introduce zero-area slivers;
+    // cull them so the output never carries degenerate faces.
+    if added > 0 {
+        report.removed_degenerate += remove_degenerate(&mut mesh);
+    }
+
     // Orient outward: if the closed volume came out negative, the whole shell is
     // inside-out — reverse every face.
     if mesh.signed_volume() < 0.0 {
@@ -302,9 +308,14 @@ pub fn repair(input: &Mesh, weld_tol: f64) -> (Mesh, RepairReport) {
 
     prune_unused(&mut mesh);
 
-    let (boundary_after, _) = count_boundary_and_nonmanifold(&mesh);
+    // Final manifold state — after welding, culling, and filling. This is what
+    // the watertight gate and blockers must reflect: removing duplicate faces
+    // can eliminate the very non-manifold edges those duplicates created, so a
+    // pre-clean count would falsely report a healed mesh as still broken.
+    let (boundary_after, nonmanifold_after) = count_boundary_and_nonmanifold(&mesh);
     report.boundary_edges_after = boundary_after;
-    report.watertight = boundary_after == 0 && report.non_manifold_edges == 0;
+    report.non_manifold_edges = nonmanifold_after;
+    report.watertight = boundary_after == 0 && nonmanifold_after == 0;
     report.output_vertices = mesh.vertices.len();
     report.output_triangles = mesh.triangles.len();
 

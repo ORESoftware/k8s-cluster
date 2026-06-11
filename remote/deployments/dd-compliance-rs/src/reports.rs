@@ -433,6 +433,7 @@ mod tests {
             max_files: 100,
             max_file_bytes: 1024 * 1024,
             max_findings_per_job: 200,
+            max_concurrent_analyses: 4,
         }
     }
 

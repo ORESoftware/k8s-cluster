@@ -1,0 +1,85 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-web-scraper
+  namespace: default
+  labels:
+    app: dd-web-scraper
+    app.kubernetes.io/name: dd-web-scraper
+    app.kubernetes.io/part-of: dd-next-runtime
+    app.kubernetes.io/component: web-scraper
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-web-scraper
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the gateway (proxied /scrape) and the observability scrapers (/metrics)
+    # may reach the service port. Nothing else in the cluster can call it.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - dd-prometheus
+                  - dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 8097
+  egress:
+    # Cluster DNS only.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Public internet on ANY port (scrape targets and rotating proxies use
+    # arbitrary ports), but never the cluster, host, link-local, or cloud
+    # metadata ranges. This is the network-layer SSRF backstop: even if a browser
+    # strategy (which the app cannot IP-pin) is steered at an internal address via
+    # DNS rebinding, the kernel drops the packet. The `except` list mirrors the
+    # private/reserved ranges the app's `isPrivateIp` guard rejects.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
