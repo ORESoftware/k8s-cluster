@@ -178,38 +178,67 @@ Future<void> _runHost(SendPort handshakePort) async {
 
   final sessions = <String, Session>{};
 
-  await for (final raw in mailbox) {
-    try {
-      if (raw is AttachSession) {
-        final session = Session(raw.boot);
-        sessions[raw.boot.sessionId] = session;
-        unawaited(() async {
-          try {
-            await session.run();
-          } catch (_) {
-            // Session-level error — already logged via the outbound
-            // MetricEvent path inside Session. Swallow to keep the host
-            // alive for sibling sessions.
-          } finally {
-            sessions.remove(raw.boot.sessionId);
-          }
-        }());
-      } else if (raw is RouteToSession) {
-        sessions[raw.sessionId]?.deliver(raw.event);
-      } else if (raw is DetachSession) {
-        final s = sessions.remove(raw.sessionId);
-        s?.requestShutdown();
-      } else if (raw == _hostShutdownSentinel) {
-        for (final s in sessions.values) {
-          s.requestShutdown();
+  // Coalesced host-level ticker (perf A/B: WS_HOST_LEVEL_TICKER). One timer
+  // per host isolate drives the 1 Hz lifecycle gate + clock emit for every
+  // session it owns, instead of one Timer.periodic per session — at
+  // 1000 sessions/host that's 1 timer replacing 1000. Clock emits are
+  // phase-spread per session (see `_assignClockPhase`) so the coalesced work
+  // doesn't arrive as a single per-second burst. Off by default; the
+  // per-session timer arm is preserved verbatim when this is unset.
+  Timer? hostTicker;
+  if (_hostLevelTicker) {
+    var hostTick = 0;
+    hostTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      hostTick++;
+      // Snapshot so a tick that triggers a session teardown (idle/age close)
+      // can't mutate the map mid-iteration.
+      for (final s in sessions.values.toList(growable: false)) {
+        try {
+          s.onHostTick(hostTick);
+        } catch (_) {
+          // Contained: the session counts its own tick errors. One bad
+          // session must not stop the host ticking its siblings.
         }
-        sessions.clear();
-        mailbox.close();
-        return;
       }
-    } catch (_) {
-      // Defensive: never let a malformed frame from main kill the host.
+    });
+  }
+
+  try {
+    await for (final raw in mailbox) {
+      try {
+        if (raw is AttachSession) {
+          final session = Session(raw.boot);
+          sessions[raw.boot.sessionId] = session;
+          unawaited(() async {
+            try {
+              await session.run();
+            } catch (_) {
+              // Session-level error — already logged via the outbound
+              // MetricEvent path inside Session. Swallow to keep the host
+              // alive for sibling sessions.
+            } finally {
+              sessions.remove(raw.boot.sessionId);
+            }
+          }());
+        } else if (raw is RouteToSession) {
+          sessions[raw.sessionId]?.deliver(raw.event);
+        } else if (raw is DetachSession) {
+          final s = sessions.remove(raw.sessionId);
+          s?.requestShutdown();
+        } else if (raw == _hostShutdownSentinel) {
+          for (final s in sessions.values) {
+            s.requestShutdown();
+          }
+          sessions.clear();
+          mailbox.close();
+          return;
+        }
+      } catch (_) {
+        // Defensive: never let a malformed frame from main kill the host.
+      }
     }
+  } finally {
+    hostTicker?.cancel();
   }
 }
 
@@ -308,7 +337,19 @@ class Session {
   final _convDirectory =
       BehaviorSubject<Map<String, ConvSummary>>.seeded(const {});
 
+  /// Per-session 1 Hz timer (per-session-ticker arm only — null when the
+  /// host-level ticker drives this session, see [onHostTick]).
   Timer? _ticker;
+
+  /// Tick counter for the per-session-ticker arm (the host-level arm passes
+  /// the host's shared counter into [_runTick] instead).
+  int _localTick = 0;
+
+  /// Clock-emit phase in `[0, clockInterval)`. 0 in the per-session arm
+  /// (preserving the original cadence exactly); round-robin-spread in the
+  /// host-level arm so one shared timer doesn't burst every clock at once.
+  late final int _clockPhase = _assignClockPhase(_boot.clockIntervalSeconds);
+
   final _subs = <StreamSubscription<dynamic>>[];
   bool _disposed = false;
 

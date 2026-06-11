@@ -154,6 +154,10 @@ List<int> _parseIntLevels(String? raw, List<int> fallback) {
 double _envDouble(String name, double fallback) =>
     double.tryParse(Platform.environment[name] ?? '') ?? fallback;
 
+/// Coerce a possibly-NaN/Infinity/negative metric reading into a finite,
+/// non-negative double so it can't poison the MDP learner's reward math.
+double _finiteNonNeg(double v) => (v.isFinite && v > 0) ? v : 0.0;
+
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
   final wsPort = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
@@ -678,12 +682,18 @@ Future<void> main(List<String> args) async {
           (coldStartsTotal - mdpPrevColdStarts).clamp(0, 1 << 30).toInt();
       final refusals =
           (refusalsTotal - mdpPrevRefusals).clamp(0, 1 << 30).toInt();
-      final p99Adopt =
-          metrics.histogramQuantile('dart_ws_adopt_latency_seconds', 0.99);
-      final p99FirstFrame = metrics.histogramQuantile(
+      // Sanitise the latency quantiles before they feed the policy. An empty
+      // histogram (no samples yet, or right after a reset) can yield NaN /
+      // Infinity from `histogramQuantile`; an un-guarded NaN would flow into
+      // the Q-learner's reward and EMA and poison every subsequent decision
+      // (NaN propagates and never recovers). Clamp to a finite, non-negative
+      // second value.
+      final p99Adopt = _finiteNonNeg(
+          metrics.histogramQuantile('dart_ws_adopt_latency_seconds', 0.99));
+      final p99FirstFrame = _finiteNonNeg(metrics.histogramQuantile(
         'dart_ws_first_frame_latency_seconds',
         0.99,
-      );
+      ));
 
       var targetGlobal = mdpLastTargetGlobal;
       var targetDensity = mdpLastDensity;
