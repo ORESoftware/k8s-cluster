@@ -52,6 +52,20 @@ The live diff also checks pg-def owned routines and triggers, including the shar
 checkpoint/event tables). This is intentional: a table-only diff can miss the exact drift that
 breaks presence cache fan-out.
 
+The diff additionally:
+
+- **Derives foreign-key supporting indexes.** Every foreign key should have an index on its
+  referencing column, or cascading deletes scan the child table and child writes contend with the
+  parent. These indexes are NOT declared in `schema.sql` — the diff generates idempotent
+  `create index if not exists <table>_<col>_fk_idx on <table> (<col>);` for any FK not already
+  covered by a contract-declared leading index, the primary key, or a live index whose leading
+  column is the FK column. Once applied, the next diff sees the live coverage and stops proposing
+  it (the generator converges). See `foreignKeyIndexRecommendations` in `src/sql-contract.mjs`.
+- **Compares index uniqueness, not just names.** A same-named index that is `UNIQUE` in the
+  contract but non-unique live (or vice versa) is a data-integrity gap that name-only diffing
+  silently accepts; the diff now introspects `pg_index.indisunique` and surfaces the drift for
+  manual rebuild (dropping a unique index can transiently admit duplicate rows).
+
 For a parser-only sanity check that opens no database connection:
 
 ```sh

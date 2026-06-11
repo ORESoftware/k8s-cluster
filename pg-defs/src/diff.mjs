@@ -3,17 +3,30 @@
 // - Generated ORM/client files are adapters only; never treat them as migration authority.
 // - This script only generates reviewable SQL. Never run or apply migrations automatically.
 // - Wait for explicit user approval before any database write in any environment.
-// - COVERAGE GAP: tables, columns, CHECK constraints, and indexes are diffed. Functions and
-//   triggers (e.g. notify_presence_member_change, presence_conv_members_notify) are NOT — they
-//   must be verified manually via psql. The sql-contract parser silently skips
-//   `create or replace function` / `create trigger` statements today.
+// - COVERAGE: tables, columns, CHECK constraints, indexes, AND functions/triggers are diffed.
+//   Routines are introspected from pg_proc (name, identity args, result type, language,
+//   volatility, body) and triggers from information_schema.triggers (timing, events,
+//   orientation, target function); see introspectDatabase + routineEquivalent/triggerEquivalent.
+//   This covers the presence_* LISTEN/NOTIFY + outbox contract
+//   (notify_presence_member_change, presence_conv_members_notify, presence_shard_of, …).
+// - REMAINING LIMITATION: routine/trigger introspection is public-schema-only, and the
+//   sql-contract parser only recognizes `create [or replace] function` (dollar-quoted body) and
+//   `create trigger ... execute function|procedure` shapes. A routine/trigger in a non-public
+//   schema, or written in an unrecognized shape, is NOT in the contract and so is invisible to
+//   the diff — verify those by hand. Index/CHECK coverage matches the schema's actual usage
+//   (text+CHECK enums, `create unique index` uniques); there are no `create type`/view/non-FK
+//   `add constraint` statements to miss.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadSqlContract } from "./sql-contract.mjs";
+import {
+  foreignKeyIndexRecommendations,
+  loadSqlContract,
+  parseIndexLeadingColumn,
+} from "./sql-contract.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(packageRoot, "..", "..", "..");
@@ -194,9 +207,25 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
     }
 
     for (const tableIndex of table.indexes ?? []) {
-      if (!actualTable.indexes.has(tableIndex.name)) {
+      const actualIndex = actualTable.indexes.get(tableIndex.name);
+      if (!actualIndex) {
         lines.push(`-- Add missing index: ${tableIndex.name}`);
         lines.push(ensureSemicolon(tableIndex.createStatement));
+        lines.push("");
+        changeCount += 1;
+        continue;
+      }
+      // Name-match is not enough: a same-named index can drift in uniqueness,
+      // which name-only diffing silently accepts. A contract-UNIQUE index that
+      // is non-unique live (or vice versa) is a data-integrity gap, so surface
+      // it explicitly. Rebuilding is left to manual review because dropping a
+      // unique index can transiently admit duplicate rows.
+      if (Boolean(tableIndex.unique) !== Boolean(actualIndex.isUnique)) {
+        lines.push(`-- MANUAL REVIEW: uniqueness differs for index ${tableIndex.name} on ${table.name}.`);
+        lines.push(`-- Desired unique: ${Boolean(tableIndex.unique)}`);
+        lines.push(`-- Actual unique:  ${Boolean(actualIndex.isUnique)}`);
+        lines.push(`-- Live definition: ${actualIndex.definition ?? "unknown"}`);
+        lines.push("-- Rebuild manually (drop + recreate); confirm no duplicate rows before adding UNIQUE.");
         lines.push("");
         changeCount += 1;
       }
@@ -220,6 +249,36 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
         lines.push("");
         changeCount += 1;
       }
+    }
+  }
+
+  // Derived foreign-key supporting indexes. Every FK should have an index on
+  // its referencing column(s); without one, cascading deletes scan the child
+  // table and writes to the child take a lock that contends with the parent.
+  // These indexes are NOT declared in schema.sql — the diff generates them so
+  // the contract stays terse while the database gets the right indexes. An FK
+  // is considered already covered by a contract-declared leading index, the
+  // primary key, or a LIVE index whose leading column is the FK column.
+  const liveLeadingSupport = new Set();
+  for (const actualTable of actualSchema.tables.values()) {
+    for (const actualIndex of actualTable.indexes.values()) {
+      if (actualIndex.leadingColumn) {
+        liveLeadingSupport.add(`${actualTable.name.toLowerCase()} ${actualIndex.leadingColumn}`);
+      }
+    }
+  }
+  const fkIndexRecommendations = foreignKeyIndexRecommendations(contract.tables, liveLeadingSupport);
+  if (fkIndexRecommendations.length > 0) {
+    lines.push("-- =============================================================");
+    lines.push(`-- Missing foreign-key supporting indexes (${fkIndexRecommendations.length})`);
+    lines.push("-- Derived from foreign keys, not declared in schema.sql. Idempotent.");
+    lines.push("-- =============================================================");
+    lines.push("");
+    for (const rec of fkIndexRecommendations) {
+      lines.push(`-- ${rec.table}.${rec.column} (${rec.constraint ?? "fk"})`);
+      lines.push(rec.statement);
+      lines.push("");
+      changeCount += 1;
     }
   }
 
@@ -327,6 +386,7 @@ async function introspectDatabase(databaseUrl, schemas = ["public"]) {
             nsp.nspname as table_schema,
             tab.relname as table_name,
             idx.relname as index_name,
+            ind.indisunique as is_unique,
             pg_get_indexdef(idx.oid) as definition
           from pg_index ind
           join pg_class idx on idx.oid = ind.indexrelid
@@ -424,6 +484,8 @@ function hydrateActualSchema(rows) {
       ?.indexes.set(index.index_name, {
         name: index.index_name,
         definition: index.definition,
+        isUnique: index.is_unique === true || index.is_unique === "t" || index.is_unique === "true",
+        leadingColumn: parseIndexLeadingColumn(index.definition),
       });
   }
 

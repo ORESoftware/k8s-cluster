@@ -17,7 +17,13 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { parseSchemaSql } from "./sql-contract.mjs";
+import {
+  foreignKeyIndexName,
+  foreignKeyIndexRecommendations,
+  parseIndexLeadingColumn,
+  parseSchemaSql,
+  splitSqlStatements,
+} from "./sql-contract.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const generatorPath = path.join(packageRoot, "src", "generate.mjs");
@@ -381,4 +387,117 @@ test("parser captures canonical presence LISTEN/NOTIFY functions and trigger", a
   assert.deepEqual(trigger?.events, ["delete", "insert", "update"]);
   assert.equal(trigger?.orientation, "row");
   assert.equal(trigger?.functionName, "notify_presence_member_change");
+});
+
+test("parser captures EVERY function/trigger in schema.sql (no silent drift drops)", async () => {
+  // The live-drift diff (src/diff.mjs) only checks routines/triggers that the
+  // parser put into the contract. A function/trigger written in a shape the
+  // parser cannot match would be SILENTLY dropped — invisible to the diff, so
+  // prod could drift on it undetected. Use splitSqlStatements (the same
+  // dollar-quote-aware splitter the parser uses, so bodies don't false-count)
+  // as an independent oracle: every create-function/create-trigger STATEMENT
+  // must be captured. This auto-tracks legitimate additions (a parseable new
+  // function keeps the test green) but fails loudly on an unparseable shape.
+  const sql = await readFile(new URL("../schema/schema.sql", import.meta.url), "utf8");
+  const schema = parseSchemaSql(sql);
+  const statements = splitSqlStatements(sql);
+
+  const fnStatements = statements.filter((s) =>
+    /^create\s+(?:or\s+replace\s+)?function\b/i.test(s),
+  );
+  const triggerStatements = statements.filter((s) => /^create\s+trigger\b/i.test(s));
+
+  assert.equal(
+    schema.routines.length,
+    fnStatements.length,
+    `parser captured ${schema.routines.length} routines but schema.sql declares ${fnStatements.length} create-function statements; an unparseable function shape is being silently dropped from the drift contract`,
+  );
+  assert.equal(
+    schema.triggers.length,
+    triggerStatements.length,
+    `parser captured ${schema.triggers.length} triggers but schema.sql declares ${triggerStatements.length} create-trigger statements; an unparseable trigger shape is being silently dropped from the drift contract`,
+  );
+  // Sanity floor so a refactor that accidentally zeroes the oracle still trips.
+  assert.ok(schema.routines.length >= 10, "expected at least the presence/cdc routine set");
+  assert.ok(schema.triggers.length >= 1, "expected at least the presence notify trigger");
+});
+
+test("parseIndexLeadingColumn extracts the first plain column from index defs", () => {
+  // pg_get_indexdef style (schema-qualified, USING btree)
+  assert.equal(
+    parseIndexLeadingColumn("CREATE INDEX foo_idx ON public.foo USING btree (lead_col, other)"),
+    "lead_col",
+  );
+  // Drizzle/quoted style, no USING
+  assert.equal(
+    parseIndexLeadingColumn('create unique index "u_idx" on "foo" ("Mixed_Col")'),
+    "mixed_col",
+  );
+  // DESC + NULLS ordering on the leading column
+  assert.equal(
+    parseIndexLeadingColumn("create index i on foo (created_at desc nulls last, id)"),
+    "created_at",
+  );
+  // GIN / partial index leading column
+  assert.equal(
+    parseIndexLeadingColumn("create index g on foo using gin (labels) where deleted = false"),
+    "labels",
+  );
+  // Expression-leading index has no usable plain column → null (caller must
+  // not treat it as supporting a plain FK column).
+  assert.equal(parseIndexLeadingColumn("create index e on foo (lower(email))"), null);
+  assert.equal(parseIndexLeadingColumn("not an index statement"), null);
+});
+
+test("foreignKeyIndexName caps at Postgres's 63-char identifier limit", () => {
+  assert.equal(foreignKeyIndexName("orders", "customer_id"), "orders_customer_id_fk_idx");
+  const long = foreignKeyIndexName("a".repeat(50), "b".repeat(50));
+  assert.equal(long.length, 63);
+});
+
+test("foreignKeyIndexRecommendations only recommends genuinely uncovered FKs", () => {
+  const tables = [
+    {
+      name: "child",
+      schema: "public",
+      columns: [{ name: "id", primaryKey: true }],
+      indexes: [{ name: "child_declared_idx", columns: ["declared_fk"] }],
+      foreignKeys: [
+        // covered by a contract-declared leading index → skip
+        { name: "child_declared_fk", column: "declared_fk", references: { table: "p", column: "id" } },
+        // the FK column is the primary key → implicitly indexed → skip
+        { name: "child_pk_fk", column: "id", references: { table: "p", column: "id" } },
+        // covered by a LIVE index leading column → skip
+        { name: "child_live_fk", column: "live_fk", references: { table: "p", column: "id" } },
+        // genuinely uncovered → recommend
+        { name: "child_uncovered_fk", column: "uncovered_fk", references: { table: "p", column: "id" } },
+      ],
+    },
+  ];
+  const liveSupport = new Set(["child live_fk"]);
+  const recs = foreignKeyIndexRecommendations(tables, liveSupport);
+  assert.equal(recs.length, 1);
+  assert.equal(recs[0].column, "uncovered_fk");
+  assert.equal(recs[0].indexName, "child_uncovered_fk_fk_idx");
+  assert.equal(
+    recs[0].statement,
+    "create index if not exists child_uncovered_fk_fk_idx on child (uncovered_fk);",
+  );
+});
+
+test("foreignKeyIndexRecommendations is complete + idempotent against schema.sql", async () => {
+  const sql = await readFile(new URL("../schema/schema.sql", import.meta.url), "utf8");
+  const { tables } = parseSchemaSql(sql);
+
+  const recs = foreignKeyIndexRecommendations(tables);
+  assert.ok(recs.length > 0, "schema.sql currently has unindexed foreign keys to recommend");
+  for (const rec of recs) {
+    assert.match(rec.statement, /^create index if not exists \S+ on \S+ \(\S+\);$/);
+  }
+
+  // Idempotence/completeness: once every recommended FK column is covered by a
+  // (now-live) leading index, a re-run recommends nothing — the generator
+  // converges and never re-proposes an index it already proposed.
+  const live = new Set(recs.map((r) => `${r.table.toLowerCase()} ${r.column.toLowerCase()}`));
+  assert.equal(foreignKeyIndexRecommendations(tables, live).length, 0);
 });
