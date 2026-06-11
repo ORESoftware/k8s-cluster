@@ -423,7 +423,8 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
       break;
     }
     case "treemap":
-    case "sunburst": {
+    case "sunburst":
+    case "icicle": {
       // Hierarchy: each row is a node bound to its parent, optionally weighted.
       const labels = fieldValues(rows, fieldFor(spec, "label"));
       const parents = fieldValues(rows, fieldFor(spec, "parent"));
@@ -465,6 +466,54 @@ export function toPlotlyFigure(layer: FinalLayer): PlotlyFigure {
       const value = measure.length > 0 ? measure[measure.length - 1] : 0;
       const upper = measure.length > 0 ? Math.max(...measure, value) : 1;
       data = [{ type: "indicator", mode: "gauge+number", value, gauge: { axis: { range: [0, upper] } } }];
+      break;
+    }
+    case "bullet": {
+      // Compact KPI: a bullet-shaped indicator scaled to the observed range.
+      const measure = fieldValues(rows, fieldFor(spec, "value") ?? fieldFor(spec, "y"))
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry));
+      const value = measure.length > 0 ? measure[measure.length - 1] : 0;
+      const upper = measure.length > 0 ? Math.max(...measure, value) : 1;
+      data = [
+        { type: "indicator", mode: "number+gauge", value, gauge: { shape: "bullet", axis: { range: [0, upper] } } }
+      ];
+      break;
+    }
+    case "radar": {
+      // Radar/spider: a closed polar line filled to the center.
+      const r = fieldValues(rows, fieldFor(spec, "r") ?? fieldFor(spec, "value") ?? fieldFor(spec, "y"));
+      const theta = fieldValues(rows, fieldFor(spec, "theta") ?? fieldFor(spec, "category") ?? fieldFor(spec, "x"));
+      data = [{ type: "scatterpolar", r, theta, fill: "toself" }];
+      break;
+    }
+    case "polar-bar": {
+      // Polar bar / wind-rose: magnitude bars around a compass.
+      const r = fieldValues(rows, fieldFor(spec, "r") ?? fieldFor(spec, "value") ?? fieldFor(spec, "y"));
+      const theta = fieldValues(rows, fieldFor(spec, "theta") ?? fieldFor(spec, "category") ?? fieldFor(spec, "x"));
+      data = [{ type: "barpolar", r, theta }];
+      break;
+    }
+    case "ohlc": {
+      // Open-high-low-close bars (sibling of candlestick).
+      const open = fieldValues(rows, fieldFor(spec, "open"));
+      const high = fieldValues(rows, fieldFor(spec, "high"));
+      const low = fieldValues(rows, fieldFor(spec, "low"));
+      const close = fieldValues(rows, fieldFor(spec, "close"));
+      data = [{ type: "ohlc", x, open, high, low, close }];
+      break;
+    }
+    case "funnelarea": {
+      // Part-to-whole funnel (pie-like): labelled segments by value.
+      const values = fieldValues(rows, fieldFor(spec, "value") ?? fieldFor(spec, "y"));
+      const labels = fieldValues(rows, fieldFor(spec, "label") ?? fieldFor(spec, "x"));
+      data = [{ type: "funnelarea", values, labels }];
+      break;
+    }
+    case "scatter3d": {
+      // 3D point cloud; force a scene so axes render even without a 3d layout.
+      layout.scene = {};
+      data = [{ type: "scatter3d", mode: "markers", x, y, z, marker: { size: 4 } }];
       break;
     }
     default: {

@@ -532,14 +532,29 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             id: "flow-and-hierarchy",
             product_analog: "Tableau / Power BI flow and part-to-whole",
             data_shape: "source/target/value flows or label/parent/value hierarchies",
-            visualization_families: vec!["sankey", "treemap", "sunburst", "funnel", "waterfall"],
+            visualization_families: vec![
+                "sankey", "treemap", "sunburst", "icicle", "funnel", "funnelarea", "waterfall",
+            ],
             refresh: "cached query snapshot",
         },
         DashboardPanel {
             id: "financial-and-kpi",
             product_analog: "Tableau / Power BI finance and KPI tiles",
-            data_shape: "OHLC series, sized scatter, or a single gauge measure",
-            visualization_families: vec!["candlestick", "bubble", "gauge"],
+            data_shape: "OHLC series, sized scatter, or a single gauge/bullet measure",
+            visualization_families: vec!["candlestick", "ohlc", "bubble", "gauge", "bullet"],
+            refresh: "cached query snapshot",
+        },
+        DashboardPanel {
+            id: "density-and-polar",
+            product_analog: "Plotly density and polar charts",
+            data_shape: "two numeric axes for density, or magnitude/angle for polar",
+            visualization_families: vec![
+                "density-heatmap",
+                "density-contour",
+                "contour",
+                "radar",
+                "polar-bar",
+            ],
             refresh: "cached query snapshot",
         },
         DashboardPanel {
@@ -547,6 +562,7 @@ pub fn dashboard_panel_catalog() -> Vec<DashboardPanel> {
             product_analog: "D3 / Plotly",
             data_shape: "n-dimensional encoded records",
             visualization_families: vec![
+                "scatter3d",
                 "3d surface",
                 "volume cloud",
                 "parallel coordinates",
