@@ -23,7 +23,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{DefaultBodyLimit, Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -31,7 +31,7 @@ use axum::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use uuid::Uuid;
 
 use dd_nats_subject_defs::{
@@ -44,6 +44,9 @@ const MAX_HTTP_BODY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_RESTARTS: usize = 512;
 const MAX_TRACKED_SOLVES: usize = 48;
+/// Most solves that may run (in background) at once. Each holds a NATS subscription
+/// and tracked state; bounding it prevents unbounded fan-out from clients.
+const MAX_CONCURRENT_SOLVES: usize = 16;
 const GEN_WIDTH: f64 = 1000.0;
 const GEN_HEIGHT: f64 = 600.0;
 
@@ -70,6 +73,7 @@ struct Metrics {
     results_collected_total: AtomicU64,
     worker_jobs_processed_total: AtomicU64,
     improvements_total: AtomicU64,
+    rejected_requests_total: AtomicU64,
     errors_total: AtomicU64,
 }
 
@@ -83,6 +87,10 @@ struct AppState {
     events_subject: String,
     metrics: Arc<Metrics>,
     solves: Arc<RwLock<HashMap<String, SolveState>>>,
+    /// Optional shared secret guarding `POST /api/solve` (dashboard reads stay open).
+    auth_secret: Option<String>,
+    /// Bounds concurrent background solves.
+    solve_permits: Arc<Semaphore>,
 }
 
 /// Master-side live view of one solve. Serialized verbatim to the dashboard.
@@ -247,7 +255,13 @@ async fn run_solve(state: AppState, solve_id: String, plan: SolvePlan) {
 }
 
 async fn run_local(state: &AppState, solve_id: &str, plan: &SolvePlan) {
+    // Honour the same total budget as the distributed path so a big local run cannot
+    // peg a CPU indefinitely in the background.
+    let deadline = Instant::now() + plan.timeout;
     for restart_id in 0..plan.restarts {
+        if Instant::now() >= deadline {
+            break;
+        }
         let seed = restart_seed(plan.base_seed, restart_id);
         let problem = plan.problem.clone();
         let passes = plan.local_passes;
@@ -424,6 +438,15 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                 continue;
             }
         };
+        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!(
+                "{SERVICE_NAME} rejected oversize routing job: {} bytes",
+                message.payload.len()
+            );
+            let _ = message.ack().await;
+            continue;
+        }
         let job = match serde_json::from_slice::<RestartJob>(&message.payload) {
             Ok(job) => job,
             Err(error) => {
@@ -432,10 +455,18 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                 continue;
             }
         };
+        // Validate a job that may have been published straight to the subject, bypassing
+        // the master's plan_solve checks — a malformed problem must not pin a worker.
+        if let Err(reason) = job.problem.validate() {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("{SERVICE_NAME} rejected invalid routing problem: {reason}");
+            let _ = message.ack().await;
+            continue;
+        }
         let node = state.node_id.clone();
         let started = Instant::now();
         let problem = job.problem.clone();
-        let passes = job.local_passes;
+        let passes = job.local_passes.clamp(1, tsp::MAX_LOCAL_PASSES);
         let seed = job.seed;
         let solution =
             match tokio::task::spawn_blocking(move || tsp::solve_restart(&problem, seed, passes)).await
@@ -487,12 +518,28 @@ async fn dashboard_page(State(state): State<AppState>) -> Html<&'static str> {
     Html(dashboard::DASHBOARD_HTML)
 }
 
-async fn solve_http(State(state): State<AppState>, Json(request): Json<SolveRequest>) -> Response {
+async fn solve_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<SolveRequest>,
+) -> Response {
     state.metrics.http_requests_total.fetch_add(1, Ordering::Relaxed);
     state.metrics.solve_requests_total.fetch_add(1, Ordering::Relaxed);
+    if !authorized(&state, &headers) {
+        state.metrics.rejected_requests_total.fetch_add(1, Ordering::Relaxed);
+        return error_response(StatusCode::UNAUTHORIZED, "missing or invalid auth token");
+    }
     if state.role != NodeRole::Master {
         return error_response(StatusCode::BAD_REQUEST, "submit /api/solve to the master node");
     }
+    // Bound concurrent background solves; shed load rather than fan out without limit.
+    let permit = match state.solve_permits.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            state.metrics.rejected_requests_total.fetch_add(1, Ordering::Relaxed);
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "solver at capacity; retry shortly");
+        }
+    };
     let plan = match plan_solve(request) {
         Ok(plan) => plan,
         Err(message) => {
@@ -526,9 +573,40 @@ async fn solve_http(State(state): State<AppState>, Json(request): Json<SolveRequ
 
     let task_state = state.clone();
     let task_id = solve_id.clone();
-    tokio::spawn(async move { run_solve(task_state, task_id, plan).await });
+    // Hold the permit for the whole background solve so the cap reflects live work.
+    tokio::spawn(async move {
+        let _permit = permit;
+        run_solve(task_state, task_id, plan).await;
+    });
 
     Json(json!({"ok": true, "solveId": solve_id})).into_response()
+}
+
+/// Opt-in bearer auth for `POST /api/solve`. When `auth_secret` is unset, all requests
+/// pass; when set, the request must present it via `Authorization: Bearer <secret>` or
+/// `X-DD-Auth`. Dashboard reads (`/`, `/api/solve/{id}`) are always open.
+fn authorized(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(secret) = state.auth_secret.as_deref() else {
+        return true;
+    };
+    let presented = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer ").or(Some(value)))
+        .or_else(|| headers.get("x-dd-auth").and_then(|value| value.to_str().ok()));
+    presented.is_some_and(|token| constant_time_eq(token.trim().as_bytes(), secret.as_bytes()))
+}
+
+/// Length-independent constant-time comparison to avoid leaking the secret by timing.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 async fn solve_state_http(State(state): State<AppState>, Path(solve_id): Path<String>) -> Response {
@@ -588,6 +666,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_routing_improvements_total Incumbent improvements across all solves.\n",
             "# TYPE dd_routing_improvements_total counter\n",
             "dd_routing_improvements_total {}\n",
+            "# HELP dd_routing_rejected_requests_total Requests rejected by auth or capacity limits.\n",
+            "# TYPE dd_routing_rejected_requests_total counter\n",
+            "dd_routing_rejected_requests_total {}\n",
             "# HELP dd_routing_errors_total Errors across HTTP and NATS paths.\n",
             "# TYPE dd_routing_errors_total counter\n",
             "dd_routing_errors_total {}\n",
@@ -598,6 +679,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         m.results_collected_total.load(Ordering::Relaxed),
         m.worker_jobs_processed_total.load(Ordering::Relaxed),
         m.improvements_total.load(Ordering::Relaxed),
+        m.rejected_requests_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
     (
@@ -650,6 +732,50 @@ fn env_u64(key: &str, default: u64) -> u64 {
     env::var(key).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(default)
 }
 
+/// Connect to NATS with bounded retries so a worker (useless without NATS) or a master
+/// started just before NATS is reachable does not silently end up in a degraded state.
+async fn connect_nats(url: &str) -> Option<async_nats::Client> {
+    let attempts = env_u64("ROUTING_NATS_CONNECT_ATTEMPTS", 30).max(1);
+    let retry = Duration::from_secs(env_u64("ROUTING_NATS_CONNECT_RETRY_SECONDS", 2).max(1));
+    for attempt in 1..=attempts {
+        match async_nats::connect(url).await {
+            Ok(client) => {
+                println!("{SERVICE_NAME} connected to NATS at {url}");
+                return Some(client);
+            }
+            Err(error) => {
+                eprintln!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
+                if attempt < attempts {
+                    tokio::time::sleep(retry).await;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Idempotently ensure the JetStream stream exists so the master's job publishes are
+/// captured even if no worker pod has started yet.
+async fn ensure_stream(client: &async_nats::Client) {
+    let jetstream = async_nats::jetstream::new(client.clone());
+    if let Err(error) = jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: DD_REMOTE_ROUTING_STREAM_NAME.to_string(),
+            subjects: DD_REMOTE_ROUTING_STREAM_SUBJECTS
+                .iter()
+                .map(|subject| subject.to_string())
+                .collect(),
+            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+            max_age: Duration::from_secs(60 * 60 * 24),
+            max_message_size: MAX_NATS_PAYLOAD_BYTES as i32,
+            ..Default::default()
+        })
+        .await
+    {
+        eprintln!("{SERVICE_NAME} ensure stream failed: {error}");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
@@ -664,18 +790,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .unwrap_or_else(|| format!("route-{}", Uuid::new_v4()));
 
     let nats = match env::var("NATS_URL").ok().filter(|v| !v.trim().is_empty()) {
-        Some(url) => match async_nats::connect(&url).await {
-            Ok(client) => {
-                println!("{SERVICE_NAME} connected to NATS at {url}");
-                Some(client)
-            }
-            Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect failed ({error}); continuing without it");
-                None
-            }
-        },
+        Some(url) => connect_nats(&url).await,
         None => None,
     };
+    if let Some(client) = &nats {
+        ensure_stream(client).await;
+    } else if role == NodeRole::Worker {
+        eprintln!("{SERVICE_NAME} worker role has no NATS connection; it will idle until restarted");
+    }
+
+    let auth_secret = env::var("ROUTING_AUTH_SECRET")
+        .ok()
+        .filter(|value| !value.trim().is_empty());
+    if auth_secret.is_some() {
+        println!("{SERVICE_NAME} POST /api/solve requires a bearer token (ROUTING_AUTH_SECRET set)");
+    }
 
     let state = AppState {
         role,
@@ -686,6 +815,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         events_subject: env_value("ROUTING_EVENTS_SUBJECT", ROUTING_EVENTS_SUBJECT),
         metrics: Arc::new(Metrics::default()),
         solves: Arc::new(RwLock::new(HashMap::new())),
+        auth_secret,
+        solve_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SOLVES)),
     };
 
     if role == NodeRole::Worker {
