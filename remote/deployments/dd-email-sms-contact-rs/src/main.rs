@@ -328,7 +328,13 @@ async fn email_send(s: &AppState, to: &str, subject: &str, html: &str, text: Opt
     if !s.email_bucket.lock().await.try_take() {
         return Outcome { ok: false, transport: "sendgrid", upstream_status: None, error: Some("email rate limit exceeded".into()), rate_limited: true };
     }
-    let from = from.map(str::to_string).unwrap_or_else(|| s.email_from.clone());
+    // Only the configured verified sender may be used — don't let callers (HTTP or the NATS lane)
+    // pick an arbitrary `from` (open-relay / spoofing primitive). Change it via EMAIL_FROM.
+    let from = match from {
+        Some(f) if f == s.email_from => f.to_string(),
+        Some(_) => return Outcome { ok: false, transport: "sendgrid", upstream_status: None, error: Some("from not allowed (must equal configured EMAIL_FROM)".into()), rate_limited: false },
+        None => s.email_from.clone(),
+    };
     let mut content = vec![json!({"type": "text/html", "value": html})];
     if let Some(t) = text {
         content.insert(0, json!({"type": "text/plain", "value": t}));
@@ -343,7 +349,7 @@ async fn email_send(s: &AppState, to: &str, subject: &str, html: &str, text: Opt
         Ok(r) if r.status().is_success() => Outcome { ok: true, transport: "sendgrid", upstream_status: Some(r.status().as_u16()), error: None, rate_limited: false },
         Ok(r) => {
             let code = r.status().as_u16();
-            let txt = r.text().await.unwrap_or_default();
+            let txt = cap(r.text().await.unwrap_or_default());
             Outcome { ok: false, transport: "sendgrid", upstream_status: Some(code), error: Some(txt), rate_limited: false }
         }
         Err(e) => Outcome { ok: false, transport: "sendgrid", upstream_status: None, error: Some(format!("request failed: {e}")), rate_limited: false },
@@ -363,7 +369,7 @@ async fn sms_send(s: &AppState, to: &str, sms_body: &str) -> Outcome {
         Ok(r) if r.status().is_success() => Outcome { ok: true, transport: "twilio", upstream_status: Some(r.status().as_u16()), error: None, rate_limited: false },
         Ok(r) => {
             let code = r.status().as_u16();
-            let txt = r.text().await.unwrap_or_default();
+            let txt = cap(r.text().await.unwrap_or_default());
             Outcome { ok: false, transport: "twilio", upstream_status: Some(code), error: Some(txt), rate_limited: false }
         }
         Err(e) => Outcome { ok: false, transport: "twilio", upstream_status: None, error: Some(format!("request failed: {e}")), rate_limited: false },
@@ -882,7 +888,7 @@ fn check_auth(s: &AppState, headers: &HeaderMap) -> bool {
     }
 }
 
-const MAX_HTML_BYTES: usize = 5 * 1024 * 1024;
+const MAX_HTML_BYTES: usize = 1024 * 1024; // 1 MiB — stays under axum's 2 MiB default body limit
 const MAX_BODY_BYTES: usize = 1600; // ~10 SMS segments
 const MAX_PUSH_BYTES: usize = 8 * 1024; // generous ceiling; FCM/APNs/Web Push payload caps are ~4KB
 
@@ -891,7 +897,8 @@ fn validate_email(to: &str, subject: &str, html: &str) -> Option<&'static str> {
     if to.len() < 3 || to.len() > 320 || !to.contains('@') || !to.split('@').nth(1).map(|d| d.contains('.')).unwrap_or(false) {
         return Some("invalid recipient email");
     }
-    if subject.is_empty() || subject.len() > 1000 {
+    // reject control chars (CR/LF etc.) so they can't bleed into the outgoing MIME Subject header
+    if subject.is_empty() || subject.len() > 1000 || subject.chars().any(|c| c.is_control()) {
         return Some("invalid subject");
     }
     if html.is_empty() || html.len() > MAX_HTML_BYTES {
@@ -1013,29 +1020,56 @@ fn status_for(o: &Outcome) -> StatusCode {
 // ── NATS consumer ──────────────────────────────────────────────────────────────
 
 async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = async_nats::connect(&url).await?;
+    let client = async_nats::ConnectOptions::new()
+        .retry_on_initial_connect()
+        .connect(&url)
+        .await?;
     println!("nats consumer connected to {url}; subscribing {CONTACT_EMAIL_SEND_SUBJECT} + {CONTACT_SMS_SEND_SUBJECT} + {CONTACT_PUSH_SEND_SUBJECT} (group {CONTACT_EMAIL_SEND_QUEUE_GROUP})");
-    let mut email_sub = client.queue_subscribe(CONTACT_EMAIL_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await?;
-    let mut sms_sub = client.queue_subscribe(CONTACT_SMS_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await?;
-    let mut push_sub = client.queue_subscribe(CONTACT_PUSH_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await?;
     loop {
-        tokio::select! {
-            Some(msg) = email_sub.next() => {
-                let (s2, c2) = (s.clone(), client.clone());
-                tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg.payload).await; });
+        let mut email_sub = match client.queue_subscribe(CONTACT_EMAIL_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
+            Ok(sub) => sub,
+            Err(error) => {
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
             }
-            Some(msg) = sms_sub.next() => {
-                let (s2, c2) = (s.clone(), client.clone());
-                tokio::spawn(async move { handle_sms_msg(&s2, &c2, &msg.payload).await; });
+        };
+        let mut sms_sub = match client.queue_subscribe(CONTACT_SMS_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
+            Ok(sub) => sub,
+            Err(error) => {
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
             }
-            Some(msg) = push_sub.next() => {
-                let (s2, c2) = (s.clone(), client.clone());
-                tokio::spawn(async move { handle_push_msg(&s2, &c2, &msg.payload).await; });
+        };
+        let mut push_sub = match client.queue_subscribe(CONTACT_PUSH_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
+            Ok(sub) => sub,
+            Err(error) => {
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue;
             }
-            else => break,
+        };
+        loop {
+            tokio::select! {
+                Some(msg) = email_sub.next() => {
+                    let (s2, c2) = (s.clone(), client.clone());
+                    tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg.payload).await; });
+                }
+                Some(msg) = sms_sub.next() => {
+                    let (s2, c2) = (s.clone(), client.clone());
+                    tokio::spawn(async move { handle_sms_msg(&s2, &c2, &msg.payload).await; });
+                }
+                Some(msg) = push_sub.next() => {
+                    let (s2, c2) = (s.clone(), client.clone());
+                    tokio::spawn(async move { handle_push_msg(&s2, &c2, &msg.payload).await; });
+                }
+                else => break,
+            }
         }
+        eprintln!("nats consumer subscriptions ended; re-subscribing in 5s");
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
-    Ok(())
 }
 
 async fn publish_result(client: &async_nats::Client, value: Value) {

@@ -192,19 +192,26 @@ prefix to root-relative calls at this gateway is not.
 2. **One Cloudflare Worker** for all apps — path-routes pages, and Referer-routes
    the leftover root-relative client calls to the owning app:
    ```js
-   const ORIGIN = "https://98.90.186.114";
+   const ORIGIN = "https://98.90.186.114";              // gateway (Origin CA cert installed)
    const APPS = ["/dd-next-1","/app2","/app3","/app4","/app5"]; // each app's basePath
    const ROOT = ["/api/","/pub/","/data/"];                     // hand-written fetch roots
+   // headers a client must NOT be able to forge through us (gateway internal-trust + spoofable):
+   const STRIP = ["x-server-auth","x-forwarded-host","x-forwarded-server","x-original-url"];
    export default { async fetch(req) {
      const u = new URL(req.url); let path = u.pathname;
+     if (path.includes("..") || /[\x00-\x1f]/.test(path))      // reject traversal / control chars
+       return new Response("bad request", { status: 400 });
      const isAppPath = APPS.some(a => path === a || path.startsWith(a + "/"));
      if (!isAppPath && ROOT.some(p => path.startsWith(p))) {
-       const ref = new URL(req.headers.get("Referer") || "http://x/").pathname;
+       let ref = ""; try { ref = new URL(req.headers.get("Referer") || "").pathname; } catch {}
        const owner = APPS.find(a => ref === a || ref.startsWith(a + "/"));
        if (owner) path = owner + path;            // /api/x -> /dd-next-1/api/x
      }
+     // everything else passes through unchanged — the origin gateway still auth-gates its own
+     // protected paths (/agents, /api/lambdas, ...), so this is not an auth bypass.
      const out = new Request(ORIGIN + path + u.search, req);
      out.headers.set("Host", u.host);
+     for (const h of STRIP) out.headers.delete(h);
      return fetch(out);
    }};
    ```
@@ -219,6 +226,13 @@ prefix to root-relative calls at this gateway is not.
 The app sends `Referrer-Policy: strict-origin-when-cross-origin` → same-origin
 requests carry the full path, so it works. The only Referer-free alternative is
 `basePath`-aware fetches = app code change (ruled out).
+
+**Security notes for the Worker (internet-facing reverse proxy):** (a) reject `..`/control
+chars; (b) strip client-forgeable trust headers (`x-server-auth`, `x-forwarded-host`, ...) so
+the origin gateway's own auth can't be spoofed through the Worker; (c) it only *adds* a prefix —
+unmatched paths pass through unchanged and the gateway keeps auth-gating its protected routes, so
+the Worker is not an open proxy to internal services; (d) pin the origin to the gateway's Origin
+CA cert (don't disable TLS verification).
 
 **Cleanup owed on the cluster side (the nginx referer experiments are committed and
 should be reverted to a clean state):**

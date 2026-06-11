@@ -951,3 +951,129 @@ function mergeValidation(column, validation) {
 function unquoteIdent(value) {
   return value.replace(/^"|"$/g, "");
 }
+
+// ---------------------------------------------------------------------------
+// Index helpers shared with the live-drift diff (src/diff.mjs)
+// ---------------------------------------------------------------------------
+
+/** Quote a Postgres identifier only when it isn't already a safe bare ident. */
+function quoteIdentifier(value) {
+  const bare = unquoteIdent(String(value));
+  return /^[a-z_][a-z0-9_]*$/.test(bare) ? bare : `"${bare.replace(/"/g, '""')}"`;
+}
+
+/** A contract index column is either a bare string or `{ name, order }`. */
+function indexColumnName(column) {
+  if (!column) {
+    return null;
+  }
+  const name = typeof column === "string" ? column : column.name;
+  return name ? unquoteIdent(String(name)) : null;
+}
+
+/**
+ * Extract the leading column name from a `CREATE INDEX` / `pg_get_indexdef`
+ * statement, lowercased and unquoted. Returns null for an unparseable or
+ * expression-leading index (so the caller treats it as "not supporting" a
+ * plain foreign-key column rather than falsely claiming coverage).
+ */
+export function parseIndexLeadingColumn(definition) {
+  if (!definition) {
+    return null;
+  }
+  let def = String(definition).trim();
+  if (def.endsWith(";")) {
+    def = def.slice(0, -1).trim();
+  }
+  def = def.replace(/\bconcurrently\b\s*/gi, "").replace(/\bif\s+not\s+exists\b\s*/gi, "");
+  // CREATE [UNIQUE] INDEX name ON [schema.]table [USING method] (
+  const head = def.match(
+    /^create\s+(?:unique\s+)?index\s+"?[\w]+"?\s+on\s+(?:"?[\w]+"?\.)?"?[\w]+"?\s*(?:using\s+\w+\s*)?\(/i,
+  );
+  if (!head) {
+    return null;
+  }
+  // Walk balanced parens from the opening `(` to capture the column list.
+  const open = def.indexOf("(", head[0].length - 1);
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < def.length; i += 1) {
+    if (def[i] === "(") depth += 1;
+    else if (def[i] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) {
+    return null;
+  }
+  const inner = def.slice(open + 1, end);
+  const first = splitTopLevelComma(inner)[0]?.trim();
+  if (!first) {
+    return null;
+  }
+  // Only a plain `col` / `"col"` / `col asc|desc` leads to a usable column.
+  const plain = first.match(/^"?([a-z_][\w$]*)"?(?:\s+(?:asc|desc))?(?:\s+nulls\s+(?:first|last))?$/i);
+  return plain ? plain[1].toLowerCase() : null;
+}
+
+/** Build the derived FK-support index name, capped to Postgres's 63-char limit. */
+export function foreignKeyIndexName(tableName, columnName) {
+  const base = `${unquoteIdent(tableName)}_${unquoteIdent(columnName)}_fk_idx`;
+  return base.length <= 63 ? base : base.slice(0, 63);
+}
+
+/**
+ * Given the parsed contract `tables` and a `liveSupport` set (keys
+ * `"tableName column"`, lowercased, of FK columns already led by a LIVE
+ * index), return the foreign keys that lack ANY supporting index — declared
+ * (a contract index whose leading column is the FK column), implicit (the FK
+ * column is a primary-key column), or live — together with an idempotent
+ * `create index if not exists` statement. Pure + deterministic; the live set
+ * is empty when deriving from the contract alone (fresh DB / unit tests).
+ */
+export function foreignKeyIndexRecommendations(tables, liveSupport = new Set()) {
+  const recommendations = [];
+  for (const table of tables ?? []) {
+    const schema = table.schema ?? "public";
+    const declaredLeading = new Set();
+    for (const index of table.indexes ?? []) {
+      const lead = indexColumnName(index.columns?.[0]);
+      if (lead) {
+        declaredLeading.add(lead.toLowerCase());
+      }
+    }
+    const pkColumns = new Set(
+      (table.columns ?? []).filter((c) => c.primaryKey).map((c) => c.name.toLowerCase()),
+    );
+    const seen = new Set();
+    for (const fk of table.foreignKeys ?? []) {
+      const column = unquoteIdent(fk.column ?? "").toLowerCase();
+      if (!column || seen.has(column)) {
+        continue;
+      }
+      seen.add(column);
+      const liveKey = `${table.name.toLowerCase()} ${column}`;
+      if (declaredLeading.has(column) || pkColumns.has(column) || liveSupport.has(liveKey)) {
+        continue;
+      }
+      const indexName = foreignKeyIndexName(table.name, fk.column);
+      const qualified =
+        schema === "public"
+          ? quoteIdentifier(table.name)
+          : `${quoteIdentifier(schema)}.${quoteIdentifier(table.name)}`;
+      recommendations.push({
+        schema,
+        table: table.name,
+        column: fk.column,
+        constraint: fk.name ?? null,
+        indexName,
+        statement: `create index if not exists ${quoteIdentifier(indexName)} on ${qualified} (${quoteIdentifier(fk.column)});`,
+      });
+    }
+  }
+  return recommendations;
+}

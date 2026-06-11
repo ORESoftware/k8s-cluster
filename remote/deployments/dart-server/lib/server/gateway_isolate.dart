@@ -49,6 +49,26 @@ import 'session_supervisor.dart';
 
 const String _wssPath = '/dart/wss';
 
+/// WebSocket per-message compression (permessage-deflate). **Off by default.**
+///
+/// Two reasons to keep it off for this workload:
+///   * **Security** — an inbound compressed frame is inflated by the WS layer
+///     *before* our `WS_MAX_INBOUND_BYTES` check sees it, so a small
+///     highly-compressible frame can decompress to a large buffer (a
+///     decompression-amplification / "zip-bomb" DoS surface). Disabling
+///     permessage-deflate removes that surface entirely.
+///   * **Perf** — fragments are tiny HTML/JSON, so deflate saves little
+///     bandwidth while costing real CPU per frame at 20–30K connections, where
+///     the pod is CPU-bound, not bandwidth-bound.
+///
+/// Set `WS_PERMESSAGE_DEFLATE=true` to restore the prior (implicit-on)
+/// behaviour. Read once per shard isolate.
+final CompressionOptions _wsCompression =
+    Platform.environment['WS_PERMESSAGE_DEFLATE']?.toLowerCase().trim() ==
+            'true'
+        ? CompressionOptions.compressionDefault
+        : CompressionOptions.compressionOff;
+
 /// Entry point handed to `Isolate.spawn(gatewayShardEntry, boot)`. Runs
 /// for the lifetime of the shard.
 ///
@@ -376,7 +396,8 @@ Future<void> _route(
     if (supervisor.isDraining) {
       metrics.inc('dart_wss_upgrade_refused_draining_total');
       try {
-        final s = await WebSocketTransformer.upgrade(req);
+        final s = await WebSocketTransformer.upgrade(req,
+            compression: _wsCompression);
         await s.close(1012, 'server_draining');
       } catch (_) {/* swallow */}
       return;
@@ -384,7 +405,8 @@ Future<void> _route(
     metrics.inc('dart_wss_upgrade_total');
     final WebSocket socket;
     try {
-      socket = await WebSocketTransformer.upgrade(req);
+      socket =
+          await WebSocketTransformer.upgrade(req, compression: _wsCompression);
     } catch (e) {
       metrics.inc('dart_wss_upgrade_failed_total');
       try {
@@ -395,15 +417,19 @@ Future<void> _route(
     }
     final sessionId = _newSessionId(shardId);
     final remote = req.connectionInfo?.remoteAddress.address ?? 'unknown';
-    final headers = <String, String>{};
-    req.headers.forEach((k, v) => headers[k] = v.join(','));
+    // The session runtime does not read request headers, so we deliberately do
+    // NOT copy them into the SessionBootMessage: copying every inbound header
+    // (attacker-controlled, up to the server's header-size limit) into a map
+    // that then crosses the isolate boundary per connection is wasted work and
+    // needless attack surface. Pass an empty map; reintroduce a small
+    // allowlist here if a header is ever actually needed downstream.
     try {
       await supervisor.adopt(
         socket,
         sessionId: sessionId,
         remoteAddr: remote,
         requestPath: path,
-        headers: headers,
+        headers: const <String, String>{},
       );
     } catch (e, st) {
       metrics.inc('dart_sessions_adopt_failed_total');
