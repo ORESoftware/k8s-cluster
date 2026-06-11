@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/source-revision: '2026-06-10-email-sms-contact-nats'
+        dd.dev/source-revision: '2026-06-10-email-sms-contact-push'
       labels:
         app: dd-email-sms-contact-rs
     spec:
@@ -90,6 +90,11 @@ spec:
               value: '60'
             - name: SMS_RATE_PER_MIN
               value: '30'
+            - name: PUSH_RATE_PER_MIN
+              value: '60'
+            # Apple production vs sandbox APNs host (set '1' for the sandbox gateway during dev).
+            - name: APNS_USE_SANDBOX
+              value: '0'
             - name: EMAIL_FROM
               value: outreach@dancingdragons.cc
             - name: SERVER_AUTH_SECRET
@@ -125,6 +130,68 @@ spec:
                 secretKeyRef:
                   name: dd-email-sms-contact-secrets
                   key: TWILIO_FROM_NUMBER
+                  optional: true
+            # Push-notification credentials — same dd-email-sms-contact-secrets bundle, all optional
+            # so the pod boots before any are populated. Each push transport turns on only when its
+            # keys are present; /readyz reports which are live. Expo needs no credentials (always on;
+            # EXPO_ACCESS_TOKEN only required if Expo push security is enabled on the project).
+            # Web Push (VAPID): EC P-256 private key PEM + a mailto:/https: contact subject.
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: VAPID_PRIVATE_KEY
+                  optional: true
+            - name: VAPID_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: VAPID_SUBJECT
+                  optional: true
+            # Firebase Cloud Messaging (HTTP v1): the full service-account JSON; project id is read
+            # from that JSON unless FCM_PROJECT_ID overrides it.
+            - name: FCM_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: FCM_SERVICE_ACCOUNT_JSON
+                  optional: true
+            - name: FCM_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: FCM_PROJECT_ID
+                  optional: true
+            # Apple APNs (token auth): .p8 EC key PEM + key id + team id + topic (app bundle id).
+            - name: APNS_KEY_P8
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: APNS_KEY_P8
+                  optional: true
+            - name: APNS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: APNS_KEY_ID
+                  optional: true
+            - name: APNS_TEAM_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: APNS_TEAM_ID
+                  optional: true
+            - name: APNS_TOPIC
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: APNS_TOPIC
+                  optional: true
+            - name: EXPO_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: EXPO_ACCESS_TOKEN
                   optional: true
           ports:
             - name: http

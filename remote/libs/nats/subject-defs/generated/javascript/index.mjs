@@ -67,6 +67,24 @@ export const BILLING_SYNC_COMMANDS_QUEUE_GROUP = "dd-billing-server";
 export const BILLING_WEBHOOK_RECEIPTS_SUBJECT = "dd.remote.billing.webhooks.receipts";
 
 /**
+ * Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.
+ * Service: dd-contract-service
+ */
+export const BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT = "dd.remote.blockchain.bridge.attestations";
+
+/**
+ * Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.
+ * Service: dd-contract-service
+ */
+export const BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.events";
+
+/**
+ * Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
+ * Service: dd-contract-service
+ */
+export const BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts";
+
+/**
  * Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
  * Service: dd-chaos
  */
@@ -755,6 +773,19 @@ export const TRADING_SIGNALS_QUEUE_GROUP = "dd-trading-server";
  */
 export const WEBSOCKET_EVENTS_SUBJECT = "dd.remote.websocket.events";
 
+/**
+ * Run lifecycle and step events fanned out by the engine (run started/step succeeded/step failed/run completed/run failed/run canceled). Fan-out telemetry for visibility and downstream subscribers; not the durable source of truth. Default for NATS_WORKFLOW_EVENT_SUBJECT.
+ * Service: dd-gleam-lambda-runner
+ */
+export const WORKFLOWS_EVENTS_SUBJECT = "dd.remote.workflows.events";
+
+/**
+ * Start a new workflow run. Request/reply: payload is {"definitionId"|"definitionSlug", "input"?, "idempotencyKey"?}; the reply carries the created run id and status. Consumed by the runner's queue group so exactly one replica creates the run. Default for NATS_WORKFLOW_START_SUBJECT='dd.remote.workflows.start'.
+ * Service: dd-gleam-lambda-runner
+ */
+export const WORKFLOWS_START_SUBJECT = "dd.remote.workflows.start";
+export const WORKFLOWS_START_QUEUE_GROUP = "dd-gleam-workflow-engine";
+
 // ---------- Parameterized subjects ----------
 
 /**
@@ -1125,6 +1156,37 @@ export function parseThreadTasksSubject(subject) {
   return result;
 }
 
+/**
+ * Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {"name": "approved", "payload"?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'.
+ * Service: dd-gleam-lambda-runner
+ */
+export const WORKFLOWS_SIGNAL_PATTERN = "dd.remote.workflows.signal.{run_id}";
+export const WORKFLOWS_SIGNAL_WILDCARD = "dd.remote.workflows.signal.*";
+export const WORKFLOWS_SIGNAL_QUEUE_GROUP = "dd-gleam-workflow-engine";
+export function workflowsSignalSubject(runId) {
+  return `dd.remote.workflows.signal.${runId}`;
+}
+export function parseWorkflowsSignalSubject(subject) {
+  const patternTokens = ["dd","remote","workflows","signal","{run_id}"];
+  const subjectTokens = subject.split(".");
+  const result = {};
+  let si = 0;
+  for (let pi = 0; pi < patternTokens.length; pi += 1) {
+    const tok = patternTokens[pi];
+    const phMatch = /^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/.exec(tok);
+    if (phMatch) {
+      if (si >= subjectTokens.length) return null;
+      result[phMatch[1]] = subjectTokens[si];
+      si += 1;
+      continue;
+    }
+    if (si >= subjectTokens.length || subjectTokens[si] !== tok) return null;
+    si += 1;
+  }
+  if (si !== subjectTokens.length) return null;
+  return result;
+}
+
 // ---------- Standalone queue groups ----------
 
 /**
@@ -1252,6 +1314,12 @@ export const SAT_SMT_SERVER_QUEUE_GROUP = "dd-sat-smt-server";
  * Service: dd-remote-rest-api
  */
 export const THREAD_PREPARER_QUEUE_GROUP = "dd-remote-thread-preparer";
+
+/**
+ * Shared queue group used by workflow-engine replicas for run start and signal delivery.
+ * Service: dd-gleam-lambda-runner
+ */
+export const WORKFLOW_ENGINE_QUEUE_GROUP = "dd-gleam-workflow-engine";
 
 // ---------- JetStream streams ----------
 

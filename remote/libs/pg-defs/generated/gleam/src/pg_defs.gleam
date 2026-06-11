@@ -1933,6 +1933,207 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   }
 }
 
+pub const workflow_definitions_table = "workflow_definitions"
+pub const workflow_definitions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions"
+
+pub type WorkflowDefinitionsStatus {
+  WorkflowDefinitionsStatusDraft
+  WorkflowDefinitionsStatusActive
+  WorkflowDefinitionsStatusPaused
+  WorkflowDefinitionsStatusArchived
+}
+
+pub fn workflow_definitions_status_to_string(value: WorkflowDefinitionsStatus) -> String {
+  case value {
+    WorkflowDefinitionsStatusDraft -> "draft"
+    WorkflowDefinitionsStatusActive -> "active"
+    WorkflowDefinitionsStatusPaused -> "paused"
+    WorkflowDefinitionsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_workflow_definitions_status(value: String) -> Result(WorkflowDefinitionsStatus, String) {
+  case value {
+    "draft" -> Ok(WorkflowDefinitionsStatusDraft)
+    "active" -> Ok(WorkflowDefinitionsStatusActive)
+    "paused" -> Ok(WorkflowDefinitionsStatusPaused)
+    "archived" -> Ok(WorkflowDefinitionsStatusArchived)
+    _ -> Error("unsupported workflow_definitions.status: " <> value)
+  }
+}
+
+pub type WorkflowDefinitionsRow {
+  WorkflowDefinitionsRow(
+    id: String,
+    slug: String,
+    display_name: String,
+    description: String,
+    steps_json: String,
+    default_retry_json: String,
+    status: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_workflow_definitions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("workflow_definitions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_workflow_definitions_status(value: String) -> Result(String, String) {
+  case list.contains(["draft", "active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported workflow_definitions.status: " <> value)
+  }
+}
+
+pub const workflow_runs_table = "workflow_runs"
+pub const workflow_runs_select_sql = "select\n      id::text as id,\n      definition_id::text as definition_id,\n      definition_slug,\n      status,\n      current_step_index,\n      attempt,\n      input::text as input_json,\n      context::text as context_json,\n      output::text as output_json,\n      last_error,\n      to_char(wake_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as wake_at,\n      to_char(wait_deadline at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as wait_deadline,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      signals::text as signals_json,\n      idempotency_key,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by\n    from workflow_runs"
+
+pub type WorkflowRunsStatus {
+  WorkflowRunsStatusPending
+  WorkflowRunsStatusRunning
+  WorkflowRunsStatusSleeping
+  WorkflowRunsStatusWaiting
+  WorkflowRunsStatusCompleted
+  WorkflowRunsStatusFailed
+  WorkflowRunsStatusCanceled
+}
+
+pub fn workflow_runs_status_to_string(value: WorkflowRunsStatus) -> String {
+  case value {
+    WorkflowRunsStatusPending -> "pending"
+    WorkflowRunsStatusRunning -> "running"
+    WorkflowRunsStatusSleeping -> "sleeping"
+    WorkflowRunsStatusWaiting -> "waiting"
+    WorkflowRunsStatusCompleted -> "completed"
+    WorkflowRunsStatusFailed -> "failed"
+    WorkflowRunsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_workflow_runs_status(value: String) -> Result(WorkflowRunsStatus, String) {
+  case value {
+    "pending" -> Ok(WorkflowRunsStatusPending)
+    "running" -> Ok(WorkflowRunsStatusRunning)
+    "sleeping" -> Ok(WorkflowRunsStatusSleeping)
+    "waiting" -> Ok(WorkflowRunsStatusWaiting)
+    "completed" -> Ok(WorkflowRunsStatusCompleted)
+    "failed" -> Ok(WorkflowRunsStatusFailed)
+    "canceled" -> Ok(WorkflowRunsStatusCanceled)
+    _ -> Error("unsupported workflow_runs.status: " <> value)
+  }
+}
+
+pub type WorkflowRunsRow {
+  WorkflowRunsRow(
+    id: String,
+    definition_id: String,
+    definition_slug: String,
+    status: String,
+    current_step_index: Int,
+    attempt: Int,
+    input_json: String,
+    context_json: String,
+    output_json: Option(String),
+    last_error: Option(String),
+    wake_at: Option(String),
+    wait_deadline: Option(String),
+    lease_until: Option(String),
+    signals_json: String,
+    idempotency_key: Option(String),
+    started_at: Option(String),
+    finished_at: Option(String),
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+  )
+}
+
+pub fn validate_workflow_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("workflow_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_workflow_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported workflow_runs.status: " <> value)
+  }
+}
+
+pub const workflow_step_runs_table = "workflow_step_runs"
+pub const workflow_step_runs_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      step_index,\n      step_name,\n      step_type,\n      function_ref,\n      attempt,\n      status,\n      input::text as input_json,\n      output::text as output_json,\n      error,\n      duration_ms,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from workflow_step_runs"
+
+pub type WorkflowStepRunsStatus {
+  WorkflowStepRunsStatusRunning
+  WorkflowStepRunsStatusSucceeded
+  WorkflowStepRunsStatusFailed
+}
+
+pub fn workflow_step_runs_status_to_string(value: WorkflowStepRunsStatus) -> String {
+  case value {
+    WorkflowStepRunsStatusRunning -> "running"
+    WorkflowStepRunsStatusSucceeded -> "succeeded"
+    WorkflowStepRunsStatusFailed -> "failed"
+  }
+}
+
+pub fn parse_workflow_step_runs_status(value: String) -> Result(WorkflowStepRunsStatus, String) {
+  case value {
+    "running" -> Ok(WorkflowStepRunsStatusRunning)
+    "succeeded" -> Ok(WorkflowStepRunsStatusSucceeded)
+    "failed" -> Ok(WorkflowStepRunsStatusFailed)
+    _ -> Error("unsupported workflow_step_runs.status: " <> value)
+  }
+}
+
+pub type WorkflowStepRunsRow {
+  WorkflowStepRunsRow(
+    id: String,
+    run_id: String,
+    step_index: Int,
+    step_name: String,
+    step_type: String,
+    function_ref: String,
+    attempt: Int,
+    status: String,
+    input_json: Option(String),
+    output_json: Option(String),
+    error: Option(String),
+    duration_ms: Option(Int),
+    started_at: String,
+    finished_at: Option(String),
+  )
+}
+
+pub fn validate_workflow_step_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("workflow_step_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_workflow_step_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["running", "succeeded", "failed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported workflow_step_runs.status: " <> value)
+  }
+}
+
 pub const container_pool_image_revisions_table = "container_pool_image_revisions"
 pub const container_pool_image_revisions_select_sql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions"
 

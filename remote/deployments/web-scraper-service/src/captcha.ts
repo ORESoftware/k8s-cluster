@@ -41,53 +41,65 @@ export function detectCaptcha(html: string): CaptchaDetection {
   if (!html) {
     return NOT_DETECTED;
   }
+  // Each branch's regexes contain adjacent unbounded `[^"']*` runs that backtrack
+  // quadratically when their marker is absent. Gate every branch behind a cheap
+  // lowercase substring check so the regexes only run when the marker is present,
+  // keeping detection linear on the common (no-CAPTCHA) path for large documents.
+  const hay = html.toLowerCase();
   const signals: string[] = [];
 
   // Cloudflare Turnstile.
-  const turnstileKey =
-    matchAttr(html, /class=["'][^"']*\bcf-turnstile\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
-    matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bcf-turnstile\b/i);
-  if (turnstileKey || /challenges\.cloudflare\.com\/turnstile/i.test(html)) {
-    if (turnstileKey) signals.push('cf-turnstile sitekey');
-    else signals.push('challenges.cloudflare.com/turnstile script');
-    return { detected: true, type: 'turnstile', sitekey: turnstileKey, action: null, signals };
+  if (hay.includes('cf-turnstile') || hay.includes('challenges.cloudflare.com/turnstile')) {
+    const turnstileKey =
+      matchAttr(html, /class=["'][^"']*\bcf-turnstile\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
+      matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bcf-turnstile\b/i);
+    if (turnstileKey || hay.includes('challenges.cloudflare.com/turnstile')) {
+      signals.push(turnstileKey ? 'cf-turnstile sitekey' : 'challenges.cloudflare.com/turnstile script');
+      return { detected: true, type: 'turnstile', sitekey: turnstileKey, action: null, signals };
+    }
   }
 
   // hCaptcha.
-  const hcaptchaKey =
-    matchAttr(html, /class=["'][^"']*\bh-captcha\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
-    matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bh-captcha\b/i);
-  if (hcaptchaKey || /\bhcaptcha\.com\/1\/api\.js/i.test(html)) {
-    if (hcaptchaKey) signals.push('h-captcha sitekey');
-    else signals.push('hcaptcha.com/1/api.js script');
-    return { detected: true, type: 'hcaptcha', sitekey: hcaptchaKey, action: null, signals };
+  if (hay.includes('h-captcha') || hay.includes('hcaptcha.com/1/api.js')) {
+    const hcaptchaKey =
+      matchAttr(html, /class=["'][^"']*\bh-captcha\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
+      matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bh-captcha\b/i);
+    if (hcaptchaKey || hay.includes('hcaptcha.com/1/api.js')) {
+      signals.push(hcaptchaKey ? 'h-captcha sitekey' : 'hcaptcha.com/1/api.js script');
+      return { detected: true, type: 'hcaptcha', sitekey: hcaptchaKey, action: null, signals };
+    }
   }
 
   // reCAPTCHA (v2 explicit widget, or v3 via render=<sitekey>).
-  const recaptchaV2Key =
-    matchAttr(html, /class=["'][^"']*\bg-recaptcha\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
-    matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bg-recaptcha\b/i);
-  if (recaptchaV2Key) {
-    signals.push('g-recaptcha sitekey');
-    return { detected: true, type: 'recaptcha-v2', sitekey: recaptchaV2Key, action: null, signals };
-  }
-  const recaptchaV3Key = matchAttr(
-    html,
-    /recaptcha\/api\.js\?[^"']*\brender=([0-9A-Za-z_-]{20,})/i,
-  );
-  if (recaptchaV3Key && recaptchaV3Key !== 'explicit' && recaptchaV3Key !== 'onload') {
-    signals.push('recaptcha v3 render sitekey');
-    return { detected: true, type: 'recaptcha-v3', sitekey: recaptchaV3Key, action: null, signals };
-  }
-  if (/www\.google\.com\/recaptcha\/api\.js/i.test(html) || /\bg-recaptcha\b/i.test(html)) {
-    signals.push('recaptcha script without inline sitekey');
-    return { detected: true, type: 'recaptcha-v2', sitekey: null, action: null, signals };
+  if (hay.includes('g-recaptcha') || hay.includes('recaptcha/api.js')) {
+    const recaptchaV2Key =
+      matchAttr(html, /class=["'][^"']*\bg-recaptcha\b[^"']*["'][^>]*\bdata-sitekey=["']([^"']+)["']/i) ??
+      matchAttr(html, /\bdata-sitekey=["']([^"']+)["'][^>]*class=["'][^"']*\bg-recaptcha\b/i);
+    if (recaptchaV2Key) {
+      signals.push('g-recaptcha sitekey');
+      return { detected: true, type: 'recaptcha-v2', sitekey: recaptchaV2Key, action: null, signals };
+    }
+    const recaptchaV3Key = matchAttr(
+      html,
+      /recaptcha\/api\.js\?[^"']*\brender=([0-9A-Za-z_-]{20,})/i,
+    );
+    if (recaptchaV3Key && recaptchaV3Key !== 'explicit' && recaptchaV3Key !== 'onload') {
+      signals.push('recaptcha v3 render sitekey');
+      return { detected: true, type: 'recaptcha-v3', sitekey: recaptchaV3Key, action: null, signals };
+    }
+    if (hay.includes('www.google.com/recaptcha/api.js') || hay.includes('g-recaptcha')) {
+      signals.push('recaptcha script without inline sitekey');
+      return { detected: true, type: 'recaptcha-v2', sitekey: null, action: null, signals };
+    }
   }
 
   // Cloudflare interstitial / managed challenge (no solvable sitekey on its own).
   if (
-    /<title>\s*Just a moment/i.test(html) ||
-    /cf-browser-verification|cf_chl_opt|__cf_chl_|cdn-cgi\/challenge-platform/i.test(html)
+    /<title>\s*just a moment/i.test(hay) ||
+    hay.includes('cf-browser-verification') ||
+    hay.includes('cf_chl_opt') ||
+    hay.includes('__cf_chl_') ||
+    hay.includes('cdn-cgi/challenge-platform')
   ) {
     signals.push('cloudflare interstitial markers');
     return {
@@ -277,7 +289,7 @@ export function buildInjectionScript(type: CaptchaType, token: string): string {
   const names = ${JSON.stringify(names)};
   for (const name of names) {
     for (const el of document.querySelectorAll('[name="' + name + '"], #' + name)) {
-      try { el.value = token; el.innerHTML = token; } catch (_) {}
+      try { el.value = token; } catch (_) {}
     }
     if (!document.querySelector('[name="' + name + '"]')) {
       const ta = document.createElement('textarea');

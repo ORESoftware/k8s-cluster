@@ -43,6 +43,18 @@ pub const billing_sync_commands_queue_group = "dd-billing-server"
 /// Service: dd-billing-server
 pub const billing_webhook_receipts_subject = "dd.remote.billing.webhooks.receipts"
 
+/// Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.
+/// Service: dd-contract-service
+pub const blockchain_bridge_attestations_subject = "dd.remote.blockchain.bridge.attestations"
+
+/// Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.
+/// Service: dd-contract-service
+pub const blockchain_index_events_subject = "dd.remote.blockchain.index.events"
+
+/// Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
+/// Service: dd-contract-service
+pub const blockchain_mev_alerts_subject = "dd.remote.blockchain.mev.alerts"
+
 /// Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 /// Service: dd-chaos
 pub const chaos_events_subject = "dd.remote.chaos.events"
@@ -519,6 +531,15 @@ pub const trading_signals_queue_group = "dd-trading-server"
 /// WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 /// Service: shared
 pub const websocket_events_subject = "dd.remote.websocket.events"
+
+/// Run lifecycle and step events fanned out by the engine (run started/step succeeded/step failed/run completed/run failed/run canceled). Fan-out telemetry for visibility and downstream subscribers; not the durable source of truth. Default for NATS_WORKFLOW_EVENT_SUBJECT.
+/// Service: dd-gleam-lambda-runner
+pub const workflows_events_subject = "dd.remote.workflows.events"
+
+/// Start a new workflow run. Request/reply: payload is {"definitionId"|"definitionSlug", "input"?, "idempotencyKey"?}; the reply carries the created run id and status. Consumed by the runner's queue group so exactly one replica creates the run. Default for NATS_WORKFLOW_START_SUBJECT='dd.remote.workflows.start'.
+/// Service: dd-gleam-lambda-runner
+pub const workflows_start_subject = "dd.remote.workflows.start"
+pub const workflows_start_queue_group = "dd-gleam-workflow-engine"
 
 /// Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
 /// Service: dd-wal-gateway
@@ -1011,6 +1032,46 @@ pub fn parse_thread_tasks_subject(subject: String) -> Option(ThreadTasksSubjectP
   }
 }
 
+/// Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {"name": "approved", "payload"?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'.
+/// Service: dd-gleam-lambda-runner
+pub const workflows_signal_pattern = "dd.remote.workflows.signal.{run_id}"
+pub const workflows_signal_wildcard = "dd.remote.workflows.signal.*"
+pub const workflows_signal_queue_group = "dd-gleam-workflow-engine"
+pub type WorkflowsSignalSubjectParts {
+  WorkflowsSignalSubjectParts(
+    run_id: String
+  )
+}
+pub fn workflows_signal_subject(run_id run_id: String) -> String {
+  "dd.remote.workflows.signal." <> run_id
+}
+
+pub fn parse_workflows_signal_subject(subject: String) -> Option(WorkflowsSignalSubjectParts) {
+  let pattern_tokens = string.split("dd.remote.workflows.signal.{run_id}", on: ".")
+  let subject_tokens = string.split(subject, on: ".")
+  case list.length(pattern_tokens) == list.length(subject_tokens) {
+    False -> None
+    True -> {
+      let pairs = list.zip(pattern_tokens, subject_tokens)
+      let run_id = lookup_param(pairs, "{run_id}")
+      let literals_ok = list.all(pairs, fn(pair) {
+        let #(p, s) = pair
+        case string.starts_with(p, "{") && string.ends_with(p, "}") {
+          True -> True
+          False -> p == s
+        }
+      })
+      case literals_ok {
+        False -> None
+        True -> {
+          use run_id <- with_some(run_id)
+          Some(WorkflowsSignalSubjectParts(run_id: run_id))
+        }
+      }
+    }
+  }
+}
+
 /// Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
 /// Service: dd-agent-sim-server
 pub const agent_sim_server_queue_group = "dd-agent-sim-server"
@@ -1094,6 +1155,10 @@ pub const sat_smt_server_queue_group = "dd-sat-smt-server"
 /// Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 /// Service: dd-remote-rest-api
 pub const thread_preparer_queue_group = "dd-remote-thread-preparer"
+
+/// Shared queue group used by workflow-engine replicas for run start and signal delivery.
+/// Service: dd-gleam-lambda-runner
+pub const workflow_engine_queue_group = "dd-gleam-workflow-engine"
 
 /// Default JetStream stream for the wal-gateway publish path. Overridable via WAL_GATEWAY_STREAM_NAME.
 /// Service: dd-wal-gateway

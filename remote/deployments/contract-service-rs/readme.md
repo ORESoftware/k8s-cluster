@@ -163,3 +163,59 @@ critical events to `NATS_CRITICAL_EVENT_SUBJECT` (default `dd.remote.events.crit
 Validation checks schema version, base58 Solana public keys, supported clusters and commitments,
 bounded instruction/account counts, instruction data encoding and size, memo size, request ID size,
 and compute-unit limits before a request is accepted.
+
+## Blockchain Feature Suite
+
+In addition to the Solana contract gateway above, the service hosts ten **keyless, off-by-default**
+blockchain modules (`src/blockchain/`). They extend the gateway with Solana **and** EVM read/relay
+support while preserving the hardening contract: **no private keys are stored and nothing here
+signs.** Anything that would sign goes through a pluggable `SignerBackend` whose only variant today is
+`External` ("client must sign"); execute/relay paths accept an already client-signed raw transaction.
+A future `Kms` variant is the documented custody extension point.
+
+Every feature is gated by a `*_ENABLED` flag defaulting to `false`. Read/coordination paths need only
+that flag; **execute/broadcast paths additionally require `CONTRACT_BLOCKCHAIN_AUTH_SECRET`** (sent as
+the `x-contract-blockchain-auth` header) and, against a mainnet target,
+`CONTRACT_BLOCKCHAIN_MAINNET_ENABLED=true` — a second gate mirroring the settlement mainnet gate. The
+service refuses to start if an execute/broadcast flag is set without its secret (or against mainnet
+without the mainnet flag). Registries/indexes are bounded in-memory and ephemeral (no Postgres DDL
+from Rust, per the repo contract).
+
+EVM support is optional: set `EVM_RPC_URL` (https, SSRF-guarded like `SOLANA_RPC_URL`), `EVM_CHAIN_ID`,
+and `EVM_NETWORK`. EVM RPC is reached over the existing public-443 egress; ABI encoding is the
+caller's responsibility (callers pass pre-encoded `data`).
+
+### Modules and routes
+
+1. **Blockchain core** — `GET /chains`, `GET /chain/:id/status` (`solana`/`evm`).
+2. **Wallet management** (watch-only) — `POST /wallet/register`, `GET /wallet/list`,
+   `POST /wallet/:id/balance`. `BLOCKCHAIN_WALLET_ENABLED`.
+3. **Smart-contract executor** — `POST /executor/simulate` (Solana `simulateTransaction` / EVM
+   `eth_call` + `eth_estimateGas`), `POST /executor/execute` (gated broadcast of a signed raw tx).
+   `BLOCKCHAIN_EXECUTOR_ENABLED`, `BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED`.
+4. **Transaction relayer** — `POST /relayer/submit` (stages, or broadcasts a signed raw tx when
+   gated), `GET /relayer/status/:id`. `BLOCKCHAIN_RELAYER_ENABLED`,
+   `BLOCKCHAIN_RELAYER_BROADCAST_ENABLED`.
+5. **Multi-signature coordinator** (keyless) — `POST /multisig/proposal`,
+   `POST /multisig/proposal/:id/approve`, `GET /multisig/proposal/:id`. `BLOCKCHAIN_MULTISIG_ENABLED`.
+6. **Blockchain indexing** — `POST /index/watch` (optional one-shot poll), `GET /index/query`;
+   publishes references to `BLOCKCHAIN_INDEX_EVENTS_SUBJECT`. `BLOCKCHAIN_INDEXER_ENABLED`.
+7. **MEV/arbitrage monitoring** — **monitoring-only, no execution path.** `POST /mev/opportunities`
+   computes the venue spread and flags an opportunity; alerts publish to `BLOCKCHAIN_MEV_ALERTS_SUBJECT`.
+   `BLOCKCHAIN_MEV_ENABLED`.
+8. **NFT/media storage** — `POST /nft/metadata/validate` (Metaplex / ERC-721/1155),
+   `POST /nft/media` (content-addressed sha256), `GET /nft/media/:digest`. `BLOCKCHAIN_NFT_ENABLED`.
+9. **Staking management** — `POST /staking/validate`, `GET /staking/positions/:chain/:address`,
+   `POST /staking/intent` (gated broadcast). `BLOCKCHAIN_STAKING_ENABLED`,
+   `BLOCKCHAIN_STAKING_EXECUTE_ENABLED`.
+10. **Cross-chain bridge coordinator** (non-custodial) — `POST /bridge/transfer`,
+    `POST /bridge/transfer/:id/attest` (verifies the source lock read-only),
+    `GET /bridge/transfer/:id`; attestations publish to `BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT`.
+    `BLOCKCHAIN_BRIDGE_ENABLED`, `BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED`.
+
+### Telemetry
+
+`/metrics` gains `dd_contract_service_blockchain_*` counters (requests, disabled rejections, auth
+failures, blocked broadcasts, EVM RPC requests/errors, and per-feature activity). The three
+publish-only subjects above are defined in `remote/libs/nats/subject-defs/schema/contracts.schema.json`
+and consumed through the generated `dd_nats_subject_defs` constants (never hand-written strings).

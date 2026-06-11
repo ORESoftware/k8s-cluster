@@ -49,6 +49,8 @@ const MAX_STREAM_EVENTS: usize = 4_000;
 const MAX_PARTITIONS: usize = 64;
 const MAX_CRASHES: usize = 256;
 const DEFAULT_MAX_INFLIGHT: usize = 16;
+/// Skip publishing a result larger than this (NATS default max_payload is ~1 MiB).
+const MAX_PUBLISH_BYTES: usize = 900_000;
 
 #[derive(Clone)]
 struct AppState {
@@ -1071,12 +1073,17 @@ async fn publish_result(state: &AppState, response: &RaftResponse) {
             return;
         }
     };
-    if let Err(error) = nats
+    if payload.len() > MAX_PUBLISH_BYTES {
+        eprintln!(
+            "raft result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}; the compact events summary is still sent",
+            payload.len()
+        );
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+    } else if let Err(error) = nats
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
         eprintln!("failed to publish raft result: {error}");
-        return;
     }
     // Fan out a compact transition summary on the consensus events subject.
     let _ = nats

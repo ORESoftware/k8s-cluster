@@ -46,12 +46,16 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'cluster-mcp-rs',
   'container-pool-rs',
   'contract-service-rs',
+  'dataset-labeling-rs',
   'dd-benefactor-marketing-rs',
   'dd-compliance-rs',
   'dd-document-rs',
   'dd-escrow-rs',
+  'dd-git-rs',
   'des-simulator-rs',
   'dd-music-rs',
+  'knowledge-graph-builder-rs',
+  'dd-ocr-rs',
   'dd-sound-recorder-rs',
   'economics-server-rs',
   'fabrication-server-rs',
@@ -720,6 +724,22 @@ async function discoverRustServices() {
       const graphqlRoutes = join(deploymentDir, 'src/graphql_routes.rs');
       if ((await pathExists(graphqlRoutes)) && source.includes('graphql_routes::router()')) {
         rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(graphqlRoutes), graphqlRoutes));
+      }
+    }
+    if (entry.name === 'contract-service-rs' && source.includes('blockchain::router()')) {
+      // The keyless blockchain feature suite mounts its routes from per-feature
+      // submodules under src/blockchain/. Scan those source files so the docs
+      // stay derived from `.route("...")` declarations (no manual inventory).
+      const blockchainDir = join(deploymentDir, 'src/blockchain');
+      if (await pathExists(blockchainDir)) {
+        const blockchainFiles = (await readdir(blockchainDir)).filter((file) => file.endsWith('.rs')).sort();
+        for (const file of blockchainFiles) {
+          const filePath = join(blockchainDir, file);
+          const fileSource = await readUtf8(filePath);
+          if (fileSource.includes('.route(')) {
+            rawRoutes.push(...extractAxumRoutesFromSource(fileSource, filePath));
+          }
+        }
       }
     }
     if (await rustDependsOnRuntimeConfigClient(deploymentDir)) {

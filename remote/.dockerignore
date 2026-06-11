@@ -7,6 +7,7 @@
 **
 
 !deployments/dd-document-rs/**
+!deployments/dd-ocr-rs/**
 !libs/nats/subject-defs/generated/rust/**
 !libs/runtime-config-client-rs/**
 !libs/interfaces/shared/generated/rust/**

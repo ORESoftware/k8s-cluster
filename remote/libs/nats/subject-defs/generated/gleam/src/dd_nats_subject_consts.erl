@@ -21,6 +21,9 @@
     billing_sync_commands_subject/0,
     billing_sync_commands_queue_group/0,
     billing_webhook_receipts_subject/0,
+    blockchain_bridge_attestations_subject/0,
+    blockchain_index_events_subject/0,
+    blockchain_mev_alerts_subject/0,
     chaos_events_subject/0,
     chaos_experiments_subject/0,
     chaos_probe_subject/0,
@@ -180,6 +183,9 @@
     trading_signals_subject/0,
     trading_signals_queue_group/0,
     websocket_events_subject/0,
+    workflows_events_subject/0,
+    workflows_start_subject/0,
+    workflows_start_queue_group/0,
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_stream/0,
@@ -212,6 +218,9 @@
     thread_tasks_wildcard/0,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    workflows_signal_pattern/0,
+    workflows_signal_wildcard/0,
+    workflows_signal_queue_group/0,
     agent_sim_server_queue_group/0,
     billing_server_queue_group/0,
     constraint_scheduler_queue_group/0,
@@ -233,6 +242,7 @@
     routing_workers_queue_group/0,
     sat_smt_server_queue_group/0,
     thread_preparer_queue_group/0,
+    workflow_engine_queue_group/0,
     cdc_stream_name/0,
     dd_remote_control_stream_name/0,
     dd_remote_critical_events_stream_name/0,
@@ -255,6 +265,9 @@ billing_reconciliation_breaks_subject() -> <<"dd.remote.billing.reconciliation.b
 billing_sync_commands_subject() -> <<"dd.remote.billing.commands.sync"/utf8>>.
 billing_sync_commands_queue_group() -> <<"dd-billing-server"/utf8>>.
 billing_webhook_receipts_subject() -> <<"dd.remote.billing.webhooks.receipts"/utf8>>.
+blockchain_bridge_attestations_subject() -> <<"dd.remote.blockchain.bridge.attestations"/utf8>>.
+blockchain_index_events_subject() -> <<"dd.remote.blockchain.index.events"/utf8>>.
+blockchain_mev_alerts_subject() -> <<"dd.remote.blockchain.mev.alerts"/utf8>>.
 chaos_events_subject() -> <<"dd.remote.chaos.events"/utf8>>.
 chaos_experiments_subject() -> <<"dd.remote.chaos.experiments"/utf8>>.
 chaos_probe_subject() -> <<"dd.remote.chaos.probe"/utf8>>.
@@ -414,6 +427,9 @@ trading_order_intents_subject() -> <<"dd.remote.trading.order_intents"/utf8>>.
 trading_signals_subject() -> <<"dd.remote.trading.signals"/utf8>>.
 trading_signals_queue_group() -> <<"dd-trading-server"/utf8>>.
 websocket_events_subject() -> <<"dd.remote.websocket.events"/utf8>>.
+workflows_events_subject() -> <<"dd.remote.workflows.events"/utf8>>.
+workflows_start_subject() -> <<"dd.remote.workflows.start"/utf8>>.
+workflows_start_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 cdc_row_change_pattern() -> <<"{prefix}.{schema}.{table}.{op}"/utf8>>.
 cdc_row_change_wildcard() -> <<"{prefix}.>"/utf8>>.
 cdc_row_change_stream() -> <<"CDC"/utf8>>.
@@ -446,6 +462,9 @@ thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
 thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
+workflows_signal_pattern() -> <<"dd.remote.workflows.signal.{run_id}"/utf8>>.
+workflows_signal_wildcard() -> <<"dd.remote.workflows.signal.*"/utf8>>.
+workflows_signal_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 agent_sim_server_queue_group() -> <<"dd-agent-sim-server"/utf8>>.
 billing_server_queue_group() -> <<"dd-billing-server"/utf8>>.
 constraint_scheduler_queue_group() -> <<"dd-constraint-scheduler"/utf8>>.
@@ -467,6 +486,7 @@ route_optimizer_queue_group() -> <<"dd-route-optimizer"/utf8>>.
 routing_workers_queue_group() -> <<"dd-routing-server-workers"/utf8>>.
 sat_smt_server_queue_group() -> <<"dd-sat-smt-server"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
+workflow_engine_queue_group() -> <<"dd-gleam-workflow-engine"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.
 dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.

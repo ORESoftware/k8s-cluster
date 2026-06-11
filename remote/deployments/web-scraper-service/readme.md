@@ -86,8 +86,44 @@ The solver client speaks the 2captcha `in.php`/`res.php` protocol, which CapSolv
 CapMonster, and Anti-Captcha expose a compatible surface for, so the vendor is
 swappable via `SCRAPER_CAPTCHA_PROVIDER_URL`. Config: `SCRAPER_CAPTCHA_API_KEY`
 (enables solving), `SCRAPER_CAPTCHA_POLL_INTERVAL_MS`, `SCRAPER_CAPTCHA_TIMEOUT_MS`,
-`SCRAPER_CAPTCHA_MAX_ATTEMPTS`. Prometheus exposes `dd_web_scraper_captcha_total`
-labelled by `event` (`detected`/`solved`/`failed`) and `type`.
+`SCRAPER_CAPTCHA_MAX_ATTEMPTS`, `SCRAPER_CAPTCHA_MAX_CONCURRENT`. Prometheus exposes
+`dd_web_scraper_captcha_total` labelled by `event` (`detected`/`solved`/`failed`)
+and `type`.
+
+### Hardening notes
+
+- **Cost amplification.** A solve holds the in-flight slot and the browser page
+  for up to `SCRAPER_CAPTCHA_TIMEOUT_MS` (longer than the request timeout) and
+  costs money per solve. A hostile target can serve a fake sitekey to trigger
+  this. Auto-solve is therefore off by default, and `SCRAPER_CAPTCHA_MAX_CONCURRENT`
+  caps simultaneous solves — excess challenges are reported as detected-only
+  (`captcha.error = "captcha solver concurrency limit reached"`) rather than
+  queued. Keep auto-solve scoped to trusted target sets.
+- **Per-request proxy.** `"proxy"` lets an authenticated caller route through an
+  arbitrary proxy; the proxy host is re-resolved and rejected if it lands on a
+  private/cluster address (unless `SCRAPER_ALLOW_PRIVATE_NETWORKS=true`). Set
+  `SCRAPER_ALLOW_REQUEST_PROXY=false` to forbid it entirely and pin egress to the
+  operator-configured pool.
+- **Proxy health.** A pooled proxy whose response is `407`/`403`/`429` or carries
+  a detected challenge is treated as unhealthy and cooled out of rotation; the
+  next request tries a different egress IP.
+- **Detection is linear.** CAPTCHA detection runs on every scrape over HTML up to
+  `SCRAPER_MAX_HTML_CHARS`; each pattern is gated behind a substring check so a
+  large non-matching document can't drive quadratic regex backtracking.
+- **DNS-rebinding.** Native-fetch strategies connect through an undici agent whose
+  DNS lookup re-checks the resolved address against the private-network policy
+  *at connect time*, so a host that passes the pre-flight check but rebinds to a
+  private/link-local/cloud-metadata address (e.g. `169.254.169.254`) is still
+  refused. (Browser strategies retain the per-subresource pre-flight route guard;
+  Chromium-level IP pinning is out of scope.)
+- **Input bounds.** `userAgent` and outbound header values reject control
+  characters (no header smuggling through the browser strategies, which bypass the
+  fetch header guard); `selectors` is capped at 50 entries; request bodies are
+  capped at 1 MiB.
+- **Parser isolation.** HTML extraction runs in `worker_threads` with memory and
+  time limits. The DOM parsers are inert by construction: jsdom and linkedom are
+  invoked without script execution or subresource loading, so untrusted HTML
+  cannot run JS or fetch URLs out of the parser.
 
 ## Browser mode and failure screenshots
 

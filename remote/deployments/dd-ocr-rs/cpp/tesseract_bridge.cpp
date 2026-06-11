@@ -11,7 +11,14 @@
 // (see build.rs); otherwise the Rust side returns TesseractError::Disabled.
 
 #include <tesseract/baseapi.h>
+// Leptonica's pkg-config Cflags point at the leptonica include dir, but the
+// header lives under <leptonica/...> on Debian (the Docker target) and at the
+// top level on Homebrew. Accept either layout.
+#if __has_include(<leptonica/allheaders.h>)
 #include <leptonica/allheaders.h>
+#else
+#include <allheaders.h>
+#endif
 
 #include <cstdlib>
 #include <cstring>

@@ -30,6 +30,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+mod blockchain;
+
 const SCHEMA_VERSION: &str = "solana.contract.v1";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
@@ -93,6 +95,9 @@ struct AppState {
     metrics: Arc<Metrics>,
     idempotency: Arc<Mutex<HashMap<String, u128>>>,
     confirm_in_flight: Arc<AtomicU64>,
+    /// Keyless, off-by-default blockchain feature suite (wallets, executor,
+    /// relayer, multisig, indexing, MEV monitoring, NFT storage, staking, bridge).
+    blockchain: blockchain::BlockchainState,
 }
 
 /// RAII slot for one in-flight confirmation poller. Decrements the service-wide
@@ -3200,6 +3205,8 @@ fn metrics_body(state: &AppState) -> String {
         "Contract service errors observed.",
         load(&m.errors_total),
     );
+    // Blockchain feature-suite counters share the same exposition.
+    state.blockchain.render_metrics(&mut out);
 
     format!(
         "# HELP dd_contract_service_info Static service configuration labels for the Solana contract service.\n\
@@ -3443,6 +3450,12 @@ mod tests {
             metrics: Arc::new(Metrics::default()),
             idempotency: Arc::new(Mutex::new(HashMap::new())),
             confirm_in_flight: Arc::new(AtomicU64::new(0)),
+            blockchain: blockchain::BlockchainState::from_env(
+                reqwest::Client::new(),
+                "https://api.devnet.solana.com",
+                "devnet",
+            )
+            .expect("blockchain state defaults are valid"),
         }
     }
 
@@ -3932,6 +3945,31 @@ async fn publish_settlement_outcome(state: &AppState, payload: Value) {
             }),
         )
         .await;
+    } else {
+        state
+            .metrics
+            .nats_results_published_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Publish-only helper for the blockchain feature suite: fire-and-forget a JSON
+/// payload to a fixed subject (index events, MEV alerts, bridge attestations),
+/// counting the same NATS metrics as the contract publish paths. No-op when NATS
+/// is not connected.
+pub(crate) async fn publish_blockchain_event(state: &AppState, subject: &str, payload: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let Ok(encoded) = serde_json::to_vec(&payload) else {
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    if nats.publish(subject.to_string(), encoded.into()).await.is_err() {
+        state
+            .metrics
+            .nats_publish_errors_total
+            .fetch_add(1, Ordering::Relaxed);
     } else {
         state
             .metrics
@@ -4676,6 +4714,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
+    // Keyless blockchain feature suite. Reuses the validated Solana RPC URL +
+    // cluster and the shared HTTP client; enforces its own mainnet/auth gates.
+    let blockchain =
+        blockchain::BlockchainState::from_env(rpc_client.clone(), &solana_rpc_url, &default_cluster)
+            .map_err(config_error)?;
+
     let state = AppState {
         rpc_client,
         solana_rpc_url,
@@ -4696,6 +4740,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: Arc::new(Metrics::default()),
         idempotency: Arc::new(Mutex::new(HashMap::new())),
         confirm_in_flight: Arc::new(AtomicU64::new(0)),
+        blockchain,
     };
 
     log_info(
@@ -4715,6 +4760,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "eventSubject": &state.event_subject,
             "criticalEventSubject": &state.critical_event_subject,
             "natsEnabled": state.nats.is_some(),
+            "blockchain": state.blockchain.startup_summary(),
         }),
     );
 
@@ -4773,6 +4819,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/simulate-settlement", post(simulate_settlement_http))
         .route("/settle", post(settle_http))
         .route("/resolve", post(resolve_http))
+        .merge(blockchain::router())
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());

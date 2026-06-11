@@ -6,7 +6,22 @@
 //! inspection. Pure geometry — additive (FDM-style) perimeter planning; the same
 //! contour output is the basis for the cost model's motion-time estimate.
 
+use std::collections::HashMap;
+
 use super::mesh::{Mesh, Vec3};
+
+/// Upper bound on slice layers. A hostile (tiny) layer height on a tall part
+/// would otherwise drive unbounded work; callers get a clear error instead.
+const MAX_SLICE_LAYERS: usize = 100_000;
+
+/// Upper bound on `layers * triangles` scan operations for one slice request,
+/// the dominant cost of slicing. Caps the multiplicative DoS that body-size
+/// limits alone do not constrain.
+const MAX_SLICE_OPS: u64 = 400_000_000;
+
+/// Upper bound on total cross-section segments retained across all layers, so
+/// pathological geometry cannot exhaust memory inside the body limit.
+const MAX_TOTAL_SEGMENTS: usize = 4_000_000;
 
 /// A single closed (or open, if stitching failed) loop at a given Z height.
 #[derive(Clone, Debug)]
@@ -66,9 +81,49 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
     ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
 }
 
-/// Stitch unordered segments into contours by greedily chaining matching
-/// endpoints within `STITCH_EPS`.
+/// Quantize a point to a STITCH_EPS grid cell for spatial bucketing.
+fn cell(p: (f64, f64)) -> (i64, i64) {
+    (
+        (p.0 / STITCH_EPS).round() as i64,
+        (p.1 / STITCH_EPS).round() as i64,
+    )
+}
+
+/// Stitch unordered segments into contours by chaining matching endpoints
+/// within `STITCH_EPS`. Endpoints are indexed in a spatial hash so chaining is
+/// near-linear in the segment count rather than O(segments^2) — this removes a
+/// quadratic-time DoS for layers with many cross-section segments.
 fn stitch(segments: &[((f64, f64), (f64, f64))], z: f64) -> Vec<Contour> {
+    // Bucket every segment endpoint by grid cell.
+    let mut buckets: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (i, seg) in segments.iter().enumerate() {
+        buckets.entry(cell(seg.0)).or_default().push(i);
+        buckets.entry(cell(seg.1)).or_default().push(i);
+    }
+    // Find an unused segment with an endpoint within STITCH_EPS of `tail`,
+    // searching the 3x3 cell neighborhood so matches near a cell boundary are
+    // not missed. Returns the segment index and its far endpoint.
+    let find = |tail: (f64, f64), used: &[bool]| -> Option<(usize, (f64, f64))> {
+        let (cx, cy) = cell(tail);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if let Some(cands) = buckets.get(&(cx + dx, cy + dy)) {
+                    for &c in cands {
+                        if used[c] {
+                            continue;
+                        }
+                        if dist(segments[c].0, tail) <= STITCH_EPS {
+                            return Some((c, segments[c].1));
+                        } else if dist(segments[c].1, tail) <= STITCH_EPS {
+                            return Some((c, segments[c].0));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    };
+
     let mut used = vec![false; segments.len()];
     let mut contours = Vec::new();
     for start in 0..segments.len() {
@@ -80,25 +135,12 @@ fn stitch(segments: &[((f64, f64), (f64, f64))], z: f64) -> Vec<Contour> {
         // Extend from the tail until no segment connects.
         loop {
             let tail = *pts.last().unwrap();
-            let mut found = false;
-            for (i, seg) in segments.iter().enumerate() {
-                if used[i] {
-                    continue;
+            match find(tail, &used) {
+                Some((c, far)) => {
+                    used[c] = true;
+                    pts.push(far);
                 }
-                if dist(seg.0, tail) <= STITCH_EPS {
-                    pts.push(seg.1);
-                    used[i] = true;
-                    found = true;
-                    break;
-                } else if dist(seg.1, tail) <= STITCH_EPS {
-                    pts.push(seg.0);
-                    used[i] = true;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                break;
+                None => break,
             }
         }
         let closed = pts.len() > 2 && dist(*pts.first().unwrap(), *pts.last().unwrap()) <= STITCH_EPS;
@@ -141,10 +183,19 @@ pub fn slice(mesh: &Mesh, layer_height: f64) -> Result<SliceResult, String> {
     }
     let layer_count = (height / layer_height).floor() as usize;
     // Hard cap so a tiny layer height on a tall part cannot exhaust memory.
-    if layer_count > 200_000 {
+    if layer_count > MAX_SLICE_LAYERS {
         return Err(format!(
-            "slicing would produce {} layers; raise layerHeightMm",
-            layer_count
+            "slicing would produce {} layers (limit {}); raise layerHeightMm",
+            layer_count, MAX_SLICE_LAYERS
+        ));
+    }
+    // Bound the multiplicative scan cost (layers * triangles) that the request
+    // body size alone does not constrain.
+    let ops = (layer_count as u64).saturating_mul(mesh.triangles.len() as u64);
+    if ops > MAX_SLICE_OPS {
+        return Err(format!(
+            "slicing would require {} plane tests (limit {}); raise layerHeightMm or simplify the mesh",
+            ops, MAX_SLICE_OPS
         ));
     }
     let mut result = SliceResult {
@@ -154,11 +205,19 @@ pub fn slice(mesh: &Mesh, layer_height: f64) -> Result<SliceResult, String> {
         layer_count,
         ..Default::default()
     };
+    let mut total_segments = 0usize;
     for i in 0..layer_count {
         let z = min.z + (i as f64 + 0.5) * layer_height;
         let segs = segments_at(mesh, z);
         if segs.is_empty() {
             continue;
+        }
+        total_segments = total_segments.saturating_add(segs.len());
+        if total_segments > MAX_TOTAL_SEGMENTS {
+            return Err(format!(
+                "slice produced more than {} cross-section segments; simplify the mesh or raise layerHeightMm",
+                MAX_TOTAL_SEGMENTS
+            ));
         }
         for contour in stitch(&segs, z) {
             result.total_path_length += contour.length;

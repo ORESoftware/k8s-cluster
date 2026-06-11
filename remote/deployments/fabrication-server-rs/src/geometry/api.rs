@@ -32,6 +32,48 @@ fn round6(v: f64) -> f64 {
     (v * 1_000_000.0).round() / 1_000_000.0
 }
 
+/// Hard ceiling on G-code sample layers emitted in a response, independent of
+/// the caller-supplied `maxGcodeLayers`, so the JSON body stays bounded.
+const MAX_GCODE_LAYERS: usize = 2_000;
+
+/// Reject NaN/Inf so malformed numbers never reach the geometry math (where
+/// they would silently serialize as JSON `null`).
+fn require_finite(name: &str, v: f64) -> Result<f64, String> {
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(format!("{} must be a finite number", name))
+    }
+}
+
+fn require_positive(name: &str, v: f64) -> Result<f64, String> {
+    let v = require_finite(name, v)?;
+    if v > 0.0 {
+        Ok(v)
+    } else {
+        Err(format!("{} must be greater than 0", name))
+    }
+}
+
+fn require_non_negative(name: &str, v: f64) -> Result<f64, String> {
+    let v = require_finite(name, v)?;
+    if v >= 0.0 {
+        Ok(v)
+    } else {
+        Err(format!("{} must not be negative", name))
+    }
+}
+
+/// Validate and clamp a 0..=1 fraction.
+fn require_fraction(name: &str, v: f64) -> Result<f64, String> {
+    let v = require_finite(name, v)?;
+    if (0.0..=1.0).contains(&v) {
+        Ok(v)
+    } else {
+        Err(format!("{} must be between 0 and 1", name))
+    }
+}
+
 /// Decode the STL bytes and parse them into a mesh, returning the raw bytes too
 /// (used to derive a deterministic request id).
 fn load_mesh(payload: &GeometryPayload) -> Result<(Mesh, Vec<u8>), String> {
@@ -51,10 +93,41 @@ fn weld_tol(payload: &GeometryPayload) -> f64 {
     payload.weld_tolerance_mm.filter(|t| *t > 0.0).unwrap_or(1e-3)
 }
 
-fn derive_request_id(provided: &Option<String>, bytes: &[u8], prefix: &str) -> String {
-    provided.clone().unwrap_or_else(|| {
-        format!("{}-{:016x}", prefix, mesh::fnv1a_64(bytes))
-    })
+const MAX_REQUEST_ID_LEN: usize = 128;
+const MAX_CURRENCY_LEN: usize = 8;
+
+fn derive_request_id(
+    provided: &Option<String>,
+    bytes: &[u8],
+    prefix: &str,
+) -> Result<String, String> {
+    match provided {
+        Some(id) => {
+            if id.is_empty() || id.len() > MAX_REQUEST_ID_LEN {
+                return Err(format!(
+                    "requestId must be 1..={} characters",
+                    MAX_REQUEST_ID_LEN
+                ));
+            }
+            Ok(id.clone())
+        }
+        None => Ok(format!("{}-{:016x}", prefix, mesh::fnv1a_64(bytes))),
+    }
+}
+
+/// Accept a short ASCII currency code (e.g. "USD"); otherwise fall back to USD
+/// rather than echoing an arbitrary caller-controlled string.
+fn sanitize_currency(provided: &Option<String>) -> String {
+    match provided {
+        Some(c)
+            if !c.is_empty()
+                && c.len() <= MAX_CURRENCY_LEN
+                && c.chars().all(|ch| ch.is_ascii_alphanumeric()) =>
+        {
+            c.to_ascii_uppercase()
+        }
+        _ => "USD".to_string(),
+    }
 }
 
 fn report_json(r: &RepairReport) -> Value {
@@ -109,7 +182,7 @@ pub struct MeshRepairPlanRequest {
 
 pub fn mesh_repair_plan_response(req: MeshRepairPlanRequest) -> Result<Value, String> {
     let (input, bytes) = load_mesh(&req.geometry)?;
-    let request_id = derive_request_id(&req.request_id, &bytes, "mesh-repair-plan");
+    let request_id = derive_request_id(&req.request_id, &bytes, "mesh-repair-plan")?;
     let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
 
     let mut blockers: Vec<String> = Vec::new();
@@ -184,9 +257,9 @@ pub struct ToolpathGenerateRequest {
 
 pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value, String> {
     let (input, bytes) = load_mesh(&req.geometry)?;
-    let request_id = derive_request_id(&req.request_id, &bytes, "toolpath-generate");
-    let layer_height = req.layer_height_mm.unwrap_or(0.2);
-    let feedrate = req.feedrate_mm_per_min.unwrap_or(3000.0);
+    let request_id = derive_request_id(&req.request_id, &bytes, "toolpath-generate")?;
+    let layer_height = require_positive("layerHeightMm", req.layer_height_mm.unwrap_or(0.2))?;
+    let feedrate = require_positive("feedrateMmPerMin", req.feedrate_mm_per_min.unwrap_or(3000.0))?;
 
     // Heal first so slicing operates on a watertight shell.
     let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
@@ -241,7 +314,7 @@ pub fn toolpath_generate_response(req: ToolpathGenerateRequest) -> Result<Value,
     });
 
     if req.emit_gcode.unwrap_or(false) {
-        let max_layers = req.max_gcode_layers.unwrap_or(50);
+        let max_layers = req.max_gcode_layers.unwrap_or(50).clamp(1, MAX_GCODE_LAYERS);
         let (gcode, truncated) = toolpath::to_gcode(&slice, feedrate, max_layers);
         layers["gcodeSample"] = json!({
             "dialect": "rs274-subset",
@@ -278,32 +351,46 @@ pub struct CostEstimateRequest {
 
 pub fn cost_estimate_response(req: CostEstimateRequest) -> Result<Value, String> {
     let (input, bytes) = load_mesh(&req.geometry)?;
-    let request_id = derive_request_id(&req.request_id, &bytes, "cost-estimate");
-    let layer_height = req.layer_height_mm.unwrap_or(0.2);
+    let request_id = derive_request_id(&req.request_id, &bytes, "cost-estimate")?;
+    let layer_height = require_positive("layerHeightMm", req.layer_height_mm.unwrap_or(0.2))?;
 
     let (repaired, report) = repair::repair(&input, weld_tol(&req.geometry));
     let slice = toolpath::slice(&repaired, layer_height)?;
 
     let defaults = CostInputs::default();
     let inputs = CostInputs {
-        material_density_g_cm3: req
-            .material_density_g_cm3
-            .unwrap_or(defaults.material_density_g_cm3),
-        material_price_per_kg: req
-            .material_price_per_kg
-            .unwrap_or(defaults.material_price_per_kg),
-        machine_rate_per_hour: req
-            .machine_rate_per_hour
-            .unwrap_or(defaults.machine_rate_per_hour),
-        setup_cost: req.setup_cost.unwrap_or(defaults.setup_cost),
-        infill_fraction: req.infill_fraction.unwrap_or(defaults.infill_fraction),
-        feedrate_mm_per_min: req
-            .feedrate_mm_per_min
-            .unwrap_or(defaults.feedrate_mm_per_min),
-        layer_change_seconds: req
-            .layer_change_seconds
-            .unwrap_or(defaults.layer_change_seconds),
-        overhead_fraction: req.overhead_fraction.unwrap_or(defaults.overhead_fraction),
+        material_density_g_cm3: require_positive(
+            "materialDensityGCm3",
+            req.material_density_g_cm3.unwrap_or(defaults.material_density_g_cm3),
+        )?,
+        material_price_per_kg: require_non_negative(
+            "materialPricePerKg",
+            req.material_price_per_kg.unwrap_or(defaults.material_price_per_kg),
+        )?,
+        machine_rate_per_hour: require_non_negative(
+            "machineRatePerHour",
+            req.machine_rate_per_hour.unwrap_or(defaults.machine_rate_per_hour),
+        )?,
+        setup_cost: require_non_negative(
+            "setupCost",
+            req.setup_cost.unwrap_or(defaults.setup_cost),
+        )?,
+        infill_fraction: require_fraction(
+            "infillFraction",
+            req.infill_fraction.unwrap_or(defaults.infill_fraction),
+        )?,
+        feedrate_mm_per_min: require_positive(
+            "feedrateMmPerMin",
+            req.feedrate_mm_per_min.unwrap_or(defaults.feedrate_mm_per_min),
+        )?,
+        layer_change_seconds: require_non_negative(
+            "layerChangeSeconds",
+            req.layer_change_seconds.unwrap_or(defaults.layer_change_seconds),
+        )?,
+        overhead_fraction: require_non_negative(
+            "overheadFraction",
+            req.overhead_fraction.unwrap_or(defaults.overhead_fraction),
+        )?,
     };
 
     let volume = repaired.signed_volume().abs();
@@ -318,7 +405,7 @@ pub fn cost_estimate_response(req: CostEstimateRequest) -> Result<Value, String>
     // Watertight geometry yields a trustworthy volume; otherwise flag low
     // confidence rather than refusing to estimate.
     let confidence = if report.watertight { "high" } else { "low" };
-    let currency = req.currency.clone().unwrap_or_else(|| "USD".to_string());
+    let currency = sanitize_currency(&req.currency);
 
     let response = json!({
         "ok": true,

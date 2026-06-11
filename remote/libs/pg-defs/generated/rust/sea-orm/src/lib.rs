@@ -1226,6 +1226,140 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use lambda_functions::Entity as LambdaFunctionEntity;
 pub use lambda_functions::Model as LambdaFunctionModel;
 
+pub mod workflow_definitions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "workflow_definitions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    pub description: String,
+    pub steps: Json,
+    #[sea_orm(column_name = "default_retry")]
+    pub default_retry: Json,
+    pub status: String,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use workflow_definitions::Entity as WorkflowDefinitionsEntity;
+pub use workflow_definitions::Model as WorkflowDefinitionsModel;
+
+pub mod workflow_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "workflow_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "definition_id")]
+    pub definition_id: Uuid,
+    #[sea_orm(column_name = "definition_slug")]
+    pub definition_slug: String,
+    pub status: String,
+    #[sea_orm(column_name = "current_step_index")]
+    pub current_step_index: i32,
+    pub attempt: i32,
+    pub input: Json,
+    pub context: Json,
+    pub output: Option<Json>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "wake_at")]
+    pub wake_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "wait_deadline")]
+    pub wait_deadline: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "lease_until")]
+    pub lease_until: Option<DateTimeWithTimeZone>,
+    pub signals: Json,
+    #[sea_orm(column_name = "idempotency_key")]
+    pub idempotency_key: Option<String>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use workflow_runs::Entity as WorkflowRunsEntity;
+pub use workflow_runs::Model as WorkflowRunsModel;
+
+pub mod workflow_step_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "workflow_step_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_id")]
+    pub run_id: Uuid,
+    #[sea_orm(column_name = "step_index")]
+    pub step_index: i32,
+    #[sea_orm(column_name = "step_name")]
+    pub step_name: String,
+    #[sea_orm(column_name = "step_type")]
+    pub step_type: String,
+    #[sea_orm(column_name = "function_ref")]
+    pub function_ref: String,
+    pub attempt: i32,
+    pub status: String,
+    pub input: Option<Json>,
+    pub output: Option<Json>,
+    pub error: Option<String>,
+    #[sea_orm(column_name = "duration_ms")]
+    pub duration_ms: Option<i32>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use workflow_step_runs::Entity as WorkflowStepRunsEntity;
+pub use workflow_step_runs::Model as WorkflowStepRunsModel;
+
 pub mod container_pool_image_revisions {
     use super::*;
 

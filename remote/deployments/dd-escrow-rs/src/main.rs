@@ -1343,13 +1343,32 @@ fn validate_parties(
         }
     }
     if request.kind == EscrowKind::CollabShow {
-        let creators = request
+        let creators: Vec<&EscrowParty> = request
             .parties
             .iter()
             .filter(|party| party.role == PartyRole::Creator)
-            .count();
-        if creators < 2 {
+            .collect();
+        if creators.len() < 2 {
             errors.push("collab-show escrow requires at least two creator parties".to_string());
+        }
+        // The revenue split is the defining term of this product, so every creator
+        // must carry payoutBps (the global check then enforces they sum to 10000).
+        if creators.iter().any(|party| party.payout_bps.is_none()) {
+            errors.push(
+                "collab-show creator parties must each set payoutBps for the agreed revenue split"
+                    .to_string(),
+            );
+        }
+        // A neutral arbiter must not be a payout recipient in the revenue split.
+        if request
+            .parties
+            .iter()
+            .any(|party| party.role == PartyRole::Arbitrator && party.payout_bps.is_some())
+        {
+            errors.push(
+                "collab-show arbiter must not carry payoutBps; the split is between creators"
+                    .to_string(),
+            );
         }
     }
 }
@@ -2536,6 +2555,8 @@ fn example_request() -> EscrowIntentRequest {
 /// required arbiter who awards or splits funds on a no-show or rule violation.
 /// The per-creator stake, pool size, show date, and rules live in `metadata`;
 /// the on-chain program (`settlementPlan.programId`) enforces the amounts.
+/// Quoted in the readme and exercised by tests; not served over HTTP.
+#[cfg(test)]
 fn collab_show_example() -> EscrowIntentRequest {
     let system_program = "11111111111111111111111111111111".to_string();
     let creator_a = system_program.clone();
@@ -3980,10 +4001,7 @@ mod tests {
         assert_eq!(response.kind, EscrowKind::CollabShow);
         assert_eq!(response.party_count, 3);
         assert!(response.on_chain_settlement_ready);
-        assert!(response
-            .required_roles
-            .iter()
-            .any(|role| *role == "creator"));
+        assert!(response.required_roles.contains(&"creator"));
     }
 
     #[test]
@@ -4010,6 +4028,32 @@ mod tests {
         assert!(errors
             .iter()
             .any(|error| error.contains("role arbitrator")));
+    }
+
+    #[test]
+    fn collab_show_requires_revenue_split() {
+        let mut request = collab_show_example();
+        // Drop one creator's payoutBps: the revenue split is now undefined.
+        request.parties[0].payout_bps = None;
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject a collab show with no revenue split");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("payoutBps for the agreed revenue split")));
+    }
+
+    #[test]
+    fn collab_show_arbiter_must_not_take_payout() {
+        let mut request = collab_show_example();
+        // Give the arbiter a payout slice and rebalance so the global sum still hits 10000.
+        request.parties[0].payout_bps = Some(5_000);
+        request.parties[1].payout_bps = Some(4_000);
+        request.parties[2].payout_bps = Some(1_000); // arbiter
+        let errors = validate_escrow_intent(&request, "devnet", &[])
+            .expect_err("must reject an arbiter that shares the payout split");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("arbiter must not carry payoutBps")));
     }
 
     #[test]

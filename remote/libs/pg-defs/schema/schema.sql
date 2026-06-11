@@ -1291,6 +1291,164 @@ create index if not exists lambda_functions_labels_gin_idx
   on lambda_functions using gin (labels);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Workflow execution engine (lightweight Temporal):
+--
+-- A workflow_definition is a declarative, ordered list of steps owned by
+-- dd-gleam-lambda-runner. Each step either invokes a stored lambda_functions
+-- activity, sleeps for a durable timer, or waits for an external signal. A
+-- workflow_run is one durable execution of a definition; the engine persists
+-- run state after every step (durable step-state machine, not event-sourced
+-- replay), so a process or node restart resumes from the last committed step.
+-- workflow_step_runs is the append-only per-attempt history for visibility.
+--
+-- `steps` JSON shape (array, executed in order):
+--   { "name": "charge",                 -- unique step label within the workflow
+--     "type": "activity",               -- activity | sleep | waitSignal (default activity)
+--     "functionId": "<uuid>",           -- activity: stored lambda UUID, or
+--     "functionSlug": "charge-card",    -- activity: stored lambda slug
+--     "input": { ... },                 -- activity: static input merged with run context
+--     "retry": { "maxAttempts": 5, "backoffMs": 1000,
+--                "backoffFactor": 2.0, "maxBackoffMs": 60000 },
+--     "timeoutMs": 30000,               -- activity: per-attempt timeout
+--     "durationMs": 3600000,            -- sleep: durable timer length
+--     "signalName": "approved",         -- waitSignal: signal to wait for
+--     "waitTimeoutMs": 86400000 }       -- waitSignal: optional give-up timeout
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists workflow_definitions (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  display_name varchar(200) not null,
+  description text default '' not null,
+  steps jsonb not null,
+  default_retry jsonb default '{}'::jsonb not null,
+  status varchar(32) default 'draft' not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint workflow_definitions_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'),
+  constraint workflow_definitions_steps_array_chk
+    check (jsonb_typeof(steps) = 'array'),
+  constraint workflow_definitions_steps_size_chk
+    check (octet_length(steps::text) <= 262144),
+  constraint workflow_definitions_default_retry_object_chk
+    check (jsonb_typeof(default_retry) = 'object'),
+  constraint workflow_definitions_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint workflow_definitions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint workflow_definitions_status_chk
+    check (status in ('draft', 'active', 'paused', 'archived'))
+);
+
+create unique index if not exists workflow_definitions_slug_active_uq
+  on workflow_definitions (slug)
+  where is_soft_deleted = false;
+
+create index if not exists workflow_definitions_status_idx
+  on workflow_definitions (status)
+  where is_soft_deleted = false;
+
+create index if not exists workflow_definitions_updated_at_idx
+  on workflow_definitions (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists workflow_runs (
+  id uuid primary key default gen_random_uuid(),
+  definition_id uuid not null,
+  definition_slug varchar(120) not null,
+  status varchar(32) default 'pending' not null,
+  current_step_index integer default 0 not null,
+  attempt integer default 0 not null,
+  input jsonb default 'null'::jsonb not null,
+  context jsonb default '{}'::jsonb not null,
+  output jsonb,
+  last_error text,
+  wake_at timestamptz,
+  wait_deadline timestamptz,
+  lease_until timestamptz,
+  signals jsonb default '[]'::jsonb not null,
+  idempotency_key varchar(200),
+  started_at timestamptz,
+  finished_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  constraint workflow_runs_status_chk
+    check (status in ('pending', 'running', 'sleeping', 'waiting', 'completed', 'failed', 'canceled')),
+  constraint workflow_runs_current_step_index_chk
+    check (current_step_index >= 0),
+  constraint workflow_runs_attempt_chk
+    check (attempt >= 0),
+  constraint workflow_runs_context_object_chk
+    check (jsonb_typeof(context) = 'object'),
+  constraint workflow_runs_signals_array_chk
+    check (jsonb_typeof(signals) = 'array'),
+  constraint workflow_runs_last_error_size_chk
+    check (last_error is null or octet_length(last_error) <= 8192)
+);
+
+create index if not exists workflow_runs_definition_id_idx
+  on workflow_runs (definition_id);
+
+create index if not exists workflow_runs_status_idx
+  on workflow_runs (status);
+
+-- Scheduler claim index: find runnable runs whose durable timer/backoff is due.
+-- The engine claims rows with a lease (lease_until) instead of flipping status,
+-- so the worker still sees the run's semantic phase (pending/running/sleeping/waiting).
+create index if not exists workflow_runs_due_idx
+  on workflow_runs (wake_at)
+  where status in ('pending', 'running', 'sleeping', 'waiting');
+
+create unique index if not exists workflow_runs_idempotency_key_uq
+  on workflow_runs (definition_id, idempotency_key)
+  where idempotency_key is not null;
+
+create table if not exists workflow_step_runs (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null,
+  step_index integer not null,
+  step_name varchar(200) not null,
+  step_type varchar(32) default 'activity' not null,
+  function_ref varchar(200) default '' not null,
+  attempt integer not null,
+  status varchar(32) not null,
+  input jsonb,
+  output jsonb,
+  error text,
+  duration_ms integer,
+  started_at timestamptz default now() not null,
+  finished_at timestamptz,
+  constraint workflow_step_runs_status_chk
+    check (status in ('running', 'succeeded', 'failed')),
+  constraint workflow_step_runs_step_index_chk
+    check (step_index >= 0),
+  constraint workflow_step_runs_attempt_chk
+    check (attempt >= 0),
+  constraint workflow_step_runs_error_size_chk
+    check (error is null or octet_length(error) <= 8192)
+);
+
+create index if not exists workflow_step_runs_run_id_idx
+  on workflow_step_runs (run_id, step_index, attempt);
+
+alter table if exists workflow_runs
+  add constraint workflow_runs_definition_fk
+  foreign key (definition_id) references workflow_definitions (id)
+  on delete cascade not valid;
+
+alter table if exists workflow_step_runs
+  add constraint workflow_step_runs_run_fk
+  foreign key (run_id) references workflow_runs (id)
+  on delete cascade not valid;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Container-pool image config:
 --
 -- One row per saved Dockerfile revision for each container-pool image (e.g.

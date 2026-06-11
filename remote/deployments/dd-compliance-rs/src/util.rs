@@ -48,6 +48,23 @@ pub fn clean_text(value: &str, max_chars: usize) -> String {
         .collect()
 }
 
+/// Bound and sanitize a caller-controlled string before echoing it into a report.
+/// All control characters (including newlines) are replaced with spaces so the
+/// value cannot bloat the response or break downstream rendering/log parsing, and
+/// the result is truncated to `max` characters with an ellipsis when shortened.
+pub fn clip(value: &str, max: usize) -> String {
+    let trimmed = value.trim();
+    let mut out: String = trimmed
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .take(max)
+        .collect();
+    if trimmed.chars().nth(max).is_some() {
+        out.push('\u{2026}');
+    }
+    out
+}
+
 pub fn is_private_or_local_url(url: &Url) -> bool {
     let Some(host) = url.host_str() else {
         return true;
@@ -101,6 +118,13 @@ mod tests {
     fn normalize_key_is_stable_for_standard_aliases() {
         assert_eq!(normalize_key("SOC 2"), "soc-2");
         assert_eq!(normalize_key("ISO/IEC 27001"), "iso-iec-27001");
+    }
+
+    #[test]
+    fn clip_sanitizes_and_truncates() {
+        assert_eq!(clip("  hello\nworld  ", 100), "hello world");
+        assert_eq!(clip("abcdefghij", 4), "abcd\u{2026}");
+        assert_eq!(clip("abcd", 4), "abcd");
     }
 
     #[test]

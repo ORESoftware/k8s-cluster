@@ -9,6 +9,11 @@ optional non-root containers.
 - `POST /check` compiles or syntax-checks a posted lambda definition without executing the
   function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
+- `POST /workflows/start` starts a durable workflow run.
+- `GET /workflows/runs` lists recent runs (optional `?definition=<id|slug>&limit=N`).
+- `GET /workflows/runs/:run_id` returns one run plus its step-run history.
+- `POST /workflows/runs/:run_id/signal` delivers an external signal to a run.
+- `POST /workflows/runs/:run_id/cancel` cancels a non-terminal run.
 
 `POST /invoke/:function_id`, `POST /check`, and `POST /destroy/:reuse_key` fail closed unless
 `LAMBDA_SERVER_AUTH_SECRET`, `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured.
@@ -186,3 +191,54 @@ package:
 ```sh
 docker build -f remote/deployments/gleam-lambda-runner/Dockerfile -t dd-gleam-lambda-runner:dev .
 ```
+
+## Workflow execution engine
+
+This service also hosts a lightweight, Temporal-style workflow engine for long-running, reliable
+jobs. A **workflow definition** (`workflow_definitions`) is a declarative, ordered list of steps;
+each step is one of:
+
+- `activity` — invoke a stored `lambda_functions` activity by `functionId`/`functionSlug`. The
+  request the activity receives is `{ runId, step, input, context, runInput }`, where `context`
+  accumulates the output of every prior step keyed by step name. Activities support a per-step
+  `retry` policy (`maxAttempts`, `backoffMs`, `backoffFactor`, `maxBackoffMs`) and `timeoutMs`.
+- `sleep` — a durable timer (`durationMs`) that survives restarts.
+- `waitSignal` — block until an external signal named `signalName` arrives (optional
+  `waitTimeoutMs`); the signal payload is merged into `context` under the step name.
+
+A **workflow run** (`workflow_runs`) is one durable execution. The engine is a **durable
+step-state machine**, not event-sourced replay: run state is committed to Postgres after every
+step, so a process crash or node restart resumes from the last committed step. Activities are
+therefore **at-least-once** — write them idempotently, the same contract Temporal places on
+activities.
+
+A singleton scheduler (`workflow_engine`) polls Postgres for due runs and claims them with an
+atomic lease (`lease_until`) under `FOR UPDATE SKIP LOCKED`, which is safe across replicas and
+does not flip a run's semantic status — so the worker always knows whether it is starting,
+retrying, waking from a timer, or resuming a wait. Each due run is advanced exactly one step by a
+short-lived worker process; orphaned (leased-but-dead) runs are reclaimed once their lease lapses,
+which is the engine's automatic crash recovery. `workflow_step_runs` is the append-only per-attempt
+history surfaced by `GET /workflows/runs/:run_id`.
+
+The engine is enabled automatically when `LAMBDA_DATABASE_URL` is set (set
+`WORKFLOW_ENGINE_ENABLED=0` to disable). All workflow HTTP routes require the same `X-Server-Auth`
+secret as `/invoke`. Run lifecycle events are best-effort published to NATS
+`dd.remote.workflows.events`; runs can also be started and signalled over NATS
+(`dd.remote.workflows.start` request/reply and `dd.remote.workflows.signal.<run_id>`). Engine
+counters are exported on `/metrics` under the `workflow_*` prefix.
+
+| Env | Default |
+| --- | --- |
+| `WORKFLOW_ENGINE_ENABLED` | `1` when `LAMBDA_DATABASE_URL` is set |
+| `WORKFLOW_POLL_MS` | `1000` |
+| `WORKFLOW_MAX_INFLIGHT` | `16` |
+| `WORKFLOW_LEASE_MS` | `60000` (crash-recovery delay for orphaned runs) |
+| `WORKFLOW_CLAIM_BATCH` | `25` |
+| `NATS_WORKFLOW_START_SUBJECT` | `dd.remote.workflows.start` |
+| `NATS_WORKFLOW_SIGNAL_SUBJECT` | `dd.remote.workflows.signal.*` |
+| `NATS_WORKFLOW_EVENT_SUBJECT` | `dd.remote.workflows.events` |
+
+Schema lives in `remote/libs/pg-defs/schema/schema.sql` (`workflow_definitions`, `workflow_runs`,
+`workflow_step_runs`); definition CRUD is the Rust REST API's responsibility, while run
+orchestration is owned here. Like the lambda tables, the runner reads these through the generated
+`dd_pg_defs` SQL constants rather than private table SQL.

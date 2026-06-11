@@ -1,0 +1,27 @@
+FROM rust:1.90-bookworm AS build
+
+WORKDIR /app
+
+# Build context must be the repo root:
+#   docker build -f remote/deployments/dataset-labeling-rs/Dockerfile -t dd-dataset-labeling:dev .
+COPY remote/libs/nats/subject-defs/generated/rust /app/remote/libs/nats/subject-defs/generated/rust
+COPY remote/deployments/dataset-labeling-rs/Cargo.toml /app/remote/deployments/dataset-labeling-rs/Cargo.toml
+COPY remote/deployments/dataset-labeling-rs/Cargo.lock /app/remote/deployments/dataset-labeling-rs/Cargo.lock
+COPY remote/deployments/dataset-labeling-rs/src /app/remote/deployments/dataset-labeling-rs/src
+COPY remote/deployments/dataset-labeling-rs/generated /app/remote/deployments/dataset-labeling-rs/generated
+
+WORKDIR /app/remote/deployments/dataset-labeling-rs
+RUN cargo build --release --locked
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get clean
+COPY --from=build /app/remote/deployments/dataset-labeling-rs/target/release/dd-dataset-labeling /usr/local/bin/dd-dataset-labeling
+
+ENV HOST=0.0.0.0
+ENV PORT=8138
+
+EXPOSE 8138
+
+CMD ["/usr/local/bin/dd-dataset-labeling"]

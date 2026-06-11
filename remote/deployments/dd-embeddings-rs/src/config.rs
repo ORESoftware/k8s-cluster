@@ -17,6 +17,24 @@ pub struct Config {
     pub qdrant_api_key: Option<String>,
     /// Outbound request timeout to provider APIs and Qdrant.
     pub request_timeout_secs: u64,
+    pub limits: Limits,
+}
+
+/// Request-shape guardrails enforced at the API boundary. These bound memory
+/// use, third-party spend, and downstream payload sizes so a single caller
+/// can't run up a provider bill or OOM the pod with one giant request.
+#[derive(Clone, Copy)]
+pub struct Limits {
+    /// Max number of texts in one embedding/index request.
+    pub max_batch_size: usize,
+    /// Max total characters summed across every text in a request.
+    pub max_total_chars: usize,
+    /// Max characters in any single text.
+    pub max_item_chars: usize,
+    /// Max neighbors returnable from a RAG search.
+    pub max_top_k: usize,
+    /// Max requested embedding dimensionality.
+    pub max_dimensions: u32,
 }
 
 impl Config {
@@ -32,6 +50,13 @@ impl Config {
             qdrant_url: env_or("QDRANT_URL", "http://dd-qdrant.ai-ml.svc.cluster.local:6333"),
             qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),
             request_timeout_secs: env_or("EMBEDDINGS_REQUEST_TIMEOUT_SECS", "30").parse()?,
+            limits: Limits {
+                max_batch_size: env_or("EMBEDDINGS_MAX_BATCH_SIZE", "256").parse()?,
+                max_total_chars: env_or("EMBEDDINGS_MAX_TOTAL_CHARS", "1000000").parse()?,
+                max_item_chars: env_or("EMBEDDINGS_MAX_ITEM_CHARS", "100000").parse()?,
+                max_top_k: env_or("EMBEDDINGS_MAX_TOP_K", "100").parse()?,
+                max_dimensions: env_or("EMBEDDINGS_MAX_DIMENSIONS", "8192").parse()?,
+            },
         })
     }
 

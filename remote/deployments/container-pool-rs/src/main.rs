@@ -588,13 +588,30 @@ fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
     let network = env_value("CONTAINER_POOL_NETWORK", "host");
-    let engine = EngineKind::parse(&env_value("CONTAINER_POOL_ENGINE", "nerdctl"));
+    let engine_raw = env_value("CONTAINER_POOL_ENGINE", "nerdctl");
+    let engine = EngineKind::parse(&engine_raw);
+    if !engine_raw.trim().is_empty() && !engine_value_recognized(&engine_raw) {
+        eprintln!(
+            "{SERVICE_NAME} warning: unrecognized CONTAINER_POOL_ENGINE={engine_raw:?}; defaulting to nerdctl"
+        );
+    }
+    let oci_runtime = match classify_oci_runtime(first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).as_deref())
+    {
+        Ok(value) => value,
+        Err(message) => {
+            eprintln!(
+                "{SERVICE_NAME} warning: {message}; containers will use the engine default OCI \
+                 runtime (no --runtime) — this may be weaker isolation than intended"
+            );
+            None
+        }
+    };
     ServiceConfig {
         engine,
         engine_bin: first_env(&["CONTAINER_POOL_ENGINE_BIN", "CONTAINER_POOL_NERDCTL_BIN"])
             .filter(|bin| !bin.trim().is_empty())
             .unwrap_or_else(|| engine.default_bin().to_string()),
-        oci_runtime: first_env(&["CONTAINER_POOL_OCI_RUNTIME"]).filter(|value| safe_oci_runtime(value)),
+        oci_runtime,
         containerd_namespace: env_value("CONTAINER_POOL_CONTAINERD_NAMESPACE", "k8s.io"),
         network: if safe_network_name(&network) {
             network
@@ -1175,6 +1192,23 @@ fn safe_oci_runtime(input: &str) -> bool {
         && bytes
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+}
+
+// Resolve CONTAINER_POOL_OCI_RUNTIME. Absent/empty -> None (engine default
+// runtime). Valid -> Some. Set-but-invalid -> Err, so the caller warns loudly
+// instead of silently dropping the operator's chosen runtime — for sandbox
+// runtimes (gVisor/Kata) a silent fallback to runc is an isolation downgrade.
+fn classify_oci_runtime(raw: Option<&str>) -> Result<Option<String>, String> {
+    match raw {
+        None => Ok(None),
+        Some(value) if value.trim().is_empty() => Ok(None),
+        Some(value) if safe_oci_runtime(value) => Ok(Some(value.to_string())),
+        Some(value) => Err(format!("ignoring invalid CONTAINER_POOL_OCI_RUNTIME={value:?}")),
+    }
+}
+
+fn engine_value_recognized(raw: &str) -> bool {
+    matches!(raw.trim().to_ascii_lowercase().as_str(), "nerdctl" | "docker" | "podman")
 }
 
 fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
@@ -3662,6 +3696,37 @@ mod tests {
         assert!(!safe_oci_runtime("runc; rm -rf /"));
         assert!(!safe_oci_runtime("two words"));
         assert!(!safe_oci_runtime(""));
+    }
+
+    #[test]
+    fn oci_runtime_set_but_invalid_is_an_error_not_a_silent_downgrade() {
+        // Absent / empty => engine default (None), no warning path.
+        assert_eq!(classify_oci_runtime(None), Ok(None));
+        assert_eq!(classify_oci_runtime(Some("")), Ok(None));
+        assert_eq!(classify_oci_runtime(Some("   ")), Ok(None));
+        // Valid handlers pass through.
+        assert_eq!(classify_oci_runtime(Some("runsc")), Ok(Some("runsc".to_string())));
+        assert_eq!(
+            classify_oci_runtime(Some("io.containerd.kata.v2")),
+            Ok(Some("io.containerd.kata.v2".to_string()))
+        );
+        // Set-but-invalid must surface as an error so the caller warns instead of
+        // silently running under the (weaker) default runtime.
+        assert!(classify_oci_runtime(Some("runc; rm -rf /")).is_err());
+        assert!(classify_oci_runtime(Some("two words")).is_err());
+    }
+
+    #[test]
+    fn engine_value_recognition() {
+        for ok in ["nerdctl", "Docker", " podman "] {
+            assert!(engine_value_recognized(ok), "{ok} should be recognized");
+        }
+        for bad in ["dcoker", "lxd", "crio", "containerd-shim"] {
+            assert!(!engine_value_recognized(bad), "{bad} should not be recognized");
+        }
+        // Parser still falls back to nerdctl for unknown values.
+        assert_eq!(EngineKind::parse("dcoker"), EngineKind::Nerdctl);
+        assert_eq!(EngineKind::parse("podman"), EngineKind::Podman);
     }
 
     #[test]

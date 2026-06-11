@@ -1,14 +1,15 @@
 import Fastify from 'fastify';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
+import { lookup as lookupCallback } from 'node:dns';
 import { access, readFile, readdir } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
 import { Worker } from 'node:worker_threads';
 import { z } from 'zod';
 
-import { ProxyAgent, type Dispatcher } from 'undici';
+import { Agent, ProxyAgent, type Dispatcher } from 'undici';
 
 import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
 import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
@@ -122,6 +123,7 @@ const config = {
   captchaPollIntervalMs: readNumberEnv('SCRAPER_CAPTCHA_POLL_INTERVAL_MS', 5_000),
   captchaTimeoutMs: readNumberEnv('SCRAPER_CAPTCHA_TIMEOUT_MS', 120_000),
   captchaMaxAttempts: readNumberEnv('SCRAPER_CAPTCHA_MAX_ATTEMPTS', 2),
+  captchaMaxConcurrent: readNumberEnv('SCRAPER_CAPTCHA_MAX_CONCURRENT', 2),
 };
 
 const proxyPool = new ProxyPool(config.proxies, config.proxyRotation, config.proxyCooldownMs);
@@ -132,7 +134,12 @@ const ScrapeRequestSchema = z.object({
   strategy: z.string().min(1).max(80).optional(),
   renderJavaScript: z.boolean().optional(),
   selector: z.string().min(1).max(800).optional(),
-  selectors: z.record(z.string().min(1).max(120), z.string().min(1).max(800)).optional(),
+  selectors: z
+    .record(z.string().min(1).max(120), z.string().min(1).max(800))
+    .refine((value) => Object.keys(value).length <= 50, {
+      message: 'at most 50 selectors are allowed',
+    })
+    .optional(),
   includeHtml: z.boolean().optional(),
   includeText: z.boolean().optional(),
   includeLinks: z.boolean().optional(),
@@ -142,7 +149,16 @@ const ScrapeRequestSchema = z.object({
   maxTextChars: z.number().int().min(500).optional(),
   waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
   headers: z.record(z.string().min(1).max(120), z.string().max(2_000)).optional(),
-  userAgent: z.string().min(1).max(500).optional(),
+  userAgent: z
+    .string()
+    .min(1)
+    .max(500)
+    // Block control chars so a UA can't smuggle a header break into the browser
+    // strategies (setUserAgent / extraHTTPHeaders bypass the fetch header guard).
+    .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+      message: 'user agent contains control characters',
+    })
+    .optional(),
   proxy: z.string().min(3).max(500).optional(),
   useProxy: z.boolean().optional(),
   detectCaptcha: z.boolean().optional(),
@@ -284,6 +300,7 @@ type StatusDescriptor = {
   captchaDetection: boolean;
   captchaAutoSolve: boolean;
   captchaSolverConfigured: boolean;
+  captchaMaxConcurrent: number;
 };
 
 type HealthDescriptor = {
@@ -364,6 +381,55 @@ let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
 let puppeteerBrowser: PuppeteerBrowser | null = null;
 let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
 const parserWorkerSemaphore = new Semaphore(config.parserWorkerConcurrency);
+let activeCaptchaSolves = 0;
+
+/**
+ * DNS lookup used at connection time so the address we connect to is the same
+ * one we vet — closing the resolve-then-connect (DNS-rebinding) window that a
+ * pre-flight `validateTargetUrl` check alone leaves open. A host that resolves
+ * to a private/link-local/cloud-metadata address (e.g. 169.254.169.254) is
+ * rejected here, at connect, unless private networks are explicitly allowed.
+ */
+const guardedLookup: LookupFunction = (hostname, options, callback): void => {
+  const wantsAll = typeof options === 'object' && options?.all === true;
+  lookupCallback(
+    hostname,
+    { ...(typeof options === 'object' ? options : {}), all: true, verbatim: true },
+    (err, addresses) => {
+      const done = callback as (
+        err: NodeJS.ErrnoException | null,
+        address?: unknown,
+        family?: number,
+      ) => void;
+      if (err) {
+        done(err);
+        return;
+      }
+      const list = addresses as Array<{ address: string; family: number }>;
+      if (list.length === 0) {
+        done(new Error(`no addresses resolved for ${hostname}`));
+        return;
+      }
+      if (!config.allowPrivateNetworks) {
+        const blocked = list.find((entry) => isPrivateIp(entry.address));
+        if (blocked) {
+          done(new Error(`address ${blocked.address} is blocked by scraper network policy`));
+          return;
+        }
+      }
+      if (wantsAll) {
+        done(null, list);
+        return;
+      }
+      const first = list[0]!;
+      done(null, first.address, first.family);
+    },
+  );
+};
+
+// Long-lived dispatcher for direct (un-proxied) target fetches; pins egress to
+// connect-time-validated addresses.
+const guardedAgent = new Agent({ connect: { lookup: guardedLookup } });
 
 const fastify = Fastify({
   logger: true,
@@ -469,20 +535,13 @@ async function runScrape(
   strategy: StrategyName,
 ): Promise<Omit<ScrapeResponse, 'durationMs'>> {
   const targetUrl = await validateTargetUrl(input.url);
-  const ctx = await createScrapeContext(input, targetUrl);
+  const ctx = await createScrapeContext(input, targetUrl, strategy);
   let fetched: FetchedDocument;
   try {
     fetched = await fetchByStrategy(input, targetUrl, strategy, ctx);
-    reportProxyOutcome(ctx, true);
   } catch (error) {
     reportProxyOutcome(ctx, false);
     throw error;
-  }
-  let extraction: ExtractionResult;
-  try {
-    extraction = await extractDocument(fetched.html, fetched.finalUrl, input, strategy);
-  } catch (error) {
-    throw attachFailureScreenshot(error, fetched.failureScreenshot);
   }
 
   // Non-browser strategies can detect a challenge but cannot solve it (no page
@@ -492,6 +551,16 @@ async function runScrape(
     if (ctx.captcha.detected) {
       recordCaptchaMetric('detected', ctx.captcha.type);
     }
+  }
+
+  // Score proxy health off the response (block/challenge pages still "fetch ok").
+  reportProxyOutcome(ctx, isHealthyProxyResponse(fetched, ctx));
+
+  let extraction: ExtractionResult;
+  try {
+    extraction = await extractDocument(fetched.html, fetched.finalUrl, input, strategy);
+  } catch (error) {
+    throw attachFailureScreenshot(error, fetched.failureScreenshot);
   }
 
   return {
@@ -539,7 +608,10 @@ async function fetchStaticDocument(
   const timeoutMs = getTimeoutMs(input);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const dispatcher = buildFetchDispatcher(ctx.proxy);
+  const proxyDispatcher = buildFetchDispatcher(ctx.proxy);
+  // Un-proxied fetches go through the guarded agent (connect-time IP vetting);
+  // proxied fetches connect to the validated proxy, which resolves the target.
+  const dispatcher = proxyDispatcher ?? guardedAgent;
   try {
     let currentUrl = targetUrl;
     for (let redirectCount = 0; redirectCount <= config.maxRedirects; redirectCount += 1) {
@@ -549,10 +621,8 @@ async function fetchStaticDocument(
         redirect: 'manual',
         headers: buildHeaders(input, currentUrl, targetUrl),
         signal: controller.signal,
+        dispatcher,
       };
-      if (dispatcher) {
-        init.dispatcher = dispatcher;
-      }
       const response = await fetch(currentUrl, init);
 
       const location = response.headers.get('location');
@@ -577,8 +647,9 @@ async function fetchStaticDocument(
     throw new Error(`maximum redirect count exceeded (${config.maxRedirects})`);
   } finally {
     clearTimeout(timeout);
-    if (dispatcher) {
-      await dispatcher.close().catch(() => undefined);
+    // Only the per-request proxy agent is disposable; guardedAgent is shared.
+    if (proxyDispatcher) {
+      await proxyDispatcher.close().catch(() => undefined);
     }
   }
 }
@@ -778,12 +849,36 @@ async function fetchWithBrowserless(
 async function createScrapeContext(
   input: ScrapeRequest,
   targetUrl: URL,
+  strategy: StrategyName,
 ): Promise<ScrapeContext> {
+  // browserless manages its own egress; refuse a proxy there rather than
+  // silently ignoring it and reporting a proxy that was never applied.
+  if (!strategyUsesProxy(strategy)) {
+    if (input.proxy) {
+      throw new Error(`the ${strategy} strategy does not support proxy rotation`);
+    }
+    return { proxy: null, proxyFromPool: false };
+  }
   const resolved = await resolveProxy(input, targetUrl);
   return {
     proxy: resolved?.entry ?? null,
     proxyFromPool: resolved?.fromPool ?? false,
   };
+}
+
+function strategyUsesProxy(strategy: StrategyName): boolean {
+  return strategy !== 'browserless';
+}
+
+/**
+ * A proxy that returns proxy-auth, block, or challenge responses is unhealthy —
+ * cool it out of the rotation so subsequent requests try a different egress IP.
+ */
+function isHealthyProxyResponse(fetched: FetchedDocument, ctx: ScrapeContext): boolean {
+  if (fetched.status === 407 || fetched.status === 403 || fetched.status === 429) {
+    return false;
+  }
+  return !ctx.captcha?.detected;
 }
 
 async function resolveProxy(
@@ -849,9 +944,9 @@ function buildFetchDispatcher(proxy: ProxyEntry | null): Dispatcher | null {
   }
   if (proxy.username || proxy.password) {
     const token = `Basic ${Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64')}`;
-    return new ProxyAgent({ uri: proxy.label, token });
+    return new ProxyAgent({ uri: proxy.label, token, connect: { lookup: guardedLookup } });
   }
-  return new ProxyAgent(proxy.label);
+  return new ProxyAgent({ uri: proxy.label, connect: { lookup: guardedLookup } });
 }
 
 function playwrightProxy(proxy: ProxyEntry): {
@@ -944,40 +1039,54 @@ async function orchestrateCaptcha(
     outcome.error = 'captcha solver not configured (set SCRAPER_CAPTCHA_API_KEY)';
     return;
   }
+  // A solve holds the in-flight slot (and the browser page) for up to the solver
+  // timeout — longer than the request timeout — and costs money. A hostile target
+  // can serve a fake sitekey to trigger that. Cap concurrent solves and shed the
+  // excess (report detection only) so solves can't starve capacity or amplify spend.
+  if (activeCaptchaSolves >= config.captchaMaxConcurrent) {
+    outcome.error = 'captcha solver concurrency limit reached';
+    recordCaptchaMetric('failed', detection.type);
+    return;
+  }
 
-  const maxAttempts = Math.max(1, Math.floor(config.captchaMaxAttempts));
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    outcome.attempts = attempt;
-    try {
-      const result = await solveCaptcha({
-        config: {
-          providerUrl: config.captchaProviderUrl,
-          apiKey: config.captchaApiKey!,
-          pollIntervalMs: config.captchaPollIntervalMs,
-          timeoutMs: config.captchaTimeoutMs,
-        },
-        detection,
-        pageUrl: ops.url(),
-        userAgent: input.userAgent,
-      });
-      await ops.evaluate(buildInjectionScript(detection.type, result.token));
-      await sleep(1_500);
-      outcome.solved = true;
-      outcome.provider = result.provider;
-      outcome.solveMs = result.solveMs;
-      delete outcome.error;
-      recordCaptchaMetric('solved', detection.type);
-      return;
-    } catch (error) {
-      outcome.error =
-        error instanceof CaptchaSolveError || error instanceof Error
-          ? error.message
-          : String(error);
-      if (attempt >= maxAttempts) {
-        recordCaptchaMetric('failed', detection.type);
+  activeCaptchaSolves += 1;
+  try {
+    const maxAttempts = Math.max(1, Math.floor(config.captchaMaxAttempts));
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      outcome.attempts = attempt;
+      try {
+        const result = await solveCaptcha({
+          config: {
+            providerUrl: config.captchaProviderUrl,
+            apiKey: config.captchaApiKey!,
+            pollIntervalMs: config.captchaPollIntervalMs,
+            timeoutMs: config.captchaTimeoutMs,
+          },
+          detection,
+          pageUrl: ops.url(),
+          userAgent: input.userAgent,
+        });
+        await ops.evaluate(buildInjectionScript(detection.type, result.token));
+        await sleep(1_500);
+        outcome.solved = true;
+        outcome.provider = result.provider;
+        outcome.solveMs = result.solveMs;
+        delete outcome.error;
+        recordCaptchaMetric('solved', detection.type);
         return;
+      } catch (error) {
+        outcome.error =
+          error instanceof CaptchaSolveError || error instanceof Error
+            ? error.message
+            : String(error);
+        if (attempt >= maxAttempts) {
+          recordCaptchaMetric('failed', detection.type);
+          return;
+        }
       }
     }
+  } finally {
+    activeCaptchaSolves -= 1;
   }
 }
 
@@ -1547,7 +1656,7 @@ function buildHeaders(
         continue;
       }
     }
-    if (/[\r\n]/.test(value)) {
+    if (/[\u0000-\u001f\u007f]/.test(value)) {
       throw new Error(`blocked outbound header with invalid value: ${normalizedName}`);
     }
     headers[normalizedName] = value;
@@ -1572,7 +1681,8 @@ function isClientPolicyError(message: string): boolean {
     message.includes('invalid proxy URL') ||
     message.includes('unsupported proxy protocol') ||
     message.includes('proxy URL is missing a host') ||
-    message.includes('SOCKS proxies are only supported')
+    message.includes('SOCKS proxies are only supported') ||
+    message.includes('does not support proxy rotation')
   );
 }
 
@@ -1745,6 +1855,7 @@ function statusDescriptor(): StatusDescriptor {
     captchaDetection: config.detectCaptchas,
     captchaAutoSolve: config.captchaAutoSolve,
     captchaSolverConfigured: isCaptchaSolverConfigured(),
+    captchaMaxConcurrent: config.captchaMaxConcurrent,
   };
 }
 

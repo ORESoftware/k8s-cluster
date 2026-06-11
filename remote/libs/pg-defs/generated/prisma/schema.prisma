@@ -638,6 +638,77 @@ model LambdaFunction {
   @@map("lambda_functions")
 }
 
+model WorkflowDefinitions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  displayName String @map("display_name") @db.VarChar(200)
+  description String @default("") @db.Text
+  steps Json
+  defaultRetry Json @map("default_retry") @default("{}")
+  status String @default("draft") @db.VarChar(32)
+  labels Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // workflow_definitions_slug_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // workflow_definitions_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // workflow_definitions_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("workflow_definitions")
+}
+
+model WorkflowRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  definitionId String @map("definition_id") @db.Uuid
+  definitionSlug String @map("definition_slug") @db.VarChar(120)
+  status String @default("pending") @db.VarChar(32)
+  currentStepIndex Int @map("current_step_index") @default(0)
+  attempt Int @default(0)
+  input Json @default("{}")
+  context Json @default("{}")
+  output Json?
+  lastError String? @map("last_error") @db.Text
+  wakeAt DateTime? @map("wake_at") @db.Timestamptz(6)
+  waitDeadline DateTime? @map("wait_deadline") @db.Timestamptz(6)
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(6)
+  signals Json @default("[]")
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(200)
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  @@index([definitionId], map: "workflow_runs_definition_id_idx")
+  @@index([status], map: "workflow_runs_status_idx")
+  // workflow_runs_due_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // workflow_runs_idempotency_key_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("workflow_runs")
+}
+
+model WorkflowStepRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+  stepIndex Int @map("step_index")
+  stepName String @map("step_name") @db.VarChar(200)
+  stepType String @map("step_type") @default("activity") @db.VarChar(32)
+  functionRef String @map("function_ref") @default("") @db.VarChar(200)
+  attempt Int
+  status String @db.VarChar(32)
+  input Json?
+  output Json?
+  error String? @db.Text
+  durationMs Int? @map("duration_ms")
+  startedAt DateTime @map("started_at") @default(now()) @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  @@index([runId, stepIndex, attempt], map: "workflow_step_runs_run_id_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("workflow_step_runs")
+}
+
 model ContainerPoolImageRevisions {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   imageSlug String @map("image_slug") @db.VarChar(120)

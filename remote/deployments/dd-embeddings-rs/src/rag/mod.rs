@@ -164,6 +164,11 @@ impl RagService {
         })
     }
 
+    /// Readiness passthrough: is the vector store reachable?
+    pub async fn qdrant_health(&self) -> Result<(), QdrantError> {
+        self.qdrant.healthz().await
+    }
+
     pub async fn search(&self, req: SearchRequest) -> Result<SearchResponse, RagError> {
         let provider = self.registry.resolve(&req.provider)?;
 

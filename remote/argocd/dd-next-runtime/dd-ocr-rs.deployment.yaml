@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ocr-rs
+  namespace: default
+  labels:
+    app: dd-ocr-rs
+spec:
+  replicas: 0
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-ocr-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-10-ocr-rs-bootstrap'
+      labels:
+        app: dd-ocr-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        # Unlike the cargo-run-from-hostPath dd-*-rs services, dd-ocr-rs runs the
+        # prebuilt image from deployments/dd-ocr-rs/Dockerfile because it links
+        # the Tesseract + Leptonica C++ OCR bridge at build time.
+        - name: ocr-rs
+          image: dd-ocr-rs:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8123'
+            - name: HOME
+              value: /tmp
+            - name: OCR_MAX_IMAGE_BYTES
+              value: '16777216'
+            # Anti-bomb decode guards (see preprocess.rs): cap decoded pixel
+            # dimensions and the decoder's intermediate allocation.
+            - name: OCR_MAX_IMAGE_DIM
+              value: '10000'
+            - name: OCR_MAX_DECODE_ALLOC_BYTES
+              value: '268435456'
+            - name: OCR_DEFAULT_LANGUAGES
+              value: eng
+            # Pin concurrency to the pod's CPU budget; available_parallelism()
+            # can otherwise see the node's core count, not the cgroup limit, and
+            # oversubscribe memory with concurrent Tesseract pages.
+            - name: OCR_CONCURRENCY
+              value: '2'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: OCR_REQUEST_SUBJECT
+              value: dd.remote.ocr.requests
+            - name: OCR_RESULT_SUBJECT
+              value: dd.remote.ocr.results
+            - name: OCR_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-ocr-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-ocr-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-ocr-rs.default.svc.cluster.local:8123/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            # ---- Paid third-party OCR backends. Each is enabled only when its
+            #      credentials are present; optional:true so the pod boots (and
+            #      the local Tesseract engine works) before the bundle exists.
+            - name: GOOGLE_VISION_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ocr-rs-secrets
+                  key: GOOGLE_VISION_API_KEY
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ocr-rs-secrets
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ocr-rs-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AZURE_VISION_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ocr-rs-secrets
+                  key: AZURE_VISION_ENDPOINT
+                  optional: true
+            - name: AZURE_VISION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ocr-rs-secrets
+                  key: AZURE_VISION_KEY
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8123
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              # Headroom for Leptonica/Tesseract page buffers plus concurrent
+              # decode/binarise passes. The in-process decode-allocation cap
+              # (OCR_MAX_DECODE_ALLOC_BYTES, default 256MB) × concurrency stays
+              # comfortably under this.
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            # Bound scratch so a hostile image can't fill node ephemeral storage.
+            sizeLimit: 1Gi

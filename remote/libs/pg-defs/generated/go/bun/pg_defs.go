@@ -50,6 +50,7 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
@@ -1629,6 +1630,174 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const WorkflowDefinitionsTable = "workflow_definitions"
+const WorkflowDefinitionsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      steps,
+      default_retry,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from workflow_definitions`
+
+var WorkflowDefinitionsStatusValues = []string{"draft", "active", "paused", "archived"}
+
+type WorkflowDefinitionsBun struct {
+	bun.BaseModel `bun:"table:workflow_definitions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
+	Description string `bun:"description,type:text,default:''" json:"description"`
+	Steps json.RawMessage `bun:"steps,type:jsonb" json:"steps"`
+	DefaultRetry json.RawMessage `bun:"default_retry,type:jsonb,default:'{}'::jsonb" json:"defaultRetry"`
+	Status string `bun:"status,type:varchar(32),default:'draft'" json:"status"`
+	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value WorkflowDefinitionsBun) Validate() error {
+	if !workflowDefinitionsSlugPattern.MatchString(value.Slug) { return errors.New("workflow_definitions.slug does not match the required pattern") }
+	if !validateRawJSON(value.Steps) { return errors.New("workflow_definitions.steps must be valid JSON") }
+	if !validateRawJSON(value.DefaultRetry) { return errors.New("workflow_definitions.default_retry must be valid JSON") }
+	if !containsString(WorkflowDefinitionsStatusValues, value.Status) { return errors.New("unsupported workflow_definitions.status") }
+	if !validateRawJSON(value.Labels) { return errors.New("workflow_definitions.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("workflow_definitions.meta_data must be valid JSON") }
+	return nil
+}
+
+const WorkflowRunsTable = "workflow_runs"
+const WorkflowRunsSelectSQL = `select
+      id::text as id,
+      definition_id::text as definition_id,
+      definition_slug,
+      status,
+      current_step_index,
+      attempt,
+      input,
+      context,
+      output,
+      last_error,
+      to_char(wake_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wake_at,
+      to_char(wait_deadline at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wait_deadline,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      signals,
+      idempotency_key,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by
+    from workflow_runs`
+
+var WorkflowRunsStatusValues = []string{"pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"}
+
+type WorkflowRunsBun struct {
+	bun.BaseModel `bun:"table:workflow_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	DefinitionId uuid.UUID `bun:"definition_id,type:uuid" json:"definitionId"`
+	DefinitionSlug string `bun:"definition_slug,type:varchar(120)" json:"definitionSlug"`
+	Status string `bun:"status,type:varchar(32),default:'pending'" json:"status"`
+	CurrentStepIndex int32 `bun:"current_step_index,type:integer,default:0" json:"currentStepIndex"`
+	Attempt int32 `bun:"attempt,type:integer,default:0" json:"attempt"`
+	Input json.RawMessage `bun:"input,type:jsonb,default:'null'::jsonb" json:"input"`
+	Context json.RawMessage `bun:"context,type:jsonb,default:'{}'::jsonb" json:"context"`
+	Output *json.RawMessage `bun:"output,type:jsonb,nullzero" json:"output,omitempty"`
+	LastError *string `bun:"last_error,type:text,nullzero" json:"lastError,omitempty"`
+	WakeAt *time.Time `bun:"wake_at,type:timestamptz,nullzero" json:"wakeAt,omitempty"`
+	WaitDeadline *time.Time `bun:"wait_deadline,type:timestamptz,nullzero" json:"waitDeadline,omitempty"`
+	LeaseUntil *time.Time `bun:"lease_until,type:timestamptz,nullzero" json:"leaseUntil,omitempty"`
+	Signals json.RawMessage `bun:"signals,type:jsonb,default:'[]'::jsonb" json:"signals"`
+	IdempotencyKey *string `bun:"idempotency_key,type:varchar(200),nullzero" json:"idempotencyKey,omitempty"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+}
+
+func (value WorkflowRunsBun) Validate() error {
+	if !containsString(WorkflowRunsStatusValues, value.Status) { return errors.New("unsupported workflow_runs.status") }
+	if value.CurrentStepIndex < 0 { return errors.New("workflow_runs.current_step_index is below the minimum") }
+	if value.Attempt < 0 { return errors.New("workflow_runs.attempt is below the minimum") }
+	if !validateRawJSON(value.Input) { return errors.New("workflow_runs.input must be valid JSON") }
+	if !validateRawJSON(value.Context) { return errors.New("workflow_runs.context must be valid JSON") }
+	if value.Output != nil {
+		if !validateRawJSON(*value.Output) { return errors.New("workflow_runs.output must be valid JSON") }
+	}
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 8192 { return errors.New("workflow_runs.last_error exceeds 8192 bytes") }
+	}
+	if !validateRawJSON(value.Signals) { return errors.New("workflow_runs.signals must be valid JSON") }
+	return nil
+}
+
+const WorkflowStepRunsTable = "workflow_step_runs"
+const WorkflowStepRunsSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      step_index,
+      step_name,
+      step_type,
+      function_ref,
+      attempt,
+      status,
+      input,
+      output,
+      error,
+      duration_ms,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from workflow_step_runs`
+
+var WorkflowStepRunsStatusValues = []string{"running", "succeeded", "failed"}
+
+type WorkflowStepRunsBun struct {
+	bun.BaseModel `bun:"table:workflow_step_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
+	StepIndex int32 `bun:"step_index,type:integer" json:"stepIndex"`
+	StepName string `bun:"step_name,type:varchar(200)" json:"stepName"`
+	StepType string `bun:"step_type,type:varchar(32),default:'activity'" json:"stepType"`
+	FunctionRef string `bun:"function_ref,type:varchar(200),default:''" json:"functionRef"`
+	Attempt int32 `bun:"attempt,type:integer" json:"attempt"`
+	Status string `bun:"status,type:varchar(32)" json:"status"`
+	Input *json.RawMessage `bun:"input,type:jsonb,nullzero" json:"input,omitempty"`
+	Output *json.RawMessage `bun:"output,type:jsonb,nullzero" json:"output,omitempty"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	DurationMs *int32 `bun:"duration_ms,type:integer,nullzero" json:"durationMs,omitempty"`
+	StartedAt time.Time `bun:"started_at,type:timestamptz,default:now()" json:"startedAt"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+}
+
+func (value WorkflowStepRunsBun) Validate() error {
+	if value.StepIndex < 0 { return errors.New("workflow_step_runs.step_index is below the minimum") }
+	if value.Attempt < 0 { return errors.New("workflow_step_runs.attempt is below the minimum") }
+	if !containsString(WorkflowStepRunsStatusValues, value.Status) { return errors.New("unsupported workflow_step_runs.status") }
+	if value.Input != nil {
+		if !validateRawJSON(*value.Input) { return errors.New("workflow_step_runs.input must be valid JSON") }
+	}
+	if value.Output != nil {
+		if !validateRawJSON(*value.Output) { return errors.New("workflow_step_runs.output must be valid JSON") }
+	}
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 8192 { return errors.New("workflow_step_runs.error exceeds 8192 bytes") }
+	}
 	return nil
 }
 

@@ -151,10 +151,10 @@
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 28,
+      "routeCount": 52,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 19,
+        "user-generated": 43,
         "runtime-config": 3
       },
       "generated": [
@@ -173,6 +173,19 @@
       "generated": [
         "remote/deployments/dart-server/generated/api-docs.json",
         "remote/deployments/dart-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dataset-labeling-rs",
+      "language": "rust",
+      "routeCount": 17,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 10
+      },
+      "generated": [
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.html"
       ]
     },
     {
@@ -231,6 +244,19 @@
       ]
     },
     {
+      "service": "dd-git-rs",
+      "language": "rust",
+      "routeCount": 15,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 8
+      },
+      "generated": [
+        "remote/deployments/dd-git-rs/generated/api-docs.json",
+        "remote/deployments/dd-git-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "dd-music-rs",
       "language": "rust",
       "routeCount": 13,
@@ -241,6 +267,20 @@
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",
         "remote/deployments/dd-music-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-ocr-rs",
+      "language": "rust",
+      "routeCount": 15,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 6,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dd-ocr-rs/generated/api-docs.json",
+        "remote/deployments/dd-ocr-rs/generated/api-docs.html"
       ]
     },
     {
@@ -356,10 +396,10 @@
     {
       "service": "gleam-lambda-runner",
       "language": "gleam",
-      "routeCount": 13,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4,
+        "user-generated": 9,
         "runtime-config": 3
       },
       "generated": [
@@ -434,6 +474,19 @@
       "generated": [
         "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
         "remote/deployments/gleamlang-ws-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "knowledge-graph-builder-rs",
+      "language": "rust",
+      "routeCount": 18,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 11
+      },
+      "generated": [
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html"
       ]
     },
     {

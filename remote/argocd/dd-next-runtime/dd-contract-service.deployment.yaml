@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-09-contract-settlement-resolution'
+        dd.dev/telemetry-revision: '2026-06-10-blockchain-suite-scaffold'
       labels:
         app: dd-contract-service
     spec:
@@ -105,6 +105,62 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: CONTRACT_SETTLEMENT_AUTH_SECRET
+                  optional: true
+            # ----------------------------------------------------------------
+            # Blockchain feature suite (keyless, custody-ready). All features are
+            # OFF by default; the service holds no keys and never signs. Read/
+            # coordination paths only need the *_ENABLED flag; execute/broadcast
+            # paths additionally require CONTRACT_BLOCKCHAIN_AUTH_SECRET and, for
+            # a mainnet target, CONTRACT_BLOCKCHAIN_MAINNET_ENABLED=true.
+            # ----------------------------------------------------------------
+            # Optional EVM read/relay surface (Solana stays the primary chain).
+            # EVM_RPC_URL must be https (SSRF-guarded like SOLANA_RPC_URL) and is
+            # reached over the existing public-443 egress rule.
+            - name: EVM_RPC_URL
+              value: ''
+            - name: EVM_CHAIN_ID
+              value: '0'
+            - name: EVM_NETWORK
+              value: sepolia
+            - name: EVM_ALLOW_PRIVATE_RPC
+              value: 'false'
+            # Read/coordination features (no signing, no broadcast).
+            - name: BLOCKCHAIN_WALLET_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_EXECUTOR_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_RELAYER_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_MULTISIG_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_INDEXER_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_MEV_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_NFT_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_STAKING_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_BRIDGE_ENABLED
+              value: 'false'
+            # Gated execute/broadcast paths: each relays an externally-signed raw
+            # transaction. Enabling any of these requires CONTRACT_BLOCKCHAIN_AUTH_SECRET.
+            - name: BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_RELAYER_BROADCAST_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_STAKING_EXECUTE_ENABLED
+              value: 'false'
+            - name: BLOCKCHAIN_BRIDGE_BROADCAST_ENABLED
+              value: 'false'
+            # Mainnet second gate for any blockchain execute/broadcast capability.
+            - name: CONTRACT_BLOCKCHAIN_MAINNET_ENABLED
+              value: 'false'
+            - name: CONTRACT_BLOCKCHAIN_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: CONTRACT_BLOCKCHAIN_AUTH_SECRET
                   optional: true
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222

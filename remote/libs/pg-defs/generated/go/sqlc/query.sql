@@ -421,6 +421,51 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
 
+-- name: ListWorkflowDefinitions :many
+select id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from workflow_definitions;
+
+-- name: GetWorkflowDefinitions :one
+select id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from workflow_definitions where id = $1 limit 1;
+
+-- name: CreateWorkflowDefinitions :one
+insert into workflow_definitions (id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateWorkflowDefinitions :one
+update workflow_definitions set slug = $2, display_name = $3, description = $4, steps = $5, default_retry = $6, status = $7, labels = $8, meta_data = $9, is_soft_deleted = $10, updated_at = $11, created_by = $12, updated_by = $13 where id = $1 returning id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteWorkflowDefinitions :exec
+delete from workflow_definitions where id = $1;
+
+-- name: ListWorkflowRuns :many
+select id, definition_id, definition_slug, status, current_step_index, attempt, input, context, output, last_error, wake_at, wait_deadline, lease_until, signals, idempotency_key, started_at, finished_at, created_at, updated_at, created_by from workflow_runs;
+
+-- name: GetWorkflowRuns :one
+select id, definition_id, definition_slug, status, current_step_index, attempt, input, context, output, last_error, wake_at, wait_deadline, lease_until, signals, idempotency_key, started_at, finished_at, created_at, updated_at, created_by from workflow_runs where id = $1 limit 1;
+
+-- name: CreateWorkflowRuns :one
+insert into workflow_runs (id, definition_id, definition_slug, status, current_step_index, attempt, input, context, output, last_error, wake_at, wait_deadline, lease_until, signals, idempotency_key, started_at, finished_at, created_at, updated_at, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning id, definition_id, definition_slug, status, current_step_index, attempt, input, context, output, last_error, wake_at, wait_deadline, lease_until, signals, idempotency_key, started_at, finished_at, created_at, updated_at, created_by;
+
+-- name: UpdateWorkflowRuns :one
+update workflow_runs set definition_id = $2, definition_slug = $3, status = $4, current_step_index = $5, attempt = $6, input = $7, context = $8, output = $9, last_error = $10, wake_at = $11, wait_deadline = $12, lease_until = $13, signals = $14, idempotency_key = $15, started_at = $16, finished_at = $17, updated_at = $18, created_by = $19 where id = $1 returning id, definition_id, definition_slug, status, current_step_index, attempt, input, context, output, last_error, wake_at, wait_deadline, lease_until, signals, idempotency_key, started_at, finished_at, created_at, updated_at, created_by;
+
+-- name: DeleteWorkflowRuns :exec
+delete from workflow_runs where id = $1;
+
+-- name: ListWorkflowStepRuns :many
+select id, run_id, step_index, step_name, step_type, function_ref, attempt, status, input, output, error, duration_ms, started_at, finished_at from workflow_step_runs;
+
+-- name: GetWorkflowStepRuns :one
+select id, run_id, step_index, step_name, step_type, function_ref, attempt, status, input, output, error, duration_ms, started_at, finished_at from workflow_step_runs where id = $1 limit 1;
+
+-- name: CreateWorkflowStepRuns :one
+insert into workflow_step_runs (id, run_id, step_index, step_name, step_type, function_ref, attempt, status, input, output, error, duration_ms, started_at, finished_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, run_id, step_index, step_name, step_type, function_ref, attempt, status, input, output, error, duration_ms, started_at, finished_at;
+
+-- name: UpdateWorkflowStepRuns :one
+update workflow_step_runs set run_id = $2, step_index = $3, step_name = $4, step_type = $5, function_ref = $6, attempt = $7, status = $8, input = $9, output = $10, error = $11, duration_ms = $12, started_at = $13, finished_at = $14 where id = $1 returning id, run_id, step_index, step_name, step_type, function_ref, attempt, status, input, output, error, duration_ms, started_at, finished_at;
+
+-- name: DeleteWorkflowStepRuns :exec
+delete from workflow_step_runs where id = $1;
+
 -- name: ListContainerPoolImageRevisions :many
 select id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_image_revisions;
 

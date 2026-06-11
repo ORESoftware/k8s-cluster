@@ -12,8 +12,30 @@ use crate::{
         BotDetectionRequest, FraudDetectionRequest, LoginAnomalyRequest, RiskAnalysisReport,
         RiskFinding, VulnerabilitySeverity,
     },
-    util::now_ms,
+    util::{clip, now_ms},
 };
+
+/// Maximum characters of a caller-controlled identifier echoed into a finding.
+const MAX_SUBJECT_CHARS: usize = 200;
+
+/// Resolve a record's caller-supplied id (sanitized) or fall back to its index.
+fn subject_ref(id: &Option<String>, index: usize) -> String {
+    id.as_deref()
+        .map(|value| clip(value, MAX_SUBJECT_CHARS))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("event-{index}"))
+}
+
+/// True when `email`'s domain is, or is a subdomain of, a disposable domain.
+/// A plain suffix check would wrongly flag e.g. `user@notmailinator.com`.
+fn is_disposable_email(email: &str) -> bool {
+    let Some(domain) = email.rsplit('@').next() else {
+        return false;
+    };
+    DISPOSABLE_EMAIL_DOMAINS
+        .iter()
+        .any(|d| domain == *d || domain.ends_with(&format!(".{d}")))
+}
 
 const DISPOSABLE_EMAIL_DOMAINS: &[&str] = &[
     "mailinator.com",
@@ -56,12 +78,13 @@ fn severity_for_score(score: u32) -> VulnerabilitySeverity {
 }
 
 fn finalize(
+    config: &Config,
     request_id: Option<String>,
     analysis_type: &str,
     id_prefix: &str,
     events_analyzed: usize,
     mut findings: Vec<RiskFinding>,
-    note: &str,
+    mut notes: Vec<String>,
 ) -> RiskAnalysisReport {
     let request_id = request_id
         .filter(|value| !value.trim().is_empty())
@@ -73,7 +96,16 @@ fn finalize(
             .then(left.subject_ref.cmp(&right.subject_ref))
             .then(left.id.cmp(&right.id))
     });
+    // Peak risk is computed before any truncation so the headline score still
+    // reflects the worst event even if low-score findings are dropped.
     let risk_score = findings.iter().map(|f| f.score).max().unwrap_or(0);
+    if findings.len() > config.max_findings_per_job {
+        findings.truncate(config.max_findings_per_job);
+        notes.push(format!(
+            "Findings truncated to the configured maximum of {}.",
+            config.max_findings_per_job
+        ));
+    }
     let high_or_worse = findings
         .iter()
         .filter(|f| f.severity >= VulnerabilitySeverity::High)
@@ -95,16 +127,29 @@ fn finalize(
         risk_score,
         findings,
         generated_at_ms: now_ms(),
-        notes: vec![note.to_string()],
+        notes,
     }
 }
 
-fn cap_events<T>(config: &Config, events: Vec<T>) -> Vec<T> {
-    let mut events = events;
-    if events.len() > config.max_files {
+/// Truncate an event batch to `config.max_files`; the flag reports whether any
+/// events were dropped so callers can be told their batch was not fully analyzed.
+fn cap_events<T>(config: &Config, mut events: Vec<T>) -> (Vec<T>, bool) {
+    let truncated = events.len() > config.max_files;
+    if truncated {
         events.truncate(config.max_files);
     }
-    events
+    (events, truncated)
+}
+
+fn base_notes(note: &str, truncated: bool) -> Vec<String> {
+    let mut notes = vec![note.to_string()];
+    if truncated {
+        notes.push(
+            "Some submitted events were skipped because the per-request event limit was reached; resubmit in smaller batches for complete coverage."
+                .to_string(),
+        );
+    }
+    notes
 }
 
 // ---------------------------------------------------------------------------
@@ -112,14 +157,15 @@ fn cap_events<T>(config: &Config, events: Vec<T>) -> Vec<T> {
 // ---------------------------------------------------------------------------
 
 pub fn detect_fraud(config: &Config, request: FraudDetectionRequest) -> RiskAnalysisReport {
-    let high_amount = request.high_amount_threshold.unwrap_or(1000.0);
+    let high_amount = request.high_amount_threshold.unwrap_or(1000.0).max(0.0);
     let blocklist: Vec<String> = request
         .blocklisted_ips
         .iter()
+        .take(config.max_files)
         .map(|ip| ip.trim().to_ascii_lowercase())
         .filter(|ip| !ip.is_empty())
         .collect();
-    let events = cap_events(config, request.events);
+    let (events, truncated) = cap_events(config, request.events);
     let events_analyzed = events.len();
 
     // Velocity: count events per email and per ip across the batch.
@@ -136,11 +182,7 @@ pub fn detect_fraud(config: &Config, request: FraudDetectionRequest) -> RiskAnal
 
     let mut findings = Vec::new();
     for (index, event) in events.iter().enumerate() {
-        let subject = event
-            .id
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| format!("event-{index}"));
+        let subject = subject_ref(&event.id, index);
         let mut score = 0u32;
         let mut reasons: Vec<String> = Vec::new();
 
@@ -169,10 +211,7 @@ pub fn detect_fraud(config: &Config, request: FraudDetectionRequest) -> RiskAnal
             reasons.push("card BIN country differs from IP country".to_string());
         }
         if let Some(email) = normalized(&event.email) {
-            if DISPOSABLE_EMAIL_DOMAINS
-                .iter()
-                .any(|domain| email.ends_with(domain))
-            {
+            if is_disposable_email(&email) {
                 score += 20;
                 reasons.push("disposable email domain".to_string());
             }
@@ -212,12 +251,16 @@ pub fn detect_fraud(config: &Config, request: FraudDetectionRequest) -> RiskAnal
     }
 
     finalize(
+        config,
         request.request_id,
         "fraud",
         "fraud-detection",
         events_analyzed,
         findings,
-        "Heuristic rule scoring over submitted transactions; calibrate thresholds and combine with a trained model and device intelligence.",
+        base_notes(
+            "Heuristic rule scoring over submitted transactions; calibrate thresholds and combine with a trained model and device intelligence.",
+            truncated,
+        ),
     )
 }
 
@@ -226,23 +269,20 @@ pub fn detect_fraud(config: &Config, request: FraudDetectionRequest) -> RiskAnal
 // ---------------------------------------------------------------------------
 
 pub fn detect_bots(config: &Config, request: BotDetectionRequest) -> RiskAnalysisReport {
-    let rate_threshold = request.rate_threshold_per_min.unwrap_or(120.0);
+    let rate_threshold = request.rate_threshold_per_min.unwrap_or(120.0).max(0.0);
     let honeypots: Vec<String> = request
         .honeypot_paths
         .iter()
+        .take(config.max_files)
         .map(|path| path.trim().to_ascii_lowercase())
         .filter(|path| !path.is_empty())
         .collect();
-    let events = cap_events(config, request.events);
+    let (events, truncated) = cap_events(config, request.events);
     let events_analyzed = events.len();
 
     let mut findings = Vec::new();
     for (index, event) in events.iter().enumerate() {
-        let subject = event
-            .id
-            .clone()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| format!("event-{index}"));
+        let subject = subject_ref(&event.id, index);
         let mut score = 0u32;
         let mut reasons: Vec<String> = Vec::new();
 
@@ -309,12 +349,16 @@ pub fn detect_bots(config: &Config, request: BotDetectionRequest) -> RiskAnalysi
     }
 
     finalize(
+        config,
         request.request_id,
         "bot",
         "bot-detection",
         events_analyzed,
         findings,
-        "Heuristic signal scoring over submitted request records; combine with edge WAF telemetry, fingerprinting, and a verified-bot allowlist.",
+        base_notes(
+            "Heuristic signal scoring over submitted request records; combine with edge WAF telemetry, fingerprinting, and a verified-bot allowlist.",
+            truncated,
+        ),
     )
 }
 
@@ -327,7 +371,7 @@ pub fn detect_login_anomalies(
     request: LoginAnomalyRequest,
 ) -> RiskAnalysisReport {
     let max_kph = request.max_travel_kph.unwrap_or(900.0).max(1.0);
-    let events = cap_events(config, request.events);
+    let (events, truncated) = cap_events(config, request.events);
     let events_analyzed = events.len();
 
     // Group successful logins per user to establish a per-user baseline and
@@ -356,11 +400,7 @@ pub fn detect_login_anomalies(
         let mut prior_success: Option<usize> = None;
         for &index in &indices {
             let event = &events[index];
-            let subject = event
-                .id
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| format!("event-{index}"));
+            let subject = subject_ref(&event.id, index);
             let mut score = 0u32;
             let mut reasons: Vec<String> = Vec::new();
 
@@ -387,9 +427,12 @@ pub fn detect_login_anomalies(
                     if let Some(kph) = travel_speed_kph(&events[prev_index], event) {
                         if kph > max_kph {
                             score += 45;
-                            reasons.push(format!(
-                                "impossible travel: ~{kph:.0} km/h exceeds {max_kph:.0} km/h"
-                            ));
+                            let detail = if kph.is_finite() {
+                                format!("~{kph:.0} km/h exceeds {max_kph:.0} km/h")
+                            } else {
+                                "two locations at the same instant".to_string()
+                            };
+                            reasons.push(format!("impossible travel: {detail}"));
                         }
                     } else if country_changed(&events[prev_index], event) {
                         // No coordinates, but country flipped between adjacent logins.
@@ -450,12 +493,16 @@ pub fn detect_login_anomalies(
     }
 
     finalize(
+        config,
         request.request_id,
         "login-anomaly",
         "login-anomaly",
         events_analyzed,
         findings,
-        "Heuristic anomaly scoring over submitted login events; combine with a per-user behavioral baseline and authoritative IP geolocation.",
+        base_notes(
+            "Heuristic anomaly scoring over submitted login events; combine with a per-user behavioral baseline and authoritative IP geolocation.",
+            truncated,
+        ),
     )
 }
 
@@ -483,7 +530,10 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let dlon = (lon2 - lon1).to_radians();
     let a = (dlat / 2.0).sin().powi(2)
         + rlat1.cos() * rlat2.cos() * (dlon / 2.0).sin().powi(2);
-    2.0 * R * a.sqrt().asin()
+    // Clamp before asin: floating-point error on near-antipodal points can push
+    // sqrt(a) marginally above 1.0, which would make asin return NaN and silently
+    // suppress an impossible-travel finding.
+    2.0 * R * a.sqrt().clamp(0.0, 1.0).asin()
 }
 
 fn country_changed(prev: &crate::models::LoginEvent, next: &crate::models::LoginEvent) -> bool {
@@ -597,6 +647,75 @@ mod tests {
         );
         assert!(!report.ok);
         assert!(report.findings.iter().any(|f| f.category == "bot"));
+    }
+
+    #[test]
+    fn disposable_email_matches_domain_and_subdomain_only() {
+        assert!(is_disposable_email("x@mailinator.com"));
+        assert!(is_disposable_email("x@smtp.mailinator.com"));
+        // A registrable domain that merely ends with the same letters must not match.
+        assert!(!is_disposable_email("x@notmailinator.com"));
+        assert!(!is_disposable_email("x@example.com"));
+    }
+
+    #[test]
+    fn long_caller_subject_id_is_clipped() {
+        let report = detect_bots(
+            &test_config(),
+            BotDetectionRequest {
+                request_id: None,
+                title: None,
+                events: vec![BotEvent {
+                    id: Some("A".repeat(5000)),
+                    ip: None,
+                    user_agent: Some("python-requests/2.31".to_string()),
+                    path: None,
+                    method: None,
+                    requests_per_min: None,
+                    asn_type: None,
+                    headers_present: vec![],
+                }],
+                rate_threshold_per_min: Some(120.0),
+                honeypot_paths: vec![],
+            },
+        );
+        assert_eq!(report.findings.len(), 1);
+        assert!(report.findings[0].subject_ref.chars().count() <= MAX_SUBJECT_CHARS + 1);
+    }
+
+    #[test]
+    fn event_batch_is_capped_and_reported() {
+        let config = test_config(); // max_files = 100
+        let events: Vec<FraudEvent> = (0..(config.max_files + 25))
+            .map(|i| FraudEvent {
+                id: Some(format!("t{i}")),
+                amount: Some(5.0),
+                currency: None,
+                email: None,
+                ip: None,
+                ip_country: None,
+                billing_country: None,
+                card_bin_country: None,
+                account_age_days: None,
+                prior_chargebacks: None,
+                timestamp_ms: None,
+            })
+            .collect();
+        let report = detect_fraud(
+            &config,
+            FraudDetectionRequest {
+                request_id: None,
+                title: None,
+                events,
+                high_amount_threshold: Some(1000.0),
+                blocklisted_ips: vec![],
+            },
+        );
+        assert_eq!(report.events_analyzed, config.max_files);
+        assert!(report
+            .notes
+            .iter()
+            .any(|n| n.contains("per-request event limit")));
     }
 
     #[test]

@@ -4182,6 +4182,452 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const WORKFLOW_DEFINITIONS_TABLE: &str = "workflow_definitions";
+pub const WORKFLOW_DEFINITIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "steps", "default_retry", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const WORKFLOW_DEFINITIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      steps,
+      default_retry,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from workflow_definitions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkflowDefinitionsStatus {
+    Draft,
+    Active,
+    Paused,
+    Archived,
+}
+
+impl WorkflowDefinitionsStatus {
+    pub const VALUES: &'static [&'static str] = &["draft", "active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for WorkflowDefinitionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowDefinitionsRow {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub steps: Value,
+    pub default_retry: Value,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowDefinitionsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub steps: Option<Value>,
+    pub default_retry: Option<Value>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_workflow_definitions_row(value: &WorkflowDefinitionsRow) -> Result<(), String> {
+    validate_slug("workflow_definitions.slug", &value.slug)?;
+    validate_string_length("workflow_definitions.display_name", &value.display_name, None, Some(200))?;
+    if !(&value.steps).is_array() { return Err("workflow_definitions.steps must be a JSON array".to_string()); }
+    if !(&value.default_retry).is_object() { return Err("workflow_definitions.default_retry must be a JSON object".to_string()); }
+    if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_definitions.status: {}", &value.status)); }
+    if !(&value.labels).is_array() { return Err("workflow_definitions.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("workflow_definitions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_workflow_definitions_insert(value: &WorkflowDefinitionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("workflow_definitions.slug", value)?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("workflow_definitions.display_name", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.steps {
+        if !(value).is_array() { return Err("workflow_definitions.steps must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.default_retry {
+        if !(value).is_object() { return Err("workflow_definitions.default_retry must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_definitions.status: {}", value)); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("workflow_definitions.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("workflow_definitions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const WORKFLOW_RUNS_TABLE: &str = "workflow_runs";
+pub const WORKFLOW_RUNS_COLUMNS: &[&str] = &["id", "definition_id", "definition_slug", "status", "current_step_index", "attempt", "input", "context", "output", "last_error", "wake_at", "wait_deadline", "lease_until", "signals", "idempotency_key", "started_at", "finished_at", "created_at", "updated_at", "created_by"];
+pub const WORKFLOW_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      definition_id::text as definition_id,
+      definition_slug,
+      status,
+      current_step_index,
+      attempt,
+      input,
+      context,
+      output,
+      last_error,
+      to_char(wake_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wake_at,
+      to_char(wait_deadline at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as wait_deadline,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      signals,
+      idempotency_key,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by
+    from workflow_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkflowRunsStatus {
+    Pending,
+    Running,
+    Sleeping,
+    Waiting,
+    Completed,
+    Failed,
+    Canceled,
+}
+
+impl WorkflowRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Sleeping => "sleeping",
+            Self::Waiting => "waiting",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for WorkflowRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "running" => Ok(Self::Running),
+            "sleeping" => Ok(Self::Sleeping),
+            "waiting" => Ok(Self::Waiting),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunsRow {
+    pub id: String,
+    pub definition_id: String,
+    pub definition_slug: String,
+    pub status: String,
+    pub current_step_index: i32,
+    pub attempt: i32,
+    pub input: Value,
+    pub context: Value,
+    pub output: Option<Value>,
+    pub last_error: Option<String>,
+    pub wake_at: Option<String>,
+    pub wait_deadline: Option<String>,
+    pub lease_until: Option<String>,
+    pub signals: Value,
+    pub idempotency_key: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunsInsert {
+    pub id: Option<String>,
+    pub definition_id: Option<String>,
+    pub definition_slug: Option<String>,
+    pub status: Option<String>,
+    pub current_step_index: Option<i32>,
+    pub attempt: Option<i32>,
+    pub input: Option<Value>,
+    pub context: Option<Value>,
+    pub output: Option<Value>,
+    pub last_error: Option<String>,
+    pub wake_at: Option<String>,
+    pub wait_deadline: Option<String>,
+    pub lease_until: Option<String>,
+    pub signals: Option<Value>,
+    pub idempotency_key: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+}
+
+pub fn validate_workflow_runs_row(value: &WorkflowRunsRow) -> Result<(), String> {
+    validate_string_length("workflow_runs.definition_slug", &value.definition_slug, None, Some(120))?;
+    if !["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_runs.status: {}", &value.status)); }
+    if *(&value.current_step_index) < 0 { return Err("workflow_runs.current_step_index is below the minimum".to_string()); }
+    if *(&value.attempt) < 0 { return Err("workflow_runs.attempt is below the minimum".to_string()); }
+    if !(&value.input).is_object() { return Err("workflow_runs.input must be a JSON object".to_string()); }
+    if !(&value.context).is_object() { return Err("workflow_runs.context must be a JSON object".to_string()); }
+    if let Some(value) = &value.output {
+        if !(value).is_object() { return Err("workflow_runs.output must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("workflow_runs.last_error exceeds 8192 bytes".to_string()); }
+    }
+    if !(&value.signals).is_array() { return Err("workflow_runs.signals must be a JSON array".to_string()); }
+    if let Some(value) = &value.idempotency_key {
+        validate_string_length("workflow_runs.idempotency_key", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub fn validate_workflow_runs_insert(value: &WorkflowRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.definition_slug {
+        validate_string_length("workflow_runs.definition_slug", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.status {
+        if !["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.current_step_index {
+        if *(value) < 0 { return Err("workflow_runs.current_step_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.attempt {
+        if *(value) < 0 { return Err("workflow_runs.attempt is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("workflow_runs.input must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.context {
+        if !(value).is_object() { return Err("workflow_runs.context must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.output {
+        if !(value).is_object() { return Err("workflow_runs.output must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("workflow_runs.last_error exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.signals {
+        if !(value).is_array() { return Err("workflow_runs.signals must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.idempotency_key {
+        validate_string_length("workflow_runs.idempotency_key", value, None, Some(200))?;
+    }
+    Ok(())
+}
+
+pub const WORKFLOW_STEP_RUNS_TABLE: &str = "workflow_step_runs";
+pub const WORKFLOW_STEP_RUNS_COLUMNS: &[&str] = &["id", "run_id", "step_index", "step_name", "step_type", "function_ref", "attempt", "status", "input", "output", "error", "duration_ms", "started_at", "finished_at"];
+pub const WORKFLOW_STEP_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_id::text as run_id,
+      step_index,
+      step_name,
+      step_type,
+      function_ref,
+      attempt,
+      status,
+      input,
+      output,
+      error,
+      duration_ms,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from workflow_step_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkflowStepRunsStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+impl WorkflowStepRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["running", "succeeded", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for WorkflowStepRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowStepRunsRow {
+    pub id: String,
+    pub run_id: String,
+    pub step_index: i32,
+    pub step_name: String,
+    pub step_type: String,
+    pub function_ref: String,
+    pub attempt: i32,
+    pub status: String,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowStepRunsInsert {
+    pub id: Option<String>,
+    pub run_id: Option<String>,
+    pub step_index: Option<i32>,
+    pub step_name: Option<String>,
+    pub step_type: Option<String>,
+    pub function_ref: Option<String>,
+    pub attempt: Option<i32>,
+    pub status: Option<String>,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub error: Option<String>,
+    pub duration_ms: Option<i32>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+pub fn validate_workflow_step_runs_row(value: &WorkflowStepRunsRow) -> Result<(), String> {
+    if *(&value.step_index) < 0 { return Err("workflow_step_runs.step_index is below the minimum".to_string()); }
+    validate_string_length("workflow_step_runs.step_name", &value.step_name, None, Some(200))?;
+    validate_string_length("workflow_step_runs.step_type", &value.step_type, None, Some(32))?;
+    validate_string_length("workflow_step_runs.function_ref", &value.function_ref, None, Some(200))?;
+    if *(&value.attempt) < 0 { return Err("workflow_step_runs.attempt is below the minimum".to_string()); }
+    if !["running", "succeeded", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported workflow_step_runs.status: {}", &value.status)); }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("workflow_step_runs.input must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.output {
+        if !(value).is_object() { return Err("workflow_step_runs.output must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 8192 { return Err("workflow_step_runs.error exceeds 8192 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_workflow_step_runs_insert(value: &WorkflowStepRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.step_index {
+        if *(value) < 0 { return Err("workflow_step_runs.step_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.step_name {
+        validate_string_length("workflow_step_runs.step_name", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.step_type {
+        validate_string_length("workflow_step_runs.step_type", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.function_ref {
+        validate_string_length("workflow_step_runs.function_ref", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.attempt {
+        if *(value) < 0 { return Err("workflow_step_runs.attempt is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["running", "succeeded", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported workflow_step_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.input {
+        if !(value).is_object() { return Err("workflow_step_runs.input must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.output {
+        if !(value).is_object() { return Err("workflow_step_runs.output must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 8192 { return Err("workflow_step_runs.error exceeds 8192 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 pub const CONTAINER_POOL_IMAGE_REVISIONS_TABLE: &str = "container_pool_image_revisions";
 pub const CONTAINER_POOL_IMAGE_REVISIONS_COLUMNS: &[&str] = &["id", "image_slug", "image_ref", "dockerfile_path", "build_context", "dockerfile_text", "dockerfile_sha256", "source", "notes", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const CONTAINER_POOL_IMAGE_REVISIONS_SELECT_SQL: &str = r###"select

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>dd-embeddings-rs API</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+      table { border-collapse: collapse; width: 100%; }
+      td, th { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
+      code { background: #f4f1ea; padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>dd-embeddings-rs</h1>
+    <p>
+      Multi-provider embedding gateway + RAG indexing service. <code>🔒</code> routes require a bearer
+      token when one is configured. The <code>anthropic</code> provider id is an alias for
+      <code>voyage</code> (Anthropic ships no embeddings API).
+    </p>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Path</th><th>Summary</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>GET</code></td><td><code>/healthz</code></td><td>Liveness probe (no dependencies).</td></tr>
+        <tr><td><code>GET</code></td><td><code>/readyz</code></td><td>Readiness probe; checks Qdrant reachability.</td></tr>
+        <tr><td><code>GET</code></td><td><code>/api/docs.json</code></td><td>This document, as JSON.</td></tr>
+        <tr><td><code>GET</code></td><td><code>/api/docs</code></td><td>Human-readable API docs.</td></tr>
+        <tr><td><code>GET</code></td><td><code>/api/providers</code> 🔒</td><td>List configured embedding providers, default models, and aliases.</td></tr>
+        <tr><td><code>POST</code></td><td><code>/api/embeddings</code> 🔒</td><td>Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }.</td></tr>
+        <tr><td><code>POST</code></td><td><code>/api/rag/index</code> 🔒</td><td>Embed documents and upsert into a Qdrant collection.</td></tr>
+        <tr><td><code>POST</code></td><td><code>/api/rag/search</code> 🔒</td><td>Embed a query and retrieve nearest neighbors.</td></tr>
+      </tbody>
+    </table>
+    <p>Machine-readable: <a href="/api/docs.json"><code>/api/docs.json</code></a></p>
+  </body>
+</html>

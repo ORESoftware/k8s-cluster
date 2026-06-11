@@ -2957,6 +2957,300 @@ class LambdaFunctionRow {
   }
 }
 
+const workflowDefinitionsTable = "workflow_definitions";
+const workflowDefinitionsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions";
+
+const workflowDefinitionsStatusValues = <String>["draft", "active", "paused", "archived"];
+
+class WorkflowDefinitionsRow {
+  const WorkflowDefinitionsRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.description,
+    required this.steps,
+    required this.defaultRetry,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String description;
+  final List<Object?> steps;
+  final Map<String, Object?> defaultRetry;
+  final String status;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory WorkflowDefinitionsRow.fromJson(Map<String, Object?> json) {
+    return WorkflowDefinitionsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      description: _readRequiredString(json, "description"),
+      steps: _readRequiredArray(json, "steps"),
+      defaultRetry: _readRequiredObject(json, "defaultRetry"),
+      status: _readRequiredString(json, "status"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "description": description,
+    "steps": steps,
+    "defaultRetry": defaultRetry,
+    "status": status,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("workflow_definitions.slug must be a lowercase slug");
+    }
+    if (!workflowDefinitionsStatusValues.contains(status)) {
+      errors.add("unsupported workflow_definitions.status");
+    }
+    return errors;
+  }
+}
+
+const workflowRunsTable = "workflow_runs";
+const workflowRunsSelectSql = "select\n      id::text as id,\n      definition_id::text as definition_id,\n      definition_slug,\n      status,\n      current_step_index,\n      attempt,\n      input::text as input_json,\n      context::text as context_json,\n      output::text as output_json,\n      last_error,\n      to_char(wake_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as wake_at,\n      to_char(wait_deadline at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as wait_deadline,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      signals::text as signals_json,\n      idempotency_key,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by\n    from workflow_runs";
+
+const workflowRunsStatusValues = <String>["pending", "running", "sleeping", "waiting", "completed", "failed", "canceled"];
+
+class WorkflowRunsRow {
+  const WorkflowRunsRow({
+    required this.id,
+    required this.definitionId,
+    required this.definitionSlug,
+    required this.status,
+    required this.currentStepIndex,
+    required this.attempt,
+    required this.input,
+    required this.context,
+    this.output,
+    this.lastError,
+    this.wakeAt,
+    this.waitDeadline,
+    this.leaseUntil,
+    required this.signals,
+    this.idempotencyKey,
+    this.startedAt,
+    this.finishedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+  });
+
+  final String id;
+  final String definitionId;
+  final String definitionSlug;
+  final String status;
+  final int currentStepIndex;
+  final int attempt;
+  final Map<String, Object?> input;
+  final Map<String, Object?> context;
+  final Map<String, Object?>? output;
+  final String? lastError;
+  final String? wakeAt;
+  final String? waitDeadline;
+  final String? leaseUntil;
+  final List<Object?> signals;
+  final String? idempotencyKey;
+  final String? startedAt;
+  final String? finishedAt;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+
+  factory WorkflowRunsRow.fromJson(Map<String, Object?> json) {
+    return WorkflowRunsRow(
+      id: _readRequiredString(json, "id"),
+      definitionId: _readRequiredString(json, "definitionId"),
+      definitionSlug: _readRequiredString(json, "definitionSlug"),
+      status: _readRequiredString(json, "status"),
+      currentStepIndex: _readRequiredInt(json, "currentStepIndex"),
+      attempt: _readRequiredInt(json, "attempt"),
+      input: _readRequiredObject(json, "input"),
+      context: _readRequiredObject(json, "context"),
+      output: _readRequiredObject(json, "output"),
+      lastError: _readOptionalString(json, "lastError"),
+      wakeAt: _readOptionalString(json, "wakeAt"),
+      waitDeadline: _readOptionalString(json, "waitDeadline"),
+      leaseUntil: _readOptionalString(json, "leaseUntil"),
+      signals: _readRequiredArray(json, "signals"),
+      idempotencyKey: _readOptionalString(json, "idempotencyKey"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "definitionId": definitionId,
+    "definitionSlug": definitionSlug,
+    "status": status,
+    "currentStepIndex": currentStepIndex,
+    "attempt": attempt,
+    "input": input,
+    "context": context,
+    "output": output,
+    "lastError": lastError,
+    "wakeAt": wakeAt,
+    "waitDeadline": waitDeadline,
+    "leaseUntil": leaseUntil,
+    "signals": signals,
+    "idempotencyKey": idempotencyKey,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!workflowRunsStatusValues.contains(status)) {
+      errors.add("unsupported workflow_runs.status");
+    }
+    if (currentStepIndex < 0) {
+      errors.add("workflow_runs.current_step_index is below the minimum");
+    }
+    if (attempt < 0) {
+      errors.add("workflow_runs.attempt is below the minimum");
+    }
+    if (lastError != null && utf8.encode(lastError!).length > 8192) {
+      errors.add("workflow_runs.last_error exceeds 8192 bytes");
+    }
+    return errors;
+  }
+}
+
+const workflowStepRunsTable = "workflow_step_runs";
+const workflowStepRunsSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      step_index,\n      step_name,\n      step_type,\n      function_ref,\n      attempt,\n      status,\n      input::text as input_json,\n      output::text as output_json,\n      error,\n      duration_ms,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from workflow_step_runs";
+
+const workflowStepRunsStatusValues = <String>["running", "succeeded", "failed"];
+
+class WorkflowStepRunsRow {
+  const WorkflowStepRunsRow({
+    required this.id,
+    required this.runId,
+    required this.stepIndex,
+    required this.stepName,
+    required this.stepType,
+    required this.functionRef,
+    required this.attempt,
+    required this.status,
+    this.input,
+    this.output,
+    this.error,
+    this.durationMs,
+    required this.startedAt,
+    this.finishedAt,
+  });
+
+  final String id;
+  final String runId;
+  final int stepIndex;
+  final String stepName;
+  final String stepType;
+  final String functionRef;
+  final int attempt;
+  final String status;
+  final Map<String, Object?>? input;
+  final Map<String, Object?>? output;
+  final String? error;
+  final int? durationMs;
+  final String startedAt;
+  final String? finishedAt;
+
+  factory WorkflowStepRunsRow.fromJson(Map<String, Object?> json) {
+    return WorkflowStepRunsRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      stepIndex: _readRequiredInt(json, "stepIndex"),
+      stepName: _readRequiredString(json, "stepName"),
+      stepType: _readRequiredString(json, "stepType"),
+      functionRef: _readRequiredString(json, "functionRef"),
+      attempt: _readRequiredInt(json, "attempt"),
+      status: _readRequiredString(json, "status"),
+      input: _readRequiredObject(json, "input"),
+      output: _readRequiredObject(json, "output"),
+      error: _readOptionalString(json, "error"),
+      durationMs: _readOptionalInt(json, "durationMs"),
+      startedAt: _readRequiredString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "stepIndex": stepIndex,
+    "stepName": stepName,
+    "stepType": stepType,
+    "functionRef": functionRef,
+    "attempt": attempt,
+    "status": status,
+    "input": input,
+    "output": output,
+    "error": error,
+    "durationMs": durationMs,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (stepIndex < 0) {
+      errors.add("workflow_step_runs.step_index is below the minimum");
+    }
+    if (attempt < 0) {
+      errors.add("workflow_step_runs.attempt is below the minimum");
+    }
+    if (!workflowStepRunsStatusValues.contains(status)) {
+      errors.add("unsupported workflow_step_runs.status");
+    }
+    if (error != null && utf8.encode(error!).length > 8192) {
+      errors.add("workflow_step_runs.error exceeds 8192 bytes");
+    }
+    return errors;
+  }
+}
+
 const containerPoolImageRevisionsTable = "container_pool_image_revisions";
 const containerPoolImageRevisionsSelectSql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions";
 

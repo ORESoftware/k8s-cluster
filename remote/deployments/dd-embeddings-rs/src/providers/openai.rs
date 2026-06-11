@@ -273,6 +273,8 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        // Truncate on a char boundary so we never split a UTF-8 sequence.
+        let cut: String = s.chars().take(max).collect();
+        format!("{cut}…")
     }
 }

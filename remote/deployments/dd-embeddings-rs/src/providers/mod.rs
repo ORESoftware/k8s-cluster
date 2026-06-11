@@ -39,7 +39,7 @@ pub enum ProviderError {
         status: u16,
         body: String,
     },
-    #[error("could not decode {provider} response: {0}")]
+    #[error("could not decode {0} response (expected field `{1}`)")]
     Decode(String, &'static str),
 }
 
@@ -122,29 +122,27 @@ impl Registry {
     pub fn from_config(cfg: &Config, http: reqwest::Client) -> Self {
         let mut providers: BTreeMap<String, Arc<dyn EmbeddingProvider>> = BTreeMap::new();
 
-        let mut add = |p: Arc<dyn EmbeddingProvider>| {
-            providers.insert(p.id().to_string(), p);
-        };
-
         // --- OpenAI-compatible upstreams (the majority) -------------------
         for spec in openai::default_specs() {
             if let Some(key) = cfg.provider_key(spec.key_env) {
-                add(Arc::new(openai::OpenAiCompatible::new(spec, key, http.clone())));
+                let p = Arc::new(openai::OpenAiCompatible::new(spec, key, http.clone()));
+                providers.insert(p.id().to_string(), p);
             } else if spec.keyless {
                 // Self-hosted (Ollama, HF TEI) — no key required.
-                add(Arc::new(openai::OpenAiCompatible::new(spec, String::new(), http.clone())));
+                let p = Arc::new(openai::OpenAiCompatible::new(spec, String::new(), http.clone()));
+                providers.insert(p.id().to_string(), p);
             }
         }
 
         // --- Bespoke wire formats ----------------------------------------
         if let Some(key) = cfg.provider_key("GEMINI_API_KEY") {
-            add(Arc::new(gemini::Gemini::new(key, http.clone())));
+            providers.insert("gemini".into(), Arc::new(gemini::Gemini::new(key, http.clone())));
         }
         if let Some(key) = cfg.provider_key("COHERE_API_KEY") {
-            add(Arc::new(cohere::Cohere::new(key, http.clone())));
+            providers.insert("cohere".into(), Arc::new(cohere::Cohere::new(key, http.clone())));
         }
         if let Some(key) = cfg.provider_key("VOYAGE_API_KEY") {
-            add(Arc::new(voyage::Voyage::new(key, http.clone())));
+            providers.insert("voyage".into(), Arc::new(voyage::Voyage::new(key, http.clone())));
         }
 
         // Anthropic has no embeddings API; route the alias to Voyage, which is
@@ -158,7 +156,7 @@ impl Registry {
         Self { providers, aliases }
     }
 
-    pub fn resolve<'a>(&self, id: &'a str) -> Result<&Arc<dyn EmbeddingProvider>, ProviderError> {
+    pub fn resolve(&self, id: &str) -> Result<&Arc<dyn EmbeddingProvider>, ProviderError> {
         let canonical = self.aliases.get(id).map(String::as_str).unwrap_or(id);
         self.providers
             .get(canonical)

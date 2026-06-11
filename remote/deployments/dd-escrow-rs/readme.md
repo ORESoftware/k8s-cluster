@@ -26,7 +26,7 @@ On-chain `simulate`/`send` are routed through a pluggable backend selected by
 
 ## Escrow Kinds
 
-The `solana.escrow.v1` catalog supports ten escrow shapes:
+The `solana.escrow.v1` catalog supports eleven escrow shapes:
 
 - `marketplace-order`
 - `milestone`
@@ -38,11 +38,44 @@ The `solana.escrow.v1` catalog supports ten escrow shapes:
 - `subscription-release`
 - `group-buy`
 - `dispute-resolution`
+- `collab-show`
 
 Each kind has allowed party roles, release modes, and settlement actions. Validation catches missing
 required roles, malformed Solana public keys, invalid asset requirements, oversized memo/metadata
 payloads, unsafe time windows, bad milestone splits, invalid payout splits, and settlement actions
 that do not belong to the selected kind.
+
+### Collab Show product (two creators)
+
+`collab-show` is an escrow for two creators running a show together. Both **put money down to
+commit** (a per-creator stake), a **shared prize pool** is escrowed alongside the stakes, the two
+creators **agree a revenue split** (`payoutBps` summing to 10000), and a **required arbiter** rules on
+a no-show or rule violation.
+
+- **Parties:** at least two `creator` parties plus an `arbitrator`; an optional `platform` party is
+  allowed. Validation requires each `creator` to carry its revenue-split `payoutBps` (the creators'
+  shares must sum to 10000) and rejects an `arbitrator` that takes a payout slice, so the split is
+  always defined and strictly between the creators.
+- **Asset:** the single escrow `asset` holds the total locked value (both stakes + pool). The
+  per-creator stake, pool size, show date, and rules are carried in `metadata` as a documented
+  convention (`stakeLamports`, `prizePoolLamports`, `showDateUnix`, `revenueSplitBps`, `rules[]`).
+- **Release modes:** `arbiter-decision` (disputes), `multi-sig` (both creators approve the happy
+  path), `time-locked` (the show date), and `delivery-proof`.
+- **Lifecycle / settlement actions:**
+  - `fund` - each creator stakes and the pool is funded into the vault.
+  - **success →** `split-release` - the pool is split between the creators per `payoutBps`.
+  - **no-show / rule violation →** `dispute-award` - the arbiter awards the breacher's stake to the
+    wronged creator (or `split-release` for a partial-fault split).
+  - **mutual cancel →** `refund` - stakes returned to the creators.
+  - **deadline passed →** `expire`, or `cancel`.
+
+Breach handling is validated by the resolution layer (`POST /resolve`, or a `resolution` attached to
+a settlement): the proposed `outcome` is cross-checked against the parties (`refund` needs a
+refundable creator; `dispute-award` needs a `winnerRole` that is a present, non-arbiter party and an
+`arbitrator`; `split` needs allocations summing to 10000). The resolution layer validates policy **by
+role**; the specific winning/owed creator and exact amounts are pinned by the signed settlement
+transaction and enforced by the on-chain program (`settlementPlan.programId`). This service never
+holds keys or signs.
 
 ## HTTP API
 

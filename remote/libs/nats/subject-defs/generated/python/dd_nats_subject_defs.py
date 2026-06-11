@@ -48,6 +48,18 @@ BILLING_SYNC_COMMANDS_QUEUE_GROUP = "dd-billing-server"
 # Service: dd-billing-server
 BILLING_WEBHOOK_RECEIPTS_SUBJECT = "dd.remote.billing.webhooks.receipts"
 
+# Cross-chain bridge attestations: a source-chain lock confirmed read-only, signalling a transfer is ready for externally-signed destination release. Default for BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT. Publish-only.
+# Service: dd-contract-service
+BLOCKCHAIN_BRIDGE_ATTESTATIONS_SUBJECT = "dd.remote.blockchain.bridge.attestations"
+
+# Indexed on-chain references (Solana signatures / EVM tx hashes) emitted by the keyless blockchain indexing module when a watched address is polled. Default for BLOCKCHAIN_INDEX_EVENTS_SUBJECT. Publish-only.
+# Service: dd-contract-service
+BLOCKCHAIN_INDEX_EVENTS_SUBJECT = "dd.remote.blockchain.index.events"
+
+# Monitoring-only MEV/arbitrage spread alerts emitted when an observed venue spread crosses the configured threshold. Default for BLOCKCHAIN_MEV_ALERTS_SUBJECT. Observation surface only; there is no execution path. Publish-only.
+# Service: dd-contract-service
+BLOCKCHAIN_MEV_ALERTS_SUBJECT = "dd.remote.blockchain.mev.alerts"
+
 # Per-fault lifecycle events (selected, injected, restored, aborted-by-guard) emitted by the chaos loops.
 # Service: dd-chaos
 CHAOS_EVENTS_SUBJECT = "dd.remote.chaos.events"
@@ -525,6 +537,15 @@ TRADING_SIGNALS_QUEUE_GROUP = "dd-trading-server"
 # Service: shared
 WEBSOCKET_EVENTS_SUBJECT = "dd.remote.websocket.events"
 
+# Run lifecycle and step events fanned out by the engine (run started/step succeeded/step failed/run completed/run failed/run canceled). Fan-out telemetry for visibility and downstream subscribers; not the durable source of truth. Default for NATS_WORKFLOW_EVENT_SUBJECT.
+# Service: dd-gleam-lambda-runner
+WORKFLOWS_EVENTS_SUBJECT = "dd.remote.workflows.events"
+
+# Start a new workflow run. Request/reply: payload is {"definitionId"|"definitionSlug", "input"?, "idempotencyKey"?}; the reply carries the created run id and status. Consumed by the runner's queue group so exactly one replica creates the run. Default for NATS_WORKFLOW_START_SUBJECT='dd.remote.workflows.start'.
+# Service: dd-gleam-lambda-runner
+WORKFLOWS_START_SUBJECT = "dd.remote.workflows.start"
+WORKFLOWS_START_QUEUE_GROUP = "dd-gleam-workflow-engine"
+
 # ---------- Parameterized subjects ----------
 
 # Per-row change emitted by wal-gateway. Subject pattern is '<prefix>.<schema>.<table>.<op>'. The default prefix is 'cdc' and the default stream name is 'CDC'. Consumers usually subscribe to the prefix tail wildcard ('cdc.>').
@@ -924,6 +945,39 @@ def parse_thread_tasks_subject(subject: str) -> Optional[ThreadTasksSubjectParts
         return None
     return ThreadTasksSubjectParts(thread_id=result["thread_id"])
 
+# Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {"name": "approved", "payload"?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'.
+# Service: dd-gleam-lambda-runner
+WORKFLOWS_SIGNAL_PATTERN = "dd.remote.workflows.signal.{run_id}"
+WORKFLOWS_SIGNAL_WILDCARD = "dd.remote.workflows.signal.*"
+WORKFLOWS_SIGNAL_QUEUE_GROUP = "dd-gleam-workflow-engine"
+@dataclass(frozen=True)
+class WorkflowsSignalSubjectParts:
+    run_id: str
+
+def workflows_signal_subject(run_id: str) -> str:
+    """Deliver an external signal to a running workflow. Producers publish to the specific run token; the engine appends the signal to the run and wakes any waitSignal step. Payload is {'name': 'approved', 'payload'?: any}. Default for NATS_WORKFLOW_SIGNAL_SUBJECT='dd.remote.workflows.signal.*'."""
+    return "dd.remote.workflows.signal.{run_id}".format(run_id=run_id)
+
+def parse_workflows_signal_subject(subject: str) -> Optional[WorkflowsSignalSubjectParts]:
+    """Parse a resolved WorkflowsSignal subject; returns None on mismatch."""
+    pattern_tokens = ["dd","remote","workflows","signal","{run_id}"]
+    subject_tokens = subject.split(".")
+    result: dict[str, str] = {}
+    si = 0
+    for tok in pattern_tokens:
+        if tok.startswith("{") and tok.endswith("}"):
+            if si >= len(subject_tokens):
+                return None
+            result[tok[1:-1]] = subject_tokens[si]
+            si += 1
+            continue
+        if si >= len(subject_tokens) or subject_tokens[si] != tok:
+            return None
+        si += 1
+    if si != len(subject_tokens):
+        return None
+    return WorkflowsSignalSubjectParts(run_id=result["run_id"])
+
 # ---------- Standalone queue groups ----------
 
 # Shared queue group used by dd-agent-sim-server replicas consuming simulate requests.
@@ -1009,6 +1063,10 @@ SAT_SMT_SERVER_QUEUE_GROUP = "dd-sat-smt-server"
 # Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 # Service: dd-remote-rest-api
 THREAD_PREPARER_QUEUE_GROUP = "dd-remote-thread-preparer"
+
+# Shared queue group used by workflow-engine replicas for run start and signal delivery.
+# Service: dd-gleam-lambda-runner
+WORKFLOW_ENGINE_QUEUE_GROUP = "dd-gleam-workflow-engine"
 
 # ---------- JetStream streams ----------
 

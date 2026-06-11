@@ -174,7 +174,10 @@ The low-level **OCI runtime** is orthogonal and set with `CONTAINER_POOL_OCI_RUN
 as `--runtime` under whichever engine is active. This covers `runc` (default when unset), `crun`,
 and sandboxed runtimes — gVisor (`runsc`, or `io.containerd.runsc.v1` under containerd/nerdctl) and
 Kata Containers (`io.containerd.kata.v2`). The value is validated to a runtime handler name or an
-absolute binary path (no whitespace/shell metacharacters). So `nerdctl` over `containerd` with
+absolute binary path (no whitespace/shell metacharacters); a set-but-invalid value is **ignored with
+a startup warning** rather than silently dropping to the engine default — important because for a
+sandbox runtime that silent fallback (e.g. intending gVisor/Kata, getting `runc`) would be an
+isolation downgrade. So `nerdctl` over `containerd` with
 `--runtime io.containerd.kata.v2` gives Kata-isolated warm pools; `docker --runtime runsc` gives
 gVisor. Any OCI image (built declaratively from a Dockerfile) works across all of these.
 

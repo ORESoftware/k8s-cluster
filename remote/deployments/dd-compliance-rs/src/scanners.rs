@@ -9,15 +9,23 @@ use crate::{
         ArtifactScanReport, ArtifactScanRequest, DependencyAuditRequest, DiagramSource,
         VulnerabilityFinding, VulnerabilitySeverity,
     },
-    util::{clean_text, now_ms},
+    util::{clean_text, clip, now_ms},
 };
 
+/// Maximum characters of a caller-controlled string (artifact name, indicator,
+/// advisory text) echoed back into a finding.
+const MAX_ECHO_CHARS: usize = 200;
+
 /// Iterate inline text plus named artifacts as `(evidence_ref, cleaned_text)`.
+///
+/// The number of artifacts is capped at `config.max_files`; the returned flag
+/// reports whether any were dropped so a single request cannot force an unbounded
+/// amount of scanning work. Per-artifact size is already bounded by `clean_text`.
 fn collect_sources<'a>(
     config: &Config,
     inline_text: Option<&'a str>,
     artifacts: &'a [DiagramSource],
-) -> Vec<(String, String)> {
+) -> (Vec<(String, String)>, bool) {
     let mut sources = Vec::new();
     if let Some(text) = inline_text {
         sources.push((
@@ -25,23 +33,54 @@ fn collect_sources<'a>(
             clean_text(text, config.max_artifact_bytes),
         ));
     }
-    for artifact in artifacts {
+    let truncated = artifacts.len() > config.max_files;
+    for artifact in artifacts.iter().take(config.max_files) {
+        // The artifact name is caller-controlled and echoed into every finding's
+        // evidenceRef, so sanitize and bound it.
         let name = artifact
             .name
-            .clone()
+            .as_deref()
+            .map(|name| clip(name, MAX_ECHO_CHARS))
+            .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "artifact".to_string());
         sources.push((name, clean_text(&artifact.content, config.max_artifact_bytes)));
     }
-    sources
+    (sources, truncated)
+}
+
+/// Cap a caller-supplied multiplier list (indicators, advisories) at `max`.
+/// These are scanned once per source, so without a bound a large list combined
+/// with large artifacts could amplify CPU cost on these synchronous routes.
+fn cap_caller_list<T>(items: &[T], max: usize) -> (&[T], bool) {
+    if items.len() > max {
+        (&items[..max], true)
+    } else {
+        (items, false)
+    }
+}
+
+fn note_truncation(notes: &mut Vec<String>, sources_truncated: bool, list: Option<(&str, bool)>) {
+    if sources_truncated {
+        notes.push(
+            "Some submitted artifacts were skipped because the per-request artifact limit was reached; resubmit in smaller batches for complete coverage."
+                .to_string(),
+        );
+    }
+    if let Some((label, true)) = list {
+        notes.push(format!(
+            "Some caller-supplied {label} were skipped because the per-request limit was reached."
+        ));
+    }
 }
 
 fn finalize(
+    config: &Config,
     request_id: Option<String>,
     scan_type: &str,
     id_prefix: &str,
     scanned_bytes: usize,
     mut findings: Vec<VulnerabilityFinding>,
-    notes: Vec<String>,
+    mut notes: Vec<String>,
 ) -> ArtifactScanReport {
     let request_id = request_id
         .filter(|value| !value.trim().is_empty())
@@ -56,6 +95,15 @@ fn finalize(
     findings.dedup_by(|left, right| {
         left.id == right.id && left.evidence_ref == right.evidence_ref && left.message == right.message
     });
+    // Keep the highest-severity findings (already sorted descending) and bound the
+    // response so a pathological input cannot return an unbounded payload.
+    if findings.len() > config.max_findings_per_job {
+        findings.truncate(config.max_findings_per_job);
+        notes.push(format!(
+            "Findings truncated to the configured maximum of {}.",
+            config.max_findings_per_job
+        ));
+    }
     let high_or_worse = findings
         .iter()
         .filter(|finding| finding.severity >= VulnerabilitySeverity::High)
@@ -84,22 +132,41 @@ fn finalize(
 // ---------------------------------------------------------------------------
 
 pub fn scan_malware(config: &Config, request: ArtifactScanRequest) -> ArtifactScanReport {
-    let sources = collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
+    let (sources, sources_truncated) =
+        collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
+    let (indicators, indicators_truncated) =
+        cap_caller_list(&request.indicators, config.max_files);
     let mut scanned_bytes = 0usize;
     let mut findings = Vec::new();
     for (evidence_ref, text) in &sources {
+        if findings.len() >= config.max_findings_per_job {
+            break;
+        }
         scanned_bytes += text.len();
-        scan_malware_text(evidence_ref, text, &request.indicators, &mut findings);
+        scan_malware_text(
+            evidence_ref,
+            text,
+            indicators,
+            config.max_findings_per_job,
+            &mut findings,
+        );
     }
+    let mut notes = vec![
+        "Heuristic indicator scan only; pair with a maintained anti-malware engine and sandbox detonation for binaries.".to_string(),
+    ];
+    note_truncation(
+        &mut notes,
+        sources_truncated,
+        Some(("indicators", indicators_truncated)),
+    );
     finalize(
+        config,
         request.request_id,
         "malware",
         "malware-scan",
         scanned_bytes,
         findings,
-        vec![
-            "Heuristic indicator scan only; pair with a maintained anti-malware engine and sandbox detonation for binaries.".to_string(),
-        ],
+        notes,
     )
 }
 
@@ -107,6 +174,7 @@ fn scan_malware_text(
     evidence_ref: &str,
     text: &str,
     indicators: &[String],
+    max_findings: usize,
     findings: &mut Vec<VulnerabilityFinding>,
 ) {
     let lower = text.to_ascii_lowercase();
@@ -123,7 +191,9 @@ fn scan_malware_text(
             "download-and-execute",
             VulnerabilitySeverity::Critical,
             "execution",
-            &["| sh", "|sh", "| bash", "|bash", "curl -s", "wget -q"],
+            // Require an actual pipe-to-shell; a bare `curl`/`wget` is too common in
+            // benign scripts to flag at Critical and only causes alert fatigue.
+            &["| sh", "|sh", "| bash", "|bash", "| /bin/sh", "|/bin/sh", "iex(", "downloadstring("],
             "Pipe-to-shell download-and-execute pattern appears in submitted evidence.",
             "Never pipe remote content straight to a shell; pin and verify artifacts and review the upstream URL.",
         ),
@@ -181,6 +251,9 @@ fn scan_malware_text(
         }
     }
     for indicator in indicators {
+        if findings.len() >= max_findings {
+            break;
+        }
         let needle = indicator.trim();
         if needle.is_empty() {
             continue;
@@ -191,7 +264,10 @@ fn scan_malware_text(
                 severity: VulnerabilitySeverity::High,
                 category: "ioc".to_string(),
                 evidence_ref: evidence_ref.to_string(),
-                message: format!("Caller-supplied indicator `{needle}` matched submitted evidence."),
+                message: format!(
+                    "Caller-supplied indicator `{}` matched submitted evidence.",
+                    clip(needle, MAX_ECHO_CHARS)
+                ),
                 recommendation: "Investigate per the playbook associated with this indicator of compromise.".to_string(),
             });
         }
@@ -212,12 +288,18 @@ const KNOWN_VULNERABLE_MARKERS: &[(&str, &str)] = &[
 ];
 
 pub fn audit_dependencies(config: &Config, request: DependencyAuditRequest) -> ArtifactScanReport {
-    let sources = collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
+    let (sources, sources_truncated) =
+        collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
+    let (advisories, advisories_truncated) =
+        cap_caller_list(&request.advisories, config.max_files);
     let mut scanned_bytes = 0usize;
     let mut findings = Vec::new();
     let mut saw_manifest = false;
     let mut saw_lockfile = false;
     for (evidence_ref, text) in &sources {
+        if findings.len() >= config.max_findings_per_job {
+            break;
+        }
         scanned_bytes += text.len();
         let lower_name = evidence_ref.to_ascii_lowercase();
         if is_lockfile(&lower_name) {
@@ -226,7 +308,13 @@ pub fn audit_dependencies(config: &Config, request: DependencyAuditRequest) -> A
         if is_manifest(&lower_name) {
             saw_manifest = true;
         }
-        audit_dependency_text(evidence_ref, text, &request.advisories, &mut findings);
+        audit_dependency_text(
+            evidence_ref,
+            text,
+            advisories,
+            config.max_findings_per_job,
+            &mut findings,
+        );
     }
     if saw_manifest && !saw_lockfile {
         findings.push(VulnerabilityFinding {
@@ -238,15 +326,22 @@ pub fn audit_dependencies(config: &Config, request: DependencyAuditRequest) -> A
             recommendation: "Commit and submit the lockfile so dependency resolution is reproducible and auditable.".to_string(),
         });
     }
+    let mut notes = vec![
+        "Static manifest audit only; run a maintained SCA tool with a live advisory database for authoritative CVE coverage.".to_string(),
+    ];
+    note_truncation(
+        &mut notes,
+        sources_truncated,
+        Some(("advisories", advisories_truncated)),
+    );
     finalize(
+        config,
         request.request_id,
         "dependency",
         "dependency-audit",
         scanned_bytes,
         findings,
-        vec![
-            "Static manifest audit only; run a maintained SCA tool with a live advisory database for authoritative CVE coverage.".to_string(),
-        ],
+        notes,
     )
 }
 
@@ -285,6 +380,7 @@ fn audit_dependency_text(
     evidence_ref: &str,
     text: &str,
     advisories: &[crate::models::DependencyAdvisory],
+    max_findings: usize,
     findings: &mut Vec<VulnerabilityFinding>,
 ) {
     let lower = text.to_ascii_lowercase();
@@ -302,6 +398,9 @@ fn audit_dependency_text(
         }
     }
     for advisory in advisories {
+        if findings.len() >= max_findings {
+            break;
+        }
         let package = advisory.package.trim().to_ascii_lowercase();
         if package.is_empty() || !lower.contains(&package) {
             continue;
@@ -315,14 +414,14 @@ fn audit_dependency_text(
             .unwrap_or(true);
         if version_matches {
             findings.push(VulnerabilityFinding {
-                id: format!("advisory-{}", package.replace(['/', ' '], "-")),
+                id: format!("advisory-{}", clip(&package, 64).replace(['/', ' '], "-")),
                 severity: advisory.severity.unwrap_or(VulnerabilitySeverity::High),
                 category: "advisory".to_string(),
                 evidence_ref: evidence_ref.to_string(),
                 message: format!(
                     "Dependency `{}` matches a caller-supplied advisory. {}",
-                    advisory.package,
-                    advisory.advisory.as_deref().unwrap_or("")
+                    clip(advisory.package.trim(), MAX_ECHO_CHARS),
+                    clip(advisory.advisory.as_deref().unwrap_or(""), MAX_ECHO_CHARS)
                 ),
                 recommendation: "Remediate per the supplied advisory and pin to a non-affected version.".to_string(),
             });
@@ -378,22 +477,29 @@ fn push_unique(findings: &mut Vec<VulnerabilityFinding>, finding: VulnerabilityF
 // ---------------------------------------------------------------------------
 
 pub fn scan_secrets(config: &Config, request: ArtifactScanRequest) -> ArtifactScanReport {
-    let sources = collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
+    let (sources, sources_truncated) =
+        collect_sources(config, request.inline_text.as_deref(), &request.artifacts);
     let mut scanned_bytes = 0usize;
     let mut findings = Vec::new();
     for (evidence_ref, text) in &sources {
+        if findings.len() >= config.max_findings_per_job {
+            break;
+        }
         scanned_bytes += text.len();
-        scan_secret_text(evidence_ref, text, &mut findings);
+        scan_secret_text(evidence_ref, text, config.max_findings_per_job, &mut findings);
     }
+    let mut notes = vec![
+        "Heuristic prefix/keyword scan with redacted output; pair with a maintained secret scanner and pre-commit hooks.".to_string(),
+    ];
+    note_truncation(&mut notes, sources_truncated, None);
     finalize(
+        config,
         request.request_id,
         "secret",
         "secret-scan",
         scanned_bytes,
         findings,
-        vec![
-            "Heuristic prefix/keyword scan with redacted output; pair with a maintained secret scanner and pre-commit hooks.".to_string(),
-        ],
+        notes,
     )
 }
 
@@ -415,11 +521,19 @@ const SECRET_PREFIXES: &[(&str, VulnerabilitySeverity, &str)] = &[
     ("sk-", VulnerabilitySeverity::High, "Provider API secret key"),
 ];
 
-fn scan_secret_text(evidence_ref: &str, text: &str, findings: &mut Vec<VulnerabilityFinding>) {
+fn scan_secret_text(
+    evidence_ref: &str,
+    text: &str,
+    max_findings: usize,
+    findings: &mut Vec<VulnerabilityFinding>,
+) {
     let lower = text.to_ascii_lowercase();
     // Token-prefix detectors operate per whitespace-delimited token so we can
     // redact the actual secret and require a plausible length.
     for token in text.split(|ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',' | ';' | '=' | ':')) {
+        if findings.len() >= max_findings {
+            break;
+        }
         let trimmed = token.trim();
         if trimmed.len() < 12 {
             continue;
@@ -467,28 +581,36 @@ fn scan_secret_text(evidence_ref: &str, text: &str, findings: &mut Vec<Vulnerabi
             });
         }
     }
-    // Embedded URL credentials: scheme://user:pass@host
-    if let Some(finding) = scan_url_credentials(&lower, evidence_ref) {
-        findings.push(finding);
-    }
-}
-
-fn scan_url_credentials(lower: &str, evidence_ref: &str) -> Option<VulnerabilityFinding> {
-    let scheme = lower.find("://")?;
-    let after = &lower[scheme + 3..];
-    let at = after.find('@')?;
-    let userinfo = &after[..at];
-    if userinfo.contains(':') && !userinfo.contains('/') && !userinfo.is_empty() {
-        return Some(VulnerabilityFinding {
+    // Embedded URL credentials: scheme://user:pass@host. Scan per line so a
+    // userinfo segment cannot be spoofed by content wrapping across lines, and so
+    // a credential in any line is caught rather than only the first URL.
+    if text.lines().any(has_url_embedded_credential) {
+        findings.push(VulnerabilityFinding {
             id: "url-embedded-credential".to_string(),
             severity: VulnerabilitySeverity::High,
             category: "secret".to_string(),
             evidence_ref: evidence_ref.to_string(),
-            message: "A connection string embeds credentials in a URL (scheme://user:pass@host).".to_string(),
+            message: "A connection string embeds credentials in a URL (scheme://user:pass@host)."
+                .to_string(),
             recommendation: "Move credentials out of connection URLs into a secret manager and reference them at runtime.".to_string(),
         });
     }
-    None
+}
+
+fn has_url_embedded_credential(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let Some(scheme) = lower.find("://") else {
+        return false;
+    };
+    let after = &lower[scheme + 3..];
+    // userinfo is everything up to the first '@' and before any path/query start.
+    let authority_end = after.find(['/', '?', '#']).unwrap_or(after.len());
+    let authority = &after[..authority_end];
+    let Some(at) = authority.find('@') else {
+        return false;
+    };
+    let userinfo = &authority[..at];
+    userinfo.contains(':') && !userinfo.contains(' ') && !userinfo.is_empty()
 }
 
 fn redact(token: &str) -> String {
@@ -574,6 +696,62 @@ mod tests {
         assert!(report.findings.iter().any(|f| f.id == "advisory-express"));
         assert!(report.findings.iter().any(|f| f.id == "unpinned-dependency"));
         assert!(report.findings.iter().any(|f| f.id == "missing-lockfile"));
+    }
+
+    #[test]
+    fn secret_scan_bounds_findings_under_token_flood() {
+        // test_config caps max_findings_per_job at 200. Each token is distinct so
+        // dedup cannot mask the bound: without the accumulation cap this 5000-token
+        // flood would build a 5000-entry vec. The cap must hold it at <= 200.
+        let mut flood = String::new();
+        for i in 0..5_000 {
+            flood.push_str(&format!("ghp_abcdefghij{i:08} "));
+        }
+        let report = scan_secrets(
+            &test_config(),
+            ArtifactScanRequest {
+                request_id: None,
+                title: None,
+                artifacts: vec![source("dump.txt", &flood)],
+                inline_text: None,
+                indicators: vec![],
+            },
+        );
+        assert!(report.findings.len() <= 200, "findings not bounded: {}", report.findings.len());
+    }
+
+    #[test]
+    fn malware_scan_does_not_flag_bare_curl_as_critical() {
+        let report = scan_malware(
+            &test_config(),
+            ArtifactScanRequest {
+                request_id: None,
+                title: None,
+                artifacts: vec![source(
+                    "deploy.sh",
+                    "#!/bin/sh\ncurl -s https://api.example.com/health\nwget -q https://example.com/file",
+                )],
+                inline_text: None,
+                indicators: vec![],
+            },
+        );
+        // A bare remote fetch with no pipe-to-shell must not be a download-and-execute finding.
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.id == "download-and-execute"));
+        assert!(report.ok);
+    }
+
+    #[test]
+    fn secret_scan_url_credential_ignores_query_at_signs() {
+        // `@` in a query string is not userinfo and must not be flagged.
+        assert!(!has_url_embedded_credential(
+            "https://example.com/path?to=a@b.com"
+        ));
+        assert!(has_url_embedded_credential(
+            "postgres://app:hunter2@db.internal:5432/app"
+        ));
     }
 
     #[test]

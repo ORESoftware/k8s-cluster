@@ -42,6 +42,7 @@ resources:
   - dd-raft-consensus.deployment.yaml
   - dd-raft-consensus.service.yaml
   - dd-gpu-rs.deployment.yaml
+  - dd-gpu-rs.networkpolicy.yaml
   - dd-gpu-rs.service.yaml
   - dd-fabrication-server.serviceaccount.yaml
   - dd-fabrication-server.deployment.yaml
@@ -79,6 +80,10 @@ resources:
   - dd-document-rs.deployment.yaml
   - dd-document-rs.networkpolicy.yaml
   - dd-document-rs.service.yaml
+  - dd-ocr-rs.deployment.yaml
+  - dd-ocr-rs.externalsecret.yaml
+  - dd-ocr-rs.networkpolicy.yaml
+  - dd-ocr-rs.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
   - dd-rust-vapi-phone.networkpolicy.yaml
   - dd-rust-vapi-phone.service.yaml
@@ -88,6 +93,12 @@ resources:
   - dd-economics-server.service.yaml
   - dd-public-data-server.deployment.yaml
   - dd-public-data-server.service.yaml
+  - dd-knowledge-graph-builder.deployment.yaml
+  - dd-knowledge-graph-builder.networkpolicy.yaml
+  - dd-knowledge-graph-builder.service.yaml
+  - dd-dataset-labeling.deployment.yaml
+  - dd-dataset-labeling.networkpolicy.yaml
+  - dd-dataset-labeling.service.yaml
   - dd-compliance-rs.deployment.yaml
   - dd-compliance-rs.networkpolicy.yaml
   - dd-compliance-rs.service.yaml

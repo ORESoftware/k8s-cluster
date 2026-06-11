@@ -1,0 +1,71 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-ocr-rs
+  namespace: default
+  labels:
+    app: dd-ocr-rs
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-ocr-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 8123
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110
+    # Paid cloud OCR backends (Google Cloud Vision, AWS Textract, Azure Read)
+    # are reached over HTTPS on the public Internet. Exclude the cloud metadata
+    # endpoint and all private/link-local ranges so a compromised process (or an
+    # SSRF in a backend response) can't pivot into the VPC or IMDS.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16   # link-local + cloud metadata (IMDS) 169.254.169.254
+              - 10.0.0.0/8       # RFC1918 (cluster/VPC)
+              - 172.16.0.0/12    # RFC1918
+              - 192.168.0.0/16   # RFC1918
+              - 100.64.0.0/10    # CGNAT (some CNI/EKS pod ranges)
+      ports:
+        - protocol: TCP
+          port: 443

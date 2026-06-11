@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-embeddings-rs
+  namespace: default
+  labels:
+    app: dd-embeddings-rs
+spec:
+  replicas: 1
+  # Zero-surge rollout: the single-node EC2 cluster cannot host two replicas
+  # during a rolling deploy (same shape as dd-billing-server / dd-akka-ws-server).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-embeddings-rs
+  template:
+    metadata:
+      labels:
+        app: dd-embeddings-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: embeddings
+          image: docker.io/library/rust:1.95-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/dd-embeddings-rs
+              if [ ! -x target/release/dd-embeddings-rs ]; then
+                echo "Building dd-embeddings-rs (release)..."
+                cargo build --release --locked
+              fi
+              exec target/release/dd-embeddings-rs
+          env:
+            - name: EMBEDDINGS_HOST
+              value: 0.0.0.0
+            - name: EMBEDDINGS_PORT
+              value: '8090'
+            - name: EMBEDDINGS_LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,hyper=warn,reqwest=warn,tower_http=info
+            - name: EMBEDDINGS_REQUEST_TIMEOUT_SECS
+              value: '30'
+            # Vector store: the dd-qdrant Helm release in the ai-ml namespace.
+            - name: QDRANT_URL
+              value: http://dd-qdrant.ai-ml.svc.cluster.local:6333
+            # The JSON API is gated by a bearer token in addition to any
+            # upstream gateway. Without this set the functional API is open to
+            # anyone who can reach the listener.
+            - name: EMBEDDINGS_API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-embeddings-rs-secrets
+                  key: api_auth_bearer
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: qdrant_api_key, optional: true }
+            # Provider API keys. All optional + blank-tolerated: a provider is
+            # only registered when its key is populated in the secret, so the
+            # pod boots cleanly with none of them set and you wire providers up
+            # incrementally (ESO refresh picks up new keys with no redeploy).
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: openai_api_key, optional: true }
+            - name: VOYAGE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: voyage_api_key, optional: true }
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: gemini_api_key, optional: true }
+            - name: COHERE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: cohere_api_key, optional: true }
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: mistral_api_key, optional: true }
+            - name: JINA_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: jina_api_key, optional: true }
+            - name: TOGETHER_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: together_api_key, optional: true }
+            - name: FIREWORKS_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: fireworks_api_key, optional: true }
+            - name: DEEPINFRA_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: deepinfra_api_key, optional: true }
+            - name: NOMIC_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: nomic_api_key, optional: true }
+            - name: AZURE_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: azure_openai_api_key, optional: true }
+            # Azure needs its resource/deployment base URL alongside the key.
+            - name: AZURE_BASE_URL
+              valueFrom:
+                secretKeyRef: { name: dd-embeddings-rs-secrets, key: azure_base_url, optional: true }
+          ports:
+            - name: http
+              containerPort: 8090
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120  # cold cargo build can take a while on first boot
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: cargo-cache
+              mountPath: /usr/local/cargo/registry
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: cargo-cache
+          hostPath:
+            path: /home/ec2-user/.cache/cargo-dd-embeddings-rs
+            type: DirectoryOrCreate

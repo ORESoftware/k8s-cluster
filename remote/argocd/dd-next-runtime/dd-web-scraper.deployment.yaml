@@ -134,6 +134,8 @@ spec:
               value: '120000'
             - name: SCRAPER_CAPTCHA_MAX_ATTEMPTS
               value: '2'
+            - name: SCRAPER_CAPTCHA_MAX_CONCURRENT
+              value: '2'
             - name: SCRAPER_CAPTCHA_API_KEY
               valueFrom:
                 secretKeyRef:

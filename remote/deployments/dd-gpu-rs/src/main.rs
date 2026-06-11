@@ -496,6 +496,14 @@ fn memory_time_integral(intervals: &[(u64, u64, u64)]) -> u128 {
 
 /// Earliest start >= est such that placing a job of `vram` MiB for `duration` on
 /// the GPU keeps concurrent VRAM <= `capacity` at every instant.
+///
+/// Implemented as an O(k log k) sweep over the card's interval boundaries (k =
+/// placed jobs): the resident-VRAM step function is scanned once to collect the
+/// maximal "blocked" regions where adding this job would exceed capacity, then
+/// the earliest gap of length `duration` at or after `est` that clears every
+/// such region is returned. This avoids the naive per-candidate rescan, which
+/// was cubic per placement and quartic across a single saturated card — a DoS
+/// vector under the 2 000-job ceiling.
 fn earliest_feasible_start(
     intervals: &[(u64, u64, u64)],
     est: u64,
@@ -503,54 +511,56 @@ fn earliest_feasible_start(
     vram: u64,
     capacity: u64,
 ) -> u64 {
-    // Candidate starts: est plus every existing interval finish >= est. Memory
-    // pressure only drops at finishes, so a feasible start begins at one of these.
-    let mut candidates: Vec<u64> = vec![est];
-    for &(_, finish, _) in intervals {
-        if finish >= est {
-            candidates.push(finish);
-        }
-    }
-    candidates.sort_unstable();
-    candidates.dedup();
-    for &start in &candidates {
-        if fits(intervals, start, duration, vram, capacity) {
-            return start;
-        }
-    }
-    // Fallback: after the last finish (always fits on a then-empty card).
-    intervals
-        .iter()
-        .map(|(_, f, _)| *f)
-        .max()
-        .unwrap_or(est)
-        .max(est)
-}
-
-fn fits(intervals: &[(u64, u64, u64)], start: u64, duration: u64, vram: u64, capacity: u64) -> bool {
+    // Caller guarantees vram <= capacity (GPUs with less VRAM are filtered out),
+    // but guard defensively: an oversize job can never fit, so never start it.
     if vram > capacity {
-        return false;
+        return est;
     }
-    let end = start + duration;
-    // Resident VRAM only rises at interval starts; sample `start` and every
-    // existing interval start inside the window.
-    let mut sample_points: Vec<u64> = vec![start];
-    for &(s, _, _) in intervals {
-        if s > start && s < end {
-            sample_points.push(s);
+    // `threshold` is the most "other" VRAM that may be resident during our window
+    // while still leaving room for this job (used + vram <= capacity).
+    let threshold = (capacity - vram) as i128;
+
+    // Boundary events: +vram at each interval start, -vram at each finish.
+    let mut events: Vec<(u64, i128)> = Vec::with_capacity(intervals.len() * 2);
+    for &(start, finish, v) in intervals {
+        events.push((start, v as i128));
+        events.push((finish, -(v as i128)));
+    }
+    events.sort_unstable_by_key(|event| event.0);
+
+    // Sweep the step function, collecting maximal regions where resident VRAM
+    // exceeds `threshold` (i.e. our job cannot be running). Events are grouped by
+    // time so the level is evaluated only after all deltas at that instant apply.
+    let mut blocked: Vec<(u64, u64)> = Vec::new();
+    let mut used: i128 = 0;
+    let mut region_start: Option<u64> = None;
+    let mut i = 0;
+    while i < events.len() {
+        let time = events[i].0;
+        while i < events.len() && events[i].0 == time {
+            used += events[i].1;
+            i += 1;
+        }
+        match (used > threshold, region_start) {
+            (true, None) => region_start = Some(time),
+            (false, Some(start)) => {
+                blocked.push((start, time));
+                region_start = None;
+            }
+            _ => {}
         }
     }
-    for point in sample_points {
-        let concurrent: u64 = intervals
-            .iter()
-            .filter(|&&(s, f, _)| s <= point && point < f)
-            .map(|&(_, _, v)| v)
-            .sum();
-        if concurrent + vram > capacity {
-            return false;
+    // `used` returns to 0 at the last finish, so a region is always closed.
+
+    // Walk the blocked regions (already sorted by start) advancing the candidate
+    // past any region the [candidate, candidate + duration) window would overlap.
+    let mut candidate = est;
+    for &(start, end) in &blocked {
+        if candidate < end && candidate.saturating_add(duration) > start {
+            candidate = end;
         }
     }
-    true
+    candidate
 }
 
 async fn schedule_in_background(request: ScheduleRequest) -> Result<ScheduleResponse, String> {
@@ -959,6 +969,66 @@ mod tests {
             kind: None,
             gpus: vec![gpu("g0", 16_000)],
             jobs: vec![],
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn empty_card_starts_at_release() {
+        assert_eq!(earliest_feasible_start(&[], 0, 50, 8_000, 24_000), 0);
+        assert_eq!(earliest_feasible_start(&[], 30, 50, 8_000, 24_000), 30);
+    }
+
+    #[test]
+    fn fits_under_threshold_starts_immediately() {
+        // One 3 GiB resident job, 6 GiB request, 10 GiB card: 3+6 <= 10, so the
+        // new job starts at est without waiting.
+        let intervals = [(0u64, 100u64, 3_000u64)];
+        assert_eq!(earliest_feasible_start(&intervals, 0, 10, 6_000, 10_000), 0);
+    }
+
+    #[test]
+    fn waits_past_merged_overlapping_blockers() {
+        // Two overlapping 6 GiB jobs on a 10 GiB card form one blocked region
+        // [0, 200) for a 6 GiB request (6+6 > 10). The sweep must merge them and
+        // start at 200, not slot between them.
+        let intervals = [(0u64, 100u64, 6_000u64), (50u64, 200u64, 6_000u64)];
+        assert_eq!(earliest_feasible_start(&intervals, 0, 10, 6_000, 10_000), 200);
+    }
+
+    #[test]
+    fn slots_into_gap_between_blockers() {
+        // Blockers at [0,100) and [300,400). A 6 GiB / 50ms request fits in the
+        // clear gap starting at 100.
+        let intervals = [(0u64, 100u64, 8_000u64), (300u64, 400u64, 8_000u64)];
+        assert_eq!(earliest_feasible_start(&intervals, 0, 50, 6_000, 10_000), 100);
+    }
+
+    #[test]
+    fn full_card_request_waits_for_total_drain() {
+        // A request needing the whole card (threshold 0) must wait until every
+        // resident byte is freed.
+        let intervals = [(0u64, 80u64, 1_000u64), (0u64, 120u64, 1_000u64)];
+        assert_eq!(earliest_feasible_start(&intervals, 0, 10, 24_000, 24_000), 120);
+    }
+
+    #[test]
+    fn oversize_job_is_never_started_by_the_sweep() {
+        // Defensive: vram > capacity can never fit; the sweep must not invent a
+        // placement (callers filter these out, but guard anyway).
+        let intervals = [(0u64, 50u64, 1_000u64)];
+        assert_eq!(earliest_feasible_start(&intervals, 5, 10, 30_000, 24_000), 5);
+    }
+
+    #[test]
+    fn rejects_tag_floods() {
+        let mut gpus = vec![gpu("g0", 16_000)];
+        gpus[0].tags = (0..MAX_TAGS + 1).map(|i| format!("t{i}")).collect();
+        assert!(schedule(ScheduleRequest {
+            request_id: None,
+            kind: None,
+            gpus,
+            jobs: vec![job("a", 1_000, 1)],
         })
         .is_err());
     }

@@ -58,6 +58,8 @@ const MAX_BOIDS_WORK: u64 = 200_000_000;
 const MAX_FRAME_DELAY_MS: u64 = 100;
 const MAX_STREAM_MILLIS: u64 = 15_000;
 const DEFAULT_MAX_INFLIGHT: usize = 8;
+/// Skip publishing a result larger than this (NATS default max_payload is ~1 MiB).
+const MAX_PUBLISH_BYTES: usize = 900_000;
 
 #[derive(Clone)]
 struct AppState {
@@ -917,11 +919,18 @@ async fn stream_and_publish(state: &AppState, run: &SimRun) {
         }
     }
 
+    // The bundled result must NOT carry the frames: they are streamed
+    // individually above, and a full frame set would blow past the NATS
+    // max_payload (default 1 MiB). Strip them before publishing.
+    let mut result_value = serde_json::to_value(&run.response).unwrap_or(serde_json::Value::Null);
+    if let Some(object) = result_value.as_object_mut() {
+        object.remove("frames");
+    }
     let payload = match serde_json::to_vec(&json!({
         "messageKind": "agent_sim.simulate.result",
         "schemaVersion": "agent_sim.simulate.v1",
         "source": "dd-agent-sim-server",
-        "result": run.response,
+        "result": result_value,
     })) {
         Ok(payload) => payload,
         Err(error) => {
@@ -929,9 +938,17 @@ async fn stream_and_publish(state: &AppState, run: &SimRun) {
             return;
         }
     };
-    let _ = nats
-        .publish(state.result_subject.clone(), payload.into())
-        .await;
+    if payload.len() > MAX_PUBLISH_BYTES {
+        eprintln!(
+            "agent-sim result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
+            payload.len()
+        );
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+    } else {
+        let _ = nats
+            .publish(state.result_subject.clone(), payload.into())
+            .await;
+    }
     let _ = nats
         .publish(
             state.event_subject.clone(),

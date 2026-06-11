@@ -44,8 +44,8 @@ fn build_tesseract_bridge() {
             println!("cargo:rustc-link-arg={token}");
         }
     }
-    // The shim itself is C++; make sure the C++ runtime is linked.
-    println!("cargo:rustc-link-lib=dylib=stdc++");
+    // cc-rs links the platform C++ runtime (libc++ / libstdc++) automatically
+    // because we compiled the shim with `.cpp(true)`.
 }
 
 fn pkg_config(args: &[&str]) -> String {

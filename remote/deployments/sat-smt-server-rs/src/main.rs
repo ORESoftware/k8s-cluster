@@ -53,6 +53,8 @@ const MAX_SOLVE_WORK: u64 = 800_000_000;
 /// exceed a default 2 MiB worker stack; run it on a thread with headroom.
 const SOLVER_STACK_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_MAX_INFLIGHT: usize = 16;
+/// Skip publishing a result larger than this (NATS default max_payload is ~1 MiB).
+const MAX_PUBLISH_BYTES: usize = 900_000;
 
 #[derive(Clone)]
 struct AppState {
@@ -589,6 +591,14 @@ async fn publish_result(state: &AppState, response: &SolveResponse) {
             return;
         }
     };
+    if payload.len() > MAX_PUBLISH_BYTES {
+        eprintln!(
+            "sat result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
+            payload.len()
+        );
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
     if let Err(error) = nats
         .publish(state.result_subject.clone(), payload.into())
         .await

@@ -46,8 +46,8 @@
     <h1>dd runtime API docs</h1>
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
-      <span>45 services</span>
-      <span>1411 routes</span>
+      <span>49 services</span>
+      <span>1505 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -1409,7 +1409,7 @@
 <details>
   <summary>
     <span><strong>contract-service-rs</strong> <span class="muted">rust</span></span>
-    <span>28 routes</span>
+    <span>52 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/contract-service-rs/generated/api-docs.json</code></span>
@@ -1464,6 +1464,41 @@
   <td data-label="Service"><code>contract-service-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/bridge/transfer</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/bridge/transfer/:id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/bridge/transfer/:id/attest</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/chain/:id/status</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/chains</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/confirm</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
@@ -1492,6 +1527,20 @@
   <td data-label="Service"><code>contract-service-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/executor/execute</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/executor/simulate</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/fee</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
@@ -1501,6 +1550,20 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
   <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/index/query</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/index/watch</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
   <td data-label="Service"><code>contract-service-rs</code></td>
@@ -1529,6 +1592,69 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/mev/opportunities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/multisig/proposal</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/multisig/proposal/:id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/multisig/proposal/:id/approve</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/nft/media</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/nft/media/:digest</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/nft/metadata/validate</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/relayer/status/:id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/relayer/submit</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
   <td data-label="Service"><code>contract-service-rs</code></td>
@@ -1596,6 +1722,27 @@
 <tr>
   <td data-label="Service"><code>contract-service-rs</code></td>
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/staking/intent</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/staking/positions/:chain/:address</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/staking/validate</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/status</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
@@ -1612,6 +1759,27 @@
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/validate</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/wallet/:id/balance</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/wallet/list</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>contract-service-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/wallet/register</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>
@@ -1775,6 +1943,140 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/readyz</code></td>
   <td data-label="Purpose">Readiness check.</td>
+</tr>
+    </tbody>
+  </table>
+</details>
+<details>
+  <summary>
+    <span><strong>dataset-labeling-rs</strong> <span class="muted">rust</span></span>
+    <span>17 routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>remote/deployments/dataset-labeling-rs/generated/api-docs.json</code></span>
+    <span>Generated HTML: <code>remote/deployments/dataset-labeling-rs/generated/api-docs.html</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/aggregate</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/datasets</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/datasets/export</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/descriptor</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/example</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/functions/apply</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/labels</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/pipeline/jobs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/schema</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dataset-labeling-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/tasks</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>
   </table>
@@ -2856,6 +3158,126 @@
 </details>
 <details>
   <summary>
+    <span><strong>dd-git-rs</strong> <span class="muted">rust</span></span>
+    <span>15 routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>remote/deployments/dd-git-rs/generated/api-docs.json</code></span>
+    <span>Generated HTML: <code>remote/deployments/dd-git-rs/generated/api-docs.html</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">DELETE</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id/log</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id/operations</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id/refs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id/show/*rev</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/api/v1/repos/:id/sync</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/v1/vcs/kinds</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-git-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+</tr>
+    </tbody>
+  </table>
+</details>
+<details>
+  <summary>
     <span><strong>dd-music-rs</strong> <span class="muted">rust</span></span>
     <span>13 routes</span>
   </summary>
@@ -2955,6 +3377,126 @@
   <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/songs/shelf</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+    </tbody>
+  </table>
+</details>
+<details>
+  <summary>
+    <span><strong>dd-ocr-rs</strong> <span class="muted">rust</span></span>
+    <span>15 routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>remote/deployments/dd-ocr-rs/generated/api-docs.json</code></span>
+    <span>Generated HTML: <code>remote/deployments/dd-ocr-rs/generated/api-docs.html</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/capabilities</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/engines</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/example</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/internal/runtime-config</code></td>
+  <td data-label="Purpose">Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/runtime-config/reset</code></td>
+  <td data-label="Purpose">Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge runtime-config">runtime-config</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/internal/update-runtime-config</code></td>
+  <td data-label="Purpose">Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/ocr</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/ocr/stream</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>dd-ocr-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/status</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>
@@ -7689,7 +8231,7 @@
 <details>
   <summary>
     <span><strong>gleam-lambda-runner</strong> <span class="muted">gleam</span></span>
-    <span>13 routes</span>
+    <span>18 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/gleam-lambda-runner/generated/api-docs.json</code></span>
@@ -7788,6 +8330,41 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>gleam-lambda-runner</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/workflows/runs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>gleam-lambda-runner</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/workflows/runs/:run_id</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>gleam-lambda-runner</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/workflows/runs/:run_id/cancel</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>gleam-lambda-runner</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/workflows/runs/:run_id/signal</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>gleam-lambda-runner</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/workflows/start</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>
   </table>
@@ -8339,6 +8916,147 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/ws?user=:id&amp;conv=:id</code></td>
   <td data-label="Purpose">Upgrade to a conv-scoped ws (must be a member).</td>
+</tr>
+    </tbody>
+  </table>
+</details>
+<details>
+  <summary>
+    <span><strong>knowledge-graph-builder-rs</strong> <span class="muted">rust</span></span>
+    <span>18 routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json</code></span>
+    <span>Generated HTML: <code>remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/descriptor</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/example</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/graph/centrality</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/graph/export</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/graph/extract</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/graph/paths</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/graph/query</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/graph/stats</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/graph/upsert</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/pipeline/jobs</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge service">service</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>knowledge-graph-builder-rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/schema</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
     </tbody>
   </table>
