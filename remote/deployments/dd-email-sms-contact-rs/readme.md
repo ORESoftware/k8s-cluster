@@ -92,3 +92,27 @@ The Web Push transport pulls `web-push` → `ece`, which links `openssl-sys` aga
 That is already present in `rust:*-bookworm` (it is built on `buildpack-deps:bookworm`, which ships
 `libssl-dev` + `pkg-config`), so no image change is needed — but a switch to a `-slim`/Alpine base
 would require adding those packages. Everything else stays pure-Rust/rustls.
+
+## Security posture (audit 2026-06-11)
+
+Hardened in code:
+- **Auth fail-closed + timing-safe** on the HTTP `/send/*` lanes (`x-server-auth`,
+  constant-time compare); rejects when no `SERVER_AUTH_SECRET` is set.
+- **`from` locked to the configured `EMAIL_FROM`** — callers can't pick an arbitrary
+  sender (no open-relay/spoofing primitive).
+- **Input validation**: recipient/subject/body shape; subject rejects control chars
+  (no CR/LF into the MIME header); HTML capped at 1 MiB (under the 2 MiB body limit).
+- **Bounded error text**: all upstream (SendGrid/Twilio/push) error bodies are `cap()`-ed
+  before they reach the HTTP response or the `CONTACT_SEND_RESULTS_SUBJECT` bus.
+- **Secrets never logged/echoed**; reqwest uses rustls (TLS verify on) + a 20s timeout;
+  webpush endpoint is SSRF-guarded (https-only, blocks localhost/private/CGNAT/etc.).
+
+Accepted / deployment-enforced (NOT in code):
+- **NATS lane has no per-message auth** — `handle_*_msg` send without a secret, by design
+  ("trusted bus"). **Requirement:** NATS account/subject ACLs must restrict who can publish
+  to `dd.remote.contact.*`, otherwise any in-cluster publisher can send mail/SMS/push. If the
+  bus is not ACL'd, add a shared-secret field to the payload and verify it in the handlers.
+- **Rate limiter is per-process.** This deployment runs `replicas: 1`, so the per-pod token
+  bucket IS the global limit. If you scale replicas, move the limiter to a shared store (Redis)
+  or the effective rate becomes `replicas × limit`.
+- **NATS payload size** is bounded by the server's `max_payload` (default 1 MiB), not app-side.
