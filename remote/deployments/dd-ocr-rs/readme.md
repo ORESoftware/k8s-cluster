@@ -67,6 +67,7 @@ When `NATS_URL` is set the service also consumes OCR requests off
 | `OCR_MAX_DECODE_ALLOC_BYTES`                   | `268435456`             | decoder allocation cap (anti-bomb)       |
 | `OCR_DEFAULT_LANGUAGES`                        | `eng`                   | Tesseract language(s), e.g. `eng+deu`    |
 | `OCR_CONCURRENCY`                              | CPU-derived             | concurrent OCR jobs                      |
+| `OCR_MAX_INFLIGHT`                             | `concurrency×8`         | in-flight HTTP cap (excess → 503)        |
 | `OCR_UPSCALE_MIN_DIM`                          | `0` (off)               | upscale scans whose short side is below  |
 | `OCR_HTTP_TIMEOUT_SECS`                        | `30`                    | cloud backend request timeout            |
 | `GOOGLE_VISION_API_KEY`                        | —                       | enables the `google` engine              |

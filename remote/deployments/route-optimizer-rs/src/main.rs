@@ -27,7 +27,7 @@ use std::{
 
 use axum::{
     extract::{DefaultBodyLimit, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -60,6 +60,8 @@ struct AppState {
     /// Bounds concurrent optimizations so a request/NATS flood cannot spawn
     /// unbounded CPU-heavy work.
     inflight: Arc<tokio::sync::Semaphore>,
+    /// Optional shared secret; when set, HTTP compute requests must present it.
+    auth_secret: Option<String>,
 }
 
 #[derive(Default)]
@@ -69,6 +71,7 @@ struct Metrics {
     feasible_total: AtomicU64,
     errors_total: AtomicU64,
     rejected_busy_total: AtomicU64,
+    auth_failures_total: AtomicU64,
     nats_messages_total: AtomicU64,
 }
 
@@ -162,6 +165,57 @@ fn env_usize(key: &str, fallback: usize) -> usize {
         .and_then(|value| value.trim().parse::<usize>().ok())
         .filter(|&value| value > 0)
         .unwrap_or(fallback)
+}
+
+/// Resolve the optional auth secret from the service-specific key, falling back
+/// to the shared `SERVER_AUTH_SECRET`. Empty values are treated as unset.
+fn optional_auth_secret(primary: &str) -> Option<String> {
+    [primary, "SERVER_AUTH_SECRET"]
+        .iter()
+        .filter_map(|key| env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .find(|value| !value.is_empty())
+}
+
+/// Timing-safe comparison so auth checks don't leak the secret via response time.
+fn constant_time_equals(candidate: &str, expected: &str) -> bool {
+    let candidate = candidate.as_bytes();
+    let expected = expected.as_bytes();
+    if candidate.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (left, right) in candidate.iter().zip(expected.iter()) {
+        diff |= left ^ right;
+    }
+    diff == 0
+}
+
+/// Optional shared-secret gate. Open when no secret is configured (matching the
+/// sibling compute services); when set, the compute endpoint requires a matching
+/// `x-server-auth` (or `auth`) header.
+fn check_auth(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let secret = state.auth_secret.as_deref()?;
+    let authorized = ["x-server-auth", "auth"]
+        .iter()
+        .filter_map(|name| headers.get(*name))
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| constant_time_equals(value, secret));
+    if authorized {
+        None
+    } else {
+        state
+            .metrics
+            .auth_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "ok": false, "error": "unauthorized" })),
+            )
+                .into_response(),
+        )
+    }
 }
 
 struct Problem {
@@ -601,6 +655,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_route_optimizer_rejected_busy_total Requests shed because the inflight cap was full.\n\
          # TYPE dd_route_optimizer_rejected_busy_total counter\n\
          dd_route_optimizer_rejected_busy_total {}\n\
+         # HELP dd_route_optimizer_auth_failures_total Rejected unauthenticated/invalid-secret requests.\n\
+         # TYPE dd_route_optimizer_auth_failures_total counter\n\
+         dd_route_optimizer_auth_failures_total {}\n\
          # HELP dd_route_optimizer_nats_messages_total NATS optimize requests received.\n\
          # TYPE dd_route_optimizer_nats_messages_total counter\n\
          dd_route_optimizer_nats_messages_total {}\n",
@@ -609,6 +666,7 @@ async fn metrics(State(state): State<AppState>) -> Response {
         m.feasible_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
         m.rejected_busy_total.load(Ordering::Relaxed),
+        m.auth_failures_total.load(Ordering::Relaxed),
         m.nats_messages_total.load(Ordering::Relaxed),
     );
     (
@@ -621,7 +679,14 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-async fn optimize_http(State(state): State<AppState>, Json(request): Json<RouteRequest>) -> Response {
+async fn optimize_http(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RouteRequest>,
+) -> Response {
+    if let Some(response) = check_auth(&state, &headers) {
+        return response;
+    }
     state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
     let Ok(_permit) = state.inflight.clone().try_acquire_owned() else {
         state
@@ -733,6 +798,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         event_subject: env_value("ROUTE_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
         metrics: Arc::new(Metrics::default()),
         inflight: Arc::new(tokio::sync::Semaphore::new(max_inflight)),
+        auth_secret: optional_auth_secret("ROUTE_AUTH_SECRET"),
     };
     let subject = env_value("ROUTE_OPTIMIZE_SUBJECT", ROUTE_OPTIMIZE_REQUESTS_SUBJECT);
     let queue_group = env_value("ROUTE_QUEUE_GROUP", ROUTE_OPTIMIZE_REQUESTS_QUEUE_GROUP);
@@ -764,6 +830,31 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_state(secret: Option<String>) -> AppState {
+        AppState {
+            nats: None,
+            result_subject: String::new(),
+            event_subject: String::new(),
+            metrics: Arc::new(Metrics::default()),
+            inflight: Arc::new(tokio::sync::Semaphore::new(1)),
+            auth_secret: secret,
+        }
+    }
+
+    #[test]
+    fn auth_open_when_no_secret() {
+        assert!(check_auth(&test_state(None), &HeaderMap::new()).is_none());
+    }
+
+    #[test]
+    fn auth_enforced_when_secret_set() {
+        let state = test_state(Some("s3cret".to_string()));
+        assert!(check_auth(&state, &HeaderMap::new()).is_some());
+        let mut good = HeaderMap::new();
+        good.insert("x-server-auth", "s3cret".parse().unwrap());
+        assert!(check_auth(&state, &good).is_none());
+    }
 
     fn stop(id: &str, x: f64, y: f64) -> StopInput {
         StopInput {

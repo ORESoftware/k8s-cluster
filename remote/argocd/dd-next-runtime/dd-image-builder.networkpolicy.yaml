@@ -1,0 +1,29 @@
+# Restrict who can reach the (privileged, node-root-capable) image builder.
+# Only dd-remote-rest-api (the delegator) should call it on :8082.
+#
+# IMPORTANT before relying on this (verify at cutover): an Ingress NetworkPolicy
+# makes the pod default-deny for ingress. Kubelet liveness/readiness probes hit
+# :8082/healthz from the node (host netns). Cilium allows host->local-pod by
+# default (`--allow-localhost=always`), so probes normally still pass — but if
+# this cluster runs Cilium host-firewall / a stricter policy, the probes can be
+# dropped and crash-loop the pod. Confirm the pod stays Ready after applying;
+# if not, add an allowance for the host/health-check source.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-image-builder
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-image-builder
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-rest-api
+      ports:
+        - port: 8082
+          protocol: TCP

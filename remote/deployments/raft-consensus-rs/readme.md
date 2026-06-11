@@ -44,3 +44,7 @@ property to assert when chaos-testing.
 ## Limits & hardening
 
 Inflight-concurrency cap (`RAFT_MAX_INFLIGHT`, default 16); HTTP returns `503` when saturated, NATS applies backpressure. Simulations are bounded to 9 nodes, 50 000 ticks, and 5 000 commands; partition/crash node ids are validated against the cluster size.
+
+## Authentication
+
+Optional and **off by default** (matching the sibling compute services). Set `RAFT_AUTH_SECRET` (or the shared `SERVER_AUTH_SECRET`) to require callers of `/simulate` to present a matching `x-server-auth: <secret>` (or `auth: <secret>`) header; the comparison is constant-time. When the secret is unset the endpoint is open. `/healthz` and `/metrics` are always open (for probes and Prometheus). Rejections return `401` and increment `*_auth_failures_total`. The deployment manifest wires `RAFT_AUTH_SECRET` from the `dd-agent-secrets` secret with `optional: true`, so enabling auth is a one-key secret edit.

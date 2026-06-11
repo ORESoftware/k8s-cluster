@@ -39,7 +39,7 @@ use crate::rag::{IndexRequest, RagService, SearchRequest};
 use crate::state::AppState;
 use crate::validate::{
     check_dimensions, clamp_top_k, constant_time_eq, enforce_input_limits, validate_collection,
-    validate_distance,
+    validate_distance, validate_model,
 };
 
 #[tokio::main]
@@ -54,6 +54,9 @@ async fn main() -> anyhow::Result<()> {
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.request_timeout_secs))
+        // Fail fast on a dead/unreachable host instead of burning the full
+        // request budget on connection setup.
+        .connect_timeout(Duration::from_secs(10))
         .user_agent("dd-embeddings-rs/0.1")
         // Do not follow redirects: provider + Qdrant endpoints are fixed POST
         // targets that don't legitimately 3xx, and following a redirect could
@@ -268,6 +271,7 @@ async fn embed(
 ) -> Result<impl IntoResponse, ApiError> {
     enforce_input_limits(&body.req.input, &state.limits)?;
     check_dimensions(body.req.dimensions, &state.limits)?;
+    validate_model(body.req.model.as_deref())?;
     let _permit = acquire_slot(&state)?;
     let provider = state.registry.resolve(&body.provider)?;
     let result = provider.embed(&body.req).await?;
@@ -280,6 +284,7 @@ async fn rag_index(
 ) -> Result<impl IntoResponse, ApiError> {
     validate_collection(&body.collection)?;
     validate_distance(&body.distance)?;
+    validate_model(body.model.as_deref())?;
     check_dimensions(body.dimensions, &state.limits)?;
     // Validate the document texts under the same batch/size guardrails as the
     // raw embedding endpoint before we embed-and-upsert them.
@@ -295,6 +300,7 @@ async fn rag_search(
     Json(mut body): Json<SearchRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     validate_collection(&body.collection)?;
+    validate_model(body.model.as_deref())?;
     check_dimensions(body.dimensions, &state.limits)?;
     enforce_input_limits(std::slice::from_ref(&body.query), &state.limits)?;
     body.top_k = clamp_top_k(body.top_k, &state.limits);

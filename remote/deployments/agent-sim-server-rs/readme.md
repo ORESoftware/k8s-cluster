@@ -43,3 +43,7 @@ curl -s localhost:8133/simulate -H 'content-type: application/json' -d '{
 ## Limits & hardening
 
 Inflight-concurrency cap (`AGENT_SIM_MAX_INFLIGHT`, default 8); HTTP returns `503` when saturated, NATS applies backpressure. CPU is bounded by compute budgets — grid `cells × steps ≤ 60M`, boids `agents² × steps ≤ 200M` — independent of the individual size caps. `frameDelayMs` is clamped to 100 ms and total streamed pacing to 15 s, so one request cannot hold a worker for minutes. Frames are fanned out individually on the frame subject; the bundled NATS result omits them and is skipped (with a warning) if it would exceed ~900 KB, since NATS's default `max_payload` is 1 MiB. The full frame set is still available in the HTTP response via `includeFrames`.
+
+## Authentication
+
+Optional and **off by default** (matching the sibling compute services). Set `AGENT_SIM_AUTH_SECRET` (or the shared `SERVER_AUTH_SECRET`) to require callers of `/simulate` to present a matching `x-server-auth: <secret>` (or `auth: <secret>`) header; the comparison is constant-time. When the secret is unset the endpoint is open. `/healthz` and `/metrics` are always open (for probes and Prometheus). Rejections return `401` and increment `*_auth_failures_total`. The deployment manifest wires `AGENT_SIM_AUTH_SECRET` from the `dd-agent-secrets` secret with `optional: true`, so enabling auth is a one-key secret edit.

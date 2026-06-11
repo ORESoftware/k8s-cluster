@@ -95,6 +95,12 @@ spec:
               value: 'false'
             - name: GIT_RS_BLOCK_PRIVATE_REMOTES
               value: 'false'
+            # Untrusted-content posture: git's ext:: transport (arbitrary command
+            # execution) is always disabled; object integrity (fsck) on
+            # clone/fetch is on by default. Set 'false' only if a legitimate but
+            # malformed legacy repo is rejected.
+            - name: GIT_RS_GIT_FSCK_OBJECTS
+              value: 'true'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: NATS_CRITICAL_EVENT_SUBJECT
@@ -164,4 +170,5 @@ spec:
             path: /var/lib/dd-git-rs
             type: DirectoryOrCreate
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 1Gi

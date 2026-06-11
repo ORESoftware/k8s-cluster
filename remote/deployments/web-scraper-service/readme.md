@@ -135,6 +135,11 @@ and `type`.
 - **Solver response is bounded.** The CAPTCHA solver client caps the provider
   response body (64 KiB) so a compromised or misconfigured `SCRAPER_CAPTCHA_PROVIDER_URL`
   can't stream an unbounded body into memory.
+- **Bounded DNS resolution.** The pre-flight SSRF checks resolve the target and
+  proxy hostnames before any fetch timeout applies. That lookup is raced against
+  `SCRAPER_DNS_TIMEOUT_MS` (default 5 s) so a hostname whose authoritative server
+  deliberately stalls can't pin an in-flight slot for the full `getaddrinfo`
+  timeout — bounding an otherwise un-timed phase of the request.
 
 ## Browser mode and failure screenshots
 

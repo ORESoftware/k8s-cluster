@@ -394,27 +394,14 @@ data:
         proxy_pass http://$dd_up_12;
       }
 
+      # /api/db/ is intentionally NOT proxied to the node-root rest-api.
+      # Generic DB CRUD must stay internal-only per the Postgres contract
+      # (AGENTS.md): the rest-api serves it under /internal/db (default-disabled
+      # via REST_API_INTERNAL_DB_ROUTES_ENABLED) and only in-cluster. Closing it
+      # at the gateway keeps DB inspection off the public path and off the
+      # privileged / containerd-socket API surface entirely.
       location /api/db/ {
-        if ($dd_gateway_auth_ok = 0) {
-          return 401;
-        }
-        if ($request_method !~ ^(GET|POST|PATCH|DELETE)$) {
-          return 405;
-        }
-        client_max_body_size 1m;
-        proxy_http_version 1.1;
-        proxy_buffering off;
-        proxy_connect_timeout 30;
-        proxy_read_timeout 360;
-        proxy_send_timeout 360;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
-        proxy_set_header X-Agent-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
-        proxy_set_header Auth $dd_gateway_auth_header;
-        set $dd_up_13 dd-remote-rest-api.default.svc.cluster.local:8082;
-        proxy_pass http://$dd_up_13;
+        return 404;
       }
 
       # /api/runtime-config/snapshot/{stage|prod} — proxied through the rest-api

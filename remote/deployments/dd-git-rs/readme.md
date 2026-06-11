@@ -38,7 +38,9 @@ Privileged routes require the `X-Server-Auth` (or `Auth`) header to match
 is always behind auth; concurrent syncs of the same repo are serialized with a
 Redis lock. Read routes additionally honor each repo's `visibility`: `public`
 repos are open, while `private`/`internal` repos require the same auth header
-(the Redis refs cache is gated too — it can't leak a private snapshot).
+(the Redis refs cache is gated too — it can't leak a private snapshot). An
+unauthorized caller gets `404`, not `401`, so a private repo is indistinguishable
+from a missing id and its existence is never disclosed.
 
 ### Register and sync
 
@@ -63,9 +65,10 @@ curl -sS 'http://dd-git-rs:8137/api/v1/repos/<id>/log?limit=20'
 - **SSRF / file-disclosure guard (two layers).** At the app layer, `file://`
   remotes are rejected unless `GIT_RS_ALLOW_FILE_URLS=true`; remotes that resolve
   to loopback, link-local, the unspecified address, or the cloud metadata
-  endpoint (`169.254.169.254`) are always blocked (including alternate
-  decimal/hex/octal IP encodings such as `2130706433` or `0x7f000001`), and
-  private networks too when `GIT_RS_BLOCK_PRIVATE_REMOTES=true`. At the network
+  endpoint (`169.254.169.254`) are always blocked — including alternate
+  decimal/hex/octal IP encodings (`2130706433`, `0x7f000001`) and IPv4-mapped
+  IPv6 forms (`::ffff:127.0.0.1`) — and private networks too when
+  `GIT_RS_BLOCK_PRIVATE_REMOTES=true`. At the network
   layer, the `NetworkPolicy` egress `except` list drops packets to those same
   reserved ranges — the backstop for DNS rebinding once the URL is handed to the
   VCS CLI (which the app cannot IP-pin).
@@ -84,6 +87,12 @@ curl -sS 'http://dd-git-rs:8137/api/v1/repos/<id>/log?limit=20'
 - **No prompts.** Credential prompts are disabled (`GIT_TERMINAL_PROMPT=0`,
   `GIT_ASKPASS=/bin/true`, `GIT_CONFIG_GLOBAL=/dev/null`, SSH `BatchMode`,
   `HGPLAIN`).
+- **Untrusted remote content.** Repositories are attacker-controlled, so every
+  git invocation runs with `protocol.ext.allow=never` (the `ext::` transport is
+  arbitrary command execution) and, by default, `transfer/fetch.fsckObjects=true`
+  so malformed objects crafted to hit a parser bug are rejected on receipt
+  (toggle with `GIT_RS_GIT_FSCK_OBJECTS`). Mirrors are bare — no working tree is
+  checked out and no hooks or submodules run.
 
 ## Configuration
 
@@ -107,6 +116,7 @@ curl -sS 'http://dd-git-rs:8137/api/v1/repos/<id>/log?limit=20'
 | `GIT_RS_MAX_BODY_BYTES`          | `65536`                                    | Max request body size.                 |
 | `GIT_RS_ALLOW_FILE_URLS`         | `false`                                    | Permit `file://` remotes (disclosure risk). |
 | `GIT_RS_BLOCK_PRIVATE_REMOTES`   | `false`                                    | Also reject private-network remotes.   |
+| `GIT_RS_GIT_FSCK_OBJECTS`        | `true`                                     | Verify git object integrity on clone/fetch. |
 | `GIT_RS_LOG_FORMAT`              | text                                       | `json` for structured logs.            |
 | `NATS_URL`                       | unset                                      | Publishes sync failures to the         |
 |                                  |                                            | `dd.remote.events.critical` subject.   |
