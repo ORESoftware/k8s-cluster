@@ -51,12 +51,15 @@ spec:
               corepack enable && corepack prepare pnpm@9.15.4 --activate
               src=/cache/dd-next-1
               ref="${DD_REPO_REF:-dev}"
-              repo="https://${GH_PAT}@github.com/dancing-dragons/dd-next-1.git"
+              # Auth via a per-command http.extraheader, NOT embedded in the remote URL — so the
+              # GH_PAT is never persisted in .git/config on the node's (shared) hostPath cache.
+              cleanrepo="https://github.com/dancing-dragons/dd-next-1.git"
+              authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
               if [ -d "$src/.git" ]; then
-                git -C "$src" remote set-url origin "$repo"
-                git -C "$src" fetch --depth 1 origin "$ref" && git -C "$src" reset --hard FETCH_HEAD && git -C "$src" clean -fdx -e node_modules -e .next
+                git -C "$src" remote set-url origin "$cleanrepo"
+                git -c "http.extraheader=$authhdr" -C "$src" fetch --depth 1 origin "$ref" && git -C "$src" reset --hard FETCH_HEAD && git -C "$src" clean -fdx -e node_modules -e .next
               else
-                rm -rf "$src"; git clone --depth 1 --branch "$ref" "$repo" "$src"
+                rm -rf "$src"; git -c "http.extraheader=$authhdr" clone --depth 1 --branch "$ref" "$cleanrepo" "$src"
               fi
               cd "$src"
               # Serve under a gateway subpath: inject Next basePath (env-gated). Without it the app
