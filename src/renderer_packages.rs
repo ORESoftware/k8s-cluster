@@ -805,6 +805,27 @@ mod tests {
     }
 
     #[test]
+    fn plotly_renderer_supports_density_polar_and_extra_marks() {
+        for entry in [
+            "\"density-contour\": \"histogram2dcontour\"",
+            "\"density-heatmap\": \"histogram2d\"",
+            "contour: \"contour\"",
+            "radar: \"scatterpolar\"",
+            "\"polar-bar\": \"barpolar\"",
+            "ohlc: \"ohlc\"",
+            "icicle: \"icicle\"",
+            "funnelarea: \"funnelarea\"",
+            "scatter3d: \"scatter3d\"",
+            "bullet: \"indicator\"",
+        ] {
+            assert!(PLOTLY_TS.contains(entry), "missing trace mapping: {entry}");
+        }
+        for case in ["case \"radar\"", "case \"polar-bar\"", "case \"ohlc\"", "case \"funnelarea\"", "case \"scatter3d\"", "case \"bullet\"", "case \"icicle\""] {
+            assert!(PLOTLY_TS.contains(case), "missing render case: {case}");
+        }
+    }
+
+    #[test]
     fn client_package_integrity_matches_file_set() {
         let package = client_package();
         let total_bytes = package.files.iter().map(|file| file.bytes).sum::<usize>();
