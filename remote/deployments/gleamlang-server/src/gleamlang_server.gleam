@@ -1,4 +1,5 @@
 import dd_cli_config_client
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/io
@@ -12,6 +13,8 @@ const tick_interval_ms = 2000
 
 pub fn main() -> Nil {
   let _ = dd_cli_config_client.load_once()
+  // Start the OpenTelemetry SDK + OTLP exporter before the HTTP supervisor.
+  let _ = dd_otel_client.init("dd-gleamlang-server")
   let broker_name = process.new_name(prefix: "dd_gleamlang_broker")
 
   let _ = pg_contract.app_config_table()

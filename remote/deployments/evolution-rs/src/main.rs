@@ -407,7 +407,7 @@ async fn dispatch_epoch(
         Ok(subscription) => subscription,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} epoch result subscribe failed: {error}");
+            tracing::error!("{SERVICE_NAME} epoch result subscribe failed: {error}");
             return (Vec::new(), true);
         }
     };
@@ -420,7 +420,7 @@ async fn dispatch_epoch(
                     .await
                 {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("{SERVICE_NAME} job publish failed: {error}");
+                    tracing::error!("{SERVICE_NAME} job publish failed: {error}");
                 } else {
                     state
                         .metrics
@@ -428,7 +428,7 @@ async fn dispatch_epoch(
                         .fetch_add(1, Ordering::Relaxed);
                 }
             }
-            Err(error) => eprintln!("{SERVICE_NAME} job serialize failed: {error}"),
+            Err(error) => tracing::error!("{SERVICE_NAME} job serialize failed: {error}"),
         }
     }
     let _ = nats.flush().await;
@@ -472,7 +472,7 @@ async fn run_epoch_locally(state: &AppState, jobs: Vec<IslandJob>) -> (Vec<Islan
             Ok(result) => results.push(result),
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} local island task failed: {error}");
+                tracing::error!("{SERVICE_NAME} local island task failed: {error}");
             }
         }
     }
@@ -510,7 +510,7 @@ fn migrate_ring(populations: &mut [Vec<Vec<f64>>], count: usize) {
 
 async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
     let Some(nats) = state.nats.clone() else {
-        eprintln!("{SERVICE_NAME} island role requires NATS_URL");
+        tracing::error!("{SERVICE_NAME} island role requires NATS_URL");
         return Ok(());
     };
     let jetstream = async_nats::jetstream::new(nats.clone());
@@ -542,7 +542,7 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
         )
         .await?;
 
-    println!("{SERVICE_NAME} island worker ready: consumer={consumer_name} jobs={}", state.jobs_subject);
+    tracing::info!("{SERVICE_NAME} island worker ready: consumer={consumer_name} jobs={}", state.jobs_subject);
     publish_event(&state, "island-started", json!({"consumer": consumer_name})).await;
 
     let mut messages = consumer.messages().await?;
@@ -550,13 +550,13 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
         let message = match message {
             Ok(message) => message,
             Err(error) => {
-                eprintln!("{SERVICE_NAME} island message fetch failed: {error}");
+                tracing::error!("{SERVICE_NAME} island message fetch failed: {error}");
                 continue;
             }
         };
         if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
+            tracing::error!(
                 "{SERVICE_NAME} rejected oversize island job: {} bytes",
                 message.payload.len()
             );
@@ -571,7 +571,7 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                 job
             }
             Err(error) => {
-                eprintln!("{SERVICE_NAME} invalid island job: {error}");
+                tracing::error!("{SERVICE_NAME} invalid island job: {error}");
                 let _ = message.ack().await;
                 continue;
             }
@@ -581,7 +581,7 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
             Ok(result) => result,
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} island evolve task failed: {error}");
+                tracing::error!("{SERVICE_NAME} island evolve task failed: {error}");
                 let _ = message
                     .ack_with(async_nats::jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
                     .await;
@@ -594,17 +594,17 @@ async fn run_island(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                     .publish(state.results_subject.clone(), payload.into())
                     .await
                 {
-                    eprintln!("{SERVICE_NAME} island result publish failed: {error}");
+                    tracing::error!("{SERVICE_NAME} island result publish failed: {error}");
                 }
             }
-            Err(error) => eprintln!("{SERVICE_NAME} island result serialize failed: {error}"),
+            Err(error) => tracing::error!("{SERVICE_NAME} island result serialize failed: {error}"),
         }
         state
             .metrics
             .island_jobs_processed_total
             .fetch_add(1, Ordering::Relaxed);
         if let Err(error) = message.ack().await {
-            eprintln!("{SERVICE_NAME} island ack failed: {error}");
+            tracing::error!("{SERVICE_NAME} island ack failed: {error}");
         }
     }
     Ok(())
@@ -810,11 +810,11 @@ async fn connect_nats(url: &str) -> Option<async_nats::Client> {
     for attempt in 1..=attempts {
         match async_nats::connect(url).await {
             Ok(client) => {
-                println!("{SERVICE_NAME} connected to NATS at {url}");
+                tracing::info!("{SERVICE_NAME} connected to NATS at {url}");
                 return Some(client);
             }
             Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
+                tracing::error!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
                 if attempt < attempts {
                     tokio::time::sleep(retry).await;
                 }
@@ -842,12 +842,14 @@ async fn ensure_stream(client: &async_nats::Client) {
         })
         .await
     {
-        eprintln!("{SERVICE_NAME} ensure stream failed: {error}");
+        tracing::error!("{SERVICE_NAME} ensure stream failed: {error}");
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-evolution-optimizer");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8131").parse::<u16>()?;
     let role = match env_value("EVOLUTION_NODE_ROLE", "master").to_ascii_lowercase().as_str() {
@@ -866,14 +868,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(client) = &nats {
         ensure_stream(client).await;
     } else if role == NodeRole::Island {
-        eprintln!("{SERVICE_NAME} island role has no NATS connection; it will idle until restarted");
+        tracing::error!("{SERVICE_NAME} island role has no NATS connection; it will idle until restarted");
     }
 
     let auth_secret = env::var("EVOLUTION_AUTH_SECRET")
         .ok()
         .filter(|value| !value.trim().is_empty());
     if auth_secret.is_some() {
-        println!("{SERVICE_NAME} /optimize requires a bearer token (EVOLUTION_AUTH_SECRET set)");
+        tracing::info!("{SERVICE_NAME} /optimize requires a bearer token (EVOLUTION_AUTH_SECRET set)");
     }
 
     let state = AppState {
@@ -892,7 +894,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let island_state = state.clone();
         tokio::spawn(async move {
             if let Err(error) = run_island(island_state).await {
-                eprintln!("{SERVICE_NAME} island loop exited: {error}");
+                tracing::error!("{SERVICE_NAME} island loop exited: {error}");
             }
         });
     }
@@ -907,9 +909,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} ({}) listening on http://{addr}", role.as_str());
+    tracing::info!("{SERVICE_NAME} ({}) listening on http://{addr}", role.as_str());
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

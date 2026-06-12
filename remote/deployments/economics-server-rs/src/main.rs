@@ -981,9 +981,9 @@ fn telemetry_log_record(
 fn emit_log(severity_text: &str, event_name: &str, body: &str, attributes: Value) {
     let record = telemetry_log_record(severity_text, event_name, body, attributes).to_string();
     if severity_number(severity_text) >= 17 {
-        eprintln!("{record}");
+        tracing::error!("{record}");
     } else {
-        println!("{record}");
+        tracing::info!("{record}");
     }
 }
 
@@ -8315,6 +8315,8 @@ async fn api_docs_json() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-economics-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8114").parse::<u16>()?;
     // Degrade gracefully if the broker is unreachable at boot: the HTTP API
@@ -8324,7 +8326,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-economics-server NATS connect failed ({url}): {error}");
+                tracing::error!("dd-economics-server NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -8392,7 +8394,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }),
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
@@ -9438,12 +9440,12 @@ mod tests {
                     successes += 1;
                 }
                 Err(error) => {
-                    eprintln!("live public source {source_id} unavailable or changed: {error}");
+                    tracing::error!("live public source {source_id} unavailable or changed: {error}");
                 }
             }
         }
         if successes == 0 {
-            eprintln!("no live public sources were reachable; skipping external assertions");
+            tracing::error!("no live public sources were reachable; skipping external assertions");
             return;
         }
         let stored = state.series_store.read().unwrap().len();

@@ -6,10 +6,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 
+	telemetry "github.com/oresoftware/dd/libs/telemetry-go"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -46,6 +48,12 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if shutdown, terr := telemetry.Init(context.Background(), "dd-thread-operator"); terr != nil {
+		fmt.Fprintf(os.Stderr, "telemetry init failed (continuing without traces): %v\n", terr)
+	} else {
+		defer func() { _ = shutdown(context.Background()) }()
+	}
 
 	cfg := ctrl.GetConfigOrDie()
 	mgrOpts := ctrl.Options{

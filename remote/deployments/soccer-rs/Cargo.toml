@@ -9,6 +9,8 @@ name = "dd-soccer-rs"
 path = "src/main.rs"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 serde = { version = "1", features = ["derive"] }

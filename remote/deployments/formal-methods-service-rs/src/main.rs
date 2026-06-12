@@ -6,9 +6,6 @@ use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::Semaphore;
 use tracing::info;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 use formal_methods_service::analysis::pipeline::Pipeline;
 use formal_methods_service::config::Config;
@@ -21,7 +18,7 @@ use formal_methods_service::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    let _otel = dd_telemetry::init("dd-formal-methods-service");
 
     let config = Config::from_env().context("failed to load configuration from environment")?;
 
@@ -76,29 +73,13 @@ async fn main() -> anyhow::Result<()> {
 
     info!(addr = %bind, "formal-methods-service listening");
 
-    axum::serve(listener, router)
+    axum::serve(listener, router.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;
 
     info!("formal-methods-service shut down cleanly");
     Ok(())
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("formal_methods_service=info,tower_http=info"));
-
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_target(true)
-        .with_level(true)
-        .with_thread_ids(false)
-        .compact();
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt_layer)
-        .init();
 }
 
 async fn shutdown_signal() {

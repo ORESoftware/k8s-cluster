@@ -1857,7 +1857,7 @@ fn app(state: AppState) -> Router {
 
 #[tokio::main]
 async fn main() {
-    init_tracing();
+    let _otel = dd_telemetry::init(SERVICE_NAME);
     rustls::crypto::ring::default_provider().install_default().ok();
 
     let config = config_from_env();
@@ -1886,23 +1886,10 @@ async fn main() {
         .await
         .expect("failed to bind dd-git-rs");
     tracing::info!(%addr, "dd-git-rs listening");
-    axum::serve(listener, app(state))
+    axum::serve(listener, app(state).layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");
-}
-
-fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-    let filter = EnvFilter::try_from_env("RUST_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("dd_git_rs=info,tower_http=info"));
-    let json = first_env(&["GIT_RS_LOG_FORMAT"]).map(|v| v == "json").unwrap_or(false);
-    let registry = tracing_subscriber::registry().with(filter);
-    if json {
-        registry.with(fmt::layer().json()).init();
-    } else {
-        registry.with(fmt::layer()).init();
-    }
 }
 
 async fn shutdown_signal() {

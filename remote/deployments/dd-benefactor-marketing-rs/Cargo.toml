@@ -10,6 +10,7 @@ name = "dd-benefactor-marketing-rs"
 path = "src/main.rs"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 anyhow = "1"
 axum = { version = "0.8", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }

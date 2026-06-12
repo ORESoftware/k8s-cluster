@@ -590,12 +590,12 @@ async fn publish_result(state: &AppState, response: &RouteResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode route result: {error}");
+            tracing::error!("failed to encode route result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        eprintln!(
+        tracing::error!(
             "route result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
             payload.len()
         );
@@ -606,7 +606,7 @@ async fn publish_result(state: &AppState, response: &RouteResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish route result: {error}");
+        tracing::error!("failed to publish route result: {error}");
         return;
     }
     let _ = nats
@@ -721,10 +721,10 @@ async fn optimize_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("route-optimizer nats loop disabled: NATS_URL is not configured");
+        tracing::info!("route-optimizer nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "route-optimizer nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -732,7 +732,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("route-optimizer nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("route-optimizer nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -745,7 +745,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "route-optimizer rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -770,23 +770,25 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("route-optimizer failed nats optimize: {error}");
+                            tracing::error!("route-optimizer failed nats optimize: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("route-optimizer invalid nats request: {error}");
+                        tracing::error!("route-optimizer invalid nats request: {error}");
                     }
                 }
             });
         }
-        eprintln!("route-optimizer subscription ended; re-subscribing in 5s");
+        tracing::error!("route-optimizer subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-route-optimizer");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8132").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -796,7 +798,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-route-optimizer NATS connect failed ({url}): {error}");
+                tracing::error!("dd-route-optimizer NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -827,9 +829,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-route-optimizer listening on http://{addr}");
+    tracing::info!("dd-route-optimizer listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

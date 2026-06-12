@@ -689,7 +689,7 @@ async fn vapi_request(
             .metrics
             .vapi_api_errors_total
             .fetch_add(1, Ordering::Relaxed);
-        eprintln!("vapi request to {path} failed: {error}");
+        tracing::error!("vapi request to {path} failed: {error}");
         VapiError::new(StatusCode::BAD_GATEWAY, "Vapi API request failed")
     })?;
 
@@ -699,7 +699,7 @@ async fn vapi_request(
             .metrics
             .vapi_api_errors_total
             .fetch_add(1, Ordering::Relaxed);
-        eprintln!("vapi response read from {path} failed: {error}");
+        tracing::error!("vapi response read from {path} failed: {error}");
         VapiError::new(StatusCode::BAD_GATEWAY, "Vapi API response read failed")
     })?;
 
@@ -714,7 +714,7 @@ async fn vapi_request(
             .metrics
             .vapi_api_errors_total
             .fetch_add(1, Ordering::Relaxed);
-        eprintln!("vapi {path} returned HTTP {status}");
+        tracing::error!("vapi {path} returned HTTP {status}");
         return Err(VapiError {
             status: StatusCode::BAD_GATEWAY,
             message: format!("Vapi API returned HTTP {status}"),
@@ -1063,7 +1063,7 @@ async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, Str
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("vapi postgres connection error: {error}");
+            tracing::error!("vapi postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -1299,7 +1299,7 @@ async fn caller_context(state: &AppState, caller_hash: &str) -> Result<Value, St
         }
         Ok(None) => query_caller_context_postgres(state, caller_hash).await,
         Err(error) => {
-            eprintln!("vapi redis caller-context lookup failed: {error}");
+            tracing::error!("vapi redis caller-context lookup failed: {error}");
             query_caller_context_postgres(state, caller_hash).await
         }
     }
@@ -1525,7 +1525,7 @@ async fn handle_record_screening_signal_tool(
     )
     .await
     {
-        eprintln!("vapi redis screening-signal cache failed: {error}");
+        tracing::error!("vapi redis screening-signal cache failed: {error}");
     }
 
     persist_call_event(
@@ -2159,9 +2159,9 @@ async fn webhook(headers: HeaderMap, State(state): State<AppState>, body: Bytes)
                 .fetch_add(1, Ordering::Relaxed);
             let ended_reason = message.get("endedReason").and_then(Value::as_str);
             if let Err(error) = persist_end_of_call_report(&state, message).await {
-                eprintln!("vapi end-of-call-report persistence failed: {error}");
+                tracing::error!("vapi end-of-call-report persistence failed: {error}");
             }
-            println!(
+            tracing::info!(
                 "dd-rust-vapi-phone end-of-call-report endedReason={} atMs={}",
                 ended_reason.unwrap_or("unknown"),
                 now_ms()
@@ -2269,7 +2269,7 @@ async fn api_docs_json() -> impl IntoResponse {
 
 async fn shutdown_signal() {
     if let Err(error) = tokio::signal::ctrl_c().await {
-        eprintln!("failed to install Ctrl-C handler: {error}");
+        tracing::error!("failed to install Ctrl-C handler: {error}");
     }
 }
 
@@ -2279,6 +2279,8 @@ fn config_error(message: impl Into<String>) -> std::io::Error {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let _otel = dd_telemetry::init("dd-rust-vapi-phone");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8113");
     let config = load_config().map_err(config_error)?;
@@ -2326,8 +2328,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
-    println!("dd-rust-vapi-phone listening on http://{address}");
-    axum::serve(listener, app)
+    tracing::info!("dd-rust-vapi-phone listening on http://{address}");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

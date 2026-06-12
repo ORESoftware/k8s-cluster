@@ -1123,12 +1123,12 @@ async fn publish_result(state: &AppState, response: &RaftResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode raft result: {error}");
+            tracing::error!("failed to encode raft result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        eprintln!(
+        tracing::error!(
             "raft result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}; the compact events summary is still sent",
             payload.len()
         );
@@ -1137,7 +1137,7 @@ async fn publish_result(state: &AppState, response: &RaftResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish raft result: {error}");
+        tracing::error!("failed to publish raft result: {error}");
     }
     // Fan out a compact transition summary on the consensus events subject.
     let _ = nats
@@ -1290,10 +1290,10 @@ async fn simulate_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("raft-consensus nats loop disabled: NATS_URL is not configured");
+        tracing::info!("raft-consensus nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "raft-consensus nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -1301,7 +1301,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("raft-consensus nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("raft-consensus nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1314,7 +1314,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "raft-consensus rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -1336,23 +1336,25 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("raft-consensus failed nats simulate: {error}");
+                            tracing::error!("raft-consensus failed nats simulate: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("raft-consensus invalid nats request: {error}");
+                        tracing::error!("raft-consensus invalid nats request: {error}");
                     }
                 }
             });
         }
-        eprintln!("raft-consensus subscription ended; re-subscribing in 5s");
+        tracing::error!("raft-consensus subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-raft-consensus");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8135").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -1362,7 +1364,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-raft-consensus NATS connect failed ({url}): {error}");
+                tracing::error!("dd-raft-consensus NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -1394,9 +1396,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-raft-consensus listening on http://{addr}");
+    tracing::info!("dd-raft-consensus listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

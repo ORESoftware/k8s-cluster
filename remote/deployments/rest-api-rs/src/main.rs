@@ -932,7 +932,7 @@ async fn publish_task_event_to_websocket_fanout(
     {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("failed to build websocket fanout client: {error}");
+            tracing::error!("failed to build websocket fanout client: {error}");
             return;
         }
     };
@@ -947,7 +947,7 @@ async fn publish_task_event_to_websocket_fanout(
         )
         .await
         {
-            eprintln!("failed to publish task event to gleam websocket fanout: {error}");
+            tracing::error!("failed to publish task event to gleam websocket fanout: {error}");
         }
     }
 
@@ -961,7 +961,7 @@ async fn publish_task_event_to_websocket_fanout(
         )
         .await
         {
-            eprintln!("failed to publish task event to rust websocket fanout: {error}");
+            tracing::error!("failed to publish task event to rust websocket fanout: {error}");
         }
     }
 }
@@ -1570,15 +1570,15 @@ async fn prune_awake_thread_workers_for_capacity(
         .await
         {
             Ok(result) if result.ok => slept.push(name),
-            Ok(result) => eprintln!(
+            Ok(result) => tracing::error!(
                 "thread capacity prune scale failed: {} status={} body={}",
                 result.resource, result.status, result.body
             ),
-            Err(error) => eprintln!("thread capacity prune failed for {name}: {error}"),
+            Err(error) => tracing::error!("thread capacity prune failed for {name}: {error}"),
         }
     }
     if !slept.is_empty() {
-        eprintln!(
+        tracing::error!(
             "thread capacity prune slept {} old workers before waking {current_name}: {}",
             slept.len(),
             slept.join(", ")
@@ -1744,7 +1744,7 @@ async fn ensure_thread_worker(
     let name = thread_resource_name(thread_id);
     let mut results = Vec::new();
     if let Err(error) = prune_awake_thread_workers_for_capacity(&namespace, &name).await {
-        eprintln!("thread capacity prune skipped before waking {name}: {error}");
+        tracing::error!("thread capacity prune skipped before waking {name}: {error}");
     }
     let deployment = render_thread_deployment(
         &namespace,
@@ -1871,7 +1871,7 @@ async fn scale_thread_runtime(
         )
         .await
         {
-            eprintln!("failed to publish thread runtime event: {error}");
+            tracing::error!("failed to publish thread runtime event: {error}");
         }
     }
     let status = if response.ok {
@@ -1922,7 +1922,7 @@ async fn delete_thread_runtime(thread_id: String, task_id: Option<String>) -> Re
         )
         .await
         {
-            eprintln!("failed to publish thread runtime event: {error}");
+            tracing::error!("failed to publish thread runtime event: {error}");
         }
     }
     let status = if response.ok {
@@ -1980,7 +1980,7 @@ async fn ensure_thread_worker_for_control(
         publish_thread_runtime_event_to_nats(thread_id, task_id, action, "waking", waking_message)
             .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
 
     let repo_config = match fetch_thread_repo_config_from_postgres(thread_id).await {
@@ -2047,7 +2047,7 @@ async fn ensure_thread_worker_for_control(
         publish_thread_runtime_event_to_nats(thread_id, task_id, action, "awake", awake_message)
             .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
 
     Ok((namespace, name, secret))
@@ -2084,7 +2084,7 @@ async fn merge_thread_upstream(thread_id: String, request: ThreadControlRequest)
     )
     .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
     if let Err(error) = k8s_json_request(
         reqwest::Method::PATCH,
@@ -2127,7 +2127,7 @@ async fn merge_thread_upstream(thread_id: String, request: ThreadControlRequest)
     )
     .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
 
     let client = reqwest::Client::new();
@@ -2207,7 +2207,7 @@ async fn open_thread_pr(thread_id: String, request: ThreadControlRequest) -> Res
     )
     .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
     if let Err(error) = k8s_json_request(
         reqwest::Method::PATCH,
@@ -2249,7 +2249,7 @@ async fn open_thread_pr(thread_id: String, request: ThreadControlRequest) -> Res
     )
     .await
     {
-        eprintln!("failed to publish thread runtime event: {error}");
+        tracing::error!("failed to publish thread runtime event: {error}");
     }
 
     let client = reqwest::Client::new();
@@ -2621,7 +2621,7 @@ async fn fetch_agents_snapshot(limit: i64) -> AgentsSnapshot {
                 };
             }
             Err(error) => {
-                eprintln!("agent tasks postgres data source error: {error}");
+                tracing::error!("agent tasks postgres data source error: {error}");
                 errors.push(public_data_source_error("postgres"));
             }
         }
@@ -2642,7 +2642,7 @@ async fn fetch_agents_snapshot(limit: i64) -> AgentsSnapshot {
                 };
             }
             Err(error) => {
-                eprintln!("agent tasks supabase data source error: {error}");
+                tracing::error!("agent tasks supabase data source error: {error}");
                 errors.push(public_data_source_error("supabase"));
             }
         }
@@ -2677,7 +2677,7 @@ async fn connect_postgres_with_url(database_url: &str) -> Result<tokio_postgres:
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("agent tasks postgres connection error: {error}");
+            tracing::error!("agent tasks postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -5051,10 +5051,10 @@ async fn publish_task_to_nats(
             )
             .await
             {
-                eprintln!("failed to publish task handoff event to nats: {error}");
+                tracing::error!("failed to publish task handoff event to nats: {error}");
             }
         }
-        Err(error) => eprintln!("failed to persist task handoff event: {error}"),
+        Err(error) => tracing::error!("failed to persist task handoff event: {error}"),
     }
     client.flush().await.map_err(|error| error.to_string())?;
     Ok(())
@@ -5074,7 +5074,7 @@ async fn run_cdc_fanout_subscriptions() {
     let nats = match async_nats::connect(nats_url()).await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("dd-remote-rest-api cdc fanout disabled: nats connect failed: {error}");
+            tracing::error!("dd-remote-rest-api cdc fanout disabled: nats connect failed: {error}");
             return;
         }
     };
@@ -5110,7 +5110,7 @@ async fn run_cdc_fanout_subscriptions() {
                     let bytes = match serde_json::to_vec(&payload) {
                         Ok(b) => b,
                         Err(error) => {
-                            eprintln!("cdc lambda fanout encode failed: {error}");
+                            tracing::error!("cdc lambda fanout encode failed: {error}");
                             return;
                         }
                     };
@@ -5118,18 +5118,18 @@ async fn run_cdc_fanout_subscriptions() {
                         .publish(nats_lambda_functions_subject(), bytes.into())
                         .await
                     {
-                        eprintln!("cdc lambda fanout publish failed: {error}");
+                        tracing::error!("cdc lambda fanout publish failed: {error}");
                     }
                 }
             })
             .await;
         match result {
-            Ok(_) => println!(
+            Ok(_) => tracing::info!(
                 "rest-api cdc subscription started: durable={durable} \
                  subject=cdc.public.lambda_functions.> -> {}",
                 nats_lambda_functions_subject()
             ),
-            Err(error) => eprintln!("rest-api cdc lambda subscription failed to start: {error}"),
+            Err(error) => tracing::error!("rest-api cdc lambda subscription failed to start: {error}"),
         }
     }
 
@@ -5158,7 +5158,7 @@ async fn run_cdc_fanout_subscriptions() {
                     let bytes = match serde_json::to_vec(&payload) {
                         Ok(b) => b,
                         Err(error) => {
-                            eprintln!("cdc git-repo fanout encode failed: {error}");
+                            tracing::error!("cdc git-repo fanout encode failed: {error}");
                             return;
                         }
                     };
@@ -5166,18 +5166,18 @@ async fn run_cdc_fanout_subscriptions() {
                         .publish(nats_git_repos_changes_subject(), bytes.into())
                         .await
                     {
-                        eprintln!("cdc git-repo fanout publish failed: {error}");
+                        tracing::error!("cdc git-repo fanout publish failed: {error}");
                     }
                 }
             })
             .await;
         match result {
-            Ok(_) => println!(
+            Ok(_) => tracing::info!(
                 "rest-api cdc subscription started: durable={durable} \
                  subject=cdc.public.known_git_repos.> -> {}",
                 nats_git_repos_changes_subject()
             ),
-            Err(error) => eprintln!("rest-api cdc git-repo subscription failed to start: {error}"),
+            Err(error) => tracing::error!("rest-api cdc git-repo subscription failed to start: {error}"),
         }
     }
 
@@ -5203,7 +5203,7 @@ async fn run_cdc_fanout_subscriptions() {
                 async move {
                     let Some(payload) = task_event_payload_from_agent_event_change(&change) else {
                         if !matches!(change.op, dd_wal_consumer::ChangeOp::Delete) {
-                            eprintln!(
+                            tracing::error!(
                                 "cdc agent-event fanout skipped malformed row: lsn={}",
                                 change.lsn
                             );
@@ -5213,24 +5213,24 @@ async fn run_cdc_fanout_subscriptions() {
                     let bytes = match serde_json::to_vec(&payload) {
                         Ok(b) => b,
                         Err(error) => {
-                            eprintln!("cdc agent-event fanout encode failed: {error}");
+                            tracing::error!("cdc agent-event fanout encode failed: {error}");
                             return;
                         }
                     };
                     if let Err(error) = nats.publish(nats_event_subject(), bytes.into()).await {
-                        eprintln!("cdc agent-event fanout publish failed: {error}");
+                        tracing::error!("cdc agent-event fanout publish failed: {error}");
                     }
                 }
             })
             .await;
         match result {
-            Ok(_) => println!(
+            Ok(_) => tracing::info!(
                 "rest-api cdc subscription started: durable={durable} \
                  subject=cdc.public.agent_remote_dev_events.> -> {}",
                 nats_event_subject()
             ),
             Err(error) => {
-                eprintln!("rest-api cdc agent-event subscription failed to start: {error}")
+                tracing::error!("rest-api cdc agent-event subscription failed to start: {error}")
             }
         }
     }
@@ -5431,7 +5431,7 @@ async fn supabase_get(http: &reqwest::Client, url: &str, key: &str) -> Result<Ve
     let status = response.status();
     let body = response.text().await.map_err(|error| error.to_string())?;
     if !status.is_success() {
-        eprintln!(
+        tracing::error!(
             "agent tasks supabase http error: status={} body={}",
             status.as_u16(),
             body.chars().take(300).collect::<String>()
@@ -5557,7 +5557,7 @@ async fn lambda_functions(Query(query): Query<LambdasQuery>) -> impl IntoRespons
             errors: Vec::new(),
         }),
         Err(error) => {
-            eprintln!("lambda functions postgres data source error: {error}");
+            tracing::error!("lambda functions postgres data source error: {error}");
             Json(LambdaFunctionsResponse {
                 ok: false,
                 source: "postgres".to_string(),
@@ -5584,7 +5584,7 @@ async fn lambda_function(Path(identifier): Path<String>) -> Response {
             Json(json!({ "ok": true, "source": "postgres", "function": function })).into_response()
         }
         Err(error) => {
-            eprintln!("lambda function fetch failed: {error}");
+            tracing::error!("lambda function fetch failed: {error}");
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({ "error": "lambda function not found" })),
@@ -5607,12 +5607,12 @@ async fn create_lambda_function(Json(request): Json<LambdaFunctionSaveRequest>) 
     match insert_lambda_function_to_postgres(&request).await {
         Ok(function) => {
             if let Err(error) = publish_lambda_function_update_to_nats("created", &function).await {
-                eprintln!("lambda function nats publish failed: {error}");
+                tracing::error!("lambda function nats publish failed: {error}");
             }
             Json(json!({ "ok": true, "source": "postgres", "function": function })).into_response()
         }
         Err(error) => {
-            eprintln!("lambda function create failed: {error}");
+            tracing::error!("lambda function create failed: {error}");
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "failed to create lambda function" })),
@@ -5638,12 +5638,12 @@ async fn update_lambda_function(
     match update_lambda_function_in_postgres(&id, &request).await {
         Ok(function) => {
             if let Err(error) = publish_lambda_function_update_to_nats("updated", &function).await {
-                eprintln!("lambda function nats publish failed: {error}");
+                tracing::error!("lambda function nats publish failed: {error}");
             }
             Json(json!({ "ok": true, "source": "postgres", "function": function })).into_response()
         }
         Err(error) => {
-            eprintln!("lambda function update failed: {error}");
+            tracing::error!("lambda function update failed: {error}");
             (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "failed to update lambda function" })),
@@ -5728,7 +5728,7 @@ async fn agent_task_feedback(
         }))
         .into_response(),
         Err(error) => {
-            eprintln!("agent feedback persist failed: {error}");
+            tracing::error!("agent feedback persist failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": public_data_source_error("postgres feedback") })),
@@ -5812,7 +5812,7 @@ async fn thread_context_candidates(
     match fetch_agent_context_candidates_from_postgres(&thread_id, &request).await {
         Ok(response) => Json(response).into_response(),
         Err(error) => {
-            eprintln!("agent context candidate lookup failed: {error}");
+            tracing::error!("agent context candidate lookup failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
@@ -5863,7 +5863,7 @@ async fn dispatch_thread_task(
                 repo_config = stored_config;
             }
             Ok(None) => {}
-            Err(error) => eprintln!("failed to fetch thread repo config before dispatch: {error}"),
+            Err(error) => tracing::error!("failed to fetch thread repo config before dispatch: {error}"),
         }
         match fetch_existing_task_dispatch_from_postgres(&request.task_id).await {
             Ok(Some(existing)) => {
@@ -5892,7 +5892,7 @@ async fn dispatch_thread_task(
                 }
             }
             Ok(None) => {}
-            Err(error) => eprintln!("failed to check existing task before dispatch: {error}"),
+            Err(error) => tracing::error!("failed to check existing task before dispatch: {error}"),
         }
     }
 
@@ -5910,7 +5910,7 @@ async fn dispatch_thread_task(
     )
     .await
     {
-        eprintln!("failed to persist remote task before worker wake: {error}");
+        tracing::error!("failed to persist remote task before worker wake: {error}");
     }
     if queued_dispatch {
         match persist_task_status_event(
@@ -5939,12 +5939,12 @@ async fn dispatch_thread_task(
                 )
                 .await;
             }
-            Err(error) => eprintln!("failed to persist queued dispatch accepted event: {error}"),
+            Err(error) => tracing::error!("failed to persist queued dispatch accepted event: {error}"),
         }
         match publish_task_dispatch_to_nats(&request, None).await {
             Ok(()) => {}
             Err(error) => {
-                eprintln!("failed to publish queued remote task to nats: {error}");
+                tracing::error!("failed to publish queued remote task to nats: {error}");
                 match persist_task_status_event(
                     Some(&thread_id),
                     &request.task_id,
@@ -5973,7 +5973,7 @@ async fn dispatch_thread_task(
                         .await;
                     }
                     Err(persist_error) => {
-                        eprintln!(
+                        tracing::error!(
                             "failed to persist queued dispatch publish failure: {persist_error}"
                         );
                     }
@@ -6032,7 +6032,7 @@ async fn dispatch_thread_task(
         match fetch_selected_agent_context_from_postgres(&request, &repo_config).await {
             Ok(items) => items,
             Err(error) => {
-                eprintln!("failed to fetch selected agent context: {error}");
+                tracing::error!("failed to fetch selected agent context: {error}");
                 return (
                     StatusCode::BAD_GATEWAY,
                     Json(json!({ "error": public_data_source_error("postgres selected context") })),
@@ -6078,7 +6078,7 @@ async fn dispatch_thread_task(
                 if let Err(error) =
                     persist_runtime_task_to_postgres(&request, branch.as_deref(), "running").await
                 {
-                    eprintln!("failed to persist remote task to postgres: {error}");
+                    tracing::error!("failed to persist remote task to postgres: {error}");
                 }
             }
             let public_status =
@@ -6091,7 +6091,7 @@ async fn dispatch_thread_task(
                 .into_response()
         }
         Err(error) => {
-            eprintln!("thread worker dispatch proxy failed: {error}");
+            tracing::error!("thread worker dispatch proxy failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": public_thread_worker_proxy_error("dispatch") })),
@@ -6131,7 +6131,7 @@ async fn ingest_agent_event(
             Json(json!({ "ok": true })).into_response()
         }
         Err(error) => {
-            eprintln!("agent event ingest failed: {error}");
+            tracing::error!("agent event ingest failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": public_data_source_error("postgres event ingest") })),
@@ -6173,7 +6173,7 @@ async fn ingest_agent_breadcrumb(
     match persist_agent_breadcrumb_to_postgres(&request).await {
         Ok(row) => Json(json!({ "ok": true, "breadcrumb": row })).into_response(),
         Err(error) => {
-            eprintln!("agent breadcrumb ingest failed: {error}");
+            tracing::error!("agent breadcrumb ingest failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
@@ -6227,7 +6227,7 @@ async fn agent_thread_breadcrumb_tail(
         })
         .into_response(),
         Err(error) => {
-            eprintln!("agent breadcrumb tail fetch failed: {error}");
+            tracing::error!("agent breadcrumb tail fetch failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
@@ -6253,7 +6253,7 @@ async fn prepare_thread(headers: HeaderMap, Path(thread_id): Path<String>) -> Re
     match prepare_thread_worker(&thread_id).await {
         Ok(response) => Json(response).into_response(),
         Err(error) => {
-            eprintln!("thread worker prepare failed: {error}");
+            tracing::error!("thread worker prepare failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": public_thread_worker_proxy_error("prepare") })),
@@ -6367,7 +6367,7 @@ async fn stream_thread_task(Path((thread_id, task_id)): Path<(String, String)>) 
                 })
         }
         Err(error) => {
-            eprintln!("thread worker stream proxy failed: {error}");
+            tracing::error!("thread worker stream proxy failed: {error}");
             (
                 StatusCode::BAD_GATEWAY,
                 public_thread_worker_proxy_error("stream"),
@@ -6665,6 +6665,8 @@ fn app_router() -> Router {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-remote-rest-api");
+
     // Fail fast at startup if `remote/libs/pg-defs/schema/schema.sql`
     // has drifted away from what this service reads or writes against
     // RDS Postgres. The CI workflow `pg-defs-check` also enforces this
@@ -6687,12 +6689,12 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("dd-remote-rest-api listening on http://{address}");
+    tracing::info!("dd-remote-rest-api listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

@@ -2025,6 +2025,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-bastion");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = first_env(&["PORT", "BASTION_PORT"])
         .and_then(|value| value.parse::<u16>().ok())
@@ -2054,11 +2056,11 @@ async fn main() {
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    println!("{SERVICE_NAME} listening on {addr}");
+    tracing::info!("{SERVICE_NAME} listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind bastion listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = signal::ctrl_c().await;
         })

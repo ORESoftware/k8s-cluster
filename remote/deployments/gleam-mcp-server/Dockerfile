@@ -1,4 +1,9 @@
 FROM ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+# The OpenTelemetry exporter transitively pulls in ts_chatterbox, which sets
+# `warnings_as_errors` and uses a now-deprecated `catch ...` form that Erlang/OTP
+# 29 promotes to a hard error. Suppressing that one deprecation warning keeps the
+# dependency compiling; it is a no-op on older OTP releases.
+ENV ERL_COMPILER_OPTIONS="[nowarn_deprecated_catch]"
 RUN apk add --no-cache postgresql-client
 
 WORKDIR /app
@@ -13,6 +18,7 @@ COPY remote/deployments/gleam-mcp-server/src ./remote/deployments/gleam-mcp-serv
 COPY remote/libs/pg-defs/generated/gleam ./remote/libs/pg-defs/generated/gleam
 COPY remote/libs/runtime-config-client-gleam ./remote/libs/runtime-config-client-gleam
 COPY remote/libs/nats/subject-defs/generated/gleam ./remote/libs/nats/subject-defs/generated/gleam
+COPY remote/libs/otel-client-gleam ./remote/libs/otel-client-gleam
 
 WORKDIR /app/remote/deployments/gleam-mcp-server
 

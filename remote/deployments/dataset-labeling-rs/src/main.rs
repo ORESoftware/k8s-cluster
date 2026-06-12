@@ -956,7 +956,7 @@ async fn maybe_submit_pipeline_job(state: &AppState, request_id: &str, dataset_i
         Ok(job) => Some(job),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("dataset-labeling pipeline job creation failed: {error}");
+            tracing::error!("dataset-labeling pipeline job creation failed: {error}");
             None
         }
     }
@@ -976,7 +976,7 @@ async fn publish_json(state: &AppState, subject: &str, value: &Value) {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("dataset-labeling failed to encode nats payload: {error}");
+            tracing::error!("dataset-labeling failed to encode nats payload: {error}");
         }
     }
 }
@@ -1459,10 +1459,10 @@ async fn api_docs_json() -> impl IntoResponse {
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("dataset-labeling nats loop disabled: NATS_URL is not configured");
+        tracing::info!("dataset-labeling nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "dataset-labeling nats loop starting: subject={} queueGroup={}",
         state.config.task_request_subject, state.config.queue_group
     );
@@ -1473,7 +1473,7 @@ async fn run_nats_loop(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("dataset-labeling nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("dataset-labeling nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1483,7 +1483,7 @@ async fn run_nats_loop(state: AppState) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "dataset-labeling rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -1493,11 +1493,11 @@ async fn run_nats_loop(state: AppState) {
             tokio::spawn(async move {
                 if let Err(error) = handle_nats_request(&task_state, &payload).await {
                     task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("dataset-labeling nats request failed: {error}");
+                    tracing::error!("dataset-labeling nats request failed: {error}");
                 }
             });
         }
-        eprintln!("dataset-labeling nats subscription ended; re-subscribing in 5s");
+        tracing::error!("dataset-labeling nats subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -1531,6 +1531,8 @@ async fn handle_nats_request(state: &AppState, payload: &[u8]) -> Result<(), Str
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-dataset-labeling");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8138").parse::<u16>()?;
     let config = config_from_env();
@@ -1538,14 +1540,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // crash loudly here instead of silently 401-ing every request, and an
     // unauthenticated deployment must be an explicit, visible opt-in.
     if config.server_auth_secret.is_none() && !config.allow_unauthenticated {
-        eprintln!(
+        tracing::error!(
             "{SERVICE_NAME} refusing to start: set SERVER_AUTH_SECRET, or explicitly opt into \
              unauthenticated mode with DATASET_LABELING_ALLOW_UNAUTHENTICATED=true"
         );
         return Err("operator auth is not configured".into());
     }
     if config.allow_unauthenticated {
-        eprintln!(
+        tracing::error!(
             "{SERVICE_NAME} WARNING: DATASET_LABELING_ALLOW_UNAUTHENTICATED=true; operator endpoints are UNAUTHENTICATED"
         );
     }
@@ -1555,7 +1557,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect failed ({url}): {error}");
+                tracing::error!("{SERVICE_NAME} NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -1591,9 +1593,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

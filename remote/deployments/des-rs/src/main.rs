@@ -2937,7 +2937,7 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
         "soccer-sim.html" | SOCCER_SIM_META_JSON | SOCCER_SIM_FRAMES_JSONL
     ) {
         if let Err(err) = ensure_soccer_playback_artifacts(&state).await {
-            eprintln!("[dd-des-rs] soccer playback render failed: {err}");
+            tracing::error!("[dd-des-rs] soccer playback render failed: {err}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "soccer playback render failed",
@@ -3374,6 +3374,8 @@ fn work_dir() -> PathBuf {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-des-rs");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8112").parse::<u16>()?;
 
@@ -3436,18 +3438,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             {
                 if let Err(SimMatchError::TooMany { count, .. }) = checked_sim_names(&needle, false)
                 {
-                    eprintln!(
+                    tracing::error!(
                         "[dd-des-rs] startup `{needle}` skipped: filter matches {count} sim(s); use narrower DES_STARTUP_SIMS entries"
                     );
                     continue;
                 }
                 let outcomes = run_filter(&startup_state, needle.clone(), false).await;
-                println!(
+                tracing::info!(
                     "[dd-des-rs] startup `{needle}`: ran {} sim(s)",
                     outcomes.len()
                 );
             }
-            println!("[dd-des-rs] startup catalogue complete");
+            tracing::info!("[dd-des-rs] startup catalogue complete");
         });
     }
 
@@ -3495,12 +3497,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!(
+    tracing::info!(
         "dd-des-rs listening on http://{addr} (out dir: {})",
         work.join("out").display()
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

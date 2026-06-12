@@ -600,12 +600,12 @@ async fn publish_result(state: &AppState, response: &SimResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode monte-carlo result: {error}");
+            tracing::error!("failed to encode monte-carlo result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        eprintln!(
+        tracing::error!(
             "monte-carlo result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
             payload.len()
         );
@@ -616,7 +616,7 @@ async fn publish_result(state: &AppState, response: &SimResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish monte-carlo result: {error}");
+        tracing::error!("failed to publish monte-carlo result: {error}");
         return;
     }
     let _ = nats
@@ -733,10 +733,10 @@ async fn simulate_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("monte-carlo nats loop disabled: NATS_URL is not configured");
+        tracing::info!("monte-carlo nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "monte-carlo nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -744,7 +744,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("monte-carlo subscribe failed: {error}; retrying in 5s");
+                tracing::error!("monte-carlo subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -757,7 +757,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "monte-carlo rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -783,23 +783,25 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("monte-carlo failed nats simulate: {error}");
+                            tracing::error!("monte-carlo failed nats simulate: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("monte-carlo invalid nats request: {error}");
+                        tracing::error!("monte-carlo invalid nats request: {error}");
                     }
                 }
             });
         }
-        eprintln!("monte-carlo subscription ended; re-subscribing in 5s");
+        tracing::error!("monte-carlo subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-monte-carlo-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8134").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -809,7 +811,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("monte-carlo-server NATS connect failed ({url}): {error}");
+                tracing::error!("monte-carlo-server NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -840,9 +842,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-monte-carlo-server listening on http://{addr}");
+    tracing::info!("dd-monte-carlo-server listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

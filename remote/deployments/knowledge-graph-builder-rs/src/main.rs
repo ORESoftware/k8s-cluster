@@ -1240,7 +1240,7 @@ async fn maybe_submit_pipeline_job(state: &AppState, request_id: &str, graph_id:
         Ok(job) => Some(job),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("knowledge-graph pipeline job creation failed: {error}");
+            tracing::error!("knowledge-graph pipeline job creation failed: {error}");
             None
         }
     }
@@ -1260,7 +1260,7 @@ async fn publish_json(state: &AppState, subject: &str, value: &Value) {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("knowledge-graph failed to encode nats payload: {error}");
+            tracing::error!("knowledge-graph failed to encode nats payload: {error}");
         }
     }
 }
@@ -1742,10 +1742,10 @@ async fn api_docs_json() -> impl IntoResponse {
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("knowledge-graph nats loop disabled: NATS_URL is not configured");
+        tracing::info!("knowledge-graph nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "knowledge-graph nats loop starting: subject={} queueGroup={}",
         state.config.build_request_subject, state.config.queue_group
     );
@@ -1756,7 +1756,7 @@ async fn run_nats_loop(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("knowledge-graph nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("knowledge-graph nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1766,7 +1766,7 @@ async fn run_nats_loop(state: AppState) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "knowledge-graph rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -1789,23 +1789,25 @@ async fn run_nats_loop(state: AppState) {
                         };
                         if let Err(error) = result {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("knowledge-graph nats request failed: {error}");
+                            tracing::error!("knowledge-graph nats request failed: {error}");
                         }
                     }
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("knowledge-graph invalid nats payload: {error}");
+                        tracing::error!("knowledge-graph invalid nats payload: {error}");
                     }
                 }
             });
         }
-        eprintln!("knowledge-graph nats subscription ended; re-subscribing in 5s");
+        tracing::error!("knowledge-graph nats subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-knowledge-graph-builder");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8137").parse::<u16>()?;
     let config = config_from_env();
@@ -1813,14 +1815,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // crash loudly here instead of silently 401-ing every request, and an
     // unauthenticated deployment must be an explicit, visible opt-in.
     if config.server_auth_secret.is_none() && !config.allow_unauthenticated {
-        eprintln!(
+        tracing::error!(
             "{SERVICE_NAME} refusing to start: set SERVER_AUTH_SECRET, or explicitly opt into \
              unauthenticated mode with KNOWLEDGE_GRAPH_ALLOW_UNAUTHENTICATED=true"
         );
         return Err("operator auth is not configured".into());
     }
     if config.allow_unauthenticated {
-        eprintln!(
+        tracing::error!(
             "{SERVICE_NAME} WARNING: KNOWLEDGE_GRAPH_ALLOW_UNAUTHENTICATED=true; operator endpoints are UNAUTHENTICATED"
         );
     }
@@ -1830,7 +1832,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect failed ({url}): {error}");
+                tracing::error!("{SERVICE_NAME} NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -1867,9 +1869,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

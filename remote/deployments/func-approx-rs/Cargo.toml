@@ -5,6 +5,8 @@ edition = "2021"
 description = "Eureqa-style function approximator. Given data it discovers a non-linear regression model three ways: genetic-programming symbolic regression that returns human-readable analytic equations along an accuracy/complexity Pareto front, a backprop-trained MLP (analytic gradients), and an evolution-strategy neuroevolution that evolves MLP weights gradient-free. Symbolic regression fuses analytic least-squares (Keijzer linear scaling) with evolutionary search and reports simplified equations plus their symbolic derivatives."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 # Source-of-truth NATS subject constants for the fit request/result lane and the

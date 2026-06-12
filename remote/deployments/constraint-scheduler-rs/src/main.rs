@@ -573,12 +573,12 @@ async fn publish_result(state: &AppState, response: &ScheduleResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode schedule result: {error}");
+            tracing::error!("failed to encode schedule result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        eprintln!(
+        tracing::error!(
             "schedule result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
             payload.len()
         );
@@ -589,7 +589,7 @@ async fn publish_result(state: &AppState, response: &ScheduleResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish schedule result: {error}");
+        tracing::error!("failed to publish schedule result: {error}");
         return;
     }
     let _ = nats
@@ -702,10 +702,10 @@ async fn schedule_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("constraint-scheduler nats loop disabled: NATS_URL is not configured");
+        tracing::info!("constraint-scheduler nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "constraint-scheduler nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -713,7 +713,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("constraint-scheduler subscribe failed: {error}; retrying in 5s");
+                tracing::error!("constraint-scheduler subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -726,7 +726,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "constraint-scheduler rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -751,23 +751,25 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("constraint-scheduler failed nats schedule: {error}");
+                            tracing::error!("constraint-scheduler failed nats schedule: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("constraint-scheduler invalid nats request: {error}");
+                        tracing::error!("constraint-scheduler invalid nats request: {error}");
                     }
                 }
             });
         }
-        eprintln!("constraint-scheduler subscription ended; re-subscribing in 5s");
+        tracing::error!("constraint-scheduler subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-constraint-scheduler");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8131").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -777,7 +779,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("constraint-scheduler NATS connect failed ({url}): {error}");
+                tracing::error!("constraint-scheduler NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -808,9 +810,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-constraint-scheduler listening on http://{addr}");
+    tracing::info!("dd-constraint-scheduler listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

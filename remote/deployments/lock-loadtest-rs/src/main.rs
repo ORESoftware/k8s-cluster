@@ -709,13 +709,7 @@ fn unix_now_ms() -> u64 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .compact()
-        .init();
+    let _otel = dd_telemetry::init("dd-lock-loadtest-rs");
 
     let bind: SocketAddr = std::env::var("HTTP_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8120".to_string())
@@ -745,7 +739,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(?bind, "dd-lock-loadtest-rs listening");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             // Honour both SIGINT (developer Ctrl-C) and SIGTERM
             // (kubelet sending us a clean shutdown).

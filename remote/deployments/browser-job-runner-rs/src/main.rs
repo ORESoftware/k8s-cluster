@@ -492,7 +492,7 @@ async fn run_tracker_loop(state: AppState) {
             let mut jobs = state.jobs.lock().await;
             if jobs.remove(id).is_some() {
                 state.metrics.killed_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("browser-job killed overrun job={id} container={container_name}");
+                tracing::error!("browser-job killed overrun job={id} container={container_name}");
             }
         }
     }
@@ -511,12 +511,12 @@ async fn connect_nats_loop(state: AppState) {
         {
             Ok(client) => {
                 *state.nats.lock().await = Some(client);
-                println!("dd-browser-job-runner connected to NATS at {}", state.config.nats_url);
+                tracing::info!("dd-browser-job-runner connected to NATS at {}", state.config.nats_url);
                 return;
             }
             Err(error) => {
                 attempt = attempt.saturating_add(1);
-                eprintln!(
+                tracing::error!(
                     "dd-browser-job-runner NATS connect attempt {attempt} failed: {error}; retrying"
                 );
                 sleep(Duration::from_secs(5)).await;
@@ -580,7 +580,7 @@ async fn publish_run_result(
     let payload = match serde_json::to_vec(result) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("browser-job result serialize failed job={}: {error}", tracked.job_id);
+            tracing::error!("browser-job result serialize failed job={}: {error}", tracked.job_id);
             return;
         }
     };
@@ -588,7 +588,7 @@ async fn publish_run_result(
         .publish(tracked.result_subject.clone(), payload.clone().into())
         .await
     {
-        eprintln!("browser-job result publish failed job={}: {error}", tracked.job_id);
+        tracing::error!("browser-job result publish failed job={}: {error}", tracked.job_id);
     }
     if !config.result_fanout_subject.is_empty() {
         let _ = client
@@ -629,14 +629,14 @@ async fn process_job(state: AppState, tracked: TrackedJob, spec: Value, max_ms: 
                 }
                 Err(reason) => {
                     state.metrics.pool_failures_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!(
+                    tracing::error!(
                         "browser-job pool path unavailable job={} ({reason}); falling back to nerdctl",
                         tracked.job_id
                     );
                 }
             }
         } else {
-            eprintln!(
+            tracing::error!(
                 "browser-job pool path skipped job={} (no NATS client yet); using nerdctl fallback",
                 tracked.job_id
             );
@@ -659,7 +659,7 @@ async fn fallback_spawn(state: &AppState, tracked: &TrackedJob, spec: &Value, ma
                 let failed = failed_result_value(tracked, "browser job fallback concurrency limit reached");
                 publish_run_result(&client, tracked, &failed, &state.config).await;
             }
-            eprintln!("browser-job fallback rejected job={} (concurrency limit)", tracked.job_id);
+            tracing::error!("browser-job fallback rejected job={} (concurrency limit)", tracked.job_id);
             return;
         }
         jobs.insert(tracked.job_id.clone(), tracked.clone());
@@ -675,7 +675,7 @@ async fn fallback_spawn(state: &AppState, tracked: &TrackedJob, spec: &Value, ma
             state.metrics.spawn_failures_total.fetch_add(1, Ordering::Relaxed);
             state.jobs.lock().await.remove(&tracked.job_id);
             force_remove(&state.config, &tracked.container_name).await;
-            eprintln!("browser-job fallback spawn failed job={}: {error}", tracked.job_id);
+            tracing::error!("browser-job fallback spawn failed job={}: {error}", tracked.job_id);
             if let Some(client) = state.nats.lock().await.clone() {
                 let failed = failed_result_value(tracked, &format!("fallback spawn failed: {error}"));
                 publish_run_result(&client, tracked, &failed, &state.config).await;
@@ -951,9 +951,11 @@ fn metrics_response(body: String) -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-browser-job-runner");
+
     let config = Arc::new(config_from_env());
     if config.server_auth_secret.is_none() && !config.allow_unauthenticated {
-        eprintln!(
+        tracing::error!(
             "dd-browser-job-runner: SERVER_AUTH_SECRET is unset and BROWSER_JOB_ALLOW_UNAUTHENTICATED \
              is false; POST /run will reject every request until a secret is provided"
         );
@@ -980,15 +982,15 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .unwrap_or_else(|error| panic!("failed to bind {bind}: {error}"));
-    println!(
+    tracing::info!(
         "dd-browser-job-runner listening on {bind} (namespace={} image={} maxConcurrent={} maxLifetime={}s)",
         config.containerd_namespace, config.image, config.max_concurrent, config.max_lifetime_seconds
     );
 
-    axum::serve(listener, router(state))
+    axum::serve(listener, router(state).layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
-            println!("dd-browser-job-runner shutting down");
+            tracing::info!("dd-browser-job-runner shutting down");
         })
         .await
         .expect("server error");

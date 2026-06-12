@@ -46,6 +46,7 @@ from dd_nats_subject_defs import (  # noqa: E402 - sys.path setup above
     TELEMETRY_RAW_QUEUE_GROUP,
     TELEMETRY_RAW_SUBJECT,
 )
+from otel import init_telemetry, instrument_handler  # noqa: E402 - sibling module in src/
 
 
 def read_int_env(
@@ -1260,6 +1261,7 @@ class PipelineHTTPServer(ThreadingHTTPServer):
         self.runtime_config = RuntimeConfigClient()
 
 
+@instrument_handler
 class Handler(BaseHTTPRequestHandler):
     server: PipelineHTTPServer
     server_version = SERVICE_NAME
@@ -1416,6 +1418,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    init_telemetry(SERVICE_NAME)
     config = Config()
     if not config.server_auth_secret and not config.allow_unauthenticated:
         raise RuntimeError("SERVER_AUTH_SECRET is required unless ML_ALLOW_UNAUTHENTICATED=true")

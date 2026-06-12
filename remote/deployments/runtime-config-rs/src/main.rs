@@ -462,7 +462,7 @@ async fn load_entries(
         match serde_json::from_str::<RuntimeConfigEntry>(&raw) {
             Ok(entry) => entries.push(entry),
             Err(error) => {
-                eprintln!("[dd-runtime-config] dropping malformed entry {entry_key}: {error}");
+                tracing::error!("[dd-runtime-config] dropping malformed entry {entry_key}: {error}");
             }
         }
     }
@@ -686,7 +686,7 @@ async fn push_to_env(
     let subs = match load_subscribers(state, env).await {
         Ok(list) => list,
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "[dd-runtime-config] failed to load subscribers for {}: {error:?}",
                 env_token(env)
             );
@@ -803,7 +803,7 @@ async fn record_push_result(
         updated.last_applied_version = Some(version);
     }
     if let Err(error) = store_subscriber(state, &updated).await {
-        eprintln!(
+        tracing::error!(
             "[dd-runtime-config] failed to persist subscriber result for {}: {error:?}",
             subscriber.name
         );
@@ -813,7 +813,7 @@ async fn record_push_result(
 // ---------- Cron ----------
 
 async fn run_push_loop(state: AppState, interval: Duration) {
-    println!(
+    tracing::info!(
         "[dd-runtime-config] push loop starting, interval={}s",
         interval.as_secs()
     );
@@ -824,7 +824,7 @@ async fn run_push_loop(state: AppState, interval: Duration) {
             let ok = outcomes.iter().filter(|outcome| outcome.ok).count();
             let total = outcomes.len();
             if total > 0 {
-                println!(
+                tracing::info!(
                     "[dd-runtime-config] cron push env={} ok={}/{}",
                     env_token(&env),
                     ok,
@@ -1366,6 +1366,8 @@ fn read_bool_env(name: &str) -> bool {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-runtime-config");
+
     let redis_url = read_env(ENV_REDIS_URL)
         .or_else(|| read_env(ENV_REDIS_URL_FALLBACK))
         .unwrap_or_else(|| "redis://dd-redis-cache.default.svc.cluster.local:6379".to_string());
@@ -1411,13 +1413,13 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("invalid runtime-config bind address");
-    println!("[dd-runtime-config] listening on http://{address}");
+    tracing::info!("[dd-runtime-config] listening on http://{address}");
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind runtime-config listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("runtime-config server crashed");

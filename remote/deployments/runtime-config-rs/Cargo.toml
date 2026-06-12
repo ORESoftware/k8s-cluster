@@ -14,6 +14,8 @@ edition = "2021"
 # Node, Python, and Gleam consumers stay byte-compatible with this service.
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 axum = { version = "0.7", features = ["macros"] }
 dd-shared-interfaces = { path = "../../libs/interfaces/shared/generated/rust" }
 maud = "0.27"

@@ -16,7 +16,6 @@ mod ui;
 use std::net::SocketAddr;
 
 use axum::extract::DefaultBodyLimit;
-use tracing_subscriber::EnvFilter;
 
 use crate::{config::Config, state::AppState};
 
@@ -24,7 +23,7 @@ const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    init_tracing();
+    let _otel = dd_telemetry::init("usacc-rest-api-backend-rs");
 
     // Fail loudly at startup if the vendored htmx bytes drift from the
     // pinned SRI hash, rather than letting browsers refuse the script.
@@ -50,28 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "usacc-rest-api-backend-rs listening");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
     Ok(())
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,hyper=warn,tower_http=info"));
-    let json = std::env::var("USACC_LOG_FORMAT")
-        .map(|value| value.eq_ignore_ascii_case("json"))
-        .unwrap_or(false);
-
-    if json {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .json()
-            .init();
-    } else {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
-    }
 }
 
 async fn shutdown_signal() {

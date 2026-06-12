@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { initTelemetry, instrumentFastify, loggerMixin } from '@dd/telemetry';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -205,10 +206,14 @@ let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
 let puppeteerBrowser: PuppeteerBrowser | null = null;
 let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
 
+const telemetry = initTelemetry('dd-browser-test-server');
+
 const fastify = Fastify({
-  logger: true,
+  logger: { mixin: loggerMixin },
   bodyLimit: 2_097_152,
 });
+
+instrumentFastify(fastify, { service: 'dd-browser-test-server' });
 
 fastify.addHook('onRequest', async (request, reply) => {
   const path = request.url.split('?')[0] ?? request.url;
@@ -1109,6 +1114,7 @@ function setTimeoutPromise(ms: number): Promise<never> {
 
 async function shutdown(signal: NodeJS.Signals) {
   fastify.log.info({ signal }, 'browser-test shutting down');
+  await telemetry.shutdown();
   try {
     await fastify.close();
   } finally {

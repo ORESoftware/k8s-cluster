@@ -5,6 +5,8 @@ edition = "2021"
 description = "Rust generative music server backed by des_engine, S3, Postgres, and Redis."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 aws-config = "1"
 aws-sdk-s3 = "1"

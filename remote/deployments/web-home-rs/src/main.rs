@@ -11363,6 +11363,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-remote-web-home");
+
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")
         .ok()
@@ -11456,12 +11458,12 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("dd-remote-web-home listening on http://{address}");
+    tracing::info!("dd-remote-web-home listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

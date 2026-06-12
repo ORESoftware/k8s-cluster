@@ -46,10 +46,6 @@
 	path = remote/deployments/dd-sound-recorder-rs
 	url = git@github.com:sonus-auris/sonus-auris-backend.rs.git
 	branch = main
-[submodule "remote/deployments/3fa-backend"]
-	path = remote/deployments/3fa-backend
-	url = git@github.com:ORESoftware/3fa-backend.rs.git
-	branch = main
 [submodule "remote/libs"]
 	path = remote/libs
 	url = git@github.com:ORESoftware/k8s-libs-and-shared-defs.git

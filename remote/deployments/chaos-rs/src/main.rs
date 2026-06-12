@@ -40,6 +40,24 @@ use dd_nats_subject_defs::{
 };
 
 const SERVICE_NAME: &str = "dd-chaos";
+/// Cap the pod-list response. Chaos samples a victim, so the first page is plenty and
+/// this bounds memory/latency on large clusters.
+const POD_LIST_LIMIT: usize = 500;
+
+/// Percent-encode a query-parameter value, escaping everything outside the unreserved
+/// set so an operator-supplied label selector cannot malform or inject into the URL.
+fn encode_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char)
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
 
 #[derive(Clone)]
 struct Config {
@@ -213,7 +231,7 @@ struct PodTarget {
 
 async fn pod_kill_loop(state: AppState) {
     let config = &state.config;
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} pod-kill loop: interval={}s blastRadius={} namespaces={:?} dryRun={} enabled={}",
         config.pod_kill_interval.as_secs(),
         config.blast_radius,
@@ -225,7 +243,7 @@ async fn pod_kill_loop(state: AppState) {
         tokio::time::sleep(config.pod_kill_interval).await;
         if let Err(error) = pod_kill_tick(&state).await {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} pod-kill tick failed: {error}");
+            tracing::error!("{SERVICE_NAME} pod-kill tick failed: {error}");
         }
     }
 }
@@ -239,22 +257,30 @@ async fn pod_kill_tick(state: &AppState) -> Result<(), String> {
         if is_protected_namespace(config, namespace) {
             continue;
         }
-        let mut path = format!("/api/v1/namespaces/{namespace}/pods");
+        // Bound the response (first page only — chaos needs a sample, not full coverage)
+        // and percent-encode the operator-supplied selector so it cannot malform the URL.
+        let mut path = format!("/api/v1/namespaces/{namespace}/pods?limit={}", POD_LIST_LIMIT);
         if !config.pod_label_selector.is_empty() {
-            path.push_str(&format!("?labelSelector={}", config.pod_label_selector));
+            path.push_str("&labelSelector=");
+            path.push_str(&encode_query_value(&config.pod_label_selector));
         }
         let list = match k8s_get(&client, &base, &token, &path).await {
             Ok(list) => list,
             Err(error) => {
-                eprintln!("{SERVICE_NAME} list pods in {namespace} failed: {error}");
+                tracing::error!("{SERVICE_NAME} list pods in {namespace} failed: {error}");
                 continue;
             }
         };
         for item in list["items"].as_array().into_iter().flatten() {
+            let name = item["metadata"]["name"].as_str().unwrap_or_default().to_string();
+            // Never target ourselves: in Kubernetes the pod name is the hostname.
+            if name == state.node_id {
+                continue;
+            }
             if pod_is_eligible(config, item) {
                 candidates.push(PodTarget {
                     namespace: namespace.clone(),
-                    name: item["metadata"]["name"].as_str().unwrap_or_default().to_string(),
+                    name,
                 });
             }
         }
@@ -294,7 +320,7 @@ async fn pod_kill_tick(state: &AppState) -> Result<(), String> {
         .await;
         if !armed {
             state.metrics.guard_aborts_total.fetch_add(1, Ordering::Relaxed);
-            println!(
+            tracing::info!(
                 "{SERVICE_NAME} would kill pod {}/{} (guarded: enabled={} dryRun={})",
                 target.namespace, target.name, config.enabled, config.dry_run
             );
@@ -310,11 +336,11 @@ async fn pod_kill_tick(state: &AppState) -> Result<(), String> {
                     json!({"experimentId": &experiment_id, "namespace": target.namespace, "pod": target.name}),
                 )
                 .await;
-                println!("{SERVICE_NAME} killed pod {}/{}", target.namespace, target.name);
+                tracing::info!("{SERVICE_NAME} killed pod {}/{}", target.namespace, target.name);
             }
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} delete pod {}/{} failed: {error}", target.namespace, target.name);
+                tracing::error!("{SERVICE_NAME} delete pod {}/{} failed: {error}", target.namespace, target.name);
             }
         }
     }
@@ -348,7 +374,7 @@ fn is_protected_namespace(config: &Config, namespace: &str) -> bool {
 
 async fn deployment_jitter_loop(state: AppState) {
     let config = &state.config;
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} jitter loop: interval={}s hold={}s targets={:?} dryRun={} enabled={}",
         config.jitter_interval.as_secs(),
         config.jitter_hold.as_secs(),
@@ -360,7 +386,7 @@ async fn deployment_jitter_loop(state: AppState) {
         tokio::time::sleep(config.jitter_interval).await;
         if let Err(error) = deployment_jitter_tick(&state).await {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} jitter tick failed: {error}");
+            tracing::error!("{SERVICE_NAME} jitter tick failed: {error}");
         }
     }
 }
@@ -402,7 +428,7 @@ async fn deployment_jitter_tick(state: &AppState) -> Result<(), String> {
 
     if !armed {
         state.metrics.guard_aborts_total.fetch_add(1, Ordering::Relaxed);
-        println!(
+        tracing::info!(
             "{SERVICE_NAME} would jitter {namespace}/{name} {original}->{reduced} (guarded: enabled={} dryRun={})",
             config.enabled, config.dry_run
         );
@@ -418,7 +444,7 @@ async fn deployment_jitter_tick(state: &AppState) -> Result<(), String> {
         json!({"experimentId": &experiment_id, "namespace": namespace, "deployment": name, "replicas": reduced}),
     )
     .await;
-    println!("{SERVICE_NAME} jittered {namespace}/{name} {original}->{reduced}, restoring in {}s", config.jitter_hold.as_secs());
+    tracing::info!("{SERVICE_NAME} jittered {namespace}/{name} {original}->{reduced}, restoring in {}s", config.jitter_hold.as_secs());
 
     tokio::time::sleep(config.jitter_hold).await;
 
@@ -427,7 +453,7 @@ async fn deployment_jitter_tick(state: &AppState) -> Result<(), String> {
         Ok((client, base, token)) => {
             if let Err(error) = k8s_patch_scale(&client, &base, &token, &scale_path, original).await {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} restore {namespace}/{name} to {original} failed: {error}");
+                tracing::error!("{SERVICE_NAME} restore {namespace}/{name} to {original} failed: {error}");
             } else {
                 publish_event(
                     state,
@@ -439,7 +465,7 @@ async fn deployment_jitter_tick(state: &AppState) -> Result<(), String> {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} restore client build failed: {error}");
+            tracing::error!("{SERVICE_NAME} restore client build failed: {error}");
         }
     }
     Ok(())
@@ -460,7 +486,7 @@ async fn probe_responder(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("{SERVICE_NAME} probe responder subscribe failed: {error}; retrying in 5s");
+                tracing::error!("{SERVICE_NAME} probe responder subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -470,7 +496,7 @@ async fn probe_responder(state: AppState) {
                 let _ = nats.publish(reply, message.payload).await;
             }
         }
-        eprintln!("{SERVICE_NAME} probe responder subscription ended; re-subscribing in 5s");
+        tracing::error!("{SERVICE_NAME} probe responder subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -480,7 +506,7 @@ async fn probe_loop(state: AppState) {
         return;
     };
     let interval = state.config.probe_interval;
-    println!("{SERVICE_NAME} nats-probe loop: interval={}s subject={}", interval.as_secs(), state.probe_subject);
+    tracing::info!("{SERVICE_NAME} nats-probe loop: interval={}s subject={}", interval.as_secs(), state.probe_subject);
     let mut last_rtt_micros: Option<u64> = None;
     loop {
         tokio::time::sleep(interval).await;
@@ -508,11 +534,11 @@ async fn probe_loop(state: AppState) {
             }
             Ok(Err(error)) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} nats probe request failed: {error}");
+                tracing::error!("{SERVICE_NAME} nats probe request failed: {error}");
             }
             Err(_) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} nats probe timed out");
+                tracing::error!("{SERVICE_NAME} nats probe timed out");
             }
         }
     }
@@ -696,8 +722,33 @@ fn load_config() -> Config {
     }
 }
 
+/// Connect to NATS with bounded retries. The probe and experiment/event publishing
+/// depend on it; retrying avoids a chaos pod that starts before NATS is reachable
+/// running blind. Returns `None` only after exhausting attempts (the k8s loops still run).
+async fn connect_nats(url: &str) -> Option<async_nats::Client> {
+    let attempts = env_u64("CHAOS_NATS_CONNECT_ATTEMPTS", 30).max(1);
+    let retry = Duration::from_secs(env_u64("CHAOS_NATS_CONNECT_RETRY_SECONDS", 2).max(1));
+    for attempt in 1..=attempts {
+        match async_nats::connect(url).await {
+            Ok(client) => {
+                tracing::info!("{SERVICE_NAME} connected to NATS at {url}");
+                return Some(client);
+            }
+            Err(error) => {
+                tracing::error!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
+                if attempt < attempts {
+                    tokio::time::sleep(retry).await;
+                }
+            }
+        }
+    }
+    None
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-chaos");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8133").parse::<u16>()?;
     let node_id = env::var("HOSTNAME")
@@ -707,16 +758,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = load_config();
 
     let nats = match env::var("NATS_URL").ok().filter(|v| !v.trim().is_empty()) {
-        Some(url) => match async_nats::connect(&url).await {
-            Ok(client) => {
-                println!("{SERVICE_NAME} connected to NATS at {url}");
-                Some(client)
-            }
-            Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect failed ({error}); continuing without it");
-                None
-            }
-        },
+        Some(url) => connect_nats(&url).await,
         None => None,
     };
 
@@ -730,7 +772,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         node_id,
     };
 
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} starting (enabled={} dryRun={}) — destructive actions are {}",
         state.config.enabled,
         state.config.dry_run,
@@ -756,9 +798,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
