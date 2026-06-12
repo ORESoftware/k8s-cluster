@@ -60697,7 +60697,7 @@ fn enrich_outcome_from_store(
         Ok(jobs) => jobs.get(&source_job_id),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} outcome source job store lock failed: {error}");
+            tracing::error!("{SERVICE_NAME} outcome source job store lock failed: {error}");
             None
         }
     };
@@ -61674,7 +61674,7 @@ fn store_job(state: &AppState, job: StoredFabricationJob) {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} job store lock failed: {error}");
+            tracing::error!("{SERVICE_NAME} job store lock failed: {error}");
         }
     }
 }
@@ -61750,7 +61750,7 @@ async fn publish_event(state: &AppState, event_type: &str, request_id: &str, ok:
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} failed to publish runtime event: {error}");
+            tracing::error!("{SERVICE_NAME} failed to publish runtime event: {error}");
         }
     }
 }
@@ -61772,7 +61772,7 @@ async fn publish_json_to_nats(state: &AppState, subject: &str, payload: Value) -
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} failed to publish to {subject}: {error}");
+            tracing::error!("{SERVICE_NAME} failed to publish to {subject}: {error}");
             false
         }
     }
@@ -62635,10 +62635,10 @@ fn parse_fabrication_nats_request(payload: &[u8]) -> Result<FabricationNatsReque
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("{SERVICE_NAME} nats loop disabled: NATS_URL is not configured");
+        tracing::info!("{SERVICE_NAME} nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} nats loop starting: subject={} queueGroup={} resultSubject={}",
         state.request_subject, state.queue_group, state.result_subject
     );
@@ -62649,7 +62649,7 @@ async fn run_nats_loop(state: AppState) {
     {
         Ok(subscription) => subscription,
         Err(error) => {
-            eprintln!("{SERVICE_NAME} nats subscribe failed: {error}; retrying in 5s");
+            tracing::error!("{SERVICE_NAME} nats subscribe failed: {error}; retrying in 5s");
             tokio::time::sleep(Duration::from_secs(5)).await;
             continue;
         }
@@ -62663,7 +62663,7 @@ async fn run_nats_loop(state: AppState) {
         let payload = message.payload.to_vec();
         if payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
+            tracing::error!(
                 "{SERVICE_NAME} rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                 payload.len()
             );
@@ -62696,7 +62696,7 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("{SERVICE_NAME} failed nats fabrication plan: {error}");
+                            tracing::error!("{SERVICE_NAME} failed nats fabrication plan: {error}");
                         }
                     }
                 }
@@ -62723,7 +62723,7 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("{SERVICE_NAME} failed nats instruction analysis: {error}");
+                            tracing::error!("{SERVICE_NAME} failed nats instruction analysis: {error}");
                         }
                     }
                 }
@@ -62751,7 +62751,7 @@ async fn run_nats_loop(state: AppState) {
                                         .metrics
                                         .errors_total
                                         .fetch_add(1, Ordering::Relaxed);
-                                    eprintln!("{SERVICE_NAME} failed nats learning store: {error}");
+                                    tracing::error!("{SERVICE_NAME} failed nats learning store: {error}");
                                 }
                             }
                         }
@@ -62760,7 +62760,7 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("{SERVICE_NAME} failed nats fabrication outcome: {error}");
+                            tracing::error!("{SERVICE_NAME} failed nats fabrication outcome: {error}");
                         }
                     }
                 }
@@ -62793,7 +62793,7 @@ async fn run_nats_loop(state: AppState) {
                                         .metrics
                                         .errors_total
                                         .fetch_add(1, Ordering::Relaxed);
-                                    eprintln!(
+                                    tracing::error!(
                                         "{SERVICE_NAME} failed nats compact learning store: {error}"
                                     );
                                 }
@@ -62804,7 +62804,7 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!(
+                            tracing::error!(
                                 "{SERVICE_NAME} failed nats compact learning outcome: {error}"
                             );
                         }
@@ -62815,12 +62815,12 @@ async fn run_nats_loop(state: AppState) {
                         .metrics
                         .errors_total
                         .fetch_add(1, Ordering::Relaxed);
-                    eprintln!("{SERVICE_NAME} invalid nats fabrication request: {error}");
+                    tracing::error!("{SERVICE_NAME} invalid nats fabrication request: {error}");
                 }
             }
         });
     }
-    eprintln!("{SERVICE_NAME} nats subscription ended; re-subscribing in 5s");
+    tracing::error!("{SERVICE_NAME} nats subscription ended; re-subscribing in 5s");
     tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -123377,6 +123377,8 @@ async fn api_docs_json() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-fabrication-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8113").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -123389,7 +123391,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-fabrication-server NATS connect failed ({url}): {error}");
+                tracing::error!("dd-fabrication-server NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -124633,9 +124635,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

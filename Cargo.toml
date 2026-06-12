@@ -5,6 +5,8 @@ edition = "2021"
 description = "Rust fabrication planner and instruction validator for 3D printers, CNC mills, routers, and lathes."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 des_engine = { path = "../../submodules/discrete-event-system.rs" }
