@@ -3,7 +3,10 @@ name: pg-defs generated bindings drift
 on:
   pull_request:
     paths:
-      - 'remote/libs/pg-defs/**'
+      # remote/libs is now a submodule; pg-defs source changes land in
+      # ORESoftware/k8s-libs-and-shared-defs. In this repo only the gitlink
+      # at `remote/libs` moves, so trigger the wiring checks on that bump.
+      - 'remote/libs'
       - 'remote/databases/pg/**'
       - 'remote/deployments/gleam-lambda-runner/**'
       - 'remote/deployments/gleam-mcp-server/**'
@@ -31,7 +34,10 @@ on:
       - dev
       - main
     paths:
-      - 'remote/libs/pg-defs/**'
+      # remote/libs is now a submodule; pg-defs source changes land in
+      # ORESoftware/k8s-libs-and-shared-defs. In this repo only the gitlink
+      # at `remote/libs` moves, so trigger the wiring checks on that bump.
+      - 'remote/libs'
       - 'remote/databases/pg/**'
       - 'remote/deployments/gleam-lambda-runner/**'
       - 'remote/deployments/gleam-mcp-server/**'
@@ -63,6 +69,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
+          # pinned to main) holding pg-defs/nats/interfaces. Without this the
+          # generator + wiring steps below hit file-not-found. `recursive`
+          # matches repo-checks.yml and also pulls the nested async-java.
+          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -119,6 +131,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
+          # pinned to main) holding pg-defs/nats/interfaces. Without this the
+          # generator + wiring steps below hit file-not-found. `recursive`
+          # matches repo-checks.yml and also pulls the nested async-java.
+          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -160,6 +178,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
+          # pinned to main) holding pg-defs/nats/interfaces. Without this the
+          # generator + wiring steps below hit file-not-found. `recursive`
+          # matches repo-checks.yml and also pulls the nested async-java.
+          submodules: recursive
 
       - name: Setup Node
         uses: actions/setup-node@v4
