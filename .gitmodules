@@ -2,10 +2,6 @@
 	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
 	branch = master
-[submodule "remote/libs/async-java"]
-	path = remote/libs/async-java
-	url = git@github.com:async-java/async.java.git
-	branch = master
 [submodule "remote/modules/github/oresoftware/json-logging"]
 	path = remote/modules/github/oresoftware/json-logging
 	url = https://github.com/oresoftware/json-logging.git
@@ -53,4 +49,8 @@
 [submodule "remote/deployments/3fa-backend"]
 	path = remote/deployments/3fa-backend
 	url = git@github.com:ORESoftware/3fa-backend.rs.git
+	branch = main
+[submodule "remote/libs"]
+	path = remote/libs
+	url = git@github.com:ORESoftware/k8s-libs-and-shared-defs.git
 	branch = main

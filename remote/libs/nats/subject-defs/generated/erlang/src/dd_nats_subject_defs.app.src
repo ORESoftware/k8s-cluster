@@ -1,7 +1,0 @@
-{application, dd_nats_subject_defs,
- [{description, "Generated Erlang NATS subject defs"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {applications, [kernel, stdlib]},
-  {env, []},
-  {modules, [dd_nats_subject_defs]}]}.

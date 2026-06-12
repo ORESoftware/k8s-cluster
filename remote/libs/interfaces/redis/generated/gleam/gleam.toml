@@ -1,8 +1,0 @@
-name = "dd_redis_interfaces"
-version = "0.1.0"
-description = "Generated Gleam types and redis key formatters for dd cross-runtime redis usage. Do not edit by hand."
-target = "erlang"
-
-[dependencies]
-gleam_stdlib = ">= 0.40.0 and < 2.0.0"
-gleam_json = ">= 1.0.0 and < 3.0.0"
