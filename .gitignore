@@ -2,5 +2,10 @@
 /target
 **/*.rs.bk
 
+# Secrets — never commit real credentials. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
 # Editor / OS
 .DS_Store
