@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Fires after `git checkout` / `git switch` — submodule pointers may differ.
+. "$(dirname "$0")/submodule-reminder.sh"

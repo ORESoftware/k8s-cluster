@@ -5,12 +5,15 @@
 [submodule "remote/modules/github/oresoftware/json-logging"]
 	path = remote/modules/github/oresoftware/json-logging
 	url = https://github.com/oresoftware/json-logging.git
+	branch = master
 [submodule "remote/modules/github/oresoftware/cmd-line-parser"]
 	path = remote/modules/github/oresoftware/cmd-line-parser
 	url = https://github.com/oresoftware/cmd-line-parser.git
+	branch = main
 [submodule "remote/modules/github/oresoftware/go-iterators"]
 	path = remote/modules/github/oresoftware/go-iterators
 	url = https://github.com/oresoftware/go-iterators.git
+	branch = main
 [submodule "remote/submodules/live-mutex"]
 	path = remote/submodules/live-mutex
 	url = git@github.com:ORESoftware/live-mutex.git
@@ -30,6 +33,7 @@
 [submodule "remote/deployments/mip-solver-node.rs"]
 	path = remote/deployments/mip-solver-node.rs
 	url = git@github.com:ORESoftware/mip-solver-node.rs.git
+	branch = main
 [submodule "remote/submodules/live-mutex-mills.rs"]
 	path = remote/submodules/live-mutex-mills.rs
 	url = git@github.com:ORESoftware/live-mutex-mills.rs.git

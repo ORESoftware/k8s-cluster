@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Fires after `git rebase` / `git commit --amend` — pointers may have moved.
+. "$(dirname "$0")/submodule-reminder.sh"

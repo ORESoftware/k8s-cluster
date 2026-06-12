@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Fires after `git pull` / merge — submodule pointers may have advanced.
+. "$(dirname "$0")/submodule-reminder.sh"
