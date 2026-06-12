@@ -15,6 +15,12 @@ FROM ghcr.io/gleam-lang/gleam:v1.13.0-erlang-alpine AS builder
 # native NIFs that pog/pgo pull in.
 RUN apk add --no-cache build-base git
 
+# The OpenTelemetry exporter transitively pulls in ts_chatterbox, which sets
+# `warnings_as_errors` and uses a now-deprecated `catch ...` form that newer
+# Erlang/OTP promotes to a hard error. Suppressing that one deprecation warning
+# keeps the dependency compiling; it is a no-op on the OTP in this base image.
+ENV ERL_COMPILER_OPTIONS="[nowarn_deprecated_catch]"
+
 WORKDIR /build
 
 # Copy the dependency lock first so layer caching kicks in.
@@ -28,8 +34,14 @@ COPY src ./src
 #   docker build -f gleamlang-presence-server/Dockerfile -t presence:0.1.0 .
 COPY ../../libs/pg-defs/generated/gleam /libs/pg-defs/generated/gleam
 
-# Symlink so the path in gleam.toml resolves inside the builder layout.
-RUN mkdir -p /build/../libs && ln -sf /libs/pg-defs /build/../../libs/pg-defs
+# The shared OpenTelemetry client is also a path dependency
+# (`../../libs/otel-client-gleam`). Layer it in the same way.
+COPY ../../libs/otel-client-gleam /libs/otel-client-gleam
+
+# Symlink so the paths in gleam.toml resolve inside the builder layout.
+RUN mkdir -p /build/../libs \
+  && ln -sf /libs/pg-defs /build/../../libs/pg-defs \
+  && ln -sf /libs/otel-client-gleam /build/../../libs/otel-client-gleam
 
 RUN gleam deps download
 RUN gleam export erlang-shipment

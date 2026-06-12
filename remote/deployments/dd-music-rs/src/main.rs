@@ -444,7 +444,7 @@ async fn state_from_config(config: Config) -> Result<AppState, String> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-music-rs NATS connect failed ({url}): {error}");
+                tracing::error!("dd-music-rs NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -475,7 +475,7 @@ impl AppState {
             .get_multiplexed_async_connection()
             .await
             .map_err(|error| {
-                eprintln!("dd-music-rs redis connection failed: {error}");
+                tracing::error!("dd-music-rs redis connection failed: {error}");
                 ServiceError::Unavailable("redis connection failed".to_string())
             })?;
         *guard = Some(connection.clone());
@@ -511,12 +511,12 @@ async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, Ser
         tokio_postgres::connect(database_url, tls)
             .await
             .map_err(|error| {
-                eprintln!("dd-music-rs postgres connect failed: {error}");
+                tracing::error!("dd-music-rs postgres connect failed: {error}");
                 ServiceError::Unavailable("postgres connect failed".to_string())
             })?;
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("dd-music-rs postgres connection error: {error}");
+            tracing::error!("dd-music-rs postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -630,7 +630,7 @@ async fn songs_shelf(
             (StatusCode::OK, Html(render_song_shelf(&songs))).into_response()
         }
         Err(error) => {
-            eprintln!("dd-music-rs song shelf unavailable: {error:?}");
+            tracing::error!("dd-music-rs song shelf unavailable: {error:?}");
             record_request("GET", "/songs/shelf", StatusCode::OK);
             (StatusCode::OK, Html(render_shelf_error())).into_response()
         }
@@ -650,7 +650,7 @@ async fn list_songs(
     {
         Ok(songs) => songs,
         Err(error) => {
-            eprintln!("dd-music-rs song list unavailable: {error:?}");
+            tracing::error!("dd-music-rs song list unavailable: {error:?}");
             Vec::new()
         }
     };
@@ -696,7 +696,7 @@ async fn song_audio(
         return Err(ServiceError::NotFound("song has no audio URL".to_string()));
     };
     if !is_allowed_audio_url(&state.config.storage, &audio_url) {
-        eprintln!("dd-music-rs blocked untrusted audio URL for song {song_id}");
+        tracing::error!("dd-music-rs blocked untrusted audio URL for song {song_id}");
         return Err(ServiceError::NotFound(
             "song audio URL is not available".to_string(),
         ));
@@ -899,19 +899,19 @@ async fn publish_music_event(state: &AppState, subject: &str, payload: Value) {
     let bytes = match serde_json::to_vec(&payload) {
         Ok(bytes) => bytes,
         Err(error) => {
-            eprintln!("dd-music-rs failed to encode {subject} event: {error}");
+            tracing::error!("dd-music-rs failed to encode {subject} event: {error}");
             return;
         }
     };
     if bytes.len() > MAX_NATS_PAYLOAD_BYTES {
-        eprintln!(
+        tracing::error!(
             "dd-music-rs dropping oversize {subject} event ({} bytes)",
             bytes.len()
         );
         return;
     }
     if let Err(error) = nats.publish(subject.to_string(), bytes.into()).await {
-        eprintln!("dd-music-rs failed to publish {subject} event: {error}");
+        tracing::error!("dd-music-rs failed to publish {subject} event: {error}");
     }
 }
 
@@ -1081,7 +1081,7 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
                 .send()
                 .await
                 .map_err(|error| {
-                    eprintln!("dd-music-rs S3 upload failed: {error}");
+                    tracing::error!("dd-music-rs S3 upload failed: {error}");
                     ServiceError::Unavailable("S3 upload failed".to_string())
                 })?;
             Ok(StoredObject {
@@ -1097,14 +1097,14 @@ async fn store_audio(state: &AppState, song: &GeneratedSong) -> Result<StoredObj
             let path = std::path::Path::new(&config.root).join(&key);
             if let Some(parent) = path.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|error| {
-                    eprintln!("dd-music-rs local storage mkdir failed: {error}");
+                    tracing::error!("dd-music-rs local storage mkdir failed: {error}");
                     ServiceError::Unavailable("local storage mkdir failed".to_string())
                 })?;
             }
             tokio::fs::write(&path, &song.audio_bytes)
                 .await
                 .map_err(|error| {
-                    eprintln!("dd-music-rs local storage write failed: {error}");
+                    tracing::error!("dd-music-rs local storage write failed: {error}");
                     ServiceError::Unavailable("local storage write failed".to_string())
                 })?;
             Ok(StoredObject {
@@ -1285,7 +1285,7 @@ async fn throttle_vote(
     let mut connection = match state.redis_connection().await {
         Ok(connection) => connection,
         Err(error) => {
-            eprintln!("dd-music-rs vote throttle unavailable: {error:?}");
+            tracing::error!("dd-music-rs vote throttle unavailable: {error:?}");
             return Ok(());
         }
     };
@@ -1300,7 +1300,7 @@ async fn throttle_vote(
     let response = match response {
         Ok(response) => response,
         Err(error) => {
-            eprintln!("dd-music-rs redis vote throttle failed: {error}");
+            tracing::error!("dd-music-rs redis vote throttle failed: {error}");
             return Ok(());
         }
     };
@@ -1333,16 +1333,16 @@ async fn run_generation_request_consumer(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("dd-music-rs failed to subscribe to generation requests: {error}; retrying in 5s");
+                tracing::error!("dd-music-rs failed to subscribe to generation requests: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
         };
-        println!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
+        tracing::info!("dd-music-rs consuming generation requests on {MUSIC_GENERATION_REQUESTS_SUBJECT}");
         while let Some(message) = subscription.next().await {
             handle_generation_request(&state, &message.payload).await;
         }
-        eprintln!("dd-music-rs generation subscription ended; re-subscribing in 5s");
+        tracing::error!("dd-music-rs generation subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -1352,7 +1352,7 @@ async fn handle_generation_request(state: &AppState, payload: &[u8]) {
     // writes). Bound the trigger: reject oversize payloads and skip anything
     // that is not a well-formed request rather than defaulting to a generation.
     if payload.len() > MAX_NATS_PAYLOAD_BYTES {
-        eprintln!(
+        tracing::error!(
             "dd-music-rs dropping oversize generation request ({} bytes)",
             payload.len()
         );
@@ -1361,7 +1361,7 @@ async fn handle_generation_request(state: &AppState, payload: &[u8]) {
     let request: GenerateRequest = match serde_json::from_slice(payload) {
         Ok(request) => request,
         Err(error) => {
-            eprintln!("dd-music-rs ignoring malformed generation request: {error}");
+            tracing::error!("dd-music-rs ignoring malformed generation request: {error}");
             return;
         }
     };
@@ -1380,24 +1380,24 @@ async fn handle_generation_request(state: &AppState, payload: &[u8]) {
     let client = match connect_postgres(&state.config).await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("dd-music-rs NATS generation request skipped (postgres): {error:?}");
+            tracing::error!("dd-music-rs NATS generation request skipped (postgres): {error:?}");
             return;
         }
     };
     let remaining = match (daily_target(state).await, published_today_count(&client).await) {
         (Ok(target), Ok(published)) => (target - published).max(0),
         (Err(error), _) | (_, Err(error)) => {
-            eprintln!("dd-music-rs NATS generation request skipped (daily budget): {error:?}");
+            tracing::error!("dd-music-rs NATS generation request skipped (daily budget): {error:?}");
             return;
         }
     };
     let to_generate = requested.min(remaining);
     if to_generate <= 0 {
-        eprintln!("dd-music-rs daily song target reached; skipping NATS generation request");
+        tracing::error!("dd-music-rs daily song target reached; skipping NATS generation request");
         return;
     }
     if let Err(error) = generate_and_publish_songs(state, to_generate, min_score).await {
-        eprintln!("dd-music-rs NATS generation request failed: {error:?}");
+        tracing::error!("dd-music-rs NATS generation request failed: {error:?}");
     }
 }
 
@@ -1405,7 +1405,7 @@ async fn run_generator_loop(state: AppState) {
     tokio::time::sleep(state.config.generator_initial_delay).await;
     loop {
         if let Err(error) = run_generator_sweep(&state).await {
-            eprintln!("dd-music-rs generator sweep failed: {error:?}");
+            tracing::error!("dd-music-rs generator sweep failed: {error:?}");
             SONG_GENERATIONS.with_label_values(&["failed"]).inc();
         }
         tokio::time::sleep(state.config.generator_interval).await;
@@ -1444,7 +1444,7 @@ async fn acquire_generation_lock(state: &AppState, token: &str) -> Result<bool, 
         .query_async(&mut connection)
         .await
         .map_err(|error| {
-            eprintln!("dd-music-rs redis generation lock failed: {error}");
+            tracing::error!("dd-music-rs redis generation lock failed: {error}");
             ServiceError::Unavailable("redis generation lock failed".to_string())
         })?;
     Ok(response.is_some())
@@ -1962,7 +1962,7 @@ fn storage_provider_name(storage: &StorageConfig) -> &'static str {
 }
 
 fn db_error(error: tokio_postgres::Error) -> ServiceError {
-    eprintln!("dd-music-rs postgres query failed: {error}");
+    tracing::error!("dd-music-rs postgres query failed: {error}");
     ServiceError::Internal("postgres query failed".to_string())
 }
 
@@ -1986,6 +1986,8 @@ fn app(state: AppState) -> Router {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-music-rs");
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
@@ -2003,7 +2005,7 @@ async fn main() {
     {
         tokio::spawn(run_generator_loop(state.clone()));
     } else if state.config.generator_enabled {
-        eprintln!("dd-music-rs generator disabled until postgres and storage are configured");
+        tracing::error!("dd-music-rs generator disabled until postgres and storage are configured");
     }
 
     // The NATS publish fan-out (songs/votes/results) is always on when NATS_URL
@@ -2018,7 +2020,7 @@ async fn main() {
         {
             tokio::spawn(run_generation_request_consumer(state.clone()));
         } else {
-            eprintln!("dd-music-rs NATS generation consumer disabled until NATS, postgres, and storage are configured");
+            tracing::error!("dd-music-rs NATS generation consumer disabled until NATS, postgres, and storage are configured");
         }
     }
 
@@ -2028,8 +2030,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("failed to bind dd-music-rs");
-    println!("dd-music-rs listening on http://{addr}");
-    axum::serve(listener, app(state))
+    tracing::info!("dd-music-rs listening on http://{addr}");
+    axum::serve(listener, app(state).layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

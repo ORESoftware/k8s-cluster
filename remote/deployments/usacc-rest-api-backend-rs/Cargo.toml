@@ -5,6 +5,7 @@ edition = "2021"
 description = "Rust REST API backend for the US Anti-Corruption Court project."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"
 des_engine = { path = "../../submodules/discrete-event-system.rs" }

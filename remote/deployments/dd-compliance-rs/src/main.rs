@@ -23,6 +23,8 @@ mod util;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-compliance-rs");
+
     let config = Arc::new(Config::from_env());
     tokio::fs::create_dir_all(&config.work_root).await?;
     let http = reqwest::Client::builder()
@@ -63,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         serde_json::json!({ "address": address.to_string() }),
     );
     let listener = tokio::net::TcpListener::bind(address).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())

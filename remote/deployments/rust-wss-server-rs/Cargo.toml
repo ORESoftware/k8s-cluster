@@ -8,6 +8,8 @@ name = "dd-rust-wss-server"
 path = "src/main.rs"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 # Multi-thread tokio runtime for the worker pool. The acceptor tasks
 # (one per gateway shard) plus the admin axum server all share this
 # runtime, mirroring how the Dart pod runs N gateway-shard isolates

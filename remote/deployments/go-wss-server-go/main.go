@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	telemetry "github.com/oresoftware/dd/libs/telemetry-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sys/unix"
@@ -311,7 +312,7 @@ func startAdminServer(addr string) {
 		}
 		fmt.Fprintln(w, "ready")
 	})
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: telemetry.Handler(mux, "dd-go-wss-server-admin"), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("admin server listening on %s", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("admin: %v", err)
@@ -327,6 +328,12 @@ func main() {
 	log.Printf("dd-go-wss-server starting host=%s ws_port=%d admin_port=%d shards=%d gomaxprocs=%d",
 		host, wsPort, adminPort, shards, runtime.GOMAXPROCS(0))
 
+	if shutdown, err := telemetry.Init(context.Background(), "dd-go-wss-server"); err != nil {
+		log.Printf("telemetry init failed (continuing without traces): %v", err)
+	} else {
+		defer func() { _ = shutdown(context.Background()) }()
+	}
+
 	go startAdminServer(fmt.Sprintf(":%d", adminPort))
 
 	wsAddr := fmt.Sprintf("%s:%d", host, wsPort)
@@ -341,7 +348,7 @@ func main() {
 			log.Fatalf("acceptor %d listen %s: %v", i, wsAddr, err)
 		}
 		log.Printf("acceptor %d bound %s (SO_REUSEPORT)", i, wsAddr)
-		go runAcceptor(i, ln, mux)
+		go runAcceptor(i, ln, telemetry.Handler(mux, "dd-go-wss-server"))
 	}
 
 	ready.Store(true)

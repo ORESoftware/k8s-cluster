@@ -1,4 +1,5 @@
 import dd_cli_config_client
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/int
@@ -10,6 +11,8 @@ import gleam_lambda_runner/workflow
 
 pub fn main() -> Nil {
   let _ = dd_cli_config_client.load_once()
+  // Start the OpenTelemetry SDK + OTLP exporter before the HTTP supervisor.
+  let _ = dd_otel_client.init("dd-gleam-lambda-runner")
   let _ = nats.start()
   let _ = workflow.start()
   let _ = dd_runtime_config_client.start_registration_loop()

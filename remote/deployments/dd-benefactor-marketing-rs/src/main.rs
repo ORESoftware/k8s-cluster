@@ -65,7 +65,6 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-benefactor-marketing-rs";
@@ -102,7 +101,6 @@ struct Config {
     cache_ttl_seconds: u64,
     rate_limit_per_minute: u64,
     job_stream: String,
-    log_json: bool,
 }
 
 #[derive(Default)]
@@ -747,8 +745,8 @@ struct LeadImportResponse {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _otel = dd_telemetry::init(SERVICE_NAME);
     let cfg = Config::from_env()?;
-    init_tracing(cfg.log_json);
     let addr: SocketAddr = format!("{}:{}", cfg.host, cfg.port).parse()?;
     let db = Database::connect(&cfg.database_url).await?;
     let redis = cfg
@@ -771,7 +769,7 @@ async fn main() -> anyhow::Result<()> {
     let app = build_router(state.clone());
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "benefactor marketing backend listening");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     info!("benefactor marketing backend shut down cleanly");
@@ -968,9 +966,6 @@ impl Config {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_JOB_STREAM.to_string());
-        let log_json = env::var("BENEFACTOR_MARKETING_LOG_FORMAT")
-            .map(|value| value.eq_ignore_ascii_case("json"))
-            .unwrap_or(false);
 
         Ok(Self {
             host,
@@ -984,26 +979,7 @@ impl Config {
             cache_ttl_seconds,
             rate_limit_per_minute,
             job_stream,
-            log_json,
         })
-    }
-}
-
-fn init_tracing(json_logs: bool) {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("dd_benefactor_marketing_rs=info,sea_orm=warn,sqlx=warn,tower_http=info")
-    });
-    let fmt = tracing_subscriber::fmt::layer();
-    if json_logs {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt.json())
-            .init();
-    } else {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt.compact())
-            .init();
     }
 }
 

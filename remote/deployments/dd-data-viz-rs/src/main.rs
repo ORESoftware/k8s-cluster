@@ -538,6 +538,8 @@ impl IntoResponse for ApiError {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _otel = dd_telemetry::init("dd-data-viz-rs");
+
     let config = Config::from_env();
     let bind_addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     let nats = match env::var("DATAVIZ_NATS_URL").ok().or_else(|| env::var("NATS_URL").ok()) {
@@ -584,7 +586,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         json!({ "addr": bind_addr.to_string() }),
     );
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
@@ -6202,7 +6204,7 @@ fn log_event(severity: &str, event_name: &str, message: &str, attributes: Value)
         "INFO" => 9,
         _ => 5,
     };
-    println!(
+    tracing::info!(
         "{}",
         json!({
             "schema": "dd.log.v1",

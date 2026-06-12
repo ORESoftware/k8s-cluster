@@ -509,6 +509,10 @@ fn log_dd_event(
         record.insert("span_id".to_string(), json!(trace.span_id));
     }
     record.insert("attributes".to_string(), attributes);
+    // This function IS the structured-log emitter: it prints an OTLP-style JSON
+    // record (already trace-correlated) straight to stdout for promtail/Loki.
+    // Keep it as a raw stdout write — routing it through `tracing` would nest
+    // JSON inside a tracing message field.
     println!("{}", Value::Object(record));
 }
 
@@ -2108,6 +2112,8 @@ async fn api_docs_json() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-cluster-mcp-rs");
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
@@ -2155,7 +2161,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

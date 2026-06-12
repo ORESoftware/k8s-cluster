@@ -24,7 +24,6 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 const SERVICE_NAME: &str = "dd-patent-filing-rs";
 const SCHEMA_VERSION: &str = "patent_filing.package.v1";
@@ -3308,15 +3307,6 @@ fn example_request() -> PatentIntakeRequest {
     }
 }
 
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("dd_patent_filing_rs=info,tower_http=info"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().compact())
-        .init();
-}
-
 fn security_header_layers() -> [SetResponseHeaderLayer<HeaderValue>; 5] {
     let csp = "default-src 'self'; \
                script-src 'self' https://unpkg.com; \
@@ -3373,7 +3363,7 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    init_tracing();
+    let _otel = dd_telemetry::init(SERVICE_NAME);
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8116").parse::<u16>()?;
     let http = reqwest::Client::builder()
@@ -3451,7 +3441,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         allow_unauthenticated = state.config.allow_unauthenticated,
         "{SERVICE_NAME} listening"
     );
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     info!("{SERVICE_NAME} shut down cleanly");

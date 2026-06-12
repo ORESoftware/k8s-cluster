@@ -23,7 +23,6 @@ use serde_json::{json, Value};
 use tokio::signal;
 use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-apostille-services-server";
@@ -297,7 +296,7 @@ enum AuthFailure {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    init_tracing();
+    let _otel = dd_telemetry::init(SERVICE_NAME);
     let config = config_from_env().map_err(|message| {
         error!(error = %message, "apostille service configuration failed");
         std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
@@ -353,20 +352,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         translation_provider = state.config.translation_provider.is_some(),
         "apostille services server listening"
     );
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     info!("apostille services server shut down cleanly");
     Ok(())
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("dd_apostille_services_server=info,tower_http=info"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().compact())
-        .init();
 }
 
 async fn shutdown_signal() {

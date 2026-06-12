@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	telemetry "github.com/oresoftware/dd/libs/telemetry-go"
 	threadv1 "github.com/ORESoftware/k8s-cluster/remote/deployments/thread-operator-go/api/v1alpha1"
 )
 
@@ -54,6 +55,9 @@ type ThreadReconciler struct {
 }
 
 func (r *ThreadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx, span := telemetry.Tracer("dd-thread-operator").Start(ctx, "Reconcile "+req.NamespacedName.String())
+	defer span.End()
+
 	logger := log.FromContext(ctx).WithValues("thread", req.NamespacedName.String())
 
 	var thread threadv1.Thread

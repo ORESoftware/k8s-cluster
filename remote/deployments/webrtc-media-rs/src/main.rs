@@ -447,6 +447,8 @@ async fn api_docs_json() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-webrtc-media");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", &DEFAULT_PORT.to_string()).parse::<u16>()?;
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
@@ -501,16 +503,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} listening on http://{addr} mode={} ready={}",
         config.mode,
         is_ready(&config)
     );
     if !config.warnings.is_empty() {
-        eprintln!("{SERVICE_NAME} configuration warnings: {:?}", config.warnings);
+        tracing::error!("{SERVICE_NAME} configuration warnings: {:?}", config.warnings);
     }
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

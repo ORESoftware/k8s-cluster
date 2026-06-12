@@ -1041,7 +1041,7 @@ async fn trigger_build_test(Path(slug): Path<String>, Json(body): Json<BuildTest
     let entry_clone: CatalogEntry = entry.clone();
     tokio::spawn(async move {
         if let Err(err) = run_build_and_test(entry_clone, revision_for_task, build_for_task).await {
-            eprintln!("container-pool build/test orchestration failed: {err}");
+            tracing::error!("container-pool build/test orchestration failed: {err}");
         }
     });
     (

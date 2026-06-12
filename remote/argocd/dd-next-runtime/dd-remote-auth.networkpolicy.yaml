@@ -44,6 +44,16 @@ spec:
   # Egress is DNS + self-registration with the runtime-config control plane
   # only. This service talks to no database, cache, NATS, or public internet.
   egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
     - to:
         - namespaceSelector:
             matchLabels:

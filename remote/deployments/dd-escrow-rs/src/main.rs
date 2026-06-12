@@ -666,8 +666,8 @@ fn structured_log_record(severity: &str, event_name: &str, body: &str, attribute
 fn write_structured_log_to_stdout(severity: &str, event_name: &str, body: &str, attributes: Value) {
     let record = structured_log_record(severity, event_name, body, attributes);
     match serde_json::to_string(&record) {
-        Ok(line) => println!("{line}"),
-        Err(error) => println!(
+        Ok(line) => tracing::info!("{line}"),
+        Err(error) => tracing::info!(
             "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
         ),
     }
@@ -676,8 +676,8 @@ fn write_structured_log_to_stdout(severity: &str, event_name: &str, body: &str, 
 fn write_structured_log_to_stderr(severity: &str, event_name: &str, body: &str, attributes: Value) {
     let record = structured_log_record(severity, event_name, body, attributes);
     match serde_json::to_string(&record) {
-        Ok(line) => eprintln!("{line}"),
-        Err(error) => eprintln!(
+        Ok(line) => tracing::error!("{line}"),
+        Err(error) => tracing::error!(
             "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
         ),
     }
@@ -3526,6 +3526,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let _otel = dd_telemetry::init("dd-escrow-rs");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8115");
     let configured_cluster = env_value("SOLANA_CLUSTER", "devnet");
@@ -3672,7 +3674,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "Escrow service HTTP listener is ready.",
         json!({ "address": address.to_string() }),
     );
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())

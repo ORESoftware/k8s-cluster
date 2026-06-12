@@ -34,7 +34,6 @@ use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
-use tracing_subscriber::EnvFilter;
 
 use crate::cache::EmbeddingCache;
 use crate::config::Config;
@@ -62,8 +61,8 @@ async fn main() -> anyhow::Result<()> {
     // the real environment, so a stray committed `.env` can't shadow them.
     #[cfg(debug_assertions)]
     let _ = dotenvy::dotenv();
+    let _otel = dd_telemetry::init("dd-embeddings-rs");
     let cfg = Config::from_env()?;
-    init_tracing(cfg.log_format_json);
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(cfg.request_timeout_secs))
@@ -199,7 +198,7 @@ async fn main() -> anyhow::Result<()> {
     // Graceful shutdown: on SIGTERM (rolling deploy) / SIGINT, stop accepting
     // and let in-flight requests finish, so we don't abort already-paid
     // provider calls mid-flight. Bounded by terminationGracePeriodSeconds.
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
@@ -228,16 +227,6 @@ async fn shutdown_signal() {
     tracing::info!("shutdown signal received — draining in-flight requests");
 }
 
-fn init_tracing(json: bool) {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,hyper=warn,reqwest=warn,tower_http=info"));
-    let builder = tracing_subscriber::fmt().with_env_filter(filter);
-    if json {
-        builder.json().flatten_event(true).init();
-    } else {
-        builder.init();
-    }
-}
 
 /// Bearer-token gate. No-op when no token is configured.
 async fn auth(

@@ -60,6 +60,9 @@ struct Config {
     // circuit breaker that takes effect on the next config refresh.
     halted: bool,
     max_inflight: usize,
+    // Maximum age of a timestamped market snapshot before the freshness gate
+    // forces a hold. Only enforced when the request supplies `market.asOfMs`.
+    max_price_age: Duration,
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
     database_url: Option<String>,
@@ -156,6 +159,10 @@ struct MarketSnapshot {
     day_volume: Option<f64>,
     realized_volatility: Option<f64>,
     prices: Option<Vec<f64>>,
+    // Epoch-ms timestamp of when this market snapshot was captured. Optional;
+    // when present it drives the `marketDataFresh` safety gate so stale quotes
+    // can't produce a live order intent.
+    as_of_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -363,6 +370,7 @@ fn config_from_env() -> Config {
         halted: env_bool("TRADING_HALT", false),
         // Cap concurrent decision evaluations from the NATS stream.
         max_inflight: env_u64("TRADING_MAX_INFLIGHT", 256).clamp(1, 4096) as usize,
+        max_price_age: Duration::from_millis(env_u64("TRADING_MAX_PRICE_AGE_MS", 300_000)),
         server_auth_secret: optional_env("SERVER_AUTH_SECRET")
             .or_else(|| optional_env("TRADING_SERVER_AUTH_SECRET")),
         allow_unauthenticated: env_bool("TRADING_ALLOW_UNAUTHENTICATED", false),
@@ -1042,7 +1050,7 @@ async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, Str
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("trading server postgres connection error: {error}");
+            tracing::error!("trading server postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -1086,7 +1094,7 @@ async fn fetch_platform_config(config: &Config) -> Result<TradingPlatformConfig,
             config.app_config_scope, config.app_config_key
         )),
         Err(error) if is_missing_app_config_table_error(&error) => {
-            eprintln!("trading app_config table is missing; using built-in platform defaults");
+            tracing::error!("trading app_config table is missing; using built-in platform defaults");
             Ok(default_platform_config())
         }
         Err(error) => Err(error),
@@ -1126,7 +1134,7 @@ async fn run_config_refresh_loop(state: AppState) {
     loop {
         sleep(state.config.config_refresh).await;
         if let Err(error) = refresh_platform_config(&state).await {
-            eprintln!("trading platform config refresh failed: {error}");
+            tracing::error!("trading platform config refresh failed: {error}");
             record_config_error(&state, error).await;
         }
     }
@@ -1146,7 +1154,7 @@ async fn run_config_refresh_loop(state: AppState) {
 /// per noisy write.
 async fn run_cdc_refresh_subscription(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("trading server cdc subscription disabled: no NATS_URL configured");
+        tracing::info!("trading server cdc subscription disabled: no NATS_URL configured");
         return;
     };
     let jetstream = async_nats::jetstream::new(nats);
@@ -1183,7 +1191,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
                     return;
                 }
                 if let Err(error) = refresh_platform_config(&task_state).await {
-                    eprintln!(
+                    tracing::error!(
                         "trading platform CDC-driven refresh failed (scope={scope} key={key}): \
                          {error}"
                     );
@@ -1194,13 +1202,13 @@ async fn run_cdc_refresh_subscription(state: AppState) {
         .await;
     match start {
         Ok(_join) => {
-            println!(
+            tracing::info!(
                 "trading server cdc subscription started: durable={label} \
                  subject=cdc.public.app_config.>"
             );
         }
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "trading server cdc subscription failed to start ({error}); \
                  falling back to poll-only refresh"
             );
@@ -1899,6 +1907,26 @@ fn evaluate_decision(
         "blocker",
         "buy/sell decisions require bid, ask, or lastPrice".to_string(),
     ));
+    // Freshness gate: only enforced when the caller timestamps the snapshot.
+    // A future asOfMs (clock skew) saturates to age 0 and passes.
+    let price_age_ms = request
+        .market
+        .as_ref()
+        .and_then(|market| market.as_of_ms)
+        .map(|as_of| now_ms().saturating_sub(u128::from(as_of)));
+    let max_price_age_ms = config.max_price_age.as_millis();
+    let market_data_fresh = price_age_ms
+        .map(|age| age <= max_price_age_ms)
+        .unwrap_or(true);
+    safety_checks.push(safety_check(
+        "marketDataFresh",
+        recommended_action == "hold" || market_data_fresh,
+        "blocker",
+        match price_age_ms {
+            Some(age) => format!("market data age {age}ms vs maxPriceAgeMs {max_price_age_ms}"),
+            None => "market snapshot has no asOfMs; freshness gate not enforced".to_string(),
+        },
+    ));
     let current_position = request
         .portfolio
         .as_ref()
@@ -2141,7 +2169,7 @@ fn schema_descriptor() -> serde_json::Value {
         "request": {
             "symbol": "required ticker, pair, or instrument id",
             "targetPlatform": "optional platform slug from app_config trading.platforms.v1",
-            "market": "bid/ask/lastPrice, realizedVolatility, and optional recent prices",
+            "market": "bid/ask/lastPrice, realizedVolatility, optional recent prices, and optional asOfMs (epoch-ms snapshot time; drives the marketDataFresh gate)",
             "webSignals": "scraper-derived sentiment signals in [-1, 1]",
             "mlFeatures": "AI/ML feature values normalized to [-1, 1]",
             "mdpPolicy": "optional MDP/POMDP action hint: buy, sell, hold",
@@ -2177,6 +2205,7 @@ fn example_request() -> DecisionRequest {
             day_volume: Some(45_000_000.0),
             realized_volatility: Some(0.24),
             prices: Some(vec![188.10, 189.30, 190.20, 192.40]),
+            as_of_ms: Some(now_ms() as u64),
         }),
         web_signals: Some(vec![WebSignal {
             source: Some("dd-web-scraper".to_string()),
@@ -2219,19 +2248,38 @@ fn example_request() -> DecisionRequest {
     }
 }
 
+/// Strip credential references (the k8s secret name + key names) from a
+/// decision. These are reconnaissance-useful and are deliberately kept off the
+/// public service descriptor; the HTTP `/decide` response and the broad
+/// `decisions` telemetry subject must match that posture. Only the executor —
+/// which consumes the dedicated `order_intents` subject — needs them, and it
+/// can equally resolve them from the platform slug via app_config.
+fn without_intent_credentials(response: &DecisionResponse) -> DecisionResponse {
+    let mut redacted = response.clone();
+    if let Some(intent) = redacted.order_intent.as_mut() {
+        intent.credential_secret = String::new();
+        intent.credential_keys = Vec::new();
+    }
+    redacted
+}
+
 async fn publish_decision(state: &AppState, response: &DecisionResponse) {
     let Some(nats) = &state.nats else {
         return;
     };
 
+    // The decisions subject is bridged into telemetry/websocket fanout, so it
+    // gets the credential-free view; the full intent (with credential refs)
+    // goes only to the order_intents subject below.
+    let public_response = without_intent_credentials(response);
     let decision_payload = match serde_json::to_vec(&json!({
         "messageKind": "trading.decision.result",
         "source": SERVICE_NAME,
-        "result": response,
+        "result": &public_response,
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("trading server failed to encode decision: {error}");
+            tracing::error!("trading server failed to encode decision: {error}");
             return;
         }
     };
@@ -2248,7 +2296,7 @@ async fn publish_decision(state: &AppState, response: &DecisionResponse) {
                 .nats_published_total
                 .fetch_add(1, Ordering::Relaxed);
         }
-        Err(error) => eprintln!("trading server failed to publish decision: {error}"),
+        Err(error) => tracing::error!("trading server failed to publish decision: {error}"),
     }
 
     if let Some(order_intent) = response.order_intent.as_ref() {
@@ -2259,7 +2307,7 @@ async fn publish_decision(state: &AppState, response: &DecisionResponse) {
         })) {
             Ok(payload) => payload,
             Err(error) => {
-                eprintln!("trading server failed to encode order intent: {error}");
+                tracing::error!("trading server failed to encode order intent: {error}");
                 return;
             }
         };
@@ -2276,7 +2324,7 @@ async fn publish_decision(state: &AppState, response: &DecisionResponse) {
                     .nats_published_total
                     .fetch_add(1, Ordering::Relaxed);
             }
-            Err(error) => eprintln!("trading server failed to publish order intent: {error}"),
+            Err(error) => tracing::error!("trading server failed to publish order intent: {error}"),
         }
     }
 
@@ -2451,7 +2499,9 @@ async fn decide_http(
                     .fetch_add(1, Ordering::Relaxed);
             }
             publish_decision(&state, &response).await;
-            Json(response).into_response()
+            // Don't return credential references to the HTTP caller; they ride
+            // only on the executor's order_intents subject.
+            Json(without_intent_credentials(&response)).into_response()
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -2466,10 +2516,10 @@ async fn decide_http(
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("trading server nats loop disabled: NATS_URL is not configured");
+        tracing::info!("trading server nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "trading server nats loop starting: subject={} queueGroup={} decisionSubject={}",
         state.config.signal_subject, state.config.queue_group, state.config.decision_subject
     );
@@ -2483,7 +2533,7 @@ async fn run_nats_loop(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("trading server nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("trading server nats subscribe failed: {error}; retrying in 5s");
                 sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -2497,7 +2547,7 @@ async fn run_nats_loop(state: AppState) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "trading server rejected oversize nats signal: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -2539,7 +2589,7 @@ async fn run_nats_loop(state: AppState) {
                                     .metrics
                                     .errors_total
                                     .fetch_add(1, Ordering::Relaxed);
-                                eprintln!("trading server failed nats decision: {error}");
+                                tracing::error!("trading server failed nats decision: {error}");
                             }
                         }
                     }
@@ -2548,12 +2598,12 @@ async fn run_nats_loop(state: AppState) {
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("trading server invalid nats signal: {error}");
+                        tracing::error!("trading server invalid nats signal: {error}");
                     }
                 }
             });
         }
-        eprintln!(
+        tracing::error!(
             "trading server nats signal subscription ended; re-subscribing in 5s: subject={} queueGroup={}",
             state.config.signal_subject, state.config.queue_group
         );
@@ -2574,6 +2624,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-trading-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8103").parse::<u16>()?;
     let nats = connect_nats().await?;
@@ -2587,7 +2639,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         inflight,
     };
     if let Err(error) = refresh_platform_config(&state).await {
-        eprintln!("trading platform initial config refresh failed: {error}");
+        tracing::error!("trading platform initial config refresh failed: {error}");
         record_config_error(&state, error).await;
     }
     tokio::spawn(run_config_refresh_loop(state.clone()));
@@ -2612,9 +2664,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
@@ -2633,6 +2685,7 @@ mod tests {
             live_orders_enabled: false,
             halted: false,
             max_inflight: 256,
+            max_price_age: Duration::from_millis(300_000),
             server_auth_secret: Some("secret".to_string()),
             allow_unauthenticated: false,
             database_url: None,
@@ -2680,6 +2733,7 @@ mod tests {
                 day_volume: Some(1_000_000.0),
                 realized_volatility: Some(0.20),
                 prices: Some(vec![100.0, 104.0, 110.0]),
+            as_of_ms: None,
             }),
             web_signals: Some(vec![WebSignal {
                 source: Some("scraper".to_string()),
@@ -2991,5 +3045,61 @@ mod tests {
             commodity_capable >= 8,
             "expected >= 8 active commodity/futures venues, found {commodity_capable}"
         );
+    }
+
+    #[test]
+    fn credential_references_are_redacted_from_public_view() {
+        let platforms = default_platform_config();
+        let response = evaluate_decision(&test_config("paper"), &platforms, positive_request())
+            .expect("decision ok");
+        // The internal decision keeps credential refs for the executor channel.
+        let full_intent = response.order_intent.as_ref().expect("order intent");
+        assert!(!full_intent.credential_secret.is_empty());
+        assert!(!full_intent.credential_keys.is_empty());
+
+        // The public view (HTTP response + decisions subject) must not.
+        let public = without_intent_credentials(&response);
+        let public_intent = public.order_intent.as_ref().expect("order intent");
+        assert!(public_intent.credential_secret.is_empty());
+        assert!(public_intent.credential_keys.is_empty());
+        // Non-sensitive fields are preserved.
+        assert_eq!(public_intent.platform, full_intent.platform);
+        assert_eq!(public_intent.notional, full_intent.notional);
+        let public_text = serde_json::to_string(&public).expect("serialize");
+        assert!(!public_text.contains("IBKR_ACCOUNT_ID"));
+        assert!(!public_text.contains("dd-trading-broker-secrets"));
+    }
+
+    #[test]
+    fn stale_market_data_forces_hold() {
+        let mut request = positive_request();
+        // Timestamp the snapshot far in the past relative to the 300s default.
+        request.market.as_mut().unwrap().as_of_ms = Some(1);
+        let platforms = default_platform_config();
+        let response =
+            evaluate_decision(&test_config("paper"), &platforms, request).expect("decision ok");
+
+        assert_eq!(response.recommended_action, "buy");
+        assert_eq!(response.final_action, "hold");
+        assert!(response.order_intent.is_none());
+        assert!(response
+            .safety_checks
+            .iter()
+            .any(|check| check.name == "marketDataFresh" && !check.ok));
+    }
+
+    #[test]
+    fn fresh_market_data_passes_freshness_gate() {
+        let mut request = positive_request();
+        request.market.as_mut().unwrap().as_of_ms = Some(now_ms() as u64);
+        let platforms = default_platform_config();
+        let response =
+            evaluate_decision(&test_config("paper"), &platforms, request).expect("decision ok");
+
+        assert_eq!(response.final_action, "buy");
+        assert!(response
+            .safety_checks
+            .iter()
+            .any(|check| check.name == "marketDataFresh" && check.ok));
     }
 }

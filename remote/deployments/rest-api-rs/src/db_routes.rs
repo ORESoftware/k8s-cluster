@@ -257,7 +257,7 @@ async fn list_tables(headers: HeaderMap, Query(query): Query<DbTablesQuery>) -> 
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB table discovery failed to connect to postgres: {error}");
+            tracing::error!("internal DB table discovery failed to connect to postgres: {error}");
             return db_error_response("table discovery");
         }
     };
@@ -279,7 +279,7 @@ async fn list_tables(headers: HeaderMap, Query(query): Query<DbTablesQuery>) -> 
         })
         .into_response(),
         Err(error) => {
-            eprintln!("internal DB table discovery failed: {error}");
+            tracing::error!("internal DB table discovery failed: {error}");
             db_error_response("table discovery")
         }
     }
@@ -385,7 +385,7 @@ async fn table_metadata(headers: HeaderMap, schema: String, table: String) -> Re
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB table metadata failed to connect to postgres: {error}");
+            tracing::error!("internal DB table metadata failed to connect to postgres: {error}");
             return db_error_response("table metadata");
         }
     };
@@ -400,7 +400,7 @@ async fn table_metadata(headers: HeaderMap, schema: String, table: String) -> Re
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} was not found")),
         Err(error) => {
-            eprintln!("internal DB table metadata failed: {error}");
+            tracing::error!("internal DB table metadata failed: {error}");
             db_error_response("table metadata")
         }
     }
@@ -426,7 +426,7 @@ async fn list_rows(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB row list failed to connect to postgres: {error}");
+            tracing::error!("internal DB row list failed to connect to postgres: {error}");
             return db_error_response("row list");
         }
     };
@@ -456,7 +456,7 @@ async fn list_rows(
         })
         .into_response(),
         Err(error) => {
-            eprintln!("internal DB row list failed: {error}");
+            tracing::error!("internal DB row list failed: {error}");
             db_error_response("row list")
         }
     }
@@ -475,7 +475,7 @@ async fn get_row(headers: HeaderMap, schema: String, table: String, id: String) 
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB row fetch failed to connect to postgres: {error}");
+            tracing::error!("internal DB row fetch failed to connect to postgres: {error}");
             return db_error_response("row fetch");
         }
     };
@@ -506,7 +506,7 @@ async fn get_row(headers: HeaderMap, schema: String, table: String, id: String) 
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("internal DB row fetch failed: {error}");
+            tracing::error!("internal DB row fetch failed: {error}");
             db_error_response("row fetch")
         }
     }
@@ -529,7 +529,7 @@ async fn insert_row(headers: HeaderMap, schema: String, table: String, body: Val
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB row insert failed to connect to postgres: {error}");
+            tracing::error!("internal DB row insert failed to connect to postgres: {error}");
             return db_error_response("row insert");
         }
     };
@@ -583,7 +583,7 @@ async fn insert_row(headers: HeaderMap, schema: String, table: String, body: Val
         })
         .into_response(),
         Err(error) => {
-            eprintln!("internal DB row insert failed: {error}");
+            tracing::error!("internal DB row insert failed: {error}");
             db_error_response("row insert")
         }
     }
@@ -616,7 +616,7 @@ async fn update_row(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB row update failed to connect to postgres: {error}");
+            tracing::error!("internal DB row update failed to connect to postgres: {error}");
             return db_error_response("row update");
         }
     };
@@ -668,7 +668,7 @@ async fn update_row(
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("internal DB row update failed: {error}");
+            tracing::error!("internal DB row update failed: {error}");
             db_error_response("row update")
         }
     }
@@ -696,7 +696,7 @@ async fn delete_row_by_id(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB row delete failed to connect to postgres: {error}");
+            tracing::error!("internal DB row delete failed to connect to postgres: {error}");
             return db_error_response("row delete");
         }
     };
@@ -730,7 +730,7 @@ async fn delete_row_by_id(
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("internal DB row delete failed: {error}");
+            tracing::error!("internal DB row delete failed: {error}");
             db_error_response("row delete")
         }
     }
@@ -784,7 +784,7 @@ async fn join_rows(headers: HeaderMap, Query(query): Query<DbJoinQuery>) -> Resp
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("internal DB join failed to connect to postgres: {error}");
+            tracing::error!("internal DB join failed to connect to postgres: {error}");
             return db_error_response("join");
         }
     };
@@ -871,7 +871,7 @@ async fn join_rows(headers: HeaderMap, Query(query): Query<DbJoinQuery>) -> Resp
         })
         .into_response(),
         Err(error) => {
-            eprintln!("internal DB join failed: {error}");
+            tracing::error!("internal DB join failed: {error}");
             db_error_response("join")
         }
     }
@@ -948,7 +948,7 @@ async fn require_table_metadata(
         Ok(Some(metadata)) => Ok(metadata),
         Ok(None) => Err(not_found(format!("{schema}.{table} was not found"))),
         Err(error) => {
-            eprintln!("internal DB table metadata lookup failed: {error}");
+            tracing::error!("internal DB table metadata lookup failed: {error}");
             Err(db_error_response("table metadata"))
         }
     }

@@ -18,6 +18,8 @@ edition = "2021"
 # /internal/update-runtime-config pushes like every other Rust deployment.
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 axum = { version = "0.7", features = ["macros"] }
 dd-redis-interfaces = { path = "../../libs/interfaces/redis/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }

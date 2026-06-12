@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { initTelemetry, instrumentFastify, loggerMixin } from '@dd/telemetry';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { lookup as lookupCallback } from 'node:dns';
@@ -432,10 +433,14 @@ const guardedLookup: LookupFunction = (hostname, options, callback): void => {
 // connect-time-validated addresses.
 const guardedAgent = new Agent({ connect: { lookup: guardedLookup } });
 
+const telemetry = initTelemetry('dd-web-scraper');
+
 const fastify = Fastify({
-  logger: true,
+  logger: { mixin: loggerMixin },
   bodyLimit: 1_048_576,
 });
+
+instrumentFastify(fastify, { service: 'dd-web-scraper' });
 
 fastify.addHook('onRequest', async (request, reply) => {
   const path = request.url.split('?')[0] ?? request.url;
@@ -1978,6 +1983,7 @@ async function main(): Promise<void> {
 
 function shutdown(signal: string): void {
   fastify.log.info(`${signal} received; shutting down`);
+  void telemetry.shutdown();
   fastify.close().finally(() => {
     closeBrowsers().finally(() => process.exit(0));
   });

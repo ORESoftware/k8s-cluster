@@ -9,6 +9,8 @@ edition = "2021"
 # /readyz + graceful-shutdown conventions of the other remote Rust servers.
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 serde = { version = "1", features = ["derive"] }

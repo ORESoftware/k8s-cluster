@@ -50,6 +50,18 @@
         -->
         <async-java.version>v0.2.9</async-java.version>
 
+        <!--
+          OpenTelemetry tracing uses Vert.x's first-class integration
+          (vertx-opentelemetry): App.java builds an OpenTelemetry SDK and hands
+          it to VertxOptions.setTracingOptions(new OpenTelemetryOptions(sdk)).
+          No -javaagent. vertx-opentelemetry's version is governed by the
+          vertx-stack-depchain BOM above; the OTel SDK + OTLP exporter come from
+          opentelemetry-bom; semconv (relocated to its own groupId) is pinned
+          explicitly.
+        -->
+        <opentelemetry.version>1.46.0</opentelemetry.version>
+        <opentelemetry-semconv.version>1.30.0</opentelemetry-semconv.version>
+
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>
 
@@ -59,6 +71,13 @@
                 <groupId>io.vertx</groupId>
                 <artifactId>vertx-stack-depchain</artifactId>
                 <version>${vertx.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -103,6 +122,31 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
             <version>1.12.13</version>
+        </dependency>
+
+        <!--
+          Vert.x native OpenTelemetry tracing bridge. Version is managed by the
+          vertx-stack-depchain BOM (kept in lockstep with vertx.version=4.5.10).
+          App.java wires the OpenTelemetry SDK into VertxOptions through
+          new OpenTelemetryOptions(openTelemetry); Vert.x then emits a SERVER
+          span per HTTP request and propagates W3C traceparent automatically.
+        -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-opentelemetry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.semconv</groupId>
+            <artifactId>opentelemetry-semconv</artifactId>
+            <version>${opentelemetry-semconv.version}</version>
         </dependency>
 
         <!--

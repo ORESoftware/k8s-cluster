@@ -3467,6 +3467,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-formal-methods-server");
+
     let config = Arc::new(config_from_env());
     let host = env_value("HOST", "0.0.0.0");
     let port = env_u64("PORT", DEFAULT_PORT as u64) as u16;
@@ -3513,12 +3515,12 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("{SERVICE_NAME} listening on http://{address}");
+    tracing::info!("{SERVICE_NAME} listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind tcp listener");
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");

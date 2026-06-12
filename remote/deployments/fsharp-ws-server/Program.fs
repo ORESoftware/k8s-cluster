@@ -9,6 +9,9 @@ open Microsoft.AspNetCore.Routing
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
+open OpenTelemetry.Resources
+open OpenTelemetry.Trace
+open OpenTelemetry.Exporter
 open OresSoftware.Dd.FsWs.PgSchema
 open OresSoftware.Dd.FsWs.PgListen
 open OresSoftware.Dd.FsWs.PgWal
@@ -205,6 +208,40 @@ let main args =
         .AddSimpleConsole(fun o ->
             o.SingleLine <- true
             o.TimestampFormat <- "yyyy-MM-ddTHH:mm:ss.fffZ ")
+    |> ignore
+
+    // --- OpenTelemetry tracing (explicit SDK wiring; no profiler/CLR hook) ---
+    // The OTLP/HTTP collector defaults to the in-cluster dd-otel-collector but
+    // is overridable via OTEL_EXPORTER_OTLP_ENDPOINT. service.name comes from
+    // OTEL_SERVICE_NAME (falling back to the assembly name), and the pod /
+    // namespace resource attributes are stamped from the downward-API env vars
+    // POD_NAME / POD_NAMESPACE so spans are attributable to a specific replica.
+    let otlpEndpoint =
+        (envOrDefault
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+            "http://dd-otel-collector.observability.svc.cluster.local:4318")
+            .TrimEnd('/')
+    let serviceName = envOrDefault "OTEL_SERVICE_NAME" "dd-fsharp-ws-server"
+
+    let resourceAttrs = ResizeArray<System.Collections.Generic.KeyValuePair<string, obj>>()
+    match envOpt "POD_NAME" with
+    | Some v -> resourceAttrs.Add(System.Collections.Generic.KeyValuePair("k8s.pod.name", box v))
+    | None -> ()
+    match envOpt "POD_NAMESPACE" with
+    | Some v -> resourceAttrs.Add(System.Collections.Generic.KeyValuePair("k8s.namespace.name", box v))
+    | None -> ()
+
+    builder.Services
+        .AddOpenTelemetry()
+        .ConfigureResource(fun r ->
+            r.AddService(serviceName).AddAttributes(resourceAttrs) |> ignore)
+        .WithTracing(fun t ->
+            t.AddAspNetCoreInstrumentation()
+             .AddHttpClientInstrumentation()
+             .AddOtlpExporter(fun o ->
+                 o.Endpoint <- Uri(otlpEndpoint + "/v1/traces")
+                 o.Protocol <- OtlpExportProtocol.HttpProtobuf)
+            |> ignore)
     |> ignore
 
     let app = builder.Build()

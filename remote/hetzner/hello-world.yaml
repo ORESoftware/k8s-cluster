@@ -19,6 +19,9 @@ spec:
       labels:
         app: hello-world
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -31,6 +34,11 @@ spec:
           image: nginxdemos/hello:plain-text
           ports:
             - containerPort: 80
+          # baseline-PSS compliant; nginxdemos/hello runs as root and needs the
+          # default cap set (CHOWN/SETUID/SETGID) to spawn workers, so we don't
+          # drop ALL. A 'restricted'-grade workload should use a non-root image.
+          securityContext:
+            allowPrivilegeEscalation: false
           resources:
             requests:
               cpu: 50m

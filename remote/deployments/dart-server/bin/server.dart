@@ -68,6 +68,7 @@ import 'package:dd_dart_server/server/hot_reloader.dart';
 import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/optimizer_client.dart';
+import 'package:dd_dart_server/server/otel.dart';
 import 'package:dd_dart_server/server/pool_autotuner.dart';
 import 'package:dd_dart_server/server/pool_shield.dart';
 import 'package:dd_dart_server/server/postgres.dart';
@@ -329,6 +330,17 @@ Future<void> main(List<String> args) async {
       .toList();
 
   final metrics = Metrics();
+
+  // Explicit OpenTelemetry tracing (hand-rolled OTLP/HTTP exporter; no runtime
+  // patching). Spans for the coordinator's admin/probe/metrics surface are
+  // created by the `traced(...)` wrapper in the admin request loop below.
+  final telemetry = Telemetry.fromEnv();
+  // ignore: avoid_print
+  print(jsonEncode({
+    'event': 'otel_init',
+    'enabled': telemetry.enabled,
+    'service_name': telemetry.serviceName,
+  }));
 
   pg_contract.assertPgContract();
 
@@ -916,58 +928,64 @@ Future<void> main(List<String> args) async {
   // ---- Admin request loop ------------------------------------------------
   await for (final req in adminServer) {
     metrics.inc('dart_admin_requests_total');
-    // Gate the admin surface behind the shared secret when configured. Only
-    // `/dart/admin/*` is protected; probes + `/metrics` fall through so the
-    // kubelet and Prometheus keep working uncredentialed.
-    if (req.uri.path.startsWith('/dart/admin') &&
-        !_adminAuthorized(req, adminAuthToken)) {
-      metrics.inc('dart_admin_auth_rejected_total');
-      await _plain(req, 'unauthorized\n',
-          status: HttpStatus.unauthorized);
-      continue;
-    }
-    // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
-    // shard carrying the most sessions and tell it to hard-kill one host
-    // isolate, simulating a crash so we can measure the real blast radius.
-    if (wsDebugCrash &&
-        req.method.toUpperCase() == 'POST' &&
-        req.uri.path == '/dart/admin/debug/crash-host') {
-      _GatewayShardHandle? target;
-      var bestLive = -1.0;
-      for (final s in shards) {
-        if (s.dead) continue;
-        final live =
-            (perShardGauges[s.shardId]?['dart_sessions_live'] ?? 0).toDouble();
-        if (target == null || live > bestLive) {
-          target = s;
-          bestLive = live;
+    // One SERVER span per admin/probe/metrics request. `traced` continues any
+    // inbound W3C traceparent, records the response status, and ends the span
+    // in a finally. The per-request work is awaited inside the span so the
+    // span's duration + status reflect the response actually produced.
+    await traced(telemetry, req, () async {
+      // Gate the admin surface behind the shared secret when configured. Only
+      // `/dart/admin/*` is protected; probes + `/metrics` fall through so the
+      // kubelet and Prometheus keep working uncredentialed.
+      if (req.uri.path.startsWith('/dart/admin') &&
+          !_adminAuthorized(req, adminAuthToken)) {
+        metrics.inc('dart_admin_auth_rejected_total');
+        await _plain(req, 'unauthorized\n',
+            status: HttpStatus.unauthorized);
+        return;
+      }
+      // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
+      // shard carrying the most sessions and tell it to hard-kill one host
+      // isolate, simulating a crash so we can measure the real blast radius.
+      if (wsDebugCrash &&
+          req.method.toUpperCase() == 'POST' &&
+          req.uri.path == '/dart/admin/debug/crash-host') {
+        _GatewayShardHandle? target;
+        var bestLive = -1.0;
+        for (final s in shards) {
+          if (s.dead) continue;
+          final live =
+              (perShardGauges[s.shardId]?['dart_sessions_live'] ?? 0).toDouble();
+          if (target == null || live > bestLive) {
+            target = s;
+            bestLive = live;
+          }
         }
+        if (target != null) {
+          try {
+            target.control.send(const ShardDebugCrashHost());
+          } catch (_) {/* swallow */}
+          metrics.inc('dart_debug_crash_host_requests_total');
+        }
+        await _plain(
+          req,
+          jsonEncode({
+            'ok': target != null,
+            'shard': target?.shardId,
+            'shard_sessions_live': bestLive < 0 ? 0 : bestLive.toInt(),
+          }),
+          contentType: 'application/json',
+        );
+        return;
       }
-      if (target != null) {
-        try {
-          target.control.send(const ShardDebugCrashHost());
-        } catch (_) {/* swallow */}
-        metrics.inc('dart_debug_crash_host_requests_total');
-      }
-      await _plain(
+      await _routeAdmin(
         req,
-        jsonEncode({
-          'ok': target != null,
-          'shard': target?.shardId,
-          'shard_sessions_live': bestLive < 0 ? 0 : bestLive.toInt(),
-        }),
-        contentType: 'application/json',
+        metrics: metrics,
+        ready: ready,
+        hotReloader: hotReloader,
+        pgPool: pgPool,
+        presenceConvsRepo: presenceConvsRepo,
       );
-      continue;
-    }
-    unawaited(_routeAdmin(
-      req,
-      metrics: metrics,
-      ready: ready,
-      hotReloader: hotReloader,
-      pgPool: pgPool,
-      presenceConvsRepo: presenceConvsRepo,
-    ));
+    });
   }
 
   final shutdown = shuttingDown;
@@ -988,6 +1006,7 @@ Future<void> main(List<String> args) async {
   metricsInbox.close();
   await pgPool?.close();
   await metrics.close();
+  telemetry.close();
 }
 
 /// Per-shard handle the coordinator keeps so it can monitor and tear

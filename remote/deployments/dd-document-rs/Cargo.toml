@@ -15,6 +15,8 @@ haskell-bridge = []
 magick-bridge = []
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"

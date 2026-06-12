@@ -269,7 +269,7 @@ async fn run_local(state: &AppState, solve_id: &str, plan: &SolvePlan) {
             Ok(solution) => apply_result(state, solve_id, solution.routes, solution.distance).await,
             Err(error) => {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} local restart task failed: {error}");
+                tracing::error!("{SERVICE_NAME} local restart task failed: {error}");
                 bump_done(state, solve_id).await;
             }
         }
@@ -286,7 +286,7 @@ async fn dispatch_distributed(state: &AppState, solve_id: &str, plan: &SolvePlan
         Ok(subscription) => subscription,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} result subscribe failed: {error}");
+            tracing::error!("{SERVICE_NAME} result subscribe failed: {error}");
             return true;
         }
     };
@@ -307,12 +307,12 @@ async fn dispatch_distributed(state: &AppState, solve_id: &str, plan: &SolvePlan
                     .await
                 {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("{SERVICE_NAME} job publish failed: {error}");
+                    tracing::error!("{SERVICE_NAME} job publish failed: {error}");
                 } else {
                     state.metrics.jobs_published_total.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            Err(error) => eprintln!("{SERVICE_NAME} job serialize failed: {error}"),
+            Err(error) => tracing::error!("{SERVICE_NAME} job serialize failed: {error}"),
         }
     }
     let _ = nats.flush().await;
@@ -396,7 +396,7 @@ async fn finalize(state: &AppState, solve_id: &str, status: &str) {
 
 async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
     let Some(nats) = state.nats.clone() else {
-        eprintln!("{SERVICE_NAME} worker role requires NATS_URL");
+        tracing::error!("{SERVICE_NAME} worker role requires NATS_URL");
         return Ok(());
     };
     let jetstream = async_nats::jetstream::new(nats.clone());
@@ -428,19 +428,19 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
         )
         .await?;
 
-    println!("{SERVICE_NAME} worker ready: consumer={consumer_name} jobs={}", state.jobs_subject);
+    tracing::info!("{SERVICE_NAME} worker ready: consumer={consumer_name} jobs={}", state.jobs_subject);
     let mut messages = consumer.messages().await?;
     while let Some(message) = messages.next().await {
         let message = match message {
             Ok(message) => message,
             Err(error) => {
-                eprintln!("{SERVICE_NAME} worker fetch failed: {error}");
+                tracing::error!("{SERVICE_NAME} worker fetch failed: {error}");
                 continue;
             }
         };
         if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!(
+            tracing::error!(
                 "{SERVICE_NAME} rejected oversize routing job: {} bytes",
                 message.payload.len()
             );
@@ -450,7 +450,7 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
         let job = match serde_json::from_slice::<RestartJob>(&message.payload) {
             Ok(job) => job,
             Err(error) => {
-                eprintln!("{SERVICE_NAME} invalid routing job: {error}");
+                tracing::error!("{SERVICE_NAME} invalid routing job: {error}");
                 let _ = message.ack().await;
                 continue;
             }
@@ -459,7 +459,7 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
         // the master's plan_solve checks — a malformed problem must not pin a worker.
         if let Err(reason) = job.problem.validate() {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("{SERVICE_NAME} rejected invalid routing problem: {reason}");
+            tracing::error!("{SERVICE_NAME} rejected invalid routing problem: {reason}");
             let _ = message.ack().await;
             continue;
         }
@@ -474,7 +474,7 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                 Ok(solution) => solution,
                 Err(error) => {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("{SERVICE_NAME} worker solve task failed: {error}");
+                    tracing::error!("{SERVICE_NAME} worker solve task failed: {error}");
                     let _ = message
                         .ack_with(async_nats::jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
                         .await;
@@ -496,14 +496,14 @@ async fn run_worker(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>>
                     .publish(state.results_subject.clone(), payload.into())
                     .await
                 {
-                    eprintln!("{SERVICE_NAME} worker result publish failed: {error}");
+                    tracing::error!("{SERVICE_NAME} worker result publish failed: {error}");
                 }
             }
-            Err(error) => eprintln!("{SERVICE_NAME} worker result serialize failed: {error}"),
+            Err(error) => tracing::error!("{SERVICE_NAME} worker result serialize failed: {error}"),
         }
         state.metrics.worker_jobs_processed_total.fetch_add(1, Ordering::Relaxed);
         if let Err(error) = message.ack().await {
-            eprintln!("{SERVICE_NAME} worker ack failed: {error}");
+            tracing::error!("{SERVICE_NAME} worker ack failed: {error}");
         }
     }
     Ok(())
@@ -740,11 +740,11 @@ async fn connect_nats(url: &str) -> Option<async_nats::Client> {
     for attempt in 1..=attempts {
         match async_nats::connect(url).await {
             Ok(client) => {
-                println!("{SERVICE_NAME} connected to NATS at {url}");
+                tracing::info!("{SERVICE_NAME} connected to NATS at {url}");
                 return Some(client);
             }
             Err(error) => {
-                eprintln!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
+                tracing::error!("{SERVICE_NAME} NATS connect attempt {attempt}/{attempts} failed: {error}");
                 if attempt < attempts {
                     tokio::time::sleep(retry).await;
                 }
@@ -772,12 +772,14 @@ async fn ensure_stream(client: &async_nats::Client) {
         })
         .await
     {
-        eprintln!("{SERVICE_NAME} ensure stream failed: {error}");
+        tracing::error!("{SERVICE_NAME} ensure stream failed: {error}");
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-routing-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8132").parse::<u16>()?;
     let role = match env_value("ROUTING_NODE_ROLE", "master").to_ascii_lowercase().as_str() {
@@ -796,14 +798,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(client) = &nats {
         ensure_stream(client).await;
     } else if role == NodeRole::Worker {
-        eprintln!("{SERVICE_NAME} worker role has no NATS connection; it will idle until restarted");
+        tracing::error!("{SERVICE_NAME} worker role has no NATS connection; it will idle until restarted");
     }
 
     let auth_secret = env::var("ROUTING_AUTH_SECRET")
         .ok()
         .filter(|value| !value.trim().is_empty());
     if auth_secret.is_some() {
-        println!("{SERVICE_NAME} POST /api/solve requires a bearer token (ROUTING_AUTH_SECRET set)");
+        tracing::info!("{SERVICE_NAME} POST /api/solve requires a bearer token (ROUTING_AUTH_SECRET set)");
     }
 
     let state = AppState {
@@ -823,7 +825,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let worker_state = state.clone();
         tokio::spawn(async move {
             if let Err(error) = run_worker(worker_state).await {
-                eprintln!("{SERVICE_NAME} worker loop exited: {error}");
+                tracing::error!("{SERVICE_NAME} worker loop exited: {error}");
             }
         });
     }
@@ -839,9 +841,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} ({}) listening on http://{addr}", role.as_str());
+    tracing::info!("{SERVICE_NAME} ({}) listening on http://{addr}", role.as_str());
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

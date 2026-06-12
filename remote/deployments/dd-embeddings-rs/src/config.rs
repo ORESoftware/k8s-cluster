@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 
 pub struct Config {
     pub addr: SocketAddr,
-    pub log_format_json: bool,
     /// Optional bearer token gating the JSON API. When unset, the API is open
     /// to anything that can reach the listener (an upstream gateway may still
     /// authenticate). When set, callers must send `Authorization: Bearer ...`.
@@ -64,7 +63,6 @@ impl Config {
 
         Ok(Self {
             addr,
-            log_format_json: env_or("EMBEDDINGS_LOG_FORMAT", "json") == "json",
             api_auth_bearer: non_empty(std::env::var("EMBEDDINGS_API_AUTH_BEARER").ok()),
             qdrant_url: env_or("QDRANT_URL", "http://dd-qdrant.ai-ml.svc.cluster.local:6333"),
             qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),

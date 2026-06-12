@@ -250,7 +250,7 @@ async fn run_container_pool_smoke() -> Result<(), String> {
     };
     let echo_key = env::var("CONTAINER_POOL_ECHO_KEY").unwrap_or_else(|_| smoke_key());
     let timeout_seconds = env_u64("CONTAINER_POOL_TIMEOUT_SECONDS", 30);
-    println!(
+    tracing::info!(
         "ws-loadtest-rs container-pool-smoke starting url={} echo_key={} timeout_seconds={}",
         url, echo_key, timeout_seconds
     );
@@ -287,13 +287,13 @@ async fn run_container_pool_smoke() -> Result<(), String> {
             status, returned_key, body
         ));
     }
-    println!(
+    tracing::info!(
         "ws-loadtest-rs container-pool-smoke ok pool={} container={} echo_key={}",
         body.pointer("/poolSlug")
-            .and_then(Value::as_str)
+            .and_then(serde_json::Value::as_str)
             .unwrap_or(""),
         body.pointer("/containerName")
-            .and_then(Value::as_str)
+            .and_then(serde_json::Value::as_str)
             .unwrap_or(""),
         returned_key
     );
@@ -400,13 +400,13 @@ async fn run_pipeline_client(
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect failed client={} error={}", client_id, error);
+                    tracing::error!("connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect timeout client={}", client_id);
+                    tracing::error!("connect timeout client={}", client_id);
                 }
             }
         }
@@ -1149,13 +1149,13 @@ async fn run_gcs_client(
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("gcs connect failed client={} error={}", client_id, error);
+                    tracing::error!("gcs connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("gcs connect timeout client={}", client_id);
+                    tracing::error!("gcs connect timeout client={}", client_id);
                 }
             }
         }
@@ -1203,13 +1203,13 @@ async fn run_client(client_id: usize, config: Arc<Config>, stats: Arc<Stats>) ->
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect failed client={} error={}", client_id, error);
+                    tracing::error!("connect failed client={} error={}", client_id, error);
                 }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
                 if stats.should_log_connect_error() {
-                    eprintln!("connect timeout client={}", client_id);
+                    tracing::error!("connect timeout client={}", client_id);
                 }
             }
         }
@@ -1257,7 +1257,7 @@ async fn report_stats(
             let in_flight = stats.in_flight.load(Ordering::Relaxed);
 
             // received/sent ratio approximates conversation fan-out in gcs mode.
-            println!(
+            tracing::info!(
                 "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} messages={} \
                  sent={} received={} latency_samples={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
@@ -1281,7 +1281,7 @@ async fn report_stats(
                 sample_count
             );
         } else {
-            println!(
+            tracing::info!(
                 "ws-loadtest-rs report attempted={} connected={} failed={} open={} messages={}",
                 attempted, connected, failed, open, messages
             );
@@ -1291,9 +1291,11 @@ async fn report_stats(
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("ws-loadtest-rs");
+
     if env::var("CONTAINER_POOL_URL").is_ok() {
         if let Err(error) = run_container_pool_smoke().await {
-            eprintln!("ws-loadtest-rs container-pool-smoke failed: {error}");
+            tracing::error!("ws-loadtest-rs container-pool-smoke failed: {error}");
             std::process::exit(1);
         }
         return;
@@ -1308,7 +1310,7 @@ async fn main() {
         Histogram::<u64>::new_with_bounds(1, 60_000_000, 3).expect("hdrhistogram bounds"),
     ));
 
-    println!(
+    tracing::info!(
         "ws-loadtest-rs starting target_ws_url={} client_count={} load_mode={} hold_seconds={} \
          connect_timeout_seconds={} receive_timeout_seconds={} reconnect_delay_ms={} \
          ramp_delay_ms={} report_interval_seconds={} messages_per_second_per_client={} \
@@ -1345,7 +1347,7 @@ async fn main() {
         let assignments = build_gcs_assignments(&config);
         let cpc = config.gcs_clients_per_conv.max(1);
         let convs = (config.client_count + cpc - 1) / cpc;
-        println!(
+        tracing::info!(
             "ws-loadtest-rs gcs-setup conversations={} clients_per_conv={} senders_per_conv={}",
             convs,
             config.gcs_clients_per_conv,

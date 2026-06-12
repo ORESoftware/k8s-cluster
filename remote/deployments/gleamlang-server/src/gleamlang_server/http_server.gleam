@@ -1,3 +1,4 @@
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -30,7 +31,7 @@ type WsState {
 }
 
 pub fn supervised(broker_name: process.Name(broadcaster.Message)) {
-  mist.new(fn(req) { route(req, broker_name) })
+  mist.new(dd_otel_client.trace(fn(req) { route(req, broker_name) }))
   |> mist.bind(host)
   |> mist.port(port)
   |> mist.supervised

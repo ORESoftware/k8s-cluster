@@ -139,7 +139,9 @@ SC
 
 ARGOCD_TAG="$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | jq -r .tag_name)"
 kubectl create namespace argocd 2>/dev/null || true
-kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_TAG}/manifests/install.yaml"
+# server-side apply: ArgoCD's applicationsets CRD exceeds the 256KB client-side
+# last-applied-configuration annotation limit, which breaks plain `kubectl apply`.
+kubectl apply --server-side --force-conflicts -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_TAG}/manifests/install.yaml"
 kubectl -n argocd rollout status deploy/argocd-server --timeout=300s || true
 kubectl -n argocd patch svc argocd-server -p '{"spec":{"type":"NodePort","ports":[{"name":"https","port":443,"targetPort":8080,"nodePort":30443}]}}' || true
 REMOTE
@@ -178,7 +180,7 @@ for loc in "${LOCS[@]}"; do
 done
 echo ""
 echo "  ArgoCD:    https://${CP_IP}:30443   (user: admin)"
-echo "  ArgoCD pw: ${PASS:-<run on ash: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password} | base64 -d>}"
+echo "  ArgoCD pw: ${PASS:-unavailable - fetch on ash from secret argocd-initial-admin-secret}"
 echo ""
 echo "  kubectl (from ash):  ssh -i ${SSH_KEY} root@${CP_IP} kubectl get nodes -o wide"
 echo "============================================================"

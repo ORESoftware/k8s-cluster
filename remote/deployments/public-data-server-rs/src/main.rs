@@ -1108,7 +1108,7 @@ async fn publish_json(state: &AppState, subject: &str, value: &Value) {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("public-data failed to encode nats payload: {error}");
+            tracing::error!("public-data failed to encode nats payload: {error}");
         }
     }
 }
@@ -1154,7 +1154,7 @@ async fn maybe_submit_pipeline_job(
         Ok(job) => Some(job),
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            eprintln!("public-data pipeline job creation failed: {error}");
+            tracing::error!("public-data pipeline job creation failed: {error}");
             None
         }
     }
@@ -2990,10 +2990,10 @@ async fn api_docs_json() -> impl IntoResponse {
 
 async fn run_nats_loop(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("public-data nats loop disabled: NATS_URL is not configured");
+        tracing::info!("public-data nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "public-data nats loop starting: subject={} queueGroup={} resultSubject={}",
         state.config.ingest_request_subject,
         state.config.queue_group,
@@ -3009,7 +3009,7 @@ async fn run_nats_loop(state: AppState) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("public-data nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("public-data nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -3022,7 +3022,7 @@ async fn run_nats_loop(state: AppState) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "public-data rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -3060,7 +3060,7 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            eprintln!("public-data nats request failed: {error}");
+                            tracing::error!("public-data nats request failed: {error}");
                         }
                     }
                     Err(error) => {
@@ -3068,12 +3068,12 @@ async fn run_nats_loop(state: AppState) {
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        eprintln!("public-data invalid nats payload: {error}");
+                        tracing::error!("public-data invalid nats payload: {error}");
                     }
                 }
             });
         }
-        eprintln!(
+        tracing::error!(
             "public-data nats subscription ended (subject={}); re-subscribing in 5s",
             state.config.ingest_request_subject
         );
@@ -3083,6 +3083,8 @@ async fn run_nats_loop(state: AppState) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-public-data-server");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8115").parse::<u16>()?;
     let nats = match optional_env("NATS_URL") {
@@ -3092,7 +3094,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-public-data-server NATS connect failed ({url}): {error}");
+                tracing::error!("dd-public-data-server NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -3143,9 +3145,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("{SERVICE_NAME} listening on http://{addr}");
+    tracing::info!("{SERVICE_NAME} listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

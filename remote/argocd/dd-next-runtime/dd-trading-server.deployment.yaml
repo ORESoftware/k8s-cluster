@@ -93,6 +93,11 @@ spec:
               value: '0.55'
             - name: TRADING_MAX_RISK_SCORE
               value: '0.72'
+            # Max age (ms) of a timestamped market snapshot before the
+            # marketDataFresh gate forces a hold. Only enforced when a request
+            # supplies market.asOfMs. Default 5 minutes.
+            - name: TRADING_MAX_PRICE_AGE_MS
+              value: '300000'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: SCRAPER_BASE_URL

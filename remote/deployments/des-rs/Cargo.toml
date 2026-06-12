@@ -5,6 +5,8 @@ edition = "2021"
 description = "HTTP server that runs the discrete-event-system.rs engine as a library and serves the rendered HTML result pages."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "signal", "time"] }
 tokio-util = { version = "0.7", features = ["io"] }

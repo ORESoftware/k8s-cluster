@@ -5,6 +5,8 @@ edition = "2021"
 description = "Pure-Rust state-vector quantum circuit simulator. Runs arbitrary gate circuits (H/X/Y/Z/S/T/RX/RY/RZ/phase/CX/CZ/SWAP/CCX/U) with measurement sampling, and three textbook quantum algorithms end-to-end: Grover's amplitude-amplification search, QAOA for MaxCut, and a variational quantum eigensolver (VQE) for a Pauli-sum Hamiltonian. Deterministic from a seed; no quantum hardware and no external math crates."
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+tracing = "0.1"
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 # Source-of-truth NATS subject constants for the solve request/result lane and

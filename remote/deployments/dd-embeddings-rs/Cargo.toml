@@ -17,6 +17,7 @@ edition = "2021"
 # See readme.md and src/providers/voyage.rs.
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 anyhow = "1"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros"] }

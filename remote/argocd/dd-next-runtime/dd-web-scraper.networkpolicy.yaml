@@ -36,6 +36,16 @@ spec:
         - protocol: TCP
           port: 8097
   egress:
+    # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
     # Cluster DNS only.
     - to:
         - namespaceSelector:

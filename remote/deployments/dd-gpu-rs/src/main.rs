@@ -581,7 +581,7 @@ async fn publish_result(state: &AppState, response: &ScheduleResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            eprintln!("failed to encode gpu schedule result: {error}");
+            tracing::error!("failed to encode gpu schedule result: {error}");
             return;
         }
     };
@@ -589,7 +589,7 @@ async fn publish_result(state: &AppState, response: &ScheduleResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        eprintln!("failed to publish gpu schedule result: {error}");
+        tracing::error!("failed to publish gpu schedule result: {error}");
         return;
     }
     let _ = nats
@@ -703,10 +703,10 @@ async fn schedule_http(State(state): State<AppState>, Json(request): Json<Schedu
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        println!("dd-gpu-rs nats loop disabled: NATS_URL is not configured");
+        tracing::info!("dd-gpu-rs nats loop disabled: NATS_URL is not configured");
         return;
     };
-    println!(
+    tracing::info!(
         "dd-gpu-rs nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -714,7 +714,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                eprintln!("dd-gpu-rs nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("dd-gpu-rs nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -727,7 +727,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!(
+                tracing::error!(
                     "dd-gpu-rs rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -749,23 +749,25 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            eprintln!("dd-gpu-rs failed nats schedule: {error}");
+                            tracing::error!("dd-gpu-rs failed nats schedule: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        eprintln!("dd-gpu-rs invalid nats request: {error}");
+                        tracing::error!("dd-gpu-rs invalid nats request: {error}");
                     }
                 }
             });
         }
-        eprintln!("dd-gpu-rs subscription ended; re-subscribing in 5s");
+        tracing::error!("dd-gpu-rs subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-gpu-rs");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8136").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -775,7 +777,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("dd-gpu-rs NATS connect failed ({url}): {error}");
+                tracing::error!("dd-gpu-rs NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -805,9 +807,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    println!("dd-gpu-rs listening on http://{addr}");
+    tracing::info!("dd-gpu-rs listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

@@ -10,6 +10,7 @@ name = "dd-apostille-services-server"
 path = "src/main.rs"
 
 [dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
 axum = { version = "0.7", features = ["macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

@@ -595,7 +595,7 @@ fn service_config_from_env() -> ServiceConfig {
     let engine_raw = env_value("CONTAINER_POOL_ENGINE", "nerdctl");
     let engine = EngineKind::parse(&engine_raw);
     if !engine_raw.trim().is_empty() && !engine_value_recognized(&engine_raw) {
-        eprintln!(
+        tracing::error!(
             "{SERVICE_NAME} warning: unrecognized CONTAINER_POOL_ENGINE={engine_raw:?}; defaulting to nerdctl"
         );
     }
@@ -603,7 +603,7 @@ fn service_config_from_env() -> ServiceConfig {
     {
         Ok(value) => value,
         Err(message) => {
-            eprintln!(
+            tracing::error!(
                 "{SERVICE_NAME} warning: {message}; containers will use the engine default OCI \
                  runtime (no --runtime) — this may be weaker isolation than intended"
             );
@@ -1349,7 +1349,7 @@ async fn connect_postgres(config: &ServiceConfig) -> Result<tokio_postgres::Clie
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            eprintln!("container pool postgres connection error: {error}");
+            tracing::error!("container pool postgres connection error: {error}");
         }
     });
     Ok(client)
@@ -1363,7 +1363,7 @@ async fn fetch_pool_configs_from_postgres(
         Ok(Some(configs)) => return Ok(configs),
         Ok(None) => {}
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "container pool app_config lookup failed, falling back to container_pool_configs: {error}"
             );
         }
@@ -1505,7 +1505,7 @@ async fn refresh_pool_configs(state: &AppState) -> Result<(), String> {
         .fetch_add(1, Ordering::Relaxed);
     for name in removed_names {
         if let Err(error) = remove_container(state, &name).await {
-            eprintln!("failed to remove container for deleted pool {name}: {error}");
+            tracing::error!("failed to remove container for deleted pool {name}: {error}");
         }
     }
     Ok(())
@@ -1789,7 +1789,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             }
         })
         .collect::<Vec<_>>();
-    eprintln!(
+    tracing::error!(
         "dd-container-pool {engine} run for {name}: {bin} {scrubbed_args:?}",
         engine = state.config.engine.label(),
         name = container.name,
@@ -1808,7 +1808,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     let worker_fanout_secret_present = container_env.contains_key("WORKER_FANOUT_WS_SECRET")
         || container_env.contains_key("GLEAM_WORKER_WS_SECRET")
         || container_env.contains_key("GLEAM_BROADCAST_SECRET");
-    eprintln!(
+    tracing::error!(
         "dd-container-pool worker env for {name}: keys={env_keys:?} \
          event_ingest_url={event_ingest_url_present} \
          event_ingest_secret={event_ingest_secret_present} \
@@ -1820,7 +1820,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         Ok(output) => {
             let trimmed = output.trim();
             if !trimmed.is_empty() {
-                eprintln!(
+                tracing::error!(
                     "dd-container-pool {engine} run -d output for {name}: {trimmed}",
                     engine = state.config.engine.label(),
                     name = container.name
@@ -1832,7 +1832,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
                 remove_affinity_for_container(&mut registry, &container.name);
                 drop(registry);
                 if let Err(remove_error) = remove_container(state, &container.name).await {
-                    eprintln!(
+                    tracing::error!(
                         "failed to remove unready warm container {}: {remove_error}",
                         container.name
                     );
@@ -1926,7 +1926,7 @@ async fn cleanup_managed_containers_on_start(state: &AppState) -> Result<(), Str
         .filter(|line| !line.is_empty())
     {
         if let Err(error) = remove_container(state, id).await {
-            eprintln!("failed to remove stale managed container {id}: {error}");
+            tracing::error!("failed to remove stale managed container {id}: {error}");
         }
     }
     Ok(())
@@ -1945,7 +1945,7 @@ async fn run_command(
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr_trimmed = stderr.trim();
         if !stderr_trimmed.is_empty() && args.iter().any(|arg| arg == "run" || arg == "inspect") {
-            eprintln!(
+            tracing::error!(
                 "{program} stderr (exit 0, args={args:?}): {}",
                 stderr_trimmed.chars().take(1500).collect::<String>()
             );
@@ -2024,7 +2024,7 @@ async fn retire_stale_starting_containers(state: &AppState, pool_id: Option<&str
             }
             Ok(true) => {}
             Err(error) => {
-                eprintln!("failed to inspect starting warm container {name}: {error}");
+                tracing::error!("failed to inspect starting warm container {name}: {error}");
             }
         }
     }
@@ -2079,7 +2079,7 @@ async fn retire_container(state: &AppState, name: &str, reason: &str) {
             .containers_unhealthy_total
             .fetch_add(1, Ordering::Relaxed);
         if let Err(error) = remove_container(state, name).await {
-            eprintln!("failed to remove unhealthy warm container {name}: {error}");
+            tracing::error!("failed to remove unhealthy warm container {name}: {error}");
         }
     }
 }
@@ -2210,7 +2210,7 @@ async fn reconcile_all(state: &AppState) {
     };
     for pool_id in pool_ids {
         if let Err(error) = reconcile_pool(state, &pool_id).await {
-            eprintln!("container pool reconcile failed for {pool_id}: {error}");
+            tracing::error!("container pool reconcile failed for {pool_id}: {error}");
         }
     }
 
@@ -2255,7 +2255,7 @@ async fn reconcile_all(state: &AppState) {
     };
     for name in stale {
         if let Err(error) = remove_container(state, &name).await {
-            eprintln!("failed to remove stale warm container {name}: {error}");
+            tracing::error!("failed to remove stale warm container {name}: {error}");
         }
     }
 }
@@ -2653,7 +2653,7 @@ async fn dispatch_to_pool(
         dispatch_to_pool_inner(state, selector, request, affinity_key, fresh_affinity).await;
     if let Some(lock_guard) = lock_guard {
         if let Err(error) = lock_guard.release().await {
-            eprintln!("container pool redis affinity lock release failed: {error}");
+            tracing::error!("container pool redis affinity lock release failed: {error}");
         }
     }
     result
@@ -2694,7 +2694,7 @@ async fn dispatch_to_pool_inner(
     let backfill_pool_id = lease.pool.id.clone();
     tokio::spawn(async move {
         if let Err(error) = reconcile_pool(&backfill_state, &backfill_pool_id).await {
-            eprintln!("container pool backfill failed for {backfill_pool_id}: {error}");
+            tracing::error!("container pool backfill failed for {backfill_pool_id}: {error}");
         }
     });
 
@@ -2774,7 +2774,7 @@ async fn dispatch_to_pool_inner(
         let refill_pool_id = lease.pool.id.clone();
         tokio::spawn(async move {
             if let Err(error) = reconcile_pool(&refill_state, &refill_pool_id).await {
-                eprintln!("container pool refill failed for {refill_pool_id}: {error}");
+                tracing::error!("container pool refill failed for {refill_pool_id}: {error}");
             }
         });
     }
@@ -3075,7 +3075,7 @@ async fn dispatch_pool(
 async fn run_config_refresh_loop(state: AppState) {
     loop {
         if let Err(error) = refresh_pool_configs(&state).await {
-            eprintln!("container pool config refresh failed: {error}");
+            tracing::error!("container pool config refresh failed: {error}");
             record_config_error(&state, error).await;
         }
         reconcile_all(&state).await;
@@ -3104,7 +3104,7 @@ async fn run_reconcile_loop(state: AppState) {
 /// to O(WAL gateway poll interval) ≈ a few hundred ms.
 async fn run_cdc_refresh_subscription(state: AppState) {
     let Some(nats) = state.nats.clone() else {
-        println!("container pool cdc subscription disabled: no NATS_URL configured");
+        tracing::info!("container pool cdc subscription disabled: no NATS_URL configured");
         return;
     };
     let jetstream = async_nats::jetstream::new(nats);
@@ -3166,7 +3166,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
 
 async fn cdc_trigger_refresh(state: &AppState, source: &str) {
     if let Err(error) = refresh_pool_configs(state).await {
-        eprintln!("container pool CDC-driven refresh failed ({source}): {error}");
+        tracing::error!("container pool CDC-driven refresh failed ({source}): {error}");
         record_config_error(state, error).await;
         return;
     }
@@ -3191,12 +3191,12 @@ fn log_cdc_subscription_result(
 ) {
     match result {
         Ok(_join) => {
-            println!(
+            tracing::info!(
                 "container pool cdc subscription started: durable={durable} subject={subject}"
             );
         }
         Err(error) => {
-            eprintln!(
+            tracing::error!(
                 "container pool cdc subscription failed to start ({error}); \
                  falling back to poll-only refresh for {subject}"
             );
@@ -3212,7 +3212,7 @@ async fn run_nats_loop(state: AppState) {
         let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
             Ok(subscriber) => subscriber,
             Err(error) => {
-                eprintln!("container pool nats subscribe failed: {error}; retrying in 5s");
+                tracing::error!("container pool nats subscribe failed: {error}; retrying in 5s");
                 sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -3232,7 +3232,7 @@ async fn run_nats_loop(state: AppState) {
             let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
                 Ok(request) => request,
                 Err(error) => {
-                    eprintln!("container pool invalid nats request: {error}");
+                    tracing::error!("container pool invalid nats request: {error}");
                     state
                         .metrics
                         .nats_failures_total
@@ -3245,7 +3245,7 @@ async fn run_nats_loop(state: AppState) {
                 pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
             };
             let Some(selector) = selector else {
-                eprintln!("container pool nats request missing pool selector");
+                tracing::error!("container pool nats request missing pool selector");
                 state
                     .metrics
                     .nats_failures_total
@@ -3267,16 +3267,16 @@ async fn run_nats_loop(state: AppState) {
             };
             if let Some(reply) = message.reply {
                 if let Err(error) = client.publish(reply, payload.into()).await {
-                    eprintln!("container pool nats reply failed: {error}");
+                    tracing::error!("container pool nats reply failed: {error}");
                 }
             } else if let Err(error) = client
                 .publish(state.config.nats_result_subject.clone(), payload.into())
                 .await
             {
-                eprintln!("container pool nats result publish failed: {error}");
+                tracing::error!("container pool nats result publish failed: {error}");
             }
         }
-        eprintln!(
+        tracing::error!(
             "container pool nats subscription ended (subject={}); re-subscribing in 5s",
             state.config.nats_subject
         );
@@ -3297,6 +3297,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _otel = dd_telemetry::init("dd-container-pool");
+
     let config = Arc::new(service_config_from_env());
     let registry = Arc::new(Mutex::new(PoolRegistry {
         next_port: config.port_start,
@@ -3309,7 +3311,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(url) => match async_nats::connect(url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                eprintln!("container pool nats connect failed: {error}");
+                tracing::error!("container pool nats connect failed: {error}");
                 None
             }
         },
@@ -3335,7 +3337,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         metrics: Arc::new(Metrics::default()),
     };
 
-    println!(
+    tracing::info!(
         "{SERVICE_NAME} starting: engine={} bin={} namespace={} oci_runtime={} network={} db_configured={} nats_subject={} redis_locks={}",
         state.config.engine.label(),
         state.config.engine_bin,
@@ -3348,10 +3350,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     if let Err(error) = cleanup_managed_containers_on_start(&state).await {
-        eprintln!("container pool startup cleanup failed: {error}");
+        tracing::error!("container pool startup cleanup failed: {error}");
     }
     if let Err(error) = refresh_pool_configs(&state).await {
-        eprintln!("container pool initial config refresh failed: {error}");
+        tracing::error!("container pool initial config refresh failed: {error}");
         record_config_error(&state, error).await;
     }
     let initial_reconcile_state = state.clone();
@@ -3384,11 +3386,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = env_u16("PORT", DEFAULT_PORT);
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("{SERVICE_NAME} listening on {addr}");
-    axum::serve(listener, app)
+    tracing::info!("{SERVICE_NAME} listening on {addr}");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
             if let Err(error) = tokio::signal::ctrl_c().await {
-                eprintln!("shutdown signal error: {error}");
+                tracing::error!("shutdown signal error: {error}");
             }
         })
         .await?;

@@ -241,9 +241,9 @@ fn log_to(stderr: bool, severity: &str, event_name: &str, body: &str, attributes
         )
     });
     if stderr {
-        eprintln!("{line}");
+        tracing::error!("{line}");
     } else {
-        println!("{line}");
+        tracing::info!("{line}");
     }
 }
 
@@ -1216,6 +1216,8 @@ fn load_azure() -> Option<AzureConfig> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let _otel = dd_telemetry::init("dd-ocr-rs");
+
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8123");
     let max_image_bytes = env_usize("OCR_MAX_IMAGE_BYTES", DEFAULT_MAX_IMAGE_BYTES);
@@ -1374,7 +1376,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "OCR service HTTP listener is ready.",
         json!({ "address": address.to_string() }),
     );
-    axum::serve(listener, app)
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())

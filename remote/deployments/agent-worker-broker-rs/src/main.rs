@@ -781,6 +781,8 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    let _otel = dd_telemetry::init("dd-agent-worker-broker");
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
@@ -790,8 +792,8 @@ async fn main() {
     let port = env_u64("PORT", 8098) as u16;
 
     if config.server_auth_secret.is_none() {
-        eprintln!(
-            "dd-agent-worker-broker WARNING: no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
+        tracing::warn!(
+            "no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
              dispatch will reject all requests until one is configured"
         );
     }
@@ -802,7 +804,7 @@ async fn main() {
     let nats = match connect_nats(&config).await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("dd-agent-worker-broker failed to connect to NATS: {error}");
+            tracing::error!(%error, "failed to connect to NATS");
             std::process::exit(1);
         }
     };
@@ -810,7 +812,7 @@ async fn main() {
     match ensure_task_stream(&config, nats.clone()).await {
         Ok(()) => stream_ensured.store(true, Ordering::Release),
         Err(error) => {
-            eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}")
+            tracing::error!(%error, "could not ensure task stream at startup");
         }
     }
 
@@ -834,14 +836,15 @@ async fn main() {
         )
         .layer(axum::extract::DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
-        .merge(dd_runtime_config_client::router());
+        .merge(dd_runtime_config_client::router())
+        .layer(dd_telemetry::http_trace_layer());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    println!("dd-agent-worker-broker listening on http://{address}");
+    tracing::info!(%address, "dd-agent-worker-broker listening");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
