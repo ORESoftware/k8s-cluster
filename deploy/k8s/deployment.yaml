@@ -58,15 +58,19 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          # Liveness must not depend on the DB: a transient DB outage should pull
+          # the pod from rotation (readiness), not restart-loop it (liveness).
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
             initialDelaySeconds: 5
             periodSeconds: 15
+          # Readiness checks the DB pool, so an unhealthy pod stops receiving
+          # traffic instead of 500ing every request.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10

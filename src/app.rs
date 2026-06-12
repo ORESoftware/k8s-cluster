@@ -6,12 +6,16 @@
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
-//!   GET  /healthz            -> liveness
+//!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
+//!   GET  /readyz             -> readiness (DB ping)
+//!
+//! The unauthenticated `/v1/register` and `/v1/login` routes are per-client
+//! rate-limited; all routes are body-size capped and wrapped in a request
+//! timeout (see [`router`]).
 
 use crate::error::ApiError;
-use crate::ratelimit::{self, RateLimiter};
 use crate::{auth, db, devices, vault_blob};
-use axum::extract::{ConnectInfo, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -21,6 +25,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use crate::protocol::{PullResponse, PushRequest, PushResponse};
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::SmartIpKeyExtractor;
+use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -34,9 +41,6 @@ const MAX_DEVICE_NAME_LEN: usize = 256;
 const MAX_PASSWORD_LEN: usize = 1024;
 /// Per-request wall-clock budget. Bounds slow/stuck handlers.
 const REQUEST_TIMEOUT_SECS: u64 = 15;
-/// Default per-IP, per-minute budget for the auth endpoints (login/register).
-/// Override at runtime with `RATE_LIMIT_AUTH_PER_MIN`.
-const DEFAULT_AUTH_RATE_PER_MIN: u32 = 10;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -63,8 +67,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(%addr, "3FA sync server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    // `into_make_service_with_connect_info` exposes the TCP peer address to the
-    // rate-limit middleware (used as the client-IP fallback behind the ingress).
+    // `into_make_service_with_connect_info` exposes the socket peer address so the
+    // rate limiter has a fallback key when no trusted forwarding header is present.
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -75,34 +79,33 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn router(state: AppState) -> Router {
-    let auth_rate = ratelimit::limit_from_env("RATE_LIMIT_AUTH_PER_MIN", DEFAULT_AUTH_RATE_PER_MIN);
-    let auth_limiter = Arc::new(RateLimiter::new(auth_rate, Duration::from_secs(60)));
+    // Per-client rate limit for the *unauthenticated* credential endpoints, which
+    // are the online-brute-force / account-spam surface. GCRA: replenish ~1 req/s
+    // with a small burst. The key is the client IP taken from `X-Forwarded-For` /
+    // `X-Real-IP` (set by the trusted ingress) so all clients aren't collapsed to
+    // the ingress pod's source address; it falls back to the socket peer.
+    let governor = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(1)
+            .burst_size(8)
+            .finish()
+            .expect("valid rate-limit config"),
+    );
 
-    // The unauthenticated, password-handling endpoints. Rate-limited per client
-    // IP so online brute force / registration flooding is bounded on top of
-    // Argon2's per-attempt cost. Authenticated routes are gated by a 256-bit
-    // bearer token (infeasible to guess) so they don't need the same throttle.
     let auth_routes = Router::new()
         .route("/v1/register", post(register))
         .route("/v1/login", post(login))
-        .route_layer(axum::middleware::from_fn(move |
-            ConnectInfo(peer): ConnectInfo<SocketAddr>,
-            req: axum::http::Request<axum::body::Body>,
-            next: axum::middleware::Next,
-        | {
-            let limiter = auth_limiter.clone();
-            async move {
-                let ip = ratelimit::client_ip(req.headers(), peer);
-                if limiter.check(ip) {
-                    Ok(next.run(req).await)
-                } else {
-                    Err(ApiError::TooManyRequests)
-                }
-            }
-        }));
+        .layer(GovernorLayer { config: governor });
 
     Router::new()
+        // Liveness: process is up. Must NOT depend on the DB, or a transient DB
+        // blip would get the pod killed instead of merely pulled from rotation.
+        .route("/livez", get(|| async { "ok" }))
+        // Back-compat alias for the old liveness path.
         .route("/healthz", get(|| async { "ok" }))
+        // Readiness: only serve traffic if the DB pool is actually usable.
+        .route("/readyz", get(readyz))
         .merge(auth_routes)
         .route("/v1/devices/revoke", post(revoke_device))
         .route("/v1/vault", get(pull_vault).post(push_vault))
@@ -110,11 +113,24 @@ pub fn router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
+        // Bound every request's lifetime so slow/hung clients can't pin the small
+        // connection pool (slowloris-style exhaustion).
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
         ))
         .with_state(state)
+}
+
+/// Readiness probe: confirms the Postgres pool can serve a trivial query within a
+/// short budget. Returns 503 (via [`ApiError::Internal`]) when the DB is
+/// unreachable so Kubernetes stops routing traffic to a pod that would only 500.
+async fn readyz(State(st): State<AppState>) -> Result<&'static str, ApiError> {
+    sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&st.pool)
+        .await
+        .map_err(|_| ApiError::Internal)?;
+    Ok("ok")
 }
 
 async fn shutdown_signal() {
@@ -152,6 +168,9 @@ async fn register(
     State(st): State<AppState>,
     Json(req): Json<CredsRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
+    // Bound every attacker-controlled field before any DB or Argon2 work, so a
+    // single field can't carry an unbounded payload into the DB / version-vector
+    // space. Password also has a minimum length.
     if req.username.trim().is_empty()
         || req.username.len() > MAX_USERNAME_LEN
         || req.device_name.len() > MAX_DEVICE_NAME_LEN
@@ -170,7 +189,6 @@ async fn register(
     .bind(&req.username)
     .bind(&secret)
     .fetch_one(&st.pool)
-    .await
     {
         Ok(id) => id,
         Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {

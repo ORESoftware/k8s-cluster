@@ -90,6 +90,15 @@ pub async fn store(
     who: AuthedDevice,
     req: &PushRequest,
 ) -> Result<PushResponse, ApiError> {
+    // Reject malformed or hostile envelopes *before* touching the DB: enforce the
+    // crypto shape (nonce/salt/ciphertext bounds) and sane KDF params (so a peer
+    // device can't be made to allocate gigabytes on the next pull), and bound the
+    // client-supplied device id (charset + length) so it can't inject junk into
+    // the version vector. The server still never decrypts — this is pure shape.
+    if !req.blob.is_well_formed() || !crate::protocol::device_id_is_valid(&req.device_id) {
+        return Err(ApiError::BadRequest);
+    }
+
     // Read current version (default empty), reconcile, then upsert atomically.
     let mut tx = pool.begin().await?;
 
@@ -107,6 +116,13 @@ pub async fn store(
             return Ok(PushResponse::Conflict { server_version });
         }
     };
+
+    // Cap version-vector cardinality so a spoofed stream of distinct device ids
+    // can't grow the stored JSON without bound (each push rewrites it under lock).
+    if new_version.len() > crate::protocol::MAX_VERSION_ENTRIES {
+        tx.rollback().await?;
+        return Err(ApiError::BadRequest);
+    }
 
     sqlx::query(
         "INSERT INTO vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \

@@ -20,6 +20,20 @@ pub enum ApiError {
     Internal,
 }
 
+impl ApiError {
+    /// Map a sqlx error, folding a Postgres unique-violation (SQLSTATE 23505)
+    /// into a client `BadRequest` (e.g. duplicate username) rather than a noisy
+    /// 500. Everything else stays an opaque `Internal` and is logged server-side.
+    pub fn from_db(e: sqlx::Error) -> Self {
+        if let Some(code) = e.as_database_error().and_then(|d| d.code()) {
+            if code == "23505" {
+                return ApiError::BadRequest;
+            }
+        }
+        ApiError::from(e)
+    }
+}
+
 impl From<sqlx::Error> for ApiError {
     fn from(e: sqlx::Error) -> Self {
         tracing::error!(error = %e, "database error");

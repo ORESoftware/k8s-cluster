@@ -3,7 +3,9 @@
 # Self-contained build of the zero-knowledge sync server. Build context is the
 # repo root:
 #   docker build -f deploy/Dockerfile -t threefa-sync-server:dev .
-FROM rust:1.83-bookworm AS build
+# Base images pinned by digest for reproducible, tamper-evident builds. Refresh
+# the digest when bumping the tag: `docker buildx imagetools inspect <tag>`.
+FROM rust:1.83-bookworm@sha256:a45bf1f5d9af0a23b26703b3500d70af1abff7f984a7abef5a104b42c02a292b AS build
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
@@ -15,7 +17,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharin
     cargo build --release --locked \
  && cp target/release/threefa-sync-server /usr/local/bin/threefa-sync-server
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
