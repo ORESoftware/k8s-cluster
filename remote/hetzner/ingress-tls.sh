@@ -28,8 +28,10 @@ SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15
 rssh() { local ip="$1"; shift; ssh "${SSH_OPTS[@]}" root@"$ip" "$@"; }
 
 command -v hcloud >/dev/null || { echo "ERROR: hcloud not authenticated." >&2; exit 1; }
-CP_IP="$(hcloud server ip dd-k8s-ash)"
-[ -n "$CP_IP" ] || { echo "ERROR: cannot resolve dd-k8s-ash IP." >&2; exit 1; }
+CP_NODE="${CP_NODE:-$(hcloud server list --selector role=dd-k8s -o noheader -o columns=name | sort | head -1)}"
+CP_IP="$(hcloud server ip "$CP_NODE")"
+[ -n "$CP_IP" ] || { echo "ERROR: cannot resolve control-plane node IP." >&2; exit 1; }
+ssh-keygen -R "$CP_IP" >/dev/null 2>&1 || true   # Hetzner reuses IPs
 HOST="hello.${CP_IP//./-}.sslip.io"   # sslip.io resolves this to CP_IP — no real DNS needed
 echo "==> control-plane ${CP_IP}   demo host ${HOST}   active issuer ${ACTIVE_ISSUER}"
 
