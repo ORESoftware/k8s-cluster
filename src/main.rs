@@ -1,7 +1,8 @@
 use std::{
+    collections::HashMap,
     env,
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -10,8 +11,9 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
 use axum::{
-    extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    extract::{ConnectInfo, Path, Query, Request, State},
+    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
+    middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
@@ -23,7 +25,7 @@ use base64::{
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use once_cell::sync::Lazy;
-use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
+use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,17 @@ static UPTIME_SECONDS: Lazy<IntGauge> = Lazy::new(|| {
         .register(Box::new(gauge.clone()))
         .expect("failed to register dd_sound_recorder_rs_uptime_seconds");
     gauge
+});
+static RATE_LIMITED: Lazy<IntCounter> = Lazy::new(|| {
+    let counter = IntCounter::new(
+        "dd_sound_recorder_rs_rate_limited_total",
+        "Requests rejected by the per-client rate limiter.",
+    )
+    .expect("failed to create dd_sound_recorder_rs_rate_limited_total");
+    prometheus::default_registry()
+        .register(Box::new(counter.clone()))
+        .expect("failed to register dd_sound_recorder_rs_rate_limited_total");
+    counter
 });
 static SEGMENT_PRESIGNS: Lazy<IntCounterVec> = Lazy::new(|| {
     let counter = IntCounterVec::new(
@@ -111,6 +124,12 @@ const JWKS_CACHE_TTL: Duration = Duration::from_secs(3600);
 const DEFAULT_USE_CASE: &str = "security";
 const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
 const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
+/// Default per-client request budget per 60s window. Generous enough that a
+/// healthy device (segment presigns, timeline polls) never trips it, but it
+/// caps abusive bursts against the anonymous register/auth surface. `0` (via
+/// `SOUND_RECORDER_RATE_LIMIT_PER_MINUTE=0`) disables the limiter.
+const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 240;
+const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
 struct AppState {
@@ -151,6 +170,13 @@ struct Config {
     public_base_url: Option<String>,
     alert_email_to: String,
     alert_email_webhook_url: Option<String>,
+    /// Per-client requests allowed per [`RATE_LIMIT_WINDOW`]. `0` disables it.
+    rate_limit_per_minute: u32,
+    /// When `true`, the leftmost `X-Forwarded-For` hop is the rate-limit key
+    /// (correct behind a trusted reverse proxy / k8s ingress). When `false`,
+    /// the limiter keys on the TCP peer address only (do this if the service is
+    /// directly internet-exposed, so clients can't spoof their key via XFF).
+    rate_limit_trust_forwarded_for: bool,
     supabase: SupabaseConfig,
 }
 
@@ -856,6 +882,15 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// Like [`env_u64`] but `0` is a meaningful value (it disables the rate
+/// limiter), so — unlike the other readers — we do not discard zero.
+fn env_u32_allow_zero(name: &str, default: u32) -> u32 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
 fn env_duration_clamped(name: &str, default: u64, min: u64, max: u64) -> Duration {
     Duration::from_secs(env_u64(name, default).clamp(min, max))
 }
@@ -991,6 +1026,14 @@ fn config_from_env() -> Config {
         alert_email_to: first_env(&["SOUND_RECORDER_ALERT_EMAIL_TO"])
             .unwrap_or_else(|| "alexander.d.mills@gmail.com".to_string()),
         alert_email_webhook_url: first_env(&["SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL"]),
+        rate_limit_per_minute: env_u32_allow_zero(
+            "SOUND_RECORDER_RATE_LIMIT_PER_MINUTE",
+            DEFAULT_RATE_LIMIT_PER_MINUTE,
+        ),
+        rate_limit_trust_forwarded_for: env_bool(
+            "SOUND_RECORDER_RATE_LIMIT_TRUST_FORWARDED_FOR",
+            true,
+        ),
         supabase: supabase_config_from_env(),
     }
 }
@@ -1236,6 +1279,131 @@ impl CloudTokenSealer {
                 },
             )
             .map_err(|_| ServiceError::Internal("cloud credential unseal failed".to_string()))
+    }
+}
+
+/// Rare-case, opt-in segment decryption.
+///
+/// Audio is sealed on the device (see the Flutter `SegmentCipher`): the cloud
+/// and this backend normally only ever see the `SAC1` ciphertext container and
+/// cannot read it — that is the zero-knowledge default. For a *user-initiated*
+/// server-side job (today: mirroring a saved clip into a server-managed Google
+/// Drive / OneDrive so it lands as a playable file) the client may opt in and
+/// release the single per-segment data key (DEK). We then decrypt exactly that
+/// one segment in memory with the supplied DEK. The device master key is never
+/// involved here and no key material is ever persisted server-side.
+mod segment_job_cipher {
+    use super::ServiceError;
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Nonce};
+
+    const MAGIC: &[u8; 4] = b"SAC1";
+    const VERSION: u8 = 1;
+    const NONCE_LEN: usize = 12;
+    const TAG_LEN: usize = 16;
+    const HEADER_FIXED_LEN: usize = 8;
+    const DEK_LEN: usize = 32;
+
+    /// Decrypts a `SAC1` container's audio payload using a client-released DEK.
+    /// The wrapped-DEK bytes in the header are ignored: unwrapping needs the
+    /// device master key, which never reaches the server — the client hands us
+    /// the already-unwrapped DEK for this one clip.
+    pub(crate) fn decrypt_segment(dek: &[u8], container: &[u8]) -> Result<Vec<u8>, ServiceError> {
+        if dek.len() != DEK_LEN {
+            return Err(ServiceError::BadRequest(
+                "released segment key must be 32 bytes".to_string(),
+            ));
+        }
+        if container.len() < HEADER_FIXED_LEN || &container[0..4] != MAGIC {
+            return Err(ServiceError::BadRequest(
+                "not a Sonus Auris encrypted segment".to_string(),
+            ));
+        }
+        if container[4] != VERSION {
+            return Err(ServiceError::BadRequest(
+                "unsupported segment cipher version".to_string(),
+            ));
+        }
+        let wrapped_len = ((container[6] as usize) << 8) | container[7] as usize;
+        let content_offset = HEADER_FIXED_LEN + wrapped_len;
+        if container.len() < content_offset + NONCE_LEN + TAG_LEN {
+            return Err(ServiceError::BadRequest(
+                "encrypted segment is truncated".to_string(),
+            ));
+        }
+        let (nonce_bytes, ciphertext_and_tag) =
+            container[content_offset..].split_at(NONCE_LEN);
+        let cipher = Aes256Gcm::new_from_slice(dek)
+            .map_err(|_| ServiceError::Internal("invalid segment key".to_string()))?;
+        cipher
+            .decrypt(Nonce::from_slice(nonce_bytes), ciphertext_and_tag)
+            .map_err(|_| ServiceError::BadRequest("segment decryption failed".to_string()))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use aes_gcm::aead::OsRng;
+        use aes_gcm::AeadCore;
+
+        /// Build a `SAC1` container exactly the way the Flutter `SegmentCipher`
+        /// does, so the parser + AEAD path is exercised end to end.
+        fn seal(dek: &[u8], plaintext: &[u8]) -> Vec<u8> {
+            let cipher = Aes256Gcm::new_from_slice(dek).unwrap();
+            let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+            let ct = cipher.encrypt(&nonce, plaintext).unwrap();
+            let wrapped_dek = [0u8; 60]; // nonce(12)+dek(32)+tag(16), opaque here
+            let mut out = Vec::new();
+            out.extend_from_slice(MAGIC);
+            out.push(VERSION);
+            out.push(0x01);
+            out.push((wrapped_dek.len() >> 8) as u8);
+            out.push((wrapped_dek.len() & 0xFF) as u8);
+            out.extend_from_slice(&wrapped_dek);
+            out.extend_from_slice(nonce.as_slice());
+            out.extend_from_slice(&ct);
+            out
+        }
+
+        #[test]
+        fn round_trips_with_the_released_dek() {
+            let dek = [7u8; 32];
+            let plaintext = b"a short captured riff".to_vec();
+            let container = seal(&dek, &plaintext);
+            let recovered = decrypt_segment(&dek, &container).unwrap();
+            assert_eq!(recovered, plaintext);
+        }
+
+        #[test]
+        fn wrong_dek_is_rejected() {
+            let container = seal(&[7u8; 32], b"secret");
+            assert!(decrypt_segment(&[9u8; 32], &container).is_err());
+        }
+
+        #[test]
+        fn non_container_bytes_are_rejected() {
+            assert!(decrypt_segment(&[7u8; 32], b"not-a-container").is_err());
+        }
+
+        #[test]
+        fn short_key_is_rejected() {
+            let container = seal(&[7u8; 32], b"secret");
+            assert!(decrypt_segment(&[7u8; 16], &container).is_err());
+        }
+    }
+}
+
+/// Applies opt-in, client-released segment decryption before a server-managed
+/// cloud copy. When `released_dek` is `None` (the default), the ciphertext is
+/// mirrored as-is and the copy stays zero-knowledge; when the user has opted a
+/// clip in, the per-segment DEK decrypts it in memory so it lands playable.
+fn apply_opt_in_segment_decryption(
+    released_dek: Option<&[u8]>,
+    bytes: Vec<u8>,
+) -> Result<Vec<u8>, ServiceError> {
+    match released_dek {
+        Some(dek) => segment_job_cipher::decrypt_segment(dek, &bytes),
+        None => Ok(bytes),
     }
 }
 
@@ -3495,7 +3663,7 @@ async fn create_alert(
 async fn listen_alert(
     State(state): State<AppState>,
     Path(alert_id): Path<String>,
-) -> Result<Html<String>, ServiceError> {
+) -> Result<(HeaderMap, Html<String>), ServiceError> {
     let alert_id = validate_uuid(&alert_id, "alertId")?;
     // Reuse the rustls-backed connector so this public route uses the same TLS
     // posture as every other database path (RDS rejects plaintext connections).
@@ -3516,7 +3684,19 @@ async fn listen_alert(
     };
     let manifest: Value = row.get("manifest");
     record_request("GET", "/listen/:alert_id", StatusCode::OK);
-    Ok(Html(render_listen_alert(&alert_id, &manifest)))
+    // This page needs its inline audio-player script and must load segment audio
+    // from presigned HTTPS URLs, so it carries its own (looser) CSP. The global
+    // middleware leaves an already-present CSP untouched.
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'none'; script-src 'unsafe-inline'; media-src https:; \
+             connect-src https:; img-src 'self' data:; style-src 'unsafe-inline'; \
+             base-uri 'none'; frame-ancestors 'none'",
+        ),
+    );
+    Ok((headers, Html(render_listen_alert(&alert_id, &manifest))))
 }
 
 async fn send_alert_email(
@@ -4198,6 +4378,10 @@ async fn process_cloud_copy_job(
     }
     let token_set = token_set_for_connection(state, client, &item.connection).await?;
     let bytes = download_segment_bytes(state, &item.segment).await?;
+    // Zero-knowledge by default: we mirror the on-device ciphertext untouched.
+    // The opt-in per-clip DEK plumbing (a follow-up: schema column + mobile
+    // authorisation flow) passes a released key here so a clip can land playable.
+    let bytes = apply_opt_in_segment_decryption(None, bytes)?;
     if bytes.len() as i64 > state.config.cloud_copy_max_bytes {
         return Err(ServiceError::BadRequest(
             "segment is larger than the cloud copy byte limit".to_string(),
@@ -5371,7 +5555,144 @@ fn app(state: AppState) -> Router {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
+        .layer(axum::middleware::from_fn(add_security_headers))
+        // Outermost layer (added last → runs first): reject over-budget clients
+        // before any handler, DB, or S3 work is done.
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit,
+        ))
         .with_state(state)
+}
+
+/// Defense-in-depth response headers applied to every route. The API is JSON,
+/// but a few routes serve HTML (home, privacy, API docs), so a strict CSP and
+/// the usual hardening headers are worthwhile.
+async fn add_security_headers(req: Request, next: Next) -> Response {
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    fn set(h: &mut HeaderMap, name: HeaderName, value: &'static str) {
+        h.entry(name).or_insert_with(|| HeaderValue::from_static(value));
+    }
+    set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    set(h, header::X_FRAME_OPTIONS, "DENY");
+    set(h, header::REFERRER_POLICY, "strict-origin-when-cross-origin");
+    set(
+        h,
+        header::STRICT_TRANSPORT_SECURITY,
+        "max-age=63072000; includeSubDomains",
+    );
+    set(
+        h,
+        HeaderName::from_static("permissions-policy"),
+        "geolocation=(), microphone=(), camera=()",
+    );
+    set(
+        h,
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; \
+         script-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    );
+    res
+}
+
+/// In-process fixed-window rate limiter, keyed per client. This is
+/// defense-in-depth against burst abuse / cheap DoS on the auth-adjacent and
+/// presign routes — it is intentionally simple (no external store) and so it is
+/// per-replica: scale the configured budget down if you run many replicas, or
+/// pair it with edge throttling at the ingress for a global cap.
+struct RateLimiter {
+    windows: Mutex<HashMap<String, RateWindow>>,
+}
+
+struct RateWindow {
+    started: Instant,
+    count: u32,
+}
+
+static RATE_LIMITER: Lazy<RateLimiter> = Lazy::new(RateLimiter::new);
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            windows: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Records one request for `key`. Returns `Ok(())` when it is within budget,
+    /// or `Err(retry_after_secs)` when the window's limit has been exceeded.
+    fn check(&self, key: &str, limit: u32, window: Duration, now: Instant) -> Result<(), u64> {
+        let mut guard = self.windows.lock().unwrap_or_else(|err| err.into_inner());
+        // Opportunistically evict stale windows so a churn of distinct client
+        // keys can't grow the map without bound.
+        if guard.len() > 8192 {
+            guard.retain(|_, w| now.duration_since(w.started) < window);
+        }
+        let entry = guard.entry(key.to_string()).or_insert(RateWindow {
+            started: now,
+            count: 0,
+        });
+        if now.duration_since(entry.started) >= window {
+            entry.started = now;
+            entry.count = 0;
+        }
+        entry.count = entry.count.saturating_add(1);
+        if entry.count > limit {
+            let elapsed = now.duration_since(entry.started);
+            Err(window.saturating_sub(elapsed).as_secs().max(1))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Derives the rate-limit bucket key for a request: the first `X-Forwarded-For`
+/// hop when we trust the proxy, otherwise the TCP peer address.
+fn client_rate_key(req: &Request, trust_forwarded_for: bool) -> String {
+    if trust_forwarded_for {
+        if let Some(forwarded) = req
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            let first = forwarded.split(',').next().unwrap_or("").trim();
+            if !first.is_empty() {
+                return first.to_string();
+            }
+        }
+    }
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Per-client rate-limit middleware. Health/metrics probes are exempt so a
+/// busy load balancer can't be throttled, and the limiter is skipped entirely
+/// when the configured budget is `0`.
+async fn rate_limit(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let limit = state.config.rate_limit_per_minute;
+    if limit == 0 || matches!(req.uri().path(), "/healthz" | "/readyz" | "/metrics") {
+        return next.run(req).await;
+    }
+    let key = client_rate_key(&req, state.config.rate_limit_trust_forwarded_for);
+    match RATE_LIMITER.check(&key, limit, RATE_LIMIT_WINDOW, Instant::now()) {
+        Ok(()) => next.run(req).await,
+        Err(retry_after) => {
+            RATE_LIMITED.inc();
+            let mut res = (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({ "error": "rate limit exceeded" })),
+            )
+                .into_response();
+            res.headers_mut().insert(
+                header::RETRY_AFTER,
+                HeaderValue::from_str(&retry_after.to_string())
+                    .unwrap_or_else(|_| HeaderValue::from_static("60")),
+            );
+            res
+        }
+    }
 }
 
 #[tokio::main]
@@ -5405,8 +5726,13 @@ async fn main() {
         .await
         .expect("failed to bind dd-sound-recorder-rs");
     info!("dd-sound-recorder-rs listening on http://{addr}");
-    axum::serve(listener, app(state))
-        .with_graceful_shutdown(shutdown_signal())
+    // `into_make_service_with_connect_info` surfaces the TCP peer address to the
+    // rate-limit middleware (its fallback key when `X-Forwarded-For` is absent).
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("axum server crashed");
 }
@@ -5523,8 +5849,38 @@ mod tests {
             public_base_url: Some("https://sound.example".to_string()),
             alert_email_to: "alexander.d.mills@gmail.com".to_string(),
             alert_email_webhook_url: None,
+            rate_limit_per_minute: 0,
+            rate_limit_trust_forwarded_for: true,
             supabase: SupabaseConfig::default(),
         }
+    }
+
+    #[test]
+    fn rate_limiter_allows_up_to_limit_then_rejects() {
+        let limiter = RateLimiter::new();
+        let now = Instant::now();
+        let window = Duration::from_secs(60);
+        // First three are within a budget of 3.
+        assert!(limiter.check("1.2.3.4", 3, window, now).is_ok());
+        assert!(limiter.check("1.2.3.4", 3, window, now).is_ok());
+        assert!(limiter.check("1.2.3.4", 3, window, now).is_ok());
+        // The fourth in the same window is rejected with a Retry-After.
+        let retry = limiter.check("1.2.3.4", 3, window, now).unwrap_err();
+        assert!(retry >= 1 && retry <= 60);
+        // A different client has its own independent budget.
+        assert!(limiter.check("5.6.7.8", 3, window, now).is_ok());
+    }
+
+    #[test]
+    fn rate_limiter_resets_after_window() {
+        let limiter = RateLimiter::new();
+        let now = Instant::now();
+        let window = Duration::from_secs(60);
+        assert!(limiter.check("9.9.9.9", 1, window, now).is_ok());
+        assert!(limiter.check("9.9.9.9", 1, window, now).is_err());
+        // Once the window has elapsed the counter resets.
+        let later = now + Duration::from_secs(61);
+        assert!(limiter.check("9.9.9.9", 1, window, later).is_ok());
     }
 
     fn test_state(config: Config) -> AppState {
