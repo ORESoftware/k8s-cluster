@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Runs after history-rewriting commands (`git rebase`, `git commit --amend`),
+# which can also move submodule pointers. Remind to sync.
+exec "$(git rev-parse --show-toplevel)/.githooks/submodule-sync-reminder.sh"

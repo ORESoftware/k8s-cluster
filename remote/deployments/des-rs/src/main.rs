@@ -2068,7 +2068,9 @@ async fn info(State(state): State<AppState>) -> Response {
         "engineSimulations": sim_names().len(),
         "modelKinds": with_builtins().kinds(),
         "streamingSolvers": streaming_model_names(),
+        "build": full_stack_build_json(),
         "endpoints": {
+            "build": "GET /api/build  (release identity: git commit + timestamps for web server, soccer engine, des engine)",
             "landing": "GET /",
             "healthz": "GET /healthz",
             "simulations": "GET /simulations",
@@ -2507,6 +2509,53 @@ async fn soccer_planner_stream(State(state): State<AppState>, body: String) -> R
     run_streaming_model(state, "soccer-planner".to_string(), body).await
 }
 
+/// This web server's own release identity, in the same `BuildInfo` shape the
+/// engines use (`build.rs` bakes in the `DD_DES_RS_*` values at compile time).
+fn web_server_build_info() -> des_engine::BuildInfo {
+    des_engine::BuildInfo::new(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("DD_DES_RS_GIT_COMMIT"),
+        env!("DD_DES_RS_GIT_COMMIT_DATE"),
+        env!("DD_DES_RS_BUILD_TIMESTAMP"),
+    )
+}
+
+/// Full running-stack release identity: this web server plus the soccer + des
+/// engines it embeds. Same payload `GET /api/build` returns (web layer merged
+/// in), reused by `GET /info`.
+fn full_stack_build_json() -> Value {
+    let mut value = soccer_engine::live_build_info_json();
+    if let (Value::Object(map), Ok(ws)) =
+        (&mut value, serde_json::to_value(web_server_build_info()))
+    {
+        map.insert("web_server".to_string(), ws);
+    }
+    value
+}
+
+/// The soccer bridge's `GET /api/build` returns the soccer + des engine layers
+/// (all it can see from inside the engine). As the host, fold in our own
+/// `web_server` layer so the live UI shows the full running stack.
+fn merge_web_server_build_layer(reply: SoccerLiveHttpReply) -> SoccerLiveHttpReply {
+    if reply.status != 200 || !reply.content_type.starts_with("application/json") {
+        return reply;
+    }
+    let mut value: Value = match serde_json::from_str(&reply.body) {
+        Ok(value @ Value::Object(_)) => value,
+        _ => return reply,
+    };
+    if let (Value::Object(map), Ok(ws)) =
+        (&mut value, serde_json::to_value(web_server_build_info()))
+    {
+        map.insert("web_server".to_string(), ws);
+    }
+    match serde_json::to_string(&value) {
+        Ok(body) => SoccerLiveHttpReply { body, ..reply },
+        Err(_) => reply,
+    }
+}
+
 fn soccer_live_reply_response(reply: SoccerLiveHttpReply) -> Response {
     let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut response = (status, reply.body).into_response();
@@ -2525,9 +2574,17 @@ async fn soccer_live_bridge_request(
     body: Bytes,
 ) -> Response {
     let body = String::from_utf8_lossy(&body).into_owned();
+    let path = uri.path();
     let reply = state
         .soccer_live_bridge
-        .handle_request(method.as_str(), uri.path(), &body);
+        .handle_request(method.as_str(), path, &body);
+    let reply = if method == Method::GET
+        && (path.ends_with("/api/build") || path.ends_with("/api/version"))
+    {
+        merge_web_server_build_layer(reply)
+    } else {
+        reply
+    };
     soccer_live_reply_response(reply)
 }
 
@@ -3149,6 +3206,12 @@ fn build_descriptor() -> ServiceDescriptor {
             "/api/state|step|reset|input/*|team-policy/*",
             "Live soccer bridge API used by /soccer/live.",
             EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/api/build",
+            "Release identity (git commit + commit date + build timestamp) for the web server, soccer engine, and des engine.",
+            EndpointKind::Service,
         )
         .endpoint(
             "GET",
