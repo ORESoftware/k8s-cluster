@@ -1,0 +1,36 @@
+# ArgoCD Application for the 3FA zero-knowledge sync server (3fa-backend.rs).
+#
+# Source = the dedicated repo directly (NOT the k8s-cluster submodule path):
+# repo-server has `reposerver.enable.git.submodule=false` (see the
+# argocd-submodule-init incident), so manifests living inside the
+# `remote/deployments/3fa-backend` submodule are NOT visible when tracking the
+# k8s-cluster repo. Tracking the backend repo directly sidesteps that entirely.
+#
+# Prereq before this syncs: ArgoCD needs read access to the private
+# git@github.com:ORESoftware/3fa-backend.rs.git (add a repo cred / deploy key),
+# and the `threefa` namespace needs DATABASE_URL provided (see
+# deploy/k8s/externalsecret.yaml). The backend applies migrations/0001_init.sql.
+#
+# Left here inert until you choose to apply it (the user is deploying separately).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: threefa-sync-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/3fa-backend.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: threefa
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
