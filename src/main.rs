@@ -9,8 +9,10 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{config::Region, presigning::PresigningConfig, types::ServerSideEncryption};
+use bb8::{Pool, PooledConnection};
+use bb8_postgres::PostgresConnectionManager;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -31,6 +33,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use tokio_postgres::Row;
+use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -108,9 +111,24 @@ const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder
 const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
 const SUPABASE_SUBJECT_PREFIX: &str = "supabase:";
 const JWKS_CACHE_TTL: Duration = Duration::from_secs(3600);
+/// Minimum wall-clock between Supabase JWKS fetches. A flood of tokens bearing
+/// unknown `kid`s (random or post-rotation) must not amplify into one outbound
+/// JWKS request per token; once the cache is warm, legitimate tokens are served
+/// from it and never reach the network, so throttling only bounds the misses.
+const JWKS_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const DEFAULT_USE_CASE: &str = "security";
 const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
 const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
+
+/// Shared async Postgres connection pool over rustls TLS. Replaces the old
+/// connect-per-request path, which performed a fresh TLS handshake to RDS on
+/// every authenticated call and could exhaust the database connection limit
+/// under load or attack. A checked-out [`PgConn`] derefs to
+/// `tokio_postgres::Client`, so every query helper that takes
+/// `&tokio_postgres::Client` keeps working unchanged.
+type PgManager = PostgresConnectionManager<MakeRustlsConnect>;
+type PgPool = Pool<PgManager>;
+type PgConn = PooledConnection<'static, PgManager>;
 
 #[derive(Clone)]
 struct AppState {
@@ -119,6 +137,7 @@ struct AppState {
     http: reqwest::Client,
     cloud_sealer: Option<CloudTokenSealer>,
     supabase: Option<Arc<SupabaseVerifier>>,
+    pg_pool: Option<PgPool>,
 }
 
 #[derive(Clone)]
@@ -1062,13 +1081,47 @@ async fn state_from_config(config: Config) -> AppState {
         info!("Supabase token verification is enabled");
     }
 
+    let pg_pool = config.database_url.as_deref().and_then(build_pg_pool);
+
     AppState {
         config: Arc::new(config),
         s3,
         http,
         cloud_sealer,
         supabase,
+        pg_pool,
     }
+}
+
+/// Builds the shared Postgres pool. `build_unchecked` opens no socket, so the
+/// process still starts when the database is briefly unreachable (matching the
+/// old lazy-connect behavior); the first checkout establishes the connection and
+/// `/readyz` continues to gate on configuration. Returns `None` (database
+/// disabled) on a malformed connection string instead of crashing at startup.
+fn build_pg_pool(database_url: &str) -> Option<PgPool> {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let tls = MakeRustlsConnect::new(tls_config);
+    let manager = match PostgresConnectionManager::new_from_stringlike(database_url, tls) {
+        Ok(manager) => manager,
+        Err(err) => {
+            error!(error = %err, "invalid Postgres connection string; database is disabled");
+            return None;
+        }
+    };
+    let max_size = env_u64("SOUND_RECORDER_PG_POOL_MAX_SIZE", 16).clamp(1, 100) as u32;
+    Some(
+        Pool::builder()
+            .max_size(max_size)
+            .min_idle(Some(1))
+            .connection_timeout(Duration::from_secs(10))
+            .idle_timeout(Some(Duration::from_secs(300)))
+            .max_lifetime(Some(Duration::from_secs(1800)))
+            .build_unchecked(manager),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1275,6 +1328,9 @@ struct SupabaseVerifier {
     jwt_secret: Option<String>,
     jwks_url: Option<String>,
     jwks_cache: RwLock<Option<JwksCacheEntry>>,
+    /// When the last JWKS refresh was *attempted* (success or failure), used to
+    /// rate-limit outbound fetches. See [`JWKS_MIN_REFRESH_INTERVAL`].
+    jwks_last_refresh: RwLock<Option<Instant>>,
 }
 
 impl SupabaseVerifier {
@@ -1288,6 +1344,7 @@ impl SupabaseVerifier {
             jwt_secret: config.jwt_secret.clone(),
             jwks_url: config.jwks_url.clone(),
             jwks_cache: RwLock::new(None),
+            jwks_last_refresh: RwLock::new(None),
         })
     }
 
@@ -1350,10 +1407,34 @@ impl SupabaseVerifier {
         if let Some(jwk) = self.cached_jwk(kid).await {
             return Ok(jwk);
         }
-        self.refresh_jwks(http).await?;
+        // Cache miss: the kid is unknown or the cache aged out. Refresh at most
+        // once per JWKS_MIN_REFRESH_INTERVAL so a burst of unknown-kid tokens
+        // cannot turn into a burst of outbound JWKS fetches.
+        if !self.try_refresh_jwks(http).await? {
+            return Err(ServiceError::Unauthorized);
+        }
         self.cached_jwk(kid)
             .await
-            .ok_or_else(|| ServiceError::Unauthorized)
+            .ok_or(ServiceError::Unauthorized)
+    }
+
+    /// Refreshes the JWKS cache unless a refresh was attempted within the last
+    /// [`JWKS_MIN_REFRESH_INTERVAL`]. Returns `Ok(true)` if a refresh ran (so the
+    /// caller should re-check the cache) and `Ok(false)` if it was throttled.
+    async fn try_refresh_jwks(&self, http: &reqwest::Client) -> Result<bool, ServiceError> {
+        {
+            // Fast path: reserve the refresh slot under the write lock and bail
+            // out (without an HTTP call) if another task refreshed recently.
+            let mut last = self.jwks_last_refresh.write().await;
+            if let Some(at) = *last {
+                if at.elapsed() < JWKS_MIN_REFRESH_INTERVAL {
+                    return Ok(false);
+                }
+            }
+            *last = Some(Instant::now());
+        }
+        self.refresh_jwks(http).await?;
+        Ok(true)
     }
 
     async fn cached_jwk(&self, kid: &str) -> Option<jsonwebtoken::jwk::Jwk> {
@@ -1793,9 +1874,16 @@ fn render_listen_alert(alert_id: &str, manifest: &Value) -> String {
             html_escape(occurred_at)
         );
     }
+    // Embed the URL list as a JS literal inside <script>. JSON is a near-subset
+    // of JS, but `<` (so `</script>` can't break out of the element) and the
+    // U+2028/U+2029 line separators (legal in JSON strings, illegal in JS string
+    // literals) must be escaped. Server-minted S3 URLs never contain these, but
+    // escaping keeps the page robust if the manifest source ever changes.
     let download_urls_json = serde_json::to_string(&download_urls)
         .unwrap_or_else(|_| "[]".to_string())
-        .replace('<', "\\u003c");
+        .replace('<', "\\u003c")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -1967,28 +2055,18 @@ fn policy(config: &Config, retention_hours: i32) -> MobilePolicy {
     }
 }
 
-async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, ServiceError> {
-    let database_url = config.database_url.as_deref().ok_or_else(|| {
+/// Checks out a pooled Postgres connection. The returned [`PgConn`] is held for
+/// the duration of one request/handler and returned to the pool on drop, so a
+/// burst of requests reuses a bounded set of connections instead of opening a
+/// new TLS handshake to RDS per call.
+async fn db_conn(state: &AppState) -> Result<PgConn, ServiceError> {
+    let pool = state.pg_pool.as_ref().ok_or_else(|| {
         ServiceError::Unavailable("sound recorder database is not configured".to_string())
     })?;
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-    let (client, connection) = tokio_postgres::connect(database_url, tls)
-        .await
-        .map_err(|err| {
-            error!(error = %err, "postgres connect failed");
-            ServiceError::Unavailable("postgres connection failed".to_string())
-        })?;
-    tokio::spawn(async move {
-        if let Err(err) = connection.await {
-            error!(error = %err, "postgres connection task failed");
-        }
-    });
-    Ok(client)
+    pool.get_owned().await.map_err(|err| {
+        error!(error = %err, "postgres pool checkout failed");
+        ServiceError::Unavailable("postgres connection unavailable".to_string())
+    })
 }
 
 fn db_error(error: tokio_postgres::Error) -> ServiceError {
@@ -2054,7 +2132,7 @@ async fn authorize_registration(
 async fn authenticate_device(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(DeviceAuth, tokio_postgres::Client), ServiceError> {
+) -> Result<(DeviceAuth, PgConn), ServiceError> {
     if !state.config.token_pepper_configured {
         return Err(ServiceError::Unavailable(
             "device token pepper is not configured".to_string(),
@@ -2062,7 +2140,7 @@ async fn authenticate_device(
     }
     let token = bearer_token(headers).ok_or(ServiceError::Unauthorized)?;
     let token_hash = hash_secret(token, &state.config.token_pepper);
-    let client = connect_postgres(&state.config).await?;
+    let client = db_conn(state).await?;
     let row = client
         .query_opt(
             "select d.id::text as device_id, d.account_id::text as account_id, a.retention_hours
@@ -2372,7 +2450,7 @@ async fn register_device(
     let token_hash = hash_secret(&token, &state.config.token_pepper);
     let token_last4 = last4(&token);
 
-    let client = connect_postgres(&state.config).await?;
+    let client = db_conn(&state).await?;
     let (account_id, retention_hours) = find_or_create_account(
         &client,
         &state.config,
@@ -3499,7 +3577,7 @@ async fn listen_alert(
     let alert_id = validate_uuid(&alert_id, "alertId")?;
     // Reuse the rustls-backed connector so this public route uses the same TLS
     // posture as every other database path (RDS rejects plaintext connections).
-    let client = connect_postgres(&state.config).await?;
+    let client = db_conn(&state).await?;
     let row = client
         .query_opt(
             "select manifest, requested_from, requested_to, expires_at
@@ -4031,7 +4109,7 @@ async fn drain_cloud_copy_jobs(
     Json(req): Json<DrainCloudCopyRequest>,
 ) -> Result<Json<DrainCloudCopyResponse>, ServiceError> {
     require_internal_auth(&state.config, &headers)?;
-    let client = connect_postgres(&state.config).await?;
+    let client = db_conn(&state).await?;
     let limit = req
         .max_jobs
         .unwrap_or(state.config.cloud_copy_batch_size)
@@ -4432,7 +4510,7 @@ async fn retention_sweep(
     headers: HeaderMap,
 ) -> Result<Json<RetentionSweepResponse>, ServiceError> {
     require_internal_auth(&state.config, &headers)?;
-    let client = connect_postgres(&state.config).await?;
+    let client = db_conn(&state).await?;
     // Bound work per call so a large backlog is drained across cron runs instead
     // of one unbounded transaction. The cron re-invokes until nothing is left.
     const SWEEP_BATCH: i64 = 1000;
@@ -5371,6 +5449,11 @@ fn app(state: AppState) -> Router {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
+        // Explicit request-body ceiling for every route. All JSON payloads are
+        // small; the largest legitimate one is a permanent-save batch (bounded
+        // by MAX_PERMANENT_SAVE_SEGMENTS). Audio bytes never transit this process
+        // — they go straight to S3 via presigned URLs — so 2 MiB is generous.
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(state)
 }
 
@@ -5537,6 +5620,7 @@ mod tests {
                 .unwrap(),
             cloud_sealer: None,
             supabase: None,
+            pg_pool: None,
         }
     }
 
@@ -5894,6 +5978,60 @@ mod tests {
         assert!(html.contains("https://downloads.example/segment-2.wav"));
         assert!(!html.contains("localhost.evil.example"));
         assert!(html.contains("loadSegment(startOffset)"));
+    }
+
+    #[tokio::test]
+    async fn jwks_refresh_is_rate_limited() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc as StdArc;
+
+        // One-shot JWKS endpoint that serves a (valid, empty) key set and counts
+        // how many times it is actually fetched. It accepts a single connection
+        // then exits, so any *second* outbound fetch would hit a refused port.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = StdArc::new(AtomicUsize::new(0));
+        let hits_server = hits.clone();
+        let handle = thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                hits_server.fetch_add(1, Ordering::SeqCst);
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(200)))
+                    .ok();
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let body = r#"{"keys":[]}"#;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        let verifier = SupabaseVerifier {
+            audience: SUPABASE_DEFAULT_AUDIENCE.to_string(),
+            issuer: None,
+            jwt_secret: None,
+            jwks_url: Some(format!("http://{addr}/jwks")),
+            jwks_cache: RwLock::new(None),
+            jwks_last_refresh: RwLock::new(None),
+        };
+        let http = reqwest::Client::builder().build().unwrap();
+
+        // First cache miss refreshes; the next two are throttled and must not
+        // emit an outbound fetch (which is the JWKS-amplification DoS guard).
+        assert!(verifier.try_refresh_jwks(&http).await.unwrap());
+        assert!(!verifier.try_refresh_jwks(&http).await.unwrap());
+        assert!(!verifier.try_refresh_jwks(&http).await.unwrap());
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "repeated unknown-kid lookups must collapse to a single JWKS fetch"
+        );
+
+        handle.join().unwrap();
     }
 }
 

@@ -100,6 +100,7 @@ the event.
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `8126` | Bind port. |
 | `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL. |
+| `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
 | `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Required for presigned upload/download URLs. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
 | `SOUND_RECORDER_CDN_BASE_URL` | unset | Optional CloudFront/base URL returned as `cdnUrl`. |
