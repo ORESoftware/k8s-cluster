@@ -117,3 +117,6 @@ temp
 
 # Local Maven cache accidentally created by spark-pipeline-server builds.
 remote/deployments/spark-pipeline-server/?/
+
+# Generated soccer-live policy snapshots (large runtime artifacts, regenerated at runtime)
+remote/deployments/soccer-rs/out/

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.86-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ COPY remote/deployments/runtime-config-rs/src /app/remote/deployments/runtime-co
 WORKDIR /app/remote/deployments/runtime-config-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/runtime-config-rs/target,id=runtime-config-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/runtime-config-rs/target,id=runtime-config-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && cp target/release/dd-runtime-config /usr/local/bin/dd-runtime-config
 

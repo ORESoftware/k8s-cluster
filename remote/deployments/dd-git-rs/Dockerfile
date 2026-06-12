@@ -17,6 +17,7 @@
 #    crate's ../../libs/pg-defs path dependency resolves.
 # ---------------------------------------------------------------------------
 FROM rust:1.91-bookworm AS build
+ARG TARGETARCH
 WORKDIR /src
 # Cargo path-dependency: the generated pg-defs constants crate.
 COPY libs/pg-defs/generated/rust ./libs/pg-defs/generated/rust
@@ -24,7 +25,7 @@ COPY deployments/dd-git-rs ./deployments/dd-git-rs
 WORKDIR /src/deployments/dd-git-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/src/deployments/dd-git-rs/target,id=dd-git-rs-target,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-git-rs/target,id=dd-git-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && strip target/release/dd-git-rs \
  && cp target/release/dd-git-rs /usr/local/bin/dd-git-rs

@@ -17,6 +17,7 @@
 #    crate's ../../libs path dependencies resolve.
 # ---------------------------------------------------------------------------
 FROM rust:1.90-bookworm AS rust-build
+ARG TARGETARCH
 WORKDIR /src
 # build.rs uses pkg-config to discover Tesseract + Leptonica; the -dev packages
 # provide headers (tesseract/baseapi.h, leptonica/allheaders.h), pkg-config
@@ -33,7 +34,7 @@ COPY deployments/dd-ocr-rs ./deployments/dd-ocr-rs
 WORKDIR /src/deployments/dd-ocr-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/src/deployments/dd-ocr-rs/target,id=dd-ocr-rs-target,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-ocr-rs/target,id=dd-ocr-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && strip target/release/dd-ocr-rs \
  && cp target/release/dd-ocr-rs /usr/local/bin/dd-ocr-rs

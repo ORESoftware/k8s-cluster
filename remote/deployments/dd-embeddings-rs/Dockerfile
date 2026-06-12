@@ -6,6 +6,7 @@
 #          TLS calls to OpenAI, Voyage, Google, Cohere, etc. and to Qdrant).
 
 FROM rust:1.95-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -15,7 +16,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/target,id=dd-embeddings-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/target,id=dd-embeddings-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --bin dd-embeddings-rs \
  && cp target/release/dd-embeddings-rs /usr/local/bin/dd-embeddings-rs
 

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -13,7 +14,7 @@ COPY remote/deployments/apostille-services-server-rs/generated /app/remote/deplo
 WORKDIR /app/remote/deployments/apostille-services-server-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/apostille-services-server-rs/target,id=apostille-services-server-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/apostille-services-server-rs/target,id=apostille-services-server-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-apostille-services-server /usr/local/bin/dd-apostille-services-server
 

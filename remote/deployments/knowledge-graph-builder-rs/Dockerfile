@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ COPY remote/deployments/knowledge-graph-builder-rs/generated /app/remote/deploym
 WORKDIR /app/remote/deployments/knowledge-graph-builder-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/knowledge-graph-builder-rs/target,id=knowledge-graph-builder-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/knowledge-graph-builder-rs/target,id=knowledge-graph-builder-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-knowledge-graph-builder /usr/local/bin/dd-knowledge-graph-builder
 

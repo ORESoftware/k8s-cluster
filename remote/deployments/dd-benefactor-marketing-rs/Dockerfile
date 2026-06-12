@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.95-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ COPY remote/deployments/dd-benefactor-marketing-rs/generated /app/remote/deploym
 WORKDIR /app/remote/deployments/dd-benefactor-marketing-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/dd-benefactor-marketing-rs/target,id=dd-benefactor-marketing-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/dd-benefactor-marketing-rs/target,id=dd-benefactor-marketing-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-benefactor-marketing-rs /usr/local/bin/dd-benefactor-marketing-rs
 

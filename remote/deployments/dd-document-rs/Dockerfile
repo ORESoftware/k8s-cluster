@@ -40,6 +40,7 @@ RUN set -eux; \
 #    dependencies resolve.
 # ---------------------------------------------------------------------------
 FROM rust:1.90-bookworm AS rust-build
+ARG TARGETARCH
 WORKDIR /src
 ENV PANDOC_BRIDGE_LIB_DIR=/usr/local/lib/dd-document-rs
 # build.rs uses pkg-config to discover Magick++; libmagick++-dev provides headers,
@@ -56,7 +57,7 @@ COPY deployments/dd-document-rs ./deployments/dd-document-rs
 WORKDIR /src/deployments/dd-document-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/src/deployments/dd-document-rs/target,id=dd-document-rs-target,sharing=locked \
+    --mount=type=cache,target=/src/deployments/dd-document-rs/target,id=dd-document-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && strip target/release/dd-document-rs \
  && cp target/release/dd-document-rs /usr/local/bin/dd-document-rs
