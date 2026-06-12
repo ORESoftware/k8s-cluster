@@ -144,6 +144,12 @@ resources:
   - dd-rust-wss-server.service.yaml
   - dd-go-wss-server.deployment.yaml
   - dd-go-wss-server.service.yaml
+  # Root soccer game server (uuid-keyed games) proxied by the gateway under
+  # /soccer/. The gateway configmap below proxies to the dd-soccer-rs Service,
+  # so these MUST be applied or nginx fails to resolve the upstream at startup
+  # and the whole gateway crashloops.
+  - dd-soccer-rs.deployment.yaml
+  - dd-soccer-rs.service.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
   - dd-runtime-config.deployment.yaml
