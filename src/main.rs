@@ -33,7 +33,6 @@ mod vendors;
 use std::sync::Arc;
 use tower::Layer;
 use tower_http::normalize_path::NormalizePathLayer;
-use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::crypto::Sealer;
@@ -41,7 +40,7 @@ use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    let _otel = dd_telemetry::init("billing-server-rs");
 
     // Fail fast at startup if the vendored htmx bytes drifted from the
     // pinned SRI hash. Browsers would otherwise refuse to execute the
@@ -88,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move { events::run_sync_command_loop(s).await });
     }
 
-    let app = api::build_router(state);
+    let app = api::build_router(state).layer(dd_telemetry::http_trace_layer());
     // Strip trailing slashes before routing so `/admin/` matches the same
     // handler as `/admin` (which `Router::nest` does not provide on its own).
     // Applied to the entire surface — JSON routes do not use trailing
@@ -122,24 +121,6 @@ async fn build_event_bus(cfg: &Config) -> events::EventBus {
         );
     }
     events::EventBus::disabled()
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,hyper=warn,tower_http=info"));
-
-    let want_json = std::env::var("BILLING_LOG_FORMAT")
-        .map(|s| s.eq_ignore_ascii_case("json"))
-        .unwrap_or(false);
-
-    if want_json {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .json()
-            .init();
-    } else {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
-    }
 }
 
 async fn shutdown_signal() {
