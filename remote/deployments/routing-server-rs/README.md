@@ -61,6 +61,24 @@ curl -s localhost:8132/api/solve/route-...   # poll for the incumbent
 You can also POST explicit `stops` (`[{ "id", "x", "y" }]`) with `depotIndex` and
 `vehicleCount`. Open `http://localhost:8132/` to watch tours improve in real time.
 
+## Hardening
+
+- **Opt-in auth**: set `ROUTING_AUTH_SECRET` and `POST /api/solve` requires it as
+  `Authorization: Bearer <secret>` (or `X-DD-Auth`), compared in constant time. Dashboard
+  reads (`/`, `/api/solve/{id}`) stay open. The master manifest wires it from
+  `dd-agent-secrets` (`optional: true`).
+- **Concurrency cap**: at most `MAX_CONCURRENT_SOLVES` (16) background solves run at once;
+  each holds a permit for its lifetime and excess requests get `503`.
+- **Total time budget**: `timeoutMs` bounds both the distributed collection and the local
+  fallback loop, so a big solve can't peg a CPU indefinitely in the background.
+- **Untrusted jobs**: workers reject oversize payloads and re-`validate()` the problem
+  (stop count, finite coords, depot range) before solving, so a job published straight to
+  the subject can't pin a worker; `MAX_STOPS`/`MAX_VEHICLES`/`MAX_LOCAL_PASSES` are clamped.
+- **NATS resilience**: bounded connect-retry (`ROUTING_NATS_CONNECT_ATTEMPTS`), and the
+  master ensures the JetStream stream exists on startup.
+- Tracked solves are capped (`MAX_TRACKED_SOLVES`, oldest evicted); rejections are counted
+  in `dd_routing_rejected_requests_total`.
+
 ## Build & deploy
 
 ```bash
