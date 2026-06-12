@@ -21,12 +21,13 @@ removed everywhere).
 ```dockerfile
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/target,id=<service>-target,sharing=locked \
+    --mount=type=cache,target=/app/target,id=<service>-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && cp target/release/<binary> /usr/local/bin/<binary>
 
@@ -41,15 +42,34 @@ ENTRYPOINT ["/usr/local/bin/<binary>"]
 ### Why each piece matters
 
 - **`registry` + `git` mounts** are shared across every service (`id=cargo-registry`,
-  `id=cargo-git`) so a crate downloaded for one service is reused by all.
-- **`target` mount** is per-service (`id=<service>-target`, the deployment dir
-  name) so two services never thrash each other's incremental build dir.
-- **`sharing=locked`** serializes concurrent builders on the same cache id,
-  which matches cargo's own locking and avoids corruption.
+  `id=cargo-git`) so a crate downloaded for one service is reused by all. The
+  cargo registry/git db holds *downloaded sources + the index* — architecture
+  independent, so sharing across services and target platforms is safe.
+- **`target` mount** is per-service AND per-arch (`id=<service>-target-${TARGETARCH}`)
+  so two services never thrash each other's incremental dir, and — critically —
+  a multi-arch build (`--platform linux/amd64,linux/arm64`) never mixes
+  arch-specific object files in one cache. `${TARGETARCH}` is auto-populated by
+  BuildKit (declare `ARG TARGETARCH` in the build stage); on a single-arch build
+  it resolves to the host arch, so the id is stable.
+- **`sharing=locked`** serializes concurrent builders on the same cache id. This
+  is required for correctness here: cargo's cross-process lock lives at
+  `$CARGO_HOME/.package-cache`, which is *not* one of the mounted paths, so
+  concurrent builds sharing the registry mount would otherwise have no lock
+  coordinating their writes. The trade-off is that concurrent Rust image builds
+  serialize on the shared registry/git caches; we prefer that to corruption.
 - **`cp target/release/<binary> /usr/local/bin/<binary>`** is mandatory: a
   cache-mounted `target/` is *not* part of the image filesystem, so the binary
   must be copied to a real path inside the same `RUN`. The runtime stage then
   `COPY --from=build /usr/local/bin/<binary>` — never from `target/release`.
+  The `<binary>` name must match what cargo emits: the crate's `[[bin]]` name,
+  or the `[package] name` if there is no explicit `[[bin]]`.
+
+### Operational note
+
+Cache mounts grow unbounded on the buildkitd host. Cap them with a buildkitd GC
+policy (e.g. `keepBytes` / `keepDuration` in `buildkitd.toml`, or
+`docker builder prune --filter type=exec.cachemount`) so the per-service
+`target/` caches don't fill the build node's disk.
 
 ## Notes
 

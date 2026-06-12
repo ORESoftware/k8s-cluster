@@ -7,6 +7,7 @@
 #          Stripe, PayPal, Plaid, etc.).
 
 FROM rust:1.95-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -17,7 +18,7 @@ COPY src ./src
 COPY migrations ./migrations
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/target,id=billing-server-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/target,id=billing-server-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --bin billing-server-rs \
  && cp target/release/billing-server-rs /usr/local/bin/billing-server-rs
 

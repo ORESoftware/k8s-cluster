@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -14,7 +15,7 @@ COPY remote/libs /app/remote/libs
 WORKDIR /app/remote/deployments/patent-filing-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/patent-filing-rs/target,id=patent-filing-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/patent-filing-rs/target,id=patent-filing-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-patent-filing-rs /usr/local/bin/dd-patent-filing-rs
 

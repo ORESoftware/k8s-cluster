@@ -1,12 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.86-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 COPY Cargo.toml ./Cargo.toml
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/target,id=rest-api-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/target,id=rest-api-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && cp target/release/dd-remote-rest-api /usr/local/bin/dd-remote-rest-api
 

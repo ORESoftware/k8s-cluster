@@ -12,6 +12,7 @@ ARG RUST_VERSION=1.90
 ARG DEBIAN_RELEASE=bookworm
 
 FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS builder
+ARG TARGETARCH
 WORKDIR /build
 
 COPY Cargo.toml ./Cargo.toml
@@ -22,7 +23,7 @@ COPY rustfmt.toml ./rustfmt.toml
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/build/target,id=formal-methods-service-rs-target,sharing=locked \
+    --mount=type=cache,target=/build/target,id=formal-methods-service-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && strip target/release/dd-formal-methods-service \
  && cp target/release/dd-formal-methods-service /usr/local/bin/dd-formal-methods-service

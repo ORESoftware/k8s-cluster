@@ -1,12 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.87-alpine AS build
+ARG TARGETARCH
 RUN apk add --no-cache musl-dev
 WORKDIR /app
 COPY Cargo.toml ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/target,id=idle-reaper-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/target,id=idle-reaper-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && cp target/release/idle-reaper /usr/local/bin/idle-reaper
 

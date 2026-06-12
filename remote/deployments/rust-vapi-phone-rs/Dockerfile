@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -18,7 +19,7 @@ COPY remote/deployments/rust-vapi-phone-rs/generated /app/remote/deployments/rus
 WORKDIR /app/remote/deployments/rust-vapi-phone-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/rust-vapi-phone-rs/target,id=rust-vapi-phone-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/rust-vapi-phone-rs/target,id=rust-vapi-phone-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-rust-vapi-phone /usr/local/bin/dd-rust-vapi-phone
 

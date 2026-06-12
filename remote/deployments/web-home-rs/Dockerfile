@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 WORKDIR /app/deployments/web-home-rs
 
 COPY deployments/web-home-rs/Cargo.toml deployments/web-home-rs/Cargo.lock ./
@@ -13,7 +14,7 @@ COPY deployments/web-home-rs/generated ./generated
 COPY deployments/web-home-rs/src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/deployments/web-home-rs/target,id=web-home-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/deployments/web-home-rs/target,id=web-home-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release \
  && cp target/release/dd-remote-web-home /usr/local/bin/dd-remote-web-home
 

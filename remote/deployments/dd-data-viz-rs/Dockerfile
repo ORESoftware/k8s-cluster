@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -12,7 +13,7 @@ COPY remote/deployments/dd-data-viz-rs/src /app/remote/deployments/dd-data-viz-r
 WORKDIR /app/remote/deployments/dd-data-viz-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
-    --mount=type=cache,target=/app/remote/deployments/dd-data-viz-rs/target,id=dd-data-viz-rs-target,sharing=locked \
+    --mount=type=cache,target=/app/remote/deployments/dd-data-viz-rs/target,id=dd-data-viz-rs-target-${TARGETARCH},sharing=locked \
     cargo build --release --locked \
  && cp target/release/dd-data-viz-rs /usr/local/bin/dd-data-viz-rs
 
