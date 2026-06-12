@@ -1,0 +1,4 @@
+[submodule "async-java"]
+	path = async-java
+	url = git@github.com:async-java/async.java.git
+	branch = master
