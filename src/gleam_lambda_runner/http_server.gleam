@@ -1,3 +1,4 @@
+import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -28,7 +29,7 @@ const child_idle_ms = 300_000
 const child_timeout_ms = 30_000
 
 pub fn supervised() {
-  mist.new(route)
+  mist.new(dd_otel_client.trace(route))
   |> mist.bind(bind_host())
   |> mist.port(bind_port())
   |> mist.supervised
