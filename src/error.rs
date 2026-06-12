@@ -8,13 +8,14 @@ use axum::response::{IntoResponse, Response};
 pub enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
-    // Vault push conflicts are returned as `PushResponse::Conflict` (200 body),
-    // not an HTTP error; kept here for completeness of the error surface.
-    #[allow(dead_code)]
+    // Returned when registration hits a unique-constraint (username taken).
+    // (Vault *push* conflicts are a 200 `PushResponse::Conflict` body, not this.)
     #[error("conflict")]
     Conflict,
     #[error("bad request")]
     BadRequest,
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("internal error")]
     Internal,
 }
@@ -32,6 +33,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
+            ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.

@@ -6,6 +6,7 @@ mod db;
 mod devices;
 mod error;
 mod protocol;
+mod ratelimit;
 mod vault_blob;
 
 #[tokio::main]
