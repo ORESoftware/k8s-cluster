@@ -195,7 +195,12 @@ fn live_html(id: Uuid) -> String {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-soccer-rs");
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
     let state = AppState::new();
 
@@ -231,7 +236,7 @@ async fn main() {
         .await
         .unwrap_or_else(|e| panic!("dd-soccer-rs bind {addr}: {e}"));
     tracing::error!("dd-soccer-rs listening on {addr}");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .await
         .expect("dd-soccer-rs serve");
 }

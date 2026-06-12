@@ -9,8 +9,13 @@ name = "dd-soccer-rs"
 path = "src/main.rs"
 
 [dependencies]
-dd-telemetry = { path = "../../libs/telemetry-rs" }
+# NOTE: the shared `dd-telemetry` crate (../../libs/telemetry-rs) referenced by
+# the other deployments does not exist in the repo yet, and this server's build
+# script does not assemble remote/libs into its build root, so depending on it
+# makes the in-pod `cargo build` fail at dependency resolution. Use a plain
+# stdout tracing subscriber until the shared telemetry crate is actually shipped.
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 serde = { version = "1", features = ["derive"] }
