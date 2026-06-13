@@ -22,6 +22,9 @@ spec:
         app.kubernetes.io/name: threefa-sync-server
         app.kubernetes.io/part-of: threefa
     spec:
+      # The server only talks to Postgres + serves HTTP; it never calls the
+      # Kubernetes API, so don't mount a SA token a compromised pod could abuse.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

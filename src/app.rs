@@ -189,6 +189,7 @@ async fn register(
     .bind(&req.username)
     .bind(&secret)
     .fetch_one(&st.pool)
+    .await
     {
         Ok(id) => id,
         Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {
