@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>dd-func-approx · function approximator</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --panel2: #1e242c; --line: #2a323c;
+    --ink: #e6edf3; --muted: #8b97a6; --accent: #4cc2ff; --accent2: #7ee787;
+    --warn: #f0b429; --bad: #ff7b72; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 999px; padding: 2px 9px; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px; align-items: start; }
+  @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .panel .body { padding: 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  select, input, textarea, button { font: inherit; color: var(--ink); background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; width: 100%; }
+  textarea { font-family: var(--mono); font-size: 12px; min-height: 92px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  button.primary { background: linear-gradient(180deg, #2b7fff, #1f6fe6); border-color: #1f6fe6;
+    color: #fff; font-weight: 600; cursor: pointer; margin-top: 14px; }
+  button.primary:hover { filter: brightness(1.07); }
+  button.ghost { width: auto; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 2px; }
+  .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 11px; font-size: 12px; }
+  .chip b { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .expr { font-family: var(--mono); font-size: 16px; color: var(--accent2);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px; overflow-x: auto; white-space: pre; }
+  .deriv { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+  .deriv .k { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; color: var(--muted); }
+  td { font-variant-numeric: tabular-nums; }
+  .warn { color: var(--warn); font-size: 12px; margin: 4px 0; }
+  .muted { color: var(--muted); }
+  .stack > * + * { margin-top: 14px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; }
+  .toolbar .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .seg button { width: auto; border: 0; border-radius: 0; background: var(--panel2); padding: 5px 10px;
+    font-size: 12px; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: #25303c; color: var(--ink); }
+  .chart { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
+  details { margin-top: 12px; } summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  pre.json { font-family: var(--mono); font-size: 11.5px; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; }
+  .status { font-size: 12px; color: var(--muted); min-height: 16px; }
+  .err { color: var(--bad); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>dd-func-approx</h1>
+  <span class="sub">genetic-programming · neuroevolution · neural · analytic equations</span>
+  <span class="spacer"></span>
+  <span class="badge" id="vizBadge">dd-data-viz: checking…</span>
+</header>
+
+<main>
+  <!-- Controls -->
+  <section class="panel">
+    <h2>Dataset &amp; method</h2>
+    <div class="body">
+      <label for="example">Sample function</label>
+      <select id="example">
+        <option value="quadratic">y = 2x² − 3</option>
+        <option value="cubic">y = x³ − 4x</option>
+        <option value="sine">y = sin(x)</option>
+        <option value="damped">y = e^(−0.3x)·sin(3x)</option>
+        <option value="linear">y = 3x − 2</option>
+        <option value="custom">— custom (paste below) —</option>
+      </select>
+
+      <label for="noise">Noise σ <span class="muted" id="noiseVal">0.00</span></label>
+      <input id="noise" type="range" min="0" max="1" step="0.02" value="0" />
+
+      <label for="custom">Custom samples (JSON: <code>[{"x":[..],"y":..}]</code> or <code>{"x":[..],"y":[..]}</code>)</label>
+      <textarea id="custom" placeholder='[{"x":[0],"y":0.0},{"x":[1],"y":3.0}]'></textarea>
+
+      <label for="method">Method</label>
+      <select id="method">
+        <option value="auto">auto (try several, keep best)</option>
+        <option value="symbolic" selected>symbolic — analytic equation</option>
+        <option value="neural">neural — MLP (backprop)</option>
+        <option value="evolution">evolution — neuroevolved MLP</option>
+        <option value="hybrid">hybrid — neuroevolution + polish</option>
+        <option value="linear">linear — ridge polynomial</option>
+      </select>
+
+      <div class="row">
+        <div><label for="generations">GP generations</label><input id="generations" type="number" value="40" min="1" max="200" /></div>
+        <div><label for="population">GP population</label><input id="population" type="number" value="400" min="8" max="2000" /></div>
+      </div>
+      <div class="row">
+        <div><label for="epochs">NN epochs</label><input id="epochs" type="number" value="400" min="1" max="5000" /></div>
+        <div><label for="seed">Seed</label><input id="seed" type="number" value="7" /></div>
+      </div>
+
+      <label for="auth" id="authLabel" class="hidden">Auth token (x-server-auth)</label>
+      <input id="auth" class="hidden" type="password" placeholder="shared secret" />
+
+      <button class="primary" id="fitBtn">Fit ▸</button>
+      <div class="status" id="status"></div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="stack">
+    <div class="panel">
+      <h2>Result</h2>
+      <div class="body stack">
+        <div class="chips" id="chips"><span class="muted">Run a fit to see the model.</span></div>
+        <div class="expr" id="expr">—</div>
+        <div class="deriv" id="deriv"></div>
+        <div id="warnings"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Visualization</h2>
+      <div class="body stack">
+        <div class="toolbar">
+          <div class="seg" id="chartTabs">
+            <button data-tab="fit" class="on">Fit</button>
+            <button data-tab="pva">Predicted vs actual</button>
+            <button data-tab="pareto">Pareto front</button>
+          </div>
+          <span class="spacer"></span>
+          <span class="muted" style="font-size:12px">renderer</span>
+          <div class="seg" id="rendererSeg">
+            <button data-r="local" class="on">local</button>
+            <button data-r="dataviz" id="rDataviz" disabled>dd-data-viz</button>
+          </div>
+        </div>
+        <div id="chartHost"><svg class="chart" id="chart" viewBox="0 0 800 420" height="420"></svg></div>
+        <div class="status" id="chartStatus"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Metrics</h2>
+      <div class="body">
+        <table id="metrics"><tbody><tr><td class="muted">—</td></tr></tbody></table>
+        <details><summary>Raw response JSON</summary><pre class="json" id="raw"></pre></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { resp: null, samples: null, dims: 1, tab: "fit", renderer: "local", cfg: { dataVizUrl: "", authRequired: false } };
+
+// ----- config (dd-data-viz URL + whether func-approx auth is on) -------------
+async function loadConfig() {
+  try {
+    const r = await fetch("ui/config.json");
+    if (r.ok) state.cfg = Object.assign(state.cfg, await r.json());
+  } catch (_) {}
+  const badge = $("vizBadge");
+  if (state.cfg.dataVizUrl) {
+    badge.textContent = "dd-data-viz: " + state.cfg.dataVizUrl;
+    $("rDataviz").disabled = false;
+  } else {
+    badge.textContent = "dd-data-viz: not configured";
+  }
+  if (state.cfg.authRequired) { $("authLabel").classList.remove("hidden"); $("auth").classList.remove("hidden"); }
+}
+
+// ----- sample datasets -------------------------------------------------------
+function gauss() { // Box-Muller
+  let u = Math.random() || 1e-9, v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+const fns = {
+  quadratic: (x) => 2 * x * x - 3,
+  cubic: (x) => x * x * x - 4 * x,
+  sine: (x) => Math.sin(x),
+  damped: (x) => Math.exp(-0.3 * x) * Math.sin(3 * x),
+  linear: (x) => 3 * x - 2,
+};
+function sampleExample(name, noise) {
+  const f = fns[name], out = [];
+  for (let x = -3; x <= 3.0001; x += 0.15) out.push({ x: [+x.toFixed(4)], y: f(x) + noise * gauss() });
+  return out;
+}
+function parseCustom() {
+  const txt = $("custom").value.trim();
+  if (!txt) throw new Error("custom selected but the samples box is empty");
+  const j = JSON.parse(txt);
+  if (Array.isArray(j)) return j.map((s) => ({ x: Array.isArray(s.x) ? s.x : [s.x], y: +s.y }));
+  if (j && Array.isArray(j.x) && Array.isArray(j.y))
+    return j.x.map((xv, i) => ({ x: Array.isArray(xv) ? xv : [xv], y: +j.y[i] }));
+  throw new Error("unrecognised JSON shape");
+}
+function currentSamples() {
+  const name = $("example").value;
+  return name === "custom" ? parseCustom() : sampleExample(name, parseFloat($("noise").value));
+}
+
+// ----- fit -------------------------------------------------------------------
+function curveGrid(samples) {
+  const xs = samples.map((s) => s.x[0]);
+  let lo = Math.min(...xs), hi = Math.max(...xs);
+  const pad = (hi - lo || 1) * 0.04; lo -= pad; hi += pad;
+  const n = 160, grid = [];
+  for (let i = 0; i < n; i++) grid.push([lo + (hi - lo) * (i / (n - 1))]);
+  return grid;
+}
+
+// ----- result panes ----------------------------------------------------------
+function num(v, d = 4) { return (v == null || Number.isNaN(v)) ? "—" : (+v).toFixed(d); }
+function renderResult() {
+  const r = state.resp;
+  const sel = r.selected || r.method;
+  const chips = [
+    `<span class="chip">method <b>${sel}</b></span>`,
+    `<span class="chip">val R² <b>${num(r.validation?.r2, 4)}</b></span>`,
+    `<span class="chip">val RMSE <b>${num(r.validation?.rmse, 4)}</b></span>`,
+    r.complexity != null ? `<span class="chip">complexity <b>${r.complexity}</b></span>` : "",
+    `<span class="chip">iters <b>${r.iterations ?? "—"}</b></span>`,
+  ].join("");
+  $("chips").innerHTML = chips;
+  $("expr").textContent = r.expression || "(no closed-form expression for this method)";
+
+  const d = r.derivatives && typeof r.derivatives === "object" ? r.derivatives : {};
+  const keys = Object.keys(d);
+  $("deriv").innerHTML = keys.length
+    ? keys.map((k) => `<div><span class="k">∂/∂${k} =</span> ${escapeHtml(d[k])}</div>`).join("")
+    : "";
+
+  $("warnings").innerHTML = (r.warnings || []).map((w) => `<div class="warn">⚠ ${escapeHtml(w)}</div>`).join("");
+
+  const m = [["", "train", "validation"]];
+  const t = r.train || {}, v = r.validation || {};
+  m.push(["RMSE", num(t.rmse), num(v.rmse)]);
+  m.push(["MAE", num(t.mae), num(v.mae)]);
+  m.push(["R²", num(t.r2), num(v.r2)]);
+  $("metrics").innerHTML = "<tbody>" + m.map((row, i) =>
+    "<tr>" + row.map((c) => i === 0 ? `<th>${c}</th>` : `<td>${c}</td>`).join("") + "</tr>").join("") + "</tbody>";
+  $("raw").textContent = JSON.stringify(r, null, 2);
+
+  // Pareto tab only meaningful when a front exists.
+  $("chartTabs").querySelector('[data-tab="pareto"]').style.display =
+    (r.paretoFront && r.paretoFront.length) ? "" : "none";
+  drawChart();
+}
+
+// ----- chart spec builders (dd-data-viz RenderRequest compatible) ------------
+function specForTab(tab) {
+  const r = state.resp; if (!r) return null;
+  if (tab === "fit") {
+    if (state.dims === 1 && r.predictedValues && req_predictAt()) {
+      const grid = req_predictAt();
+      const line = grid.map((g, i) => ({ x: g[0], y: r.predictedValues[i] }))
+        .filter((p) => Number.isFinite(p.y)).sort((a, b) => a.x - b.x);
+      const pts = state.samples.map((s) => ({ x: s.x[0], y: s.y }));
+      return { kind: "overlay", title: "fit · data + model", xLabel: "x", yLabel: "y", points: pts, line };
+    }
+    return specForTab("pva"); // multi-feature: fall back to predicted-vs-actual
+  }
+  if (tab === "pva") {
+    const preds = r.predictions || [];
+    const pts = state.samples.slice(0, preds.length).map((s, i) => ({ x: s.y, y: preds[i] }))
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    const lo = Math.min(...pts.map((p) => Math.min(p.x, p.y)));
+    const hi = Math.max(...pts.map((p) => Math.max(p.x, p.y)));
+    return { kind: "overlay", title: "predicted vs actual", xLabel: "actual", yLabel: "predicted",
+      points: pts, line: [{ x: lo, y: lo }, { x: hi, y: hi }] };
+  }
+  if (tab === "pareto") {
+    const pts = (r.paretoFront || []).map((p) => ({ x: p.complexity, y: p.valRmse, label: p.expression }))
+      .filter((p) => Number.isFinite(p.y)).sort((a, b) => a.x - b.x);
+    return { kind: "line", title: "Pareto · complexity vs val RMSE", xLabel: "complexity", yLabel: "val RMSE", points: pts, line: pts };
+  }
+  return null;
+}
+function req_predictAt() { return state._grid; }
+
+// Convert a single series into a dd-data-viz /render request.
+function dataVizRequest(spec, mark) {
+  const series = mark === "scatter" ? spec.points : (spec.line && spec.line.length ? spec.line : spec.points);
+  return { mark, x: spec.xLabel || "x", y: spec.yLabel || "y", title: spec.title,
+    width: 800, height: 420, rows: series.map((p) => ({ [spec.xLabel || "x"]: p.x, [spec.yLabel || "y"]: p.y })) };
+}
+
+// ----- chart drawing ---------------------------------------------------------
+async function drawChart() {
+  const spec = specForTab(state.tab);
+  const host = $("chartHost"), status = $("chartStatus");
+  if (!spec) { host.innerHTML = '<svg class="chart" viewBox="0 0 800 420" height="420"></svg>'; return; }
+
+  if (state.renderer === "dataviz" && state.cfg.dataVizUrl) {
+    status.textContent = "rendering via dd-data-viz…"; status.classList.remove("err");
+    try {
+      // dd-data-viz renders one series per mark; scatter the points (and, for
+      // the Pareto/line tabs, the line). Overlay tabs render their scatter.
+      const mark = spec.kind === "line" ? "line" : "scatter";
+      const svg = await renderViaDataViz(dataVizRequest(spec, mark));
+      host.innerHTML = svg;
+      host.firstElementChild && host.firstElementChild.classList.add("chart");
+      status.textContent = "rendered by dd-data-viz (" + mark + " mark; overlay shown local)";
+      return;
+    } catch (e) {
+      status.innerHTML = '<span class="err">dd-data-viz failed (' + escapeHtml(e.message) + ') — showing local</span>';
+    }
+  } else {
+    status.textContent = "";
+  }
+  host.innerHTML = drawLocal(spec);
+}
+
+async function renderViaDataViz(reqBody) {
+  const base = state.cfg.dataVizUrl.replace(/\/$/, "");
+  const headers = { "content-type": "application/json" };
+  if (state.cfg.dataVizAuth) headers["x-server-auth"] = state.cfg.dataVizAuth;
+  const r = await fetch(base + "/render", { method: "POST", headers, body: JSON.stringify(reqBody) });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json();
+  if (!j.svg) throw new Error("no svg in response");
+  return j.svg;
+}
+
+// Self-contained SVG: axes, gridlines, scatter, line. Zero dependencies.
+function drawLocal(spec) {
+  const W = 800, H = 420, mL = 64, mR = 18, mT = 36, mB = 44;
+  const all = (spec.points || []).concat(spec.line || []);
+  if (!all.length) return svgWrap(W, H, '<text x="400" y="210" fill="#8b97a6" text-anchor="middle">no finite points to plot</text>');
+  const xs = all.map((p) => p.x), ys = all.map((p) => p.y);
+  let xlo = Math.min(...xs), xhi = Math.max(...xs), ylo = Math.min(...ys), yhi = Math.max(...ys);
+  if (xlo === xhi) { xlo -= 1; xhi += 1; }
+  if (ylo === yhi) { ylo -= 1; yhi += 1; }
+  const padY = (yhi - ylo) * 0.06; ylo -= padY; yhi += padY;
+  const sx = (x) => mL + (x - xlo) / (xhi - xlo) * (W - mL - mR);
+  const sy = (y) => H - mB - (y - ylo) / (yhi - ylo) * (H - mT - mB);
+
+  let g = "";
+  // gridlines + ticks
+  for (let i = 0; i <= 5; i++) {
+    const gy = mT + (H - mT - mB) * (i / 5), yv = yhi - (yhi - ylo) * (i / 5);
+    g += `<line x1="${mL}" y1="${gy}" x2="${W - mR}" y2="${gy}" stroke="#2a323c" />`;
+    g += `<text x="${mL - 8}" y="${gy + 4}" fill="#8b97a6" font-size="11" text-anchor="end">${fmt(yv)}</text>`;
+  }
+  for (let i = 0; i <= 6; i++) {
+    const gx = mL + (W - mL - mR) * (i / 6), xv = xlo + (xhi - xlo) * (i / 6);
+    g += `<line x1="${gx}" y1="${mT}" x2="${gx}" y2="${H - mB}" stroke="#222a33" />`;
+    g += `<text x="${gx}" y="${H - mB + 16}" fill="#8b97a6" font-size="11" text-anchor="middle">${fmt(xv)}</text>`;
+  }
+  // line
+  if (spec.line && spec.line.length > 1) {
+    const pts = spec.line.filter((p) => Number.isFinite(p.y)).map((p) => `${sx(p.x).toFixed(1)},${sy(p.y).toFixed(1)}`).join(" ");
+    g += `<polyline points="${pts}" fill="none" stroke="#4cc2ff" stroke-width="2.2" />`;
+  }
+  // points
+  for (const p of (spec.points || [])) {
+    if (!Number.isFinite(p.y)) continue;
+    g += `<circle cx="${sx(p.x).toFixed(1)}" cy="${sy(p.y).toFixed(1)}" r="3.2" fill="#7ee787" fill-opacity="0.85" />`;
+  }
+  // labels
+  g += `<text x="${(mL + W - mR) / 2}" y="${H - 6}" fill="#8b97a6" font-size="12" text-anchor="middle">${escapeHtml(spec.xLabel || "x")}</text>`;
+  g += `<text transform="translate(16 ${(mT + H - mB) / 2}) rotate(-90)" fill="#8b97a6" font-size="12" text-anchor="middle">${escapeHtml(spec.yLabel || "y")}</text>`;
+  g += `<text x="${mL}" y="22" fill="#e6edf3" font-size="13">${escapeHtml(spec.title || "")}</text>`;
+  return svgWrap(W, H, g);
+}
+function svgWrap(W, H, body) {
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" height="${H}" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="${H}" fill="#1e242c"/>${body}</svg>`;
+}
+
+// ----- helpers ---------------------------------------------------------------
+function fmt(v) { const a = Math.abs(v); return (a !== 0 && (a < 1e-2 || a >= 1e4)) ? v.toExponential(1) : (+v).toFixed(2); }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function setStatus(msg, isErr) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
+
+// ----- wiring ----------------------------------------------------------------
+$("noise").addEventListener("input", () => { $("noiseVal").textContent = parseFloat($("noise").value).toFixed(2); });
+$("fitBtn").addEventListener("click", fitMain);
+$("chartTabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]"); if (!b) return;
+  state.tab = b.dataset.tab;
+  [...$("chartTabs").children].forEach((c) => c.classList.toggle("on", c === b));
+  drawChart();
+});
+$("rendererSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-r]"); if (!b || b.disabled) return;
+  state.renderer = b.dataset.r;
+  [...$("rendererSeg").children].forEach((c) => c.classList.toggle("on", c === b));
+  drawChart();
+});
+// fitMain runs the fit and records the predictAt grid for chart alignment.
+async function fitMain() {
+  const btn = $("fitBtn"); btn.disabled = true; setStatus("fitting…");
+  try {
+    const samples = currentSamples();
+    if (!samples.length) throw new Error("no samples");
+    state.samples = samples; state.dims = samples[0].x.length;
+    const grid = state.dims === 1 ? curveGrid(samples) : null;
+    state._grid = grid;
+    const req = { method: $("method").value, samples, seed: +$("seed").value, includePredictions: true,
+      config: { generations: +$("generations").value, population: +$("population").value, epochs: +$("epochs").value } };
+    if (grid) req.predictAt = grid;
+    const headers = { "content-type": "application/json" };
+    const tok = $("auth").value.trim(); if (tok) headers["x-server-auth"] = tok;
+    const r = await fetch("approximate", { method: "POST", headers, body: JSON.stringify(req) });
+    const body = await r.json();
+    if (!r.ok || body.ok === false) throw new Error(body.error || ("HTTP " + r.status));
+    state.resp = body; renderResult();
+    setStatus("done · " + (body.durationMs ?? "?") + " ms", false);
+  } catch (e) { setStatus(e.message, true); } finally { btn.disabled = false; }
+}
+
+loadConfig();
+$("noiseVal").textContent = "0.00";
+</script>
+</body>
+</html>

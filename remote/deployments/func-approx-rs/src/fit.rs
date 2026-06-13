@@ -392,16 +392,33 @@ fn fit_symbolic(
         }
     }
 
-    let expression = result
+    // Take the chosen front member and canonicalise it with the e-graph engine,
+    // so the *reported* equation is the simplest analytic form we can reach (the
+    // front is built on raw, evolution-shaped trees: un-combined like-terms,
+    // un-folded constants). Canonicalisation is value-preserving under the
+    // engine's protected arithmetic, so the same canonical tree also drives
+    // prediction. Each egg pass is bounded by whatever remains of the fit budget,
+    // collapsing to identity once the deadline passes.
+    let remaining = || {
+        deadline
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_millis(250))
+    };
+    let chosen = result
         .front
         .get(best_i)
-        .map(|m| m.expr.to_infix(names))
-        .unwrap_or_else(|| "0".to_string());
-    let complexity = result.front.get(best_i).map(|m| m.complexity);
+        .map(|m| m.expr.clone())
+        .unwrap_or(gp::Expr::Const(0.0));
+    let canon = crate::algebra::canonicalize(&chosen, remaining());
 
-    // Symbolic derivatives of the chosen equation, per input variable.
+    let expression = canon.to_infix(names);
+    let complexity = Some(canon.complexity());
+
+    // Symbolic derivatives of the chosen equation, per input variable — each
+    // canonicalised too, both for readability and so the node-size cap measures
+    // the simplified form rather than the raw quotient/product-rule expansion.
     let mut derivatives = serde_json::Map::new();
-    if let Some(member) = result.front.get(best_i) {
+    {
         let dvars = data.d.min(MAX_DERIVATIVE_VARS);
         if data.d > MAX_DERIVATIVE_VARS {
             warnings.push(format!(
@@ -411,9 +428,16 @@ fn fit_symbolic(
         }
         let mut skipped = 0;
         for k in 0..dvars {
-            let d_expr = member.expr.derivative(k);
-            // The quotient/product rules can blow a derivative up; skip giants so
-            // the response stays bounded.
+            // The quotient/product rules can blow a derivative up. Reject giants
+            // on the *raw* tree first, so we never hand a pathological expression
+            // to the e-graph; then canonicalise, and re-check (canonicalisation
+            // can only shrink, but the guard keeps the contract explicit).
+            let raw = canon.derivative(k);
+            if raw.size() > MAX_DERIVATIVE_NODES {
+                skipped += 1;
+                continue;
+            }
+            let d_expr = crate::algebra::canonicalize(&raw, remaining());
             if d_expr.size() > MAX_DERIVATIVE_NODES {
                 skipped += 1;
                 continue;
@@ -426,12 +450,6 @@ fn fit_symbolic(
             ));
         }
     }
-
-    let best_expr = result
-        .front
-        .get(best_i)
-        .map(|m| m.expr.clone())
-        .unwrap_or(gp::Expr::Const(0.0));
 
     let model_json = json!({
         "kind": "expression",
@@ -450,7 +468,7 @@ fn fit_symbolic(
         complexity,
         pareto_raw: result.front,
         iterations,
-        predict: Box::new(move |row: &[f64]| best_expr.eval(row)),
+        predict: Box::new(move |row: &[f64]| canon.eval(row)),
     }
 }
 

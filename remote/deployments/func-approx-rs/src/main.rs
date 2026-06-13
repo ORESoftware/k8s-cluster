@@ -19,6 +19,7 @@
 // Sits beside the other compute servers (monte-carlo, evolution, economics).
 // Pure-Rust math with a seeded PRNG, so every fit is reproducible from a seed.
 
+mod algebra;
 mod data;
 mod evo;
 mod fit;
@@ -41,7 +42,7 @@ use std::{
 use axum::{
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -223,6 +224,25 @@ async fn healthz() -> impl IntoResponse {
     }))
 }
 
+/// The interactive browser playground (served at `/` and `/ui`). Self-contained:
+/// inline HTML/CSS/JS, no build step and no external assets. It fits over
+/// same-origin `/approximate` and can optionally offload chart rendering to the
+/// dd-data-viz `/render` endpoint.
+async fn ui() -> Html<&'static str> {
+    Html(include_str!("../ui.html"))
+}
+
+/// Bootstrap config the UI fetches on load. Reports the optional dd-data-viz base
+/// URL the browser may post render specs to, and whether this server requires an
+/// auth token on `/approximate` (so the UI can prompt for it). No secret is ever
+/// handed to the browser.
+async fn ui_config(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(json!({
+        "dataVizUrl": env_value("FUNC_APPROX_DATA_VIZ_URL", ""),
+        "authRequired": state.auth_secret.is_some(),
+    }))
+}
+
 async fn metrics(State(state): State<AppState>) -> Response {
     let m = &state.metrics;
     let body = format!(
@@ -394,7 +414,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(run_nats_loop(state.clone(), subject, queue_group));
 
     let app = Router::new()
-        .route("/", get(healthz))
+        .route("/", get(ui))
+        .route("/ui", get(ui))
+        .route("/ui/config.json", get(ui_config))
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/approximate", post(approximate_http))

@@ -33,6 +33,8 @@ reproducible from `seed`.
 
 ## HTTP
 
+- `GET /`, `GET /ui` — interactive browser playground (see **Web UI**)
+- `GET /ui/config.json` — UI bootstrap (dd-data-viz URL, whether auth is required)
 - `GET /healthz`, `GET /metrics`
 - `POST /approximate` (alias `POST /fit`)
 
@@ -76,6 +78,32 @@ Name variables with `variableNames` (defaults `x0, x1, …`). Knobs live under
 | `FUNC_APPROX_EVENT_SUBJECT` | `dd.remote.events` | runtime events |
 
 `PORT` defaults to `8139`. Set `NATS_URL` to enable the request/result lane.
+
+## Web UI
+
+`GET /` (and `/ui`) serves a **self-contained browser playground** — inline
+HTML/CSS/JS in [`ui.html`](ui.html), no build step, no external assets or CDNs.
+Pick a sample function (or paste your own `samples` JSON), add optional noise,
+choose a method and a couple of knobs, and **Fit** posts to same-origin
+`/approximate`. It shows the chosen **analytic equation**, its **symbolic
+derivatives**, train/validation **metrics**, **warnings**, and the raw response,
+plus charts:
+
+- **Fit** — for single-feature data, the scatter of `(x, y)` with the fitted
+  model curve overlaid (sampled server-side via a dense `predictAt` grid, so it
+  reflects the *actual* model for every method, not just the symbolic ones).
+- **Predicted vs actual** — the dimension-agnostic diagnostic (with a `y = x`
+  reference) used automatically for multi-feature data.
+- **Pareto front** — complexity vs validation RMSE, when a symbolic/auto front
+  is present.
+
+Charts render **locally** as dependency-free inline SVG by default. If
+`FUNC_APPROX_DATA_VIZ_URL` is set, the UI also offers a **dd-data-viz** renderer
+toggle that posts a [dd-data-viz `/render`](../dd-data-viz-rs) spec
+(`{mark, x, y, rows}`) to that service and shows the returned SVG, falling back
+to local rendering on any error. No secret is exposed to the browser:
+`/ui/config.json` reports only the URL and whether `/approximate` requires a
+token (the UI then prompts for one and sends it as `x-server-auth`).
 The request payload is the same JSON as `POST /approximate`.
 
 ## Limits & hardening
@@ -118,6 +146,32 @@ an unstable model never serialises as JSON `null` inside an `f64[]`. Non-finite
 numeric config (`NaN`/`Inf`) is rejected. Scalers are fitted on the **training
 fold only** to avoid validation leakage.
 
+**Analytic-formulation engine.** The chosen symbolic equation and its
+derivatives are canonicalised by **e-graph equality saturation** (the `egg`
+crate — the engine [Herbie](https://herbie.uwplse.org/) uses), turning the raw,
+evolution-shaped tree into the simplest analytic form: like-terms combined
+(`x+x → 2x`), `x·x → x²`, common factors pulled out, the linear-scaling wrapper's
+scattered constants folded (`a·(f−c)+b → a·f+(b−ac)`), and exact identities
+applied (`√(a²) → |a|`, `|−a| → |a|`, parity `sin(−x) → −sin(x)`, `cos(−x) →
+cos(x)`). The rewrites are **value-preserving under the engine's own protected
+arithmetic** (e.g. `a/a → 1` holds because protected division returns `1` at a
+near-zero denominator too; rearrangements *across* protected division are
+intentionally excluded because they are not), the constant folder reuses the
+exact `Unary::eval`/`Binary::eval` semantics, and extraction minimises the **same
+complexity weight** the Pareto front reports. The pass is bounded on nodes,
+iterations *and* the remaining wall-clock budget, and is total — on any failure
+it returns the input unchanged, so it can never break a fit. The result is then
+rendered by a **precedence-aware pretty-printer** that drops redundant
+parentheses, writes `square` as `^2` and a trailing negative constant as a
+subtraction (`((2 * (x0 * x0)) + -3) → 2 * x0^2 - 3`), and **recognises
+materialised constants** as clean analytic symbols (`π`, `e`, `√2`, `√3`, `ln 2`,
+`φ`, small rationals). Symbolic **derivatives match the protected operators**
+they differentiate (away from the clamp/degenerate guards of `exp` and protected
+division) — in particular `d/dx √(|x|)` carries the `sign(x)` factor, so it stays
+finite and correctly-signed for negative `x` (the earlier form went `NaN`). The
+whole pass is deterministic (egg's `deterministic` feature), so a fit is still
+fully reproducible from `seed`.
+
 ## Authentication
 
 Optional and **off by default** (matching the sibling compute services). Set
@@ -134,12 +188,14 @@ secret with `optional: true`, so enabling auth is a one-key secret edit.
 | File | Role |
 | --- | --- |
 | `src/gp.rs` | symbolic regression: expression trees, linear scaling, Pareto archive, simplify, symbolic diff |
+| `src/algebra.rs` | analytic-formulation engine: e-graph (`egg`) canonicalisation + analytic constant recognition |
 | `src/nn.rs` | MLP forward / backprop (Adam, early stopping) |
 | `src/evo.rs` | self-adaptive (μ/μ_I, λ) Evolution Strategy over MLP weights |
 | `src/linalg.rs` | closed-form ridge least squares (normal equations, partial pivoting) |
 | `src/data.rs` | dataset, standardisation, seeded split, RMSE/MAE/R² |
 | `src/fit.rs` | request/response contract, method dispatch, `auto`, analytic output |
-| `src/main.rs` | axum HTTP + NATS server wiring, metrics, auth, runtime-config |
+| `src/main.rs` | axum HTTP + NATS server wiring, metrics, auth, runtime-config, UI routes |
+| `ui.html` | self-contained browser playground (served at `/`), optional dd-data-viz rendering |
 
 Run the tests with `cargo test` (covers eval/simplify/derivative correctness and
 end-to-end recovery of a quadratic, a line, and `sin`).
