@@ -2536,13 +2536,12 @@ fn web_server_build_info() -> des_engine::BuildInfo {
 /// engines it embeds. Same payload `GET /api/build` returns (web layer merged
 /// in), reused by `GET /info`.
 fn full_stack_build_json() -> Value {
-    let mut value = soccer_engine::live_build_info_json();
-    if let (Value::Object(map), Ok(ws)) =
-        (&mut value, serde_json::to_value(web_server_build_info()))
-    {
-        map.insert("web_server".to_string(), ws);
-    }
-    value
+    // soccer_engine no longer exposes `live_build_info_json()` on `main` — the
+    // build_info module + build.rs were dropped in a parallel-history sync. Report
+    // this web server's release identity here; the soccer + des engine layers are
+    // still surfaced by the soccer bridge's own `GET /api/build`
+    // (merge_web_server_build_layer folds the web layer into that reply).
+    serde_json::json!({ "web_server": web_server_build_info() })
 }
 
 /// The soccer bridge's `GET /api/build` returns the soccer + des engine layers

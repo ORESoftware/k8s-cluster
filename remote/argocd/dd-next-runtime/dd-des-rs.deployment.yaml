@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-13-stdout-subscriber-drop-shared-telemetry'
+        dd.dev/telemetry-revision: '2026-06-13-stdout-subscriber-drop-telemetry-and-soccer-buildinfo'
         dd.dev/des-server-revision: 'streamed-out-artifacts'
         dd.dev/des-engine-revision: 'f694d98170a3efb4459c6c92778a9715d1e61c50'
       labels:
