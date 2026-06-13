@@ -3723,7 +3723,14 @@ fn work_dir() -> PathBuf {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let _otel = dd_telemetry::init("dd-des-rs");
+    // Plain stdout tracing subscriber (see Cargo.toml: dd-telemetry lives in a
+    // private submodule the in-pod build cannot fetch). Mirrors dd-soccer-rs.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8112").parse::<u16>()?;
@@ -3853,7 +3860,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         work.join("out").display()
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
