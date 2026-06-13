@@ -184,6 +184,12 @@ struct Config {
     cloud_backfill_segments: i64,
     google_oauth: OAuthProviderConfig,
     microsoft_oauth: OAuthProviderConfig,
+    /// Exact OAuth `redirectUri` values the backend will initiate a cloud-link
+    /// flow with. Empty = accept any https / loopback-http URI (the OAuth
+    /// provider still enforces its own registered-redirect allow-list). When
+    /// set, the backend additionally pins redirects to these known app callbacks
+    /// — defense in depth against an attacker-chosen redirect target.
+    oauth_redirect_allowlist: Vec<String>,
     google_drive_upload_url: String,
     microsoft_graph_base_url: String,
     public_base_url: Option<String>,
@@ -1037,6 +1043,14 @@ fn config_from_env() -> Config {
             authorization_url: first_env(&["SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL"]),
             token_url: first_env(&["SOUND_RECORDER_MICROSOFT_TOKEN_URL"]),
         },
+        oauth_redirect_allowlist: first_env(&["SOUND_RECORDER_OAUTH_REDIRECT_ALLOWLIST"])
+            .map(|raw| {
+                raw.split(',')
+                    .map(|item| item.trim().to_string())
+                    .filter(|item| !item.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
         google_drive_upload_url: first_env(&["SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL"])
             .unwrap_or_else(|| "https://www.googleapis.com/upload/drive/v3/files".to_string()),
         microsoft_graph_base_url: first_env(&["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"])
@@ -1892,6 +1906,7 @@ fn validate_alert_trigger(value: &str) -> Result<String, ServiceError> {
 fn validate_redirect_uri(
     provider: CloudProvider,
     value: Option<String>,
+    allowlist: &[String],
 ) -> Result<String, ServiceError> {
     if provider == CloudProvider::AppleICloud {
         return Ok("client-managed://apple-icloud".to_string());
@@ -1903,13 +1918,20 @@ fn validate_redirect_uri(
     // Parse the host rather than prefix-match: `starts_with("http://localhost")`
     // also accepted `http://localhost.evil.example`. is_safe_public_url enforces
     // scheme https (any host) or http only for a real loopback host.
-    if is_safe_public_url(&uri) {
-        Ok(uri)
-    } else {
-        Err(ServiceError::BadRequest(
+    if !is_safe_public_url(&uri) {
+        return Err(ServiceError::BadRequest(
             "redirectUri must be https or local loopback http".to_string(),
-        ))
+        ));
     }
+    // Defense in depth: when an allow-list is configured, the redirect must be a
+    // known app callback. (The OAuth provider also enforces its own registered
+    // redirects; this pins the target before we ever initiate the flow.)
+    if !allowlist.is_empty() && !allowlist.iter().any(|allowed| allowed == &uri) {
+        return Err(ServiceError::BadRequest(
+            "redirectUri is not in the allowed redirect list".to_string(),
+        ));
+    }
+    Ok(uri)
 }
 
 fn validate_folder_path(value: Option<String>) -> Result<String, ServiceError> {
@@ -3858,7 +3880,11 @@ async fn start_cloud_link(
 ) -> Result<Json<StartCloudLinkResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
     let provider = CloudProvider::parse(&req.provider)?;
-    let redirect_uri = validate_redirect_uri(provider, req.redirect_uri)?;
+    let redirect_uri = validate_redirect_uri(
+        provider,
+        req.redirect_uri,
+        &state.config.oauth_redirect_allowlist,
+    )?;
     let folder_path = validate_folder_path(req.folder_path)?;
     let root_folder_id = clean_optional_nonempty(req.root_folder_id, 512)?;
     let display_name = clean_string(req.display_name, 160);
@@ -5927,6 +5953,7 @@ mod tests {
                 authorization_url: None,
                 token_url: None,
             },
+            oauth_redirect_allowlist: Vec::new(),
             google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
             public_base_url: Some("https://sound.example".to_string()),
@@ -6286,32 +6313,71 @@ mod tests {
     #[test]
     fn redirect_uri_rejects_lookalike_loopback() {
         let provider = CloudProvider::GoogleDrive;
+        let any: &[String] = &[];
         assert!(validate_redirect_uri(
             provider,
-            Some("https://app.example/oauth".to_string())
+            Some("https://app.example/oauth".to_string()),
+            any
         )
         .is_ok());
         assert!(validate_redirect_uri(
             provider,
-            Some("http://localhost:8080/cb".to_string())
+            Some("http://localhost:8080/cb".to_string()),
+            any
         )
         .is_ok());
         // The pre-fix prefix match accepted these lookalike hosts.
         assert!(validate_redirect_uri(
             provider,
-            Some("http://localhost.evil.example/cb".to_string())
+            Some("http://localhost.evil.example/cb".to_string()),
+            any
         )
         .is_err());
         assert!(validate_redirect_uri(
             provider,
-            Some("http://127.0.0.1.evil.example/cb".to_string())
+            Some("http://127.0.0.1.evil.example/cb".to_string()),
+            any
         )
         .is_err());
         assert!(validate_redirect_uri(
             provider,
-            Some("http://example.com/cb".to_string())
+            Some("http://example.com/cb".to_string()),
+            any
         )
         .is_err());
+    }
+
+    #[test]
+    fn redirect_uri_allowlist_pins_to_known_callbacks() {
+        let provider = CloudProvider::GoogleDrive;
+        let allow = vec![
+            "https://app.sonusauris.com/oauth/callback".to_string(),
+            "https://app.sonusauris.com/oauth/onedrive".to_string(),
+        ];
+        // An allowed exact match passes.
+        assert!(validate_redirect_uri(
+            provider,
+            Some("https://app.sonusauris.com/oauth/callback".to_string()),
+            &allow,
+        )
+        .is_ok());
+        // A different https host that would pass is_safe_public_url is now
+        // rejected because it is not in the allow-list (open-redirect defense).
+        assert!(validate_redirect_uri(
+            provider,
+            Some("https://attacker.example/oauth/callback".to_string()),
+            &allow,
+        )
+        .is_err());
+        // A path/case variant of an allowed entry is not an exact match.
+        assert!(validate_redirect_uri(
+            provider,
+            Some("https://app.sonusauris.com/oauth/callback/extra".to_string()),
+            &allow,
+        )
+        .is_err());
+        // iCloud is client-managed and bypasses the URL allow-list entirely.
+        assert!(validate_redirect_uri(CloudProvider::AppleICloud, None, &allow).is_ok());
     }
 
     #[test]
