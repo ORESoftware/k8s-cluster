@@ -46,7 +46,9 @@ pub enum Binary {
 }
 
 impl Unary {
-    fn eval(self, v: f64) -> f64 {
+    /// Protected single-argument evaluation. `pub(crate)` so the e-graph constant
+    /// folder in `algebra.rs` folds literals with the *same* semantics as `eval`.
+    pub(crate) fn eval(self, v: f64) -> f64 {
         match self {
             Unary::Neg => -v,
             Unary::Sin => v.sin(),
@@ -88,7 +90,9 @@ impl Unary {
 }
 
 impl Binary {
-    fn eval(self, a: f64, b: f64) -> f64 {
+    /// Protected two-argument evaluation. `pub(crate)` so the e-graph constant
+    /// folder in `algebra.rs` folds literals with the *same* semantics as `eval`.
+    pub(crate) fn eval(self, a: f64, b: f64) -> f64 {
         match self {
             Binary::Add => a + b,
             Binary::Sub => a - b,
@@ -170,22 +174,58 @@ impl Expr {
         }
     }
 
-    /// Human-readable infix form using the caller's variable names.
+    /// Human-readable infix form using the caller's variable names. A
+    /// precedence-aware printer that drops redundant parentheses, renders
+    /// `square` as `^2`, prefix negation as `-`, and a trailing negative constant
+    /// as a subtraction — so the canonical `((2 * (x0 * x0)) + -3)` prints as
+    /// `2 * x0^2 - 3`.
     pub fn to_infix(&self, vars: &[String]) -> String {
-        match self {
-            Expr::Const(c) => fmt_num(*c),
-            Expr::Var(i) => vars
-                .get(*i)
-                .cloned()
-                .unwrap_or_else(|| format!("x{i}")),
-            Expr::Unary(op, a) => match op {
-                Unary::Neg => format!("(-{})", a.to_infix(vars)),
-                Unary::Square => format!("({})^2", a.to_infix(vars)),
-                _ => format!("{}({})", op.name(), a.to_infix(vars)),
-            },
-            Expr::Binary(op, a, b) => {
-                format!("({} {} {})", a.to_infix(vars), op.symbol(), b.to_infix(vars))
+        self.fmt_prec(vars, 0)
+    }
+
+    /// Render with just enough parentheses for the result to re-parse to the same
+    /// tree. `parent` is the precedence of the enclosing context; a node wraps
+    /// itself when its own precedence is lower. Precedence ladder:
+    /// `+ -` = 1, `* /` = 2, prefix `-` = 3, `^2` = 4, functions/atoms = 5/6.
+    fn fmt_prec(&self, vars: &[String], parent: u8) -> String {
+        let (prec, body) = match self {
+            // Display-only: a literal renders as a recognised analytic symbol
+            // (π, e, √2, small rational) when within tolerance, else a clean
+            // decimal; evaluation always uses the stored f64.
+            Expr::Const(c) => (
+                6,
+                crate::algebra::recognize_constant(*c).unwrap_or_else(|| fmt_num(*c)),
+            ),
+            Expr::Var(i) => (6, vars.get(*i).cloned().unwrap_or_else(|| format!("x{i}"))),
+            Expr::Unary(Unary::Neg, a) => (3, format!("-{}", a.fmt_prec(vars, 3))),
+            Expr::Unary(Unary::Square, a) => (4, format!("{}^2", a.fmt_prec(vars, 4))),
+            // Functions parenthesise their own argument, so it needs none itself.
+            Expr::Unary(op, a) => (5, format!("{}({})", op.name(), a.fmt_prec(vars, 0))),
+            Expr::Binary(Binary::Add, a, b) => {
+                // Fold a trailing negative literal into a subtraction for reading.
+                match b.as_ref() {
+                    Expr::Const(c) if *c < 0.0 && crate::algebra::recognize_constant(*c).is_none() => {
+                        (1, format!("{} - {}", a.fmt_prec(vars, 1), fmt_num(-c)))
+                    }
+                    _ => (1, format!("{} + {}", a.fmt_prec(vars, 1), b.fmt_prec(vars, 1))),
+                }
             }
+            Expr::Binary(Binary::Sub, a, b) => {
+                (1, format!("{} - {}", a.fmt_prec(vars, 1), b.fmt_prec(vars, 2)))
+            }
+            Expr::Binary(Binary::Mul, a, b) => {
+                (2, format!("{} * {}", a.fmt_prec(vars, 2), b.fmt_prec(vars, 2)))
+            }
+            // Division is not associative, so its right operand binds tighter to
+            // keep `a / (b * c)` and `a / (b / c)` correctly grouped.
+            Expr::Binary(Binary::Div, a, b) => {
+                (2, format!("{} / {}", a.fmt_prec(vars, 2), b.fmt_prec(vars, 3)))
+            }
+        };
+        if prec < parent {
+            format!("({body})")
+        } else {
+            body
         }
     }
 
@@ -284,13 +324,20 @@ impl Expr {
                     Unary::Sin => mul(Expr::Unary(Unary::Cos, a.clone()), da),
                     Unary::Cos => neg(mul(Expr::Unary(Unary::Sin, a.clone()), da)),
                     Unary::Exp => mul(Expr::Unary(Unary::Exp, a.clone()), da),
-                    // d/dx log(a) = a'/a
+                    // d/dx log(|a|) = a'/a  (matches the protected log away from 0)
                     Unary::Log => bin(Binary::Div, da, (**a).clone()),
-                    // d/dx sqrt(a) = a'/(2·sqrt(a))
-                    Unary::Sqrt => bin(
-                        Binary::Div,
+                    // The forward op is the *protected* sqrt(|a|), whose derivative
+                    // is sign(a)·a'/(2·sqrt(|a|)) — written (a/|a|)·a'/(2·sqrt(a)),
+                    // and sqrt(a) here also evaluates as sqrt(|a|). The earlier form
+                    // a'/(2·sqrt(a)) dropped the sign factor, so the reported slope
+                    // was wrong (and went NaN) for negative arguments.
+                    Unary::Sqrt => mul(
+                        bin(
+                            Binary::Div,
+                            bin(Binary::Div, (**a).clone(), Expr::Unary(Unary::Abs, a.clone())),
+                            mul(Expr::Const(2.0), Expr::Unary(Unary::Sqrt, a.clone())),
+                        ),
                         da,
-                        mul(Expr::Const(2.0), Expr::Unary(Unary::Sqrt, a.clone())),
                     ),
                     // d/dx a^2 = 2·a·a'
                     Unary::Square => mul(mul(Expr::Const(2.0), (**a).clone()), da),
@@ -937,6 +984,43 @@ mod tests {
         for &xv in &[0.0, 1.0, 2.5] {
             assert!((d.eval(&[xv]) - xv.cos()).abs() < 1e-9);
         }
+    }
+
+    #[test]
+    fn derivative_of_protected_sqrt_matches_numeric() {
+        // The forward op is sqrt(|x|); its analytic derivative must agree with a
+        // central finite difference everywhere, *including negative x* where the
+        // old (sign-dropping) form returned a wrong-signed / NaN slope.
+        let e = Expr::Unary(Unary::Sqrt, Box::new(Expr::Var(0)));
+        let d = e.derivative(0);
+        for &xv in &[-4.0, -1.0, -0.25, 0.25, 1.0, 4.0] {
+            let h = 1e-6;
+            let num = (e.eval(&[xv + h]) - e.eval(&[xv - h])) / (2.0 * h);
+            let sym = d.eval(&[xv]);
+            assert!(sym.is_finite(), "derivative non-finite at x={xv}");
+            assert!((sym - num).abs() < 1e-3, "x={xv}: sym={sym} num={num}");
+        }
+    }
+
+    #[test]
+    fn pretty_printer_drops_redundant_parens() {
+        let v = vars(1);
+        // ((2 * (x0 * x0)) + -3)  ->  2 * x0^2 - 3
+        let e = bin(
+            Binary::Add,
+            mul(Expr::Const(2.0), Expr::Unary(Unary::Square, Box::new(Expr::Var(0)))),
+            Expr::Const(-3.0),
+        );
+        assert_eq!(e.to_infix(&v), "2 * x0^2 - 3");
+        // Function arguments need no inner parens.
+        let e = Expr::Unary(
+            Unary::Sin,
+            Box::new(bin(Binary::Add, Expr::Var(0), Expr::Const(1.0))),
+        );
+        assert_eq!(e.to_infix(&v), "sin(x0 + 1)");
+        // Division is not associative: the right operand keeps its grouping.
+        let e = bin(Binary::Div, Expr::Var(0), mul(Expr::Var(0), Expr::Const(2.0)));
+        assert_eq!(e.to_infix(&v), "x0 / (x0 * 2)");
     }
 
     #[test]

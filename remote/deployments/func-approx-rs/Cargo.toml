@@ -13,6 +13,13 @@ axum = { version = "0.7", features = ["macros"] }
 # shared runtime-events publish default.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+# Analytic-formulation engine: e-graph equality saturation (the approach Herbie
+# uses) to canonicalise the symbolic-regression output. The `deterministic`
+# feature keeps extraction reproducible from the fit `seed`, matching the crate's
+# pure-Rust deterministic contract. `ordered-float` gives the e-graph a
+# hashable/orderable f64 constant for the analysis.
+egg = { version = "0.11", features = ["deterministic"] }
+ordered-float = "4"
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
