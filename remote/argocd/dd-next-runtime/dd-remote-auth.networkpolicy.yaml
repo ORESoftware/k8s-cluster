@@ -41,8 +41,11 @@ spec:
       ports:
         - protocol: TCP
           port: 8083
-  # Egress is DNS + self-registration with the runtime-config control plane
-  # only. This service talks to no database, cache, NATS, or public internet.
+  # Egress is DNS + self-registration with the runtime-config control plane,
+  # plus public 80/443 so the pod can clone its source (GitHub) and fetch
+  # crates (crates.io) for the cold in-pod release build on the
+  # build-from-source nodes, where the EC2 hostPath checkout/cargo cache is not
+  # pre-staged. This service still talks to no database, cache, or NATS.
   egress:
     # Allow OTLP trace export to the in-cluster OpenTelemetry collector.
     - to:
@@ -70,3 +73,48 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
+    # Public 80/443 (IPv4) for `git clone` (GitHub) + crate downloads
+    # (crates.io) during the cold in-pod build. Private/link-local/special
+    # ranges are excluded so this does not widen in-cluster reachability.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    # Public 80/443 (IPv6), same purpose.
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
