@@ -1,0 +1,24 @@
+{
+  "name": "@dd/telemetry",
+  "version": "0.1.0",
+  "description": "Shared OpenTelemetry tracing + trace-correlated logging for the Node (Fastify) services in k8s-cluster/remote. Explicit SDK wiring only — no @opentelemetry/auto-instrumentations, no require() patching.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts"
+  ],
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/core": "^1.30.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",
+    "@opentelemetry/resources": "^1.30.1",
+    "@opentelemetry/sdk-trace-base": "^1.30.1",
+    "@opentelemetry/sdk-trace-node": "^1.30.1"
+  }
+}

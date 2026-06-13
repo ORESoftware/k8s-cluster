@@ -1,0 +1,16 @@
+name = "dd_otel_client"
+version = "0.1.0"
+target = "erlang"
+description = "Shared OpenTelemetry tracing client for Gleam/Mist deployments. Starts the BEAM OpenTelemetry SDK + OTLP exporter (HTTP/protobuf) pointed at the in-cluster collector, and exposes a per-request Mist middleware that opens a W3C-context-aware SERVER span. Explicit instrumentation only — no monkey-patching."
+
+[dependencies]
+gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+gleam_erlang = ">= 1.3.0 and < 2.0.0"
+gleam_http = ">= 4.0.0 and < 5.0.0"
+mist = ">= 6.0.0 and < 7.0.0"
+opentelemetry_api = ">= 1.4.0 and < 2.0.0"
+opentelemetry = ">= 1.5.0 and < 2.0.0"
+opentelemetry_exporter = ">= 1.7.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
