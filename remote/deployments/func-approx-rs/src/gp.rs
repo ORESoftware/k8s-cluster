@@ -114,15 +114,6 @@ impl Binary {
             Binary::Div => 2,
         }
     }
-
-    fn symbol(self) -> &'static str {
-        match self {
-            Binary::Add => "+",
-            Binary::Sub => "-",
-            Binary::Mul => "*",
-            Binary::Div => "/",
-        }
-    }
 }
 
 // ----------------------------------------------------------------- expression
