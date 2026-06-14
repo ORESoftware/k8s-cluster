@@ -8,9 +8,9 @@ k8s cluster. This repo was extracted (with history) from `k8s-cluster` at
 
 | Path | What it is |
 |------|------------|
-| `pg-defs/` | Canonical Postgres `schema/schema.sql` + generated adapters for every language (rust, gleam, typescript, python, go, elixir, erlang, jvm, dart, prisma, drizzle, …). `src/generate.mjs` is the generator. |
-| `nats/subject-defs/` | NATS subject definitions + multi-language generator (`src/generate.mjs`). |
-| `interfaces/redis/`, `interfaces/shared/` | Redis cache shapes and shared interface schemas + generators. |
+| `pg-defs/` | Canonical Postgres `schema/schema.sql` + generated adapters for every language (rust [sqlx/diesel/sea-orm], typescript [drizzle/typeorm/sequelize/prisma], python [sqlalchemy/django/peewee], go [gorm/bun/ent/sqlc], jvm [jooq/hibernate], dart, gleam, elixir, erlang, ruby [activerecord], php [eloquent/doctrine], csharp [ef-core], fsharp, kotlin [exposed], haskell, ocaml, cpp, zig). Each adapter converts Postgres rows into typed objects/structs. `src/generate.mjs` is the generator. |
+| `nats/subject-defs/` | NATS subject definitions + multi-language generator (typescript, javascript, rust, python, gleam, erlang, dart, go, java, haskell, ocaml, fsharp, cpp, zig, elixir). `src/generate.mjs`. |
+| `interfaces/redis/`, `interfaces/shared/` | Redis cache shapes and shared interface schemas + generators, at full language parity with nats (typescript, javascript, rust, python, gleam, erlang, dart, go, java, haskell, ocaml, fsharp, cpp, zig, elixir). |
 | `runtime-config-client-rs/`, `runtime-config-client-gleam/`, `cli-config-client-gleam/` | Runtime/CLI config client libs. |
 | `wal-consumer-rs/` | WAL consumer lib. |
 | `browser/` | Browser helper (service worker). |
@@ -40,12 +40,6 @@ node interfaces/shared/src/generate.mjs --check
 
 To regenerate after editing a schema, run the same command without `--check` and
 commit the updated `generated/` files.
-
-> **Known issue:** `pg-defs/src/generate.mjs --check` currently throws
-> `Unsupported SQL type for Drizzle: smallint` — `drizzleColumn()` in
-> `pg-defs/src/generate.mjs` lacks a `smallint` case while `schema.sql` has a
-> `battery_level smallint` column. Add the mapping (and its drizzle-orm import)
-> before relying on the pg-defs drift check.
 
 ## Consumed by k8s-cluster
 

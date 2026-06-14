@@ -9,7 +9,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, SmallInteger, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -497,11 +497,16 @@ class SoundRecorderAccountsInsert(BaseModel):
 
 SoundRecorderDevicesPlatform = Literal["ios", "android"]
 SoundRecorderDevicesStatus = Literal["active", "revoked", "lost", "replaced", "deleted"]
+SoundRecorderDevicesTransferPauseReason = Literal["low_battery", "network_constraint", "offline", "manual"]
+SoundRecorderDevicesNetworkPolicy = Literal["any", "wifi_only", "cellular_only"]
 
 class SoundRecorderDevices(Base):
     __tablename__ = "sound_recorder_devices"
     __table_args__ = (
         CheckConstraint("platform in ('ios', 'android')", name="sound_recorder_devices_platform_chk"),
+        CheckConstraint("network_policy in ('any', 'wifi_only', 'cellular_only')", name="sound_recorder_devices_network_policy_chk"),
+        CheckConstraint("transfer_pause_reason is null\n      or transfer_pause_reason in ('low_battery', 'network_constraint', 'offline', 'manual')", name="sound_recorder_devices_pause_reason_chk"),
+        CheckConstraint("battery_level is null or battery_level between 0 and 100", name="sound_recorder_devices_battery_level_chk"),
         CheckConstraint("status in ('active', 'revoked', 'lost', 'replaced', 'deleted')", name="sound_recorder_devices_status_chk"),
         CheckConstraint("octet_length(install_id) between 1 and 160", name="sound_recorder_devices_install_id_size_chk"),
         CheckConstraint("device_label is null or octet_length(device_label) between 1 and 160", name="sound_recorder_devices_device_label_size_chk"),
@@ -513,6 +518,7 @@ class SoundRecorderDevices(Base):
         Index("sound_recorder_devices_token_hash_uq", "token_hash", unique=True),
         Index("sound_recorder_devices_account_install_uq", "account_id", "install_id", unique=True),
         Index("sound_recorder_devices_account_status_idx", "account_id", "status", text("updated_at desc")),
+        Index("sound_recorder_devices_transfer_paused_idx", "id", postgresql_where=text("transfer_paused = true")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -529,6 +535,12 @@ class SoundRecorderDevices(Base):
     consent_accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recording_indicator_acknowledged: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    transfer_paused: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    transfer_pause_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    network_policy: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'any'"))
+    battery_level: Mapped[int | None] = mapped_column(SmallInteger(), nullable=True)
+    charging: Mapped[bool | None] = mapped_column(Boolean(), nullable=True)
+    transfer_state_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
 
@@ -549,6 +561,12 @@ class SoundRecorderDevicesRow(BaseModel):
     consentAcceptedAt: datetime
     recordingIndicatorAcknowledged: bool
     lastSeenAt: datetime | None = None
+    transferPaused: bool
+    transferPauseReason: SoundRecorderDevicesTransferPauseReason | None = None
+    networkPolicy: SoundRecorderDevicesNetworkPolicy
+    batteryLevel: int | None = Field(None, ge=0, le=100)
+    charging: bool | None = None
+    transferStateUpdatedAt: datetime | None = None
     createdAt: datetime
     updatedAt: datetime
 
@@ -597,6 +615,12 @@ class SoundRecorderDevicesInsert(BaseModel):
     consentAcceptedAt: datetime
     recordingIndicatorAcknowledged: bool | None = False
     lastSeenAt: datetime | None = None
+    transferPaused: bool | None = False
+    transferPauseReason: SoundRecorderDevicesTransferPauseReason | None = None
+    networkPolicy: SoundRecorderDevicesNetworkPolicy | None = "any"
+    batteryLevel: int | None = Field(None, ge=0, le=100)
+    charging: bool | None = None
+    transferStateUpdatedAt: datetime | None = None
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
 
@@ -9800,6 +9824,172 @@ class BenefactorIcpsInsert(BaseModel):
     targetEvents: bool | None = False
     targetCorporate: bool | None = False
     targetIndustrial: bool | None = False
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsThrottling(Base):
+    __tablename__ = "benefactor_leads_throttling"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_leads_throttling_meta_object_chk"),
+        Index("benefactor_leads_throttling_email_type_uq", "email", "request_type", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("benefactor_leads_throttling_lead_id_idx", "benefactor_lead_id"),
+        Index("benefactor_leads_throttling_email_idx", "email"),
+        Index("benefactor_leads_throttling_request_type_idx", "request_type"),
+        Index("benefactor_leads_throttling_last_request_at_idx", "last_request_at"),
+        Index("benefactor_leads_throttling_next_allowed_at_idx", "next_allowed_at"),
+        Index("benefactor_leads_throttling_email_request_type_idx", "email", "request_type"),
+        {"schema": "benefactor"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    benefactor_lead_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_request_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    next_allowed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    request_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    throttle_window_days: Mapped[int] = mapped_column(Integer(), nullable=False)
+    last_request_source: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorLeadsThrottlingRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    benefactorLeadId: UUID | None = None
+    email: str = Field(..., max_length=255)
+    requestType: str = Field(..., max_length=100)
+    lastRequestAt: datetime
+    nextAllowedAt: datetime | None = None
+    requestCount: int
+    throttleWindowDays: int
+    lastRequestSource: str | None = Field(None, max_length=80)
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsThrottlingInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    benefactorLeadId: UUID | None = None
+    email: str = Field(..., max_length=255)
+    requestType: str = Field(..., max_length=100)
+    lastRequestAt: datetime
+    nextAllowedAt: datetime | None = None
+    requestCount: int | None = 1
+    throttleWindowDays: int
+    lastRequestSource: str | None = Field(None, max_length=80)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isActive: bool | None = True
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsReminders(Base):
+    __tablename__ = "benefactor_leads_reminders"
+    __table_args__ = (
+        CheckConstraint("jsonb_typeof(tags) = 'array'", name="benefactor_leads_reminders_tags_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="benefactor_leads_reminders_meta_object_chk"),
+        Index("benefactor_leads_reminders_email_type_uq", "email", "reminder_type", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("benefactor_leads_reminders_lead_id_idx", "benefactor_lead_id"),
+        Index("benefactor_leads_reminders_reminder_type_idx", "reminder_type"),
+        Index("benefactor_leads_reminders_email_idx", "email"),
+        Index("benefactor_leads_reminders_sent_at_idx", "sent_at"),
+        Index("benefactor_leads_reminders_original_request_sent_at_idx", "original_request_sent_at"),
+        Index("benefactor_leads_reminders_last_reminder_sent_at_idx", "last_reminder_sent_at"),
+        Index("benefactor_leads_reminders_reminder_count_idx", "reminder_count"),
+        Index("benefactor_leads_reminders_email_type_sent_at_idx", "email", "reminder_type", "sent_at"),
+        {"schema": "benefactor"},
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    benefactor_lead_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    reminder_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    channel: Mapped[str] = mapped_column(String(50), nullable=False, server_default=text("'email'"))
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    original_request_sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    original_request_message_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reminder_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    last_reminder_message_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tags: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class BenefactorLeadsRemindersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    benefactorLeadId: UUID | None = None
+    reminderType: str = Field(..., max_length=80)
+    channel: str = Field(..., max_length=50)
+    email: str = Field(..., max_length=255)
+    firstName: str | None = Field(None, max_length=160)
+    lastName: str | None = Field(None, max_length=160)
+    subject: str | None = None
+    originalRequestSentAt: datetime
+    originalRequestMessageId: str | None = None
+    sentAt: datetime
+    lastReminderSentAt: datetime | None = None
+    reminderCount: int
+    lastReminderMessageId: str | None = None
+    messageId: str | None = Field(None, max_length=255)
+    tags: list[Any]
+    metaData: dict[str, Any]
+    isActive: bool
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class BenefactorLeadsRemindersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    benefactorLeadId: UUID | None = None
+    reminderType: str = Field(..., max_length=80)
+    channel: str | None = Field("email", max_length=50)
+    email: str = Field(..., max_length=255)
+    firstName: str | None = Field(None, max_length=160)
+    lastName: str | None = Field(None, max_length=160)
+    subject: str | None = None
+    originalRequestSentAt: datetime
+    originalRequestMessageId: str | None = None
+    sentAt: datetime | None = None
+    lastReminderSentAt: datetime | None = None
+    reminderCount: int | None = 0
+    lastReminderMessageId: str | None = None
+    messageId: str | None = Field(None, max_length=255)
+    tags: list[Any] | None = Field(default_factory=list)
     metaData: dict[str, Any] | None = Field(default_factory=dict)
     isActive: bool | None = True
     isSoftDeleted: bool | None = False

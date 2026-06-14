@@ -548,10 +548,12 @@ class SoundRecorderAccountsRow {
 }
 
 const soundRecorderDevicesTable = "sound_recorder_devices";
-const soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices";
+const soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      transfer_paused,\n      transfer_pause_reason,\n      network_policy,\n      battery_level,\n      charging,\n      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as transfer_state_updated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices";
 
 const soundRecorderDevicesPlatformValues = <String>["ios", "android"];
 const soundRecorderDevicesStatusValues = <String>["active", "revoked", "lost", "replaced", "deleted"];
+const soundRecorderDevicesTransferPauseReasonValues = <String>["low_battery", "network_constraint", "offline", "manual"];
+const soundRecorderDevicesNetworkPolicyValues = <String>["any", "wifi_only", "cellular_only"];
 
 class SoundRecorderDevicesRow {
   const SoundRecorderDevicesRow({
@@ -569,6 +571,12 @@ class SoundRecorderDevicesRow {
     required this.consentAcceptedAt,
     required this.recordingIndicatorAcknowledged,
     this.lastSeenAt,
+    required this.transferPaused,
+    this.transferPauseReason,
+    required this.networkPolicy,
+    this.batteryLevel,
+    this.charging,
+    this.transferStateUpdatedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -587,6 +595,12 @@ class SoundRecorderDevicesRow {
   final String consentAcceptedAt;
   final bool recordingIndicatorAcknowledged;
   final String? lastSeenAt;
+  final bool transferPaused;
+  final String? transferPauseReason;
+  final String networkPolicy;
+  final int? batteryLevel;
+  final bool? charging;
+  final String? transferStateUpdatedAt;
   final String createdAt;
   final String updatedAt;
 
@@ -606,6 +620,12 @@ class SoundRecorderDevicesRow {
       consentAcceptedAt: _readRequiredString(json, "consentAcceptedAt"),
       recordingIndicatorAcknowledged: _readRequiredBool(json, "recordingIndicatorAcknowledged"),
       lastSeenAt: _readOptionalString(json, "lastSeenAt"),
+      transferPaused: _readRequiredBool(json, "transferPaused"),
+      transferPauseReason: _readOptionalString(json, "transferPauseReason"),
+      networkPolicy: _readRequiredString(json, "networkPolicy"),
+      batteryLevel: _readOptionalInt(json, "batteryLevel"),
+      charging: _readOptionalBool(json, "charging"),
+      transferStateUpdatedAt: _readOptionalString(json, "transferStateUpdatedAt"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
     );
@@ -626,6 +646,12 @@ class SoundRecorderDevicesRow {
     "consentAcceptedAt": consentAcceptedAt,
     "recordingIndicatorAcknowledged": recordingIndicatorAcknowledged,
     "lastSeenAt": lastSeenAt,
+    "transferPaused": transferPaused,
+    "transferPauseReason": transferPauseReason,
+    "networkPolicy": networkPolicy,
+    "batteryLevel": batteryLevel,
+    "charging": charging,
+    "transferStateUpdatedAt": transferStateUpdatedAt,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
   };
@@ -670,6 +696,18 @@ class SoundRecorderDevicesRow {
     }
     if (!RegExp(r'^[A-Za-z0-9._:/-]{1,80}$').hasMatch(consentVersion)) {
       errors.add("sound_recorder_devices.consent_version does not match the required pattern");
+    }
+    if (transferPauseReason != null && !soundRecorderDevicesTransferPauseReasonValues.contains(transferPauseReason!)) {
+      errors.add("unsupported sound_recorder_devices.transfer_pause_reason");
+    }
+    if (!soundRecorderDevicesNetworkPolicyValues.contains(networkPolicy)) {
+      errors.add("unsupported sound_recorder_devices.network_policy");
+    }
+    if (batteryLevel != null && batteryLevel! < 0) {
+      errors.add("sound_recorder_devices.battery_level is below the minimum");
+    }
+    if (batteryLevel != null && batteryLevel! > 100) {
+      errors.add("sound_recorder_devices.battery_level is above the maximum");
     }
     return errors;
   }
@@ -10699,6 +10737,206 @@ class BenefactorIcpsRow {
     "targetEvents": targetEvents,
     "targetCorporate": targetCorporate,
     "targetIndustrial": targetIndustrial,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const benefactorLeadsThrottlingTable = "benefactor.benefactor_leads_throttling";
+const benefactorLeadsThrottlingSelectSql = "select\n      id::text as id,\n      benefactor_lead_id::text as benefactor_lead_id,\n      email,\n      request_type,\n      to_char(last_request_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_request_at,\n      to_char(next_allowed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_allowed_at,\n      request_count,\n      throttle_window_days,\n      last_request_source,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_throttling";
+
+class BenefactorLeadsThrottlingRow {
+  const BenefactorLeadsThrottlingRow({
+    required this.id,
+    this.benefactorLeadId,
+    required this.email,
+    required this.requestType,
+    required this.lastRequestAt,
+    this.nextAllowedAt,
+    required this.requestCount,
+    required this.throttleWindowDays,
+    this.lastRequestSource,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String? benefactorLeadId;
+  final String email;
+  final String requestType;
+  final String lastRequestAt;
+  final String? nextAllowedAt;
+  final int requestCount;
+  final int throttleWindowDays;
+  final String? lastRequestSource;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorLeadsThrottlingRow.fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsThrottlingRow(
+      id: _readRequiredString(json, "id"),
+      benefactorLeadId: _readOptionalString(json, "benefactorLeadId"),
+      email: _readRequiredString(json, "email"),
+      requestType: _readRequiredString(json, "requestType"),
+      lastRequestAt: _readRequiredString(json, "lastRequestAt"),
+      nextAllowedAt: _readOptionalString(json, "nextAllowedAt"),
+      requestCount: _readRequiredInt(json, "requestCount"),
+      throttleWindowDays: _readRequiredInt(json, "throttleWindowDays"),
+      lastRequestSource: _readOptionalString(json, "lastRequestSource"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "benefactorLeadId": benefactorLeadId,
+    "email": email,
+    "requestType": requestType,
+    "lastRequestAt": lastRequestAt,
+    "nextAllowedAt": nextAllowedAt,
+    "requestCount": requestCount,
+    "throttleWindowDays": throttleWindowDays,
+    "lastRequestSource": lastRequestSource,
+    "metaData": metaData,
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const benefactorLeadsRemindersTable = "benefactor.benefactor_leads_reminders";
+const benefactorLeadsRemindersSelectSql = "select\n      id::text as id,\n      benefactor_lead_id::text as benefactor_lead_id,\n      reminder_type,\n      channel,\n      email,\n      first_name,\n      last_name,\n      subject,\n      to_char(original_request_sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as original_request_sent_at,\n      original_request_message_id,\n      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sent_at,\n      to_char(last_reminder_sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_reminder_sent_at,\n      reminder_count,\n      last_reminder_message_id,\n      message_id,\n      tags::text as tags_json,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_reminders";
+
+class BenefactorLeadsRemindersRow {
+  const BenefactorLeadsRemindersRow({
+    required this.id,
+    this.benefactorLeadId,
+    required this.reminderType,
+    required this.channel,
+    required this.email,
+    this.firstName,
+    this.lastName,
+    this.subject,
+    required this.originalRequestSentAt,
+    this.originalRequestMessageId,
+    required this.sentAt,
+    this.lastReminderSentAt,
+    required this.reminderCount,
+    this.lastReminderMessageId,
+    this.messageId,
+    required this.tags,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String? benefactorLeadId;
+  final String reminderType;
+  final String channel;
+  final String email;
+  final String? firstName;
+  final String? lastName;
+  final String? subject;
+  final String originalRequestSentAt;
+  final String? originalRequestMessageId;
+  final String sentAt;
+  final String? lastReminderSentAt;
+  final int reminderCount;
+  final String? lastReminderMessageId;
+  final String? messageId;
+  final List<Object?> tags;
+  final Map<String, Object?> metaData;
+  final bool isActive;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory BenefactorLeadsRemindersRow.fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsRemindersRow(
+      id: _readRequiredString(json, "id"),
+      benefactorLeadId: _readOptionalString(json, "benefactorLeadId"),
+      reminderType: _readRequiredString(json, "reminderType"),
+      channel: _readRequiredString(json, "channel"),
+      email: _readRequiredString(json, "email"),
+      firstName: _readOptionalString(json, "firstName"),
+      lastName: _readOptionalString(json, "lastName"),
+      subject: _readOptionalString(json, "subject"),
+      originalRequestSentAt: _readRequiredString(json, "originalRequestSentAt"),
+      originalRequestMessageId: _readOptionalString(json, "originalRequestMessageId"),
+      sentAt: _readRequiredString(json, "sentAt"),
+      lastReminderSentAt: _readOptionalString(json, "lastReminderSentAt"),
+      reminderCount: _readRequiredInt(json, "reminderCount"),
+      lastReminderMessageId: _readOptionalString(json, "lastReminderMessageId"),
+      messageId: _readOptionalString(json, "messageId"),
+      tags: _readRequiredArray(json, "tags"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isActive: _readRequiredBool(json, "isActive"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "benefactorLeadId": benefactorLeadId,
+    "reminderType": reminderType,
+    "channel": channel,
+    "email": email,
+    "firstName": firstName,
+    "lastName": lastName,
+    "subject": subject,
+    "originalRequestSentAt": originalRequestSentAt,
+    "originalRequestMessageId": originalRequestMessageId,
+    "sentAt": sentAt,
+    "lastReminderSentAt": lastReminderSentAt,
+    "reminderCount": reminderCount,
+    "lastReminderMessageId": lastReminderMessageId,
+    "messageId": messageId,
+    "tags": tags,
     "metaData": metaData,
     "isActive": isActive,
     "isSoftDeleted": isSoftDeleted,

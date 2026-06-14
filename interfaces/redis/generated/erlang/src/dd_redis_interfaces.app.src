@@ -1,0 +1,7 @@
+{application, dd_redis_interfaces,
+ [{description, "Generated Erlang redis interfaces"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {env, []},
+  {modules, [dd_redis_interfaces]}]}.

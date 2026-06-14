@@ -406,12 +406,20 @@ const SoundRecorderDevicesSelectSQL = `select
       to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
       recording_indicator_acknowledged,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      transfer_paused,
+      transfer_pause_reason,
+      network_policy,
+      battery_level,
+      charging,
+      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as transfer_state_updated_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices`
 
 var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
 var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
+var SoundRecorderDevicesTransferPauseReasonValues = []string{"low_battery", "network_constraint", "offline", "manual"}
+var SoundRecorderDevicesNetworkPolicyValues = []string{"any", "wifi_only", "cellular_only"}
 
 type SoundRecorderDevicesGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -428,6 +436,12 @@ type SoundRecorderDevicesGorm struct {
 	ConsentAcceptedAt time.Time `gorm:"column:consent_accepted_at;type:timestamptz;not null" json:"consentAcceptedAt"`
 	RecordingIndicatorAcknowledged bool `gorm:"column:recording_indicator_acknowledged;type:boolean;default:false;not null" json:"recordingIndicatorAcknowledged"`
 	LastSeenAt *time.Time `gorm:"column:last_seen_at;type:timestamptz" json:"lastSeenAt,omitempty"`
+	TransferPaused bool `gorm:"column:transfer_paused;type:boolean;default:false;not null" json:"transferPaused"`
+	TransferPauseReason *string `gorm:"column:transfer_pause_reason;type:varchar(40)" json:"transferPauseReason,omitempty"`
+	NetworkPolicy string `gorm:"column:network_policy;type:varchar(20);default:'any';not null" json:"networkPolicy"`
+	BatteryLevel *int32 `gorm:"column:battery_level;type:smallint" json:"batteryLevel,omitempty"`
+	Charging *bool `gorm:"column:charging;type:boolean" json:"charging,omitempty"`
+	TransferStateUpdatedAt *time.Time `gorm:"column:transfer_state_updated_at;type:timestamptz" json:"transferStateUpdatedAt,omitempty"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
 }
@@ -454,6 +468,14 @@ func (value SoundRecorderDevicesGorm) Validate() error {
 	if !soundRecorderDevicesTokenHashPattern.MatchString(value.TokenHash) { return errors.New("sound_recorder_devices.token_hash does not match the required pattern") }
 	if !soundRecorderDevicesTokenLast4Pattern.MatchString(value.TokenLast4) { return errors.New("sound_recorder_devices.token_last4 does not match the required pattern") }
 	if !soundRecorderDevicesConsentVersionPattern.MatchString(value.ConsentVersion) { return errors.New("sound_recorder_devices.consent_version does not match the required pattern") }
+	if value.TransferPauseReason != nil {
+		if !containsString(SoundRecorderDevicesTransferPauseReasonValues, *value.TransferPauseReason) { return errors.New("unsupported sound_recorder_devices.transfer_pause_reason") }
+	}
+	if !containsString(SoundRecorderDevicesNetworkPolicyValues, value.NetworkPolicy) { return errors.New("unsupported sound_recorder_devices.network_policy") }
+	if value.BatteryLevel != nil {
+		if *value.BatteryLevel < 0 { return errors.New("sound_recorder_devices.battery_level is below the minimum") }
+		if *value.BatteryLevel > 100 { return errors.New("sound_recorder_devices.battery_level is above the maximum") }
+	}
 	return nil
 }
 
@@ -5923,6 +5945,113 @@ func (value BenefactorIcpsGorm) Validate() error {
 	if !validateJSONString(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
 	if !validateJSONString(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsThrottlingTable = "benefactor.benefactor_leads_throttling"
+const BenefactorLeadsThrottlingSelectSQL = `select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      email,
+      request_type,
+      to_char(last_request_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_request_at,
+      to_char(next_allowed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_allowed_at,
+      request_count,
+      throttle_window_days,
+      last_request_source,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_throttling`
+
+type BenefactorLeadsThrottlingGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	BenefactorLeadId *uuid.UUID `gorm:"column:benefactor_lead_id;type:uuid" json:"benefactorLeadId,omitempty"`
+	Email string `gorm:"column:email;type:varchar(255);not null" json:"email"`
+	RequestType string `gorm:"column:request_type;type:varchar(100);not null" json:"requestType"`
+	LastRequestAt time.Time `gorm:"column:last_request_at;type:timestamptz;not null" json:"lastRequestAt"`
+	NextAllowedAt *time.Time `gorm:"column:next_allowed_at;type:timestamptz" json:"nextAllowedAt,omitempty"`
+	RequestCount int32 `gorm:"column:request_count;type:integer;default:1;not null" json:"requestCount"`
+	ThrottleWindowDays int32 `gorm:"column:throttle_window_days;type:integer;not null" json:"throttleWindowDays"`
+	LastRequestSource *string `gorm:"column:last_request_source;type:varchar(80)" json:"lastRequestSource,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorLeadsThrottlingGorm) TableName() string { return BenefactorLeadsThrottlingTable }
+
+func (value BenefactorLeadsThrottlingGorm) Validate() error {
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_leads_throttling.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsRemindersTable = "benefactor.benefactor_leads_reminders"
+const BenefactorLeadsRemindersSelectSQL = `select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      reminder_type,
+      channel,
+      email,
+      first_name,
+      last_name,
+      subject,
+      to_char(original_request_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as original_request_sent_at,
+      original_request_message_id,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(last_reminder_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_reminder_sent_at,
+      reminder_count,
+      last_reminder_message_id,
+      message_id,
+      tags,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_reminders`
+
+type BenefactorLeadsRemindersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	BenefactorLeadId *uuid.UUID `gorm:"column:benefactor_lead_id;type:uuid" json:"benefactorLeadId,omitempty"`
+	ReminderType string `gorm:"column:reminder_type;type:varchar(80);not null" json:"reminderType"`
+	Channel string `gorm:"column:channel;type:varchar(50);default:'email';not null" json:"channel"`
+	Email string `gorm:"column:email;type:varchar(255);not null" json:"email"`
+	FirstName *string `gorm:"column:first_name;type:varchar(160)" json:"firstName,omitempty"`
+	LastName *string `gorm:"column:last_name;type:varchar(160)" json:"lastName,omitempty"`
+	Subject *string `gorm:"column:subject;type:text" json:"subject,omitempty"`
+	OriginalRequestSentAt time.Time `gorm:"column:original_request_sent_at;type:timestamptz;not null" json:"originalRequestSentAt"`
+	OriginalRequestMessageId *string `gorm:"column:original_request_message_id;type:text" json:"originalRequestMessageId,omitempty"`
+	SentAt time.Time `gorm:"column:sent_at;type:timestamptz;default:now();not null" json:"sentAt"`
+	LastReminderSentAt *time.Time `gorm:"column:last_reminder_sent_at;type:timestamptz" json:"lastReminderSentAt,omitempty"`
+	ReminderCount int32 `gorm:"column:reminder_count;type:integer;default:0;not null" json:"reminderCount"`
+	LastReminderMessageId *string `gorm:"column:last_reminder_message_id;type:text" json:"lastReminderMessageId,omitempty"`
+	MessageId *string `gorm:"column:message_id;type:varchar(255)" json:"messageId,omitempty"`
+	Tags datatypes.JSON `gorm:"column:tags;type:jsonb;default:'[]'::jsonb;not null" json:"tags"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsActive bool `gorm:"column:is_active;type:boolean;default:true;not null" json:"isActive"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (BenefactorLeadsRemindersGorm) TableName() string { return BenefactorLeadsRemindersTable }
+
+func (value BenefactorLeadsRemindersGorm) Validate() error {
+	if !validateJSONString(value.Tags) { return errors.New("benefactor_leads_reminders.tags must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("benefactor_leads_reminders.meta_data must be valid JSON") }
 	return nil
 }
 

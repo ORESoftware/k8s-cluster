@@ -1,0 +1,2 @@
+(library
+ (name dd_redis_interfaces))

@@ -123,6 +123,12 @@ public final class Tables {
     public static final Field<OffsetDateTime> SOUND_RECORDER_DEVICES_CONSENT_ACCEPTED_AT = DSL.field(DSL.name("sound_recorder_devices", "consent_accepted_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<Boolean> SOUND_RECORDER_DEVICES_RECORDING_INDICATOR_ACKNOWLEDGED = DSL.field(DSL.name("sound_recorder_devices", "recording_indicator_acknowledged"), SQLDataType.BOOLEAN);
     public static final Field<OffsetDateTime> SOUND_RECORDER_DEVICES_LAST_SEEN_AT = DSL.field(DSL.name("sound_recorder_devices", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Boolean> SOUND_RECORDER_DEVICES_TRANSFER_PAUSED = DSL.field(DSL.name("sound_recorder_devices", "transfer_paused"), SQLDataType.BOOLEAN);
+    public static final Field<String> SOUND_RECORDER_DEVICES_TRANSFER_PAUSE_REASON = DSL.field(DSL.name("sound_recorder_devices", "transfer_pause_reason"), SQLDataType.VARCHAR(40));
+    public static final Field<String> SOUND_RECORDER_DEVICES_NETWORK_POLICY = DSL.field(DSL.name("sound_recorder_devices", "network_policy"), SQLDataType.VARCHAR(20));
+    public static final Field<Integer> SOUND_RECORDER_DEVICES_BATTERY_LEVEL = DSL.field(DSL.name("sound_recorder_devices", "battery_level"), SQLDataType.INTEGER);
+    public static final Field<Boolean> SOUND_RECORDER_DEVICES_CHARGING = DSL.field(DSL.name("sound_recorder_devices", "charging"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_DEVICES_TRANSFER_STATE_UPDATED_AT = DSL.field(DSL.name("sound_recorder_devices", "transfer_state_updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SOUND_RECORDER_DEVICES_CREATED_AT = DSL.field(DSL.name("sound_recorder_devices", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SOUND_RECORDER_DEVICES_UPDATED_AT = DSL.field(DSL.name("sound_recorder_devices", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
@@ -1874,6 +1880,51 @@ public final class Tables {
     public static final Field<OffsetDateTime> BENEFACTOR_ICPS_UPDATED_AT = DSL.field(DSL.name("benefactor", "benefactor_icps", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<UUID> BENEFACTOR_ICPS_CREATED_BY = DSL.field(DSL.name("benefactor", "benefactor_icps", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> BENEFACTOR_ICPS_UPDATED_BY = DSL.field(DSL.name("benefactor", "benefactor_icps", "updated_by"), SQLDataType.UUID);
+
+    public static final Name BENEFACTOR_LEADS_THROTTLING_NAME = DSL.name("benefactor", "benefactor_leads_throttling");
+    public static final Table<org.jooq.Record> BENEFACTOR_LEADS_THROTTLING = DSL.table(BENEFACTOR_LEADS_THROTTLING_NAME);
+    public static final Field<UUID> BENEFACTOR_LEADS_THROTTLING_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "id"), SQLDataType.UUID);
+    public static final Field<UUID> BENEFACTOR_LEADS_THROTTLING_BENEFACTOR_LEAD_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "benefactor_lead_id"), SQLDataType.UUID);
+    public static final Field<String> BENEFACTOR_LEADS_THROTTLING_EMAIL = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "email"), SQLDataType.VARCHAR(255));
+    public static final Field<String> BENEFACTOR_LEADS_THROTTLING_REQUEST_TYPE = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "request_type"), SQLDataType.VARCHAR(100));
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_THROTTLING_LAST_REQUEST_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "last_request_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_THROTTLING_NEXT_ALLOWED_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "next_allowed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Integer> BENEFACTOR_LEADS_THROTTLING_REQUEST_COUNT = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "request_count"), SQLDataType.INTEGER);
+    public static final Field<Integer> BENEFACTOR_LEADS_THROTTLING_THROTTLE_WINDOW_DAYS = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "throttle_window_days"), SQLDataType.INTEGER);
+    public static final Field<String> BENEFACTOR_LEADS_THROTTLING_LAST_REQUEST_SOURCE = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "last_request_source"), SQLDataType.VARCHAR(80));
+    public static final Field<JSONB> BENEFACTOR_LEADS_THROTTLING_META_DATA = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> BENEFACTOR_LEADS_THROTTLING_IS_ACTIVE = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "is_active"), SQLDataType.BOOLEAN);
+    public static final Field<Boolean> BENEFACTOR_LEADS_THROTTLING_IS_SOFT_DELETED = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_THROTTLING_CREATED_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_THROTTLING_UPDATED_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> BENEFACTOR_LEADS_THROTTLING_CREATED_BY = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> BENEFACTOR_LEADS_THROTTLING_UPDATED_BY = DSL.field(DSL.name("benefactor", "benefactor_leads_throttling", "updated_by"), SQLDataType.UUID);
+
+    public static final Name BENEFACTOR_LEADS_REMINDERS_NAME = DSL.name("benefactor", "benefactor_leads_reminders");
+    public static final Table<org.jooq.Record> BENEFACTOR_LEADS_REMINDERS = DSL.table(BENEFACTOR_LEADS_REMINDERS_NAME);
+    public static final Field<UUID> BENEFACTOR_LEADS_REMINDERS_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "id"), SQLDataType.UUID);
+    public static final Field<UUID> BENEFACTOR_LEADS_REMINDERS_BENEFACTOR_LEAD_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "benefactor_lead_id"), SQLDataType.UUID);
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_REMINDER_TYPE = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "reminder_type"), SQLDataType.VARCHAR(80));
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_CHANNEL = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "channel"), SQLDataType.VARCHAR(50));
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_EMAIL = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "email"), SQLDataType.VARCHAR(255));
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_FIRST_NAME = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "first_name"), SQLDataType.VARCHAR(160));
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_LAST_NAME = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "last_name"), SQLDataType.VARCHAR(160));
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_SUBJECT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "subject"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_REMINDERS_ORIGINAL_REQUEST_SENT_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "original_request_sent_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_ORIGINAL_REQUEST_MESSAGE_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "original_request_message_id"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_REMINDERS_SENT_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "sent_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_REMINDERS_LAST_REMINDER_SENT_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "last_reminder_sent_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Integer> BENEFACTOR_LEADS_REMINDERS_REMINDER_COUNT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "reminder_count"), SQLDataType.INTEGER);
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_LAST_REMINDER_MESSAGE_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "last_reminder_message_id"), SQLDataType.CLOB);
+    public static final Field<String> BENEFACTOR_LEADS_REMINDERS_MESSAGE_ID = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "message_id"), SQLDataType.VARCHAR(255));
+    public static final Field<JSONB> BENEFACTOR_LEADS_REMINDERS_TAGS = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "tags"), SQLDataType.JSONB);
+    public static final Field<JSONB> BENEFACTOR_LEADS_REMINDERS_META_DATA = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> BENEFACTOR_LEADS_REMINDERS_IS_ACTIVE = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "is_active"), SQLDataType.BOOLEAN);
+    public static final Field<Boolean> BENEFACTOR_LEADS_REMINDERS_IS_SOFT_DELETED = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_REMINDERS_CREATED_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> BENEFACTOR_LEADS_REMINDERS_UPDATED_AT = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> BENEFACTOR_LEADS_REMINDERS_CREATED_BY = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> BENEFACTOR_LEADS_REMINDERS_UPDATED_BY = DSL.field(DSL.name("benefactor", "benefactor_leads_reminders", "updated_by"), SQLDataType.UUID);
 
     public static final Name VCS_REPOSITORIES_NAME = DSL.name("vcs_repositories");
     public static final Table<org.jooq.Record> VCS_REPOSITORIES = DSL.table(VCS_REPOSITORIES_NAME);

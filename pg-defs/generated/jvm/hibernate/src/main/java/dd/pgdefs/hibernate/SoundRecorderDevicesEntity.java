@@ -58,6 +58,24 @@ public class SoundRecorderDevicesEntity {
     @Column(name = "last_seen_at", nullable = true, columnDefinition = "timestamptz")
     private OffsetDateTime lastSeenAt;
 
+    @Column(name = "transfer_paused", nullable = false)
+    private Boolean transferPaused;
+
+    @Column(name = "transfer_pause_reason", length = 40, nullable = true)
+    private String transferPauseReason;
+
+    @Column(name = "network_policy", length = 20, nullable = false)
+    private String networkPolicy;
+
+    @Column(name = "battery_level", nullable = true)
+    private Integer batteryLevel;
+
+    @Column(name = "charging", nullable = true)
+    private Boolean charging;
+
+    @Column(name = "transfer_state_updated_at", nullable = true, columnDefinition = "timestamptz")
+    private OffsetDateTime transferStateUpdatedAt;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamptz")
     private OffsetDateTime createdAt;
 
@@ -174,6 +192,54 @@ public class SoundRecorderDevicesEntity {
 
     public void setLastSeenAt(OffsetDateTime lastSeenAt) {
         this.lastSeenAt = lastSeenAt;
+    }
+
+    public Boolean getTransferPaused() {
+        return transferPaused;
+    }
+
+    public void setTransferPaused(Boolean transferPaused) {
+        this.transferPaused = transferPaused;
+    }
+
+    public String getTransferPauseReason() {
+        return transferPauseReason;
+    }
+
+    public void setTransferPauseReason(String transferPauseReason) {
+        this.transferPauseReason = transferPauseReason;
+    }
+
+    public String getNetworkPolicy() {
+        return networkPolicy;
+    }
+
+    public void setNetworkPolicy(String networkPolicy) {
+        this.networkPolicy = networkPolicy;
+    }
+
+    public Integer getBatteryLevel() {
+        return batteryLevel;
+    }
+
+    public void setBatteryLevel(Integer batteryLevel) {
+        this.batteryLevel = batteryLevel;
+    }
+
+    public Boolean getCharging() {
+        return charging;
+    }
+
+    public void setCharging(Boolean charging) {
+        this.charging = charging;
+    }
+
+    public OffsetDateTime getTransferStateUpdatedAt() {
+        return transferStateUpdatedAt;
+    }
+
+    public void setTransferStateUpdatedAt(OffsetDateTime transferStateUpdatedAt) {
+        this.transferStateUpdatedAt = transferStateUpdatedAt;
     }
 
     public OffsetDateTime getCreatedAt() {

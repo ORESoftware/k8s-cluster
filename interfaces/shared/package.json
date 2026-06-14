@@ -15,7 +15,18 @@
     "./typescript": "./generated/typescript/index.ts",
     "./rust": "./generated/rust/src/lib.rs",
     "./python": "./generated/python/dd_shared_interfaces.py",
-    "./gleam": "./generated/gleam/src/dd_shared_interfaces.gleam"
+    "./gleam": "./generated/gleam/src/dd_shared_interfaces.gleam",
+    "./haskell": "./generated/haskell/src/DdSharedInterfaces.hs",
+    "./ocaml": "./generated/ocaml/lib/dd_shared_interfaces.ml",
+    "./fsharp": "./generated/fsharp/DdSharedInterfaces.fs",
+    "./cpp": "./generated/cpp/dd_shared_interfaces.hpp",
+    "./zig": "./generated/zig/dd_shared_interfaces.zig",
+    "./elixir": "./generated/elixir/lib/dd_shared_interfaces.ex",
+    "./go": "./generated/go/interfaces.go",
+    "./java": "./generated/jvm/src/main/java/dd/shared/DdSharedInterfaces.java",
+    "./dart": "./generated/dart/lib/dd_shared_interfaces.dart",
+    "./erlang": "./generated/erlang/src/dd_shared_interfaces.erl",
+    "./javascript": "./generated/javascript/index.mjs"
   },
   "packageManager": "pnpm@9.15.4"
 }

@@ -721,7 +721,7 @@ pub fn validate_sound_recorder_accounts_insert(value: &SoundRecorderAccountsInse
 }
 
 pub const SOUND_RECORDER_DEVICES_TABLE: &str = "sound_recorder_devices";
-pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &["id", "account_id", "platform", "status", "install_id", "device_label", "app_version", "os_version", "token_hash", "token_last4", "consent_version", "consent_accepted_at", "recording_indicator_acknowledged", "last_seen_at", "created_at", "updated_at"];
+pub const SOUND_RECORDER_DEVICES_COLUMNS: &[&str] = &["id", "account_id", "platform", "status", "install_id", "device_label", "app_version", "os_version", "token_hash", "token_last4", "consent_version", "consent_accepted_at", "recording_indicator_acknowledged", "last_seen_at", "transfer_paused", "transfer_pause_reason", "network_policy", "battery_level", "charging", "transfer_state_updated_at", "created_at", "updated_at"];
 pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
       id::text as id,
       account_id::text as account_id,
@@ -737,6 +737,12 @@ pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
       to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
       recording_indicator_acknowledged,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      transfer_paused,
+      transfer_pause_reason,
+      network_policy,
+      battery_level,
+      charging,
+      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as transfer_state_updated_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices"###;
@@ -810,6 +816,75 @@ impl TryFrom<&str> for SoundRecorderDevicesStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesTransferPauseReason {
+    LowBattery,
+    NetworkConstraint,
+    Offline,
+    Manual,
+}
+
+impl SoundRecorderDevicesTransferPauseReason {
+    pub const VALUES: &'static [&'static str] = &["low_battery", "network_constraint", "offline", "manual"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LowBattery => "low_battery",
+            Self::NetworkConstraint => "network_constraint",
+            Self::Offline => "offline",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesTransferPauseReason {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "low_battery" => Ok(Self::LowBattery),
+            "network_constraint" => Ok(Self::NetworkConstraint),
+            "offline" => Ok(Self::Offline),
+            "manual" => Ok(Self::Manual),
+            _ => Err(format!("unsupported transfer_pause_reason: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SoundRecorderDevicesNetworkPolicy {
+    Any,
+    WifiOnly,
+    CellularOnly,
+}
+
+impl SoundRecorderDevicesNetworkPolicy {
+    pub const VALUES: &'static [&'static str] = &["any", "wifi_only", "cellular_only"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::WifiOnly => "wifi_only",
+            Self::CellularOnly => "cellular_only",
+        }
+    }
+}
+
+impl TryFrom<&str> for SoundRecorderDevicesNetworkPolicy {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "any" => Ok(Self::Any),
+            "wifi_only" => Ok(Self::WifiOnly),
+            "cellular_only" => Ok(Self::CellularOnly),
+            _ => Err(format!("unsupported network_policy: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
@@ -828,6 +903,12 @@ pub struct SoundRecorderDevicesRow {
     pub consent_accepted_at: String,
     pub recording_indicator_acknowledged: bool,
     pub last_seen_at: Option<String>,
+    pub transfer_paused: bool,
+    pub transfer_pause_reason: Option<String>,
+    pub network_policy: String,
+    pub battery_level: Option<i16>,
+    pub charging: Option<bool>,
+    pub transfer_state_updated_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -849,6 +930,12 @@ pub struct SoundRecorderDevicesInsert {
     pub consent_accepted_at: Option<String>,
     pub recording_indicator_acknowledged: Option<bool>,
     pub last_seen_at: Option<String>,
+    pub transfer_paused: Option<bool>,
+    pub transfer_pause_reason: Option<String>,
+    pub network_policy: Option<String>,
+    pub battery_level: Option<i16>,
+    pub charging: Option<bool>,
+    pub transfer_state_updated_at: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -873,6 +960,14 @@ pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> R
     validate_string_length("sound_recorder_devices.token_hash", &value.token_hash, None, Some(64))?;
     validate_string_length("sound_recorder_devices.token_last4", &value.token_last4, None, Some(4))?;
     validate_string_length("sound_recorder_devices.consent_version", &value.consent_version, None, Some(80))?;
+    if let Some(value) = &value.transfer_pause_reason {
+        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.transfer_pause_reason: {}", value)); }
+    }
+    if !["any", "wifi_only", "cellular_only"].contains(&(&value.network_policy).as_str()) { return Err(format!("unsupported sound_recorder_devices.network_policy: {}", &value.network_policy)); }
+    if let Some(value) = &value.battery_level {
+        if *(value) < 0 { return Err("sound_recorder_devices.battery_level is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("sound_recorder_devices.battery_level is above the maximum".to_string()); }
+    }
     Ok(())
 }
 
@@ -907,6 +1002,16 @@ pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert
     }
     if let Some(value) = &value.consent_version {
         validate_string_length("sound_recorder_devices.consent_version", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.transfer_pause_reason {
+        if !["low_battery", "network_constraint", "offline", "manual"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.transfer_pause_reason: {}", value)); }
+    }
+    if let Some(value) = &value.network_policy {
+        if !["any", "wifi_only", "cellular_only"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.network_policy: {}", value)); }
+    }
+    if let Some(value) = &value.battery_level {
+        if *(value) < 0 { return Err("sound_recorder_devices.battery_level is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("sound_recorder_devices.battery_level is above the maximum".to_string()); }
     }
     Ok(())
 }
@@ -17338,6 +17443,227 @@ pub fn validate_benefactor_icps_insert(value: &BenefactorIcpsInsert) -> Result<(
     }
     if let Some(value) = &value.meta_data {
         if !(value).is_object() { return Err("benefactor_icps.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_LEADS_THROTTLING_TABLE: &str = "benefactor.benefactor_leads_throttling";
+pub const BENEFACTOR_LEADS_THROTTLING_COLUMNS: &[&str] = &["id", "benefactor_lead_id", "email", "request_type", "last_request_at", "next_allowed_at", "request_count", "throttle_window_days", "last_request_source", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_THROTTLING_SELECT_SQL: &str = r###"select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      email,
+      request_type,
+      to_char(last_request_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_request_at,
+      to_char(next_allowed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_allowed_at,
+      request_count,
+      throttle_window_days,
+      last_request_source,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_throttling"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsThrottlingRow {
+    pub id: String,
+    pub benefactor_lead_id: Option<String>,
+    pub email: String,
+    pub request_type: String,
+    pub last_request_at: String,
+    pub next_allowed_at: Option<String>,
+    pub request_count: i32,
+    pub throttle_window_days: i32,
+    pub last_request_source: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsThrottlingInsert {
+    pub id: Option<String>,
+    pub benefactor_lead_id: Option<String>,
+    pub email: Option<String>,
+    pub request_type: Option<String>,
+    pub last_request_at: Option<String>,
+    pub next_allowed_at: Option<String>,
+    pub request_count: Option<i32>,
+    pub throttle_window_days: Option<i32>,
+    pub last_request_source: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_leads_throttling_row(value: &BenefactorLeadsThrottlingRow) -> Result<(), String> {
+    validate_string_length("benefactor_leads_throttling.email", &value.email, None, Some(255))?;
+    validate_string_length("benefactor_leads_throttling.request_type", &value.request_type, None, Some(100))?;
+    if let Some(value) = &value.last_request_source {
+        validate_string_length("benefactor_leads_throttling.last_request_source", value, None, Some(80))?;
+    }
+    if !(&value.meta_data).is_object() { return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_leads_throttling_insert(value: &BenefactorLeadsThrottlingInsert) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        validate_string_length("benefactor_leads_throttling.email", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.request_type {
+        validate_string_length("benefactor_leads_throttling.request_type", value, None, Some(100))?;
+    }
+    if let Some(value) = &value.last_request_source {
+        validate_string_length("benefactor_leads_throttling.last_request_source", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_leads_throttling.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const BENEFACTOR_LEADS_REMINDERS_TABLE: &str = "benefactor.benefactor_leads_reminders";
+pub const BENEFACTOR_LEADS_REMINDERS_COLUMNS: &[&str] = &["id", "benefactor_lead_id", "reminder_type", "channel", "email", "first_name", "last_name", "subject", "original_request_sent_at", "original_request_message_id", "sent_at", "last_reminder_sent_at", "reminder_count", "last_reminder_message_id", "message_id", "tags", "meta_data", "is_active", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const BENEFACTOR_LEADS_REMINDERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      reminder_type,
+      channel,
+      email,
+      first_name,
+      last_name,
+      subject,
+      to_char(original_request_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as original_request_sent_at,
+      original_request_message_id,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(last_reminder_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_reminder_sent_at,
+      reminder_count,
+      last_reminder_message_id,
+      message_id,
+      tags,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_reminders"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsRemindersRow {
+    pub id: String,
+    pub benefactor_lead_id: Option<String>,
+    pub reminder_type: String,
+    pub channel: String,
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub subject: Option<String>,
+    pub original_request_sent_at: String,
+    pub original_request_message_id: Option<String>,
+    pub sent_at: String,
+    pub last_reminder_sent_at: Option<String>,
+    pub reminder_count: i32,
+    pub last_reminder_message_id: Option<String>,
+    pub message_id: Option<String>,
+    pub tags: Value,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefactorLeadsRemindersInsert {
+    pub id: Option<String>,
+    pub benefactor_lead_id: Option<String>,
+    pub reminder_type: Option<String>,
+    pub channel: Option<String>,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub subject: Option<String>,
+    pub original_request_sent_at: Option<String>,
+    pub original_request_message_id: Option<String>,
+    pub sent_at: Option<String>,
+    pub last_reminder_sent_at: Option<String>,
+    pub reminder_count: Option<i32>,
+    pub last_reminder_message_id: Option<String>,
+    pub message_id: Option<String>,
+    pub tags: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_benefactor_leads_reminders_row(value: &BenefactorLeadsRemindersRow) -> Result<(), String> {
+    validate_string_length("benefactor_leads_reminders.reminder_type", &value.reminder_type, None, Some(80))?;
+    validate_string_length("benefactor_leads_reminders.channel", &value.channel, None, Some(50))?;
+    validate_string_length("benefactor_leads_reminders.email", &value.email, None, Some(255))?;
+    if let Some(value) = &value.first_name {
+        validate_string_length("benefactor_leads_reminders.first_name", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.last_name {
+        validate_string_length("benefactor_leads_reminders.last_name", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.message_id {
+        validate_string_length("benefactor_leads_reminders.message_id", value, None, Some(255))?;
+    }
+    if !(&value.tags).is_array() { return Err("benefactor_leads_reminders.tags must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_benefactor_leads_reminders_insert(value: &BenefactorLeadsRemindersInsert) -> Result<(), String> {
+    if let Some(value) = &value.reminder_type {
+        validate_string_length("benefactor_leads_reminders.reminder_type", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.channel {
+        validate_string_length("benefactor_leads_reminders.channel", value, None, Some(50))?;
+    }
+    if let Some(value) = &value.email {
+        validate_string_length("benefactor_leads_reminders.email", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.first_name {
+        validate_string_length("benefactor_leads_reminders.first_name", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.last_name {
+        validate_string_length("benefactor_leads_reminders.last_name", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.message_id {
+        validate_string_length("benefactor_leads_reminders.message_id", value, None, Some(255))?;
+    }
+    if let Some(value) = &value.tags {
+        if !(value).is_array() { return Err("benefactor_leads_reminders.tags must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("benefactor_leads_reminders.meta_data must be a JSON object".to_string()); }
     }
     Ok(())
 }

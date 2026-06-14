@@ -41,6 +41,12 @@ func (SoundRecorderDevices) Fields() []ent.Field {
 		field.Time("consent_accepted_at").StorageKey("consent_accepted_at"),
 		field.Bool("recording_indicator_acknowledged").Default(false).StorageKey("recording_indicator_acknowledged"),
 		field.Time("last_seen_at").Optional().Nillable().StorageKey("last_seen_at"),
+		field.Bool("transfer_paused").Default(false).StorageKey("transfer_paused"),
+		field.Enum("transfer_pause_reason").Values("low_battery", "network_constraint", "offline", "manual").Optional().Nillable().StorageKey("transfer_pause_reason"),
+		field.Enum("network_policy").Values("any", "wifi_only", "cellular_only").StorageKey("network_policy"),
+		field.Int32("battery_level").Min(0).Max(100).Optional().Nillable().StorageKey("battery_level"),
+		field.Bool("charging").Optional().Nillable().StorageKey("charging"),
+		field.Time("transfer_state_updated_at").Optional().Nillable().StorageKey("transfer_state_updated_at"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),
 	}
@@ -51,5 +57,6 @@ func (SoundRecorderDevices) Indexes() []ent.Index {
 		index.Fields("token_hash").Unique(),
 		index.Fields("account_id", "install_id").Unique(),
 		index.Fields("account_id", "status", "updated_at"),
+		// sound_recorder_devices_transfer_paused_idx lives in schema.sql because ent cannot model partial indexes.
 	}
 }

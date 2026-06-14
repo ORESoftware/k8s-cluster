@@ -26,11 +26,17 @@ defmodule DdPgDefs.SoundRecorderDevices do
     field :consent_accepted_at, :utc_datetime_usec
     field :recording_indicator_acknowledged, :boolean, default: false
     field :last_seen_at, :utc_datetime_usec
+    field :transfer_paused, :boolean, default: false
+    field :transfer_pause_reason, :string, default: nil
+    field :network_policy, :string, default: "any"
+    field :battery_level, :integer
+    field :charging, :boolean
+    field :transfer_state_updated_at, :utc_datetime_usec
     timestamps(inserted_at: :created_at, type: :utc_datetime_usec)
   end
 
   @required_fields ~w(account_id platform install_id token_hash token_last4 consent_version consent_accepted_at)a
-  @optional_fields ~w(status device_label app_version os_version recording_indicator_acknowledged last_seen_at)a
+  @optional_fields ~w(status device_label app_version os_version recording_indicator_acknowledged last_seen_at transfer_paused transfer_pause_reason network_policy battery_level charging transfer_state_updated_at)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
@@ -49,5 +55,8 @@ defmodule DdPgDefs.SoundRecorderDevices do
     |> validate_length(:token_last4, max: 4)
     |> validate_format(:consent_version, ~r/^[A-Za-z0-9._:\/-]{1,80}$/)
     |> validate_length(:consent_version, max: 80)
+    |> validate_inclusion(:transfer_pause_reason, ["low_battery", "network_constraint", "offline", "manual"])
+    |> validate_inclusion(:network_policy, ["any", "wifi_only", "cellular_only"])
+    |> validate_number(:battery_level, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
   end
 end

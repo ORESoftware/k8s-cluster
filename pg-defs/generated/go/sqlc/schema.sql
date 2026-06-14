@@ -254,10 +254,23 @@ create table if not exists sound_recorder_devices (
   consent_accepted_at timestamptz not null,
   recording_indicator_acknowledged boolean default false not null,
   last_seen_at timestamptz,
+  transfer_paused boolean default false not null,
+  transfer_pause_reason varchar(40),
+  network_policy varchar(20) default 'any' not null,
+  battery_level smallint,
+  charging boolean,
+  transfer_state_updated_at timestamptz,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   constraint sound_recorder_devices_platform_chk
     check (platform in ('ios', 'android')),
+  constraint sound_recorder_devices_network_policy_chk
+    check (network_policy in ('any', 'wifi_only', 'cellular_only')),
+  constraint sound_recorder_devices_pause_reason_chk
+    check (transfer_pause_reason is null
+      or transfer_pause_reason in ('low_battery', 'network_constraint', 'offline', 'manual')),
+  constraint sound_recorder_devices_battery_level_chk
+    check (battery_level is null or battery_level between 0 and 100),
   constraint sound_recorder_devices_status_chk
     check (status in ('active', 'revoked', 'lost', 'replaced', 'deleted')),
   constraint sound_recorder_devices_install_id_size_chk
@@ -284,6 +297,10 @@ create unique index if not exists sound_recorder_devices_account_install_uq
 
 create index if not exists sound_recorder_devices_account_status_idx
   on sound_recorder_devices (account_id, status, updated_at desc);
+
+create index if not exists sound_recorder_devices_transfer_paused_idx
+  on sound_recorder_devices (id)
+  where transfer_paused = true;
 
 alter table if exists sound_recorder_devices
   add constraint sound_recorder_devices_account_fk
@@ -5274,6 +5291,131 @@ create index if not exists benefactor_icps_soft_deleted_idx
 alter table if exists benefactor.benefactor_scrape_queries
   add constraint benefactor_scrape_queries_location_fk
   foreign key (benefactor_search_location_id) references benefactor.benefactor_search_locations(id);
+
+-- ---------------------------------------------------------------------------
+-- benefactor contact dedup + throttle ledger (mirrors dd-next-1 leads_throttling
+-- / leads_reminders). benefactor_leads_throttling is the rate limiter: one live
+-- row per (email, request_type) records last_request_at + throttle_window_days,
+-- so any caller (scrape re-contact, outreach send, enrichment) can ask "is this
+-- email/request still inside its window?" and skip if so. benefactor_leads_reminders
+-- is the durable contact ledger: one live row per (email, reminder_type) holds the
+-- original send + reminder_count + message ids, so we never double-send and can
+-- drive follow-up cadence. Both are email-keyed (lead may not yet exist / be linked)
+-- with a nullable, indexed FK back to benefactor_leads.
+-- ---------------------------------------------------------------------------
+
+create table if not exists benefactor.benefactor_leads_throttling (
+  id uuid primary key default gen_random_uuid(),
+  benefactor_lead_id uuid,
+  email varchar(255) not null,
+  request_type varchar(100) not null,
+  last_request_at timestamptz not null,
+  next_allowed_at timestamptz,
+  request_count integer default 1 not null,
+  throttle_window_days integer not null,
+  last_request_source varchar(80),
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_leads_throttling_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+-- One live throttle window per (email, request_type): the dedup key that makes
+-- "have we already hit this email for this purpose?" a single indexed lookup.
+create unique index if not exists benefactor_leads_throttling_email_type_uq
+  on benefactor.benefactor_leads_throttling (email, request_type)
+  where is_soft_deleted = false;
+
+create index if not exists benefactor_leads_throttling_lead_id_idx
+  on benefactor.benefactor_leads_throttling (benefactor_lead_id);
+
+create index if not exists benefactor_leads_throttling_email_idx
+  on benefactor.benefactor_leads_throttling (email);
+
+create index if not exists benefactor_leads_throttling_request_type_idx
+  on benefactor.benefactor_leads_throttling (request_type);
+
+create index if not exists benefactor_leads_throttling_last_request_at_idx
+  on benefactor.benefactor_leads_throttling (last_request_at);
+
+create index if not exists benefactor_leads_throttling_next_allowed_at_idx
+  on benefactor.benefactor_leads_throttling (next_allowed_at);
+
+create index if not exists benefactor_leads_throttling_email_request_type_idx
+  on benefactor.benefactor_leads_throttling (email, request_type);
+
+alter table if exists benefactor.benefactor_leads_throttling
+  add constraint benefactor_leads_throttling_lead_fk
+  foreign key (benefactor_lead_id) references benefactor.benefactor_leads(id);
+
+create table if not exists benefactor.benefactor_leads_reminders (
+  id uuid primary key default gen_random_uuid(),
+  benefactor_lead_id uuid,
+  reminder_type varchar(80) not null,
+  channel varchar(50) default 'email' not null,
+  email varchar(255) not null,
+  first_name varchar(160),
+  last_name varchar(160),
+  subject text,
+  original_request_sent_at timestamptz not null,
+  original_request_message_id text,
+  sent_at timestamptz default now() not null,
+  last_reminder_sent_at timestamptz,
+  reminder_count integer default 0 not null,
+  last_reminder_message_id text,
+  message_id varchar(255),
+  tags jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_active boolean default true not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint benefactor_leads_reminders_tags_array_chk
+    check (jsonb_typeof(tags) = 'array'),
+  constraint benefactor_leads_reminders_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+-- One live ledger row per (email, reminder_type): prevents double-sending the same
+-- outreach/reminder kind to an address while still allowing multiple reminder types.
+create unique index if not exists benefactor_leads_reminders_email_type_uq
+  on benefactor.benefactor_leads_reminders (email, reminder_type)
+  where is_soft_deleted = false;
+
+create index if not exists benefactor_leads_reminders_lead_id_idx
+  on benefactor.benefactor_leads_reminders (benefactor_lead_id);
+
+create index if not exists benefactor_leads_reminders_reminder_type_idx
+  on benefactor.benefactor_leads_reminders (reminder_type);
+
+create index if not exists benefactor_leads_reminders_email_idx
+  on benefactor.benefactor_leads_reminders (email);
+
+create index if not exists benefactor_leads_reminders_sent_at_idx
+  on benefactor.benefactor_leads_reminders (sent_at);
+
+create index if not exists benefactor_leads_reminders_original_request_sent_at_idx
+  on benefactor.benefactor_leads_reminders (original_request_sent_at);
+
+create index if not exists benefactor_leads_reminders_last_reminder_sent_at_idx
+  on benefactor.benefactor_leads_reminders (last_reminder_sent_at);
+
+create index if not exists benefactor_leads_reminders_reminder_count_idx
+  on benefactor.benefactor_leads_reminders (reminder_count);
+
+create index if not exists benefactor_leads_reminders_email_type_sent_at_idx
+  on benefactor.benefactor_leads_reminders (email, reminder_type, sent_at);
+
+alter table if exists benefactor.benefactor_leads_reminders
+  add constraint benefactor_leads_reminders_lead_fk
+  foreign key (benefactor_lead_id) references benefactor.benefactor_leads(id);
 
 -- ---------------------------------------------------------------------------
 -- dd-git-rs: multi-VCS operations server (git, mercurial, subversion, fossil).

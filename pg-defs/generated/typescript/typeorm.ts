@@ -247,6 +247,7 @@ export class SoundRecorderAccountsEntity {
 @Index("sound_recorder_devices_token_hash_uq", ["tokenHash"], { unique: true })
 @Index("sound_recorder_devices_account_install_uq", ["accountId", "installId"], { unique: true })
 // sound_recorder_devices_account_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("sound_recorder_devices_transfer_paused_idx", ["id"], { where: "transfer_paused = true" })
 @Entity({ name: "sound_recorder_devices" })
 export class SoundRecorderDevicesEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
@@ -290,6 +291,24 @@ export class SoundRecorderDevicesEntity {
 
   @Column({ name: "last_seen_at", type: "timestamptz", nullable: true })
   lastSeenAt!: Date | null;
+
+  @Column({ name: "transfer_paused", type: "boolean", default: () => "false" })
+  transferPaused!: boolean;
+
+  @Column({ name: "transfer_pause_reason", type: "varchar", length: 40, nullable: true })
+  transferPauseReason!: string | null;
+
+  @Column({ name: "network_policy", type: "varchar", length: 20, default: () => "'any'" })
+  networkPolicy!: string;
+
+  @Column({ name: "battery_level", type: "smallint", nullable: true })
+  batteryLevel!: number | null;
+
+  @Column({ name: "charging", type: "boolean", nullable: true })
+  charging!: boolean | null;
+
+  @Column({ name: "transfer_state_updated_at", type: "timestamptz", nullable: true })
+  transferStateUpdatedAt!: Date | null;
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
@@ -5289,6 +5308,147 @@ export class BenefactorIcpsEntity {
 
   @Column({ name: "target_industrial", type: "boolean", default: () => "false" })
   targetIndustrial!: boolean;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_leads_throttling_email_type_uq", ["email", "requestType"], { unique: true, where: "is_soft_deleted = false" })
+@Index("benefactor_leads_throttling_lead_id_idx", ["benefactorLeadId"])
+@Index("benefactor_leads_throttling_email_idx", ["email"])
+@Index("benefactor_leads_throttling_request_type_idx", ["requestType"])
+@Index("benefactor_leads_throttling_last_request_at_idx", ["lastRequestAt"])
+@Index("benefactor_leads_throttling_next_allowed_at_idx", ["nextAllowedAt"])
+@Index("benefactor_leads_throttling_email_request_type_idx", ["email", "requestType"])
+@Entity({ schema: "benefactor", name: "benefactor_leads_throttling" })
+export class BenefactorLeadsThrottlingEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "benefactor_lead_id", type: "uuid", nullable: true })
+  benefactorLeadId!: string | null;
+
+  @Column({ name: "email", type: "varchar", length: 255 })
+  email!: string;
+
+  @Column({ name: "request_type", type: "varchar", length: 100 })
+  requestType!: string;
+
+  @Column({ name: "last_request_at", type: "timestamptz" })
+  lastRequestAt!: Date;
+
+  @Column({ name: "next_allowed_at", type: "timestamptz", nullable: true })
+  nextAllowedAt!: Date | null;
+
+  @Column({ name: "request_count", type: "integer", default: () => "1" })
+  requestCount!: number;
+
+  @Column({ name: "throttle_window_days", type: "integer" })
+  throttleWindowDays!: number;
+
+  @Column({ name: "last_request_source", type: "varchar", length: 80, nullable: true })
+  lastRequestSource!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_active", type: "boolean", default: () => "true" })
+  isActive!: boolean;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("benefactor_leads_reminders_email_type_uq", ["email", "reminderType"], { unique: true, where: "is_soft_deleted = false" })
+@Index("benefactor_leads_reminders_lead_id_idx", ["benefactorLeadId"])
+@Index("benefactor_leads_reminders_reminder_type_idx", ["reminderType"])
+@Index("benefactor_leads_reminders_email_idx", ["email"])
+@Index("benefactor_leads_reminders_sent_at_idx", ["sentAt"])
+@Index("benefactor_leads_reminders_original_request_sent_at_idx", ["originalRequestSentAt"])
+@Index("benefactor_leads_reminders_last_reminder_sent_at_idx", ["lastReminderSentAt"])
+@Index("benefactor_leads_reminders_reminder_count_idx", ["reminderCount"])
+@Index("benefactor_leads_reminders_email_type_sent_at_idx", ["email", "reminderType", "sentAt"])
+@Entity({ schema: "benefactor", name: "benefactor_leads_reminders" })
+export class BenefactorLeadsRemindersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "benefactor_lead_id", type: "uuid", nullable: true })
+  benefactorLeadId!: string | null;
+
+  @Column({ name: "reminder_type", type: "varchar", length: 80 })
+  reminderType!: string;
+
+  @Column({ name: "channel", type: "varchar", length: 50, default: () => "'email'" })
+  channel!: string;
+
+  @Column({ name: "email", type: "varchar", length: 255 })
+  email!: string;
+
+  @Column({ name: "first_name", type: "varchar", length: 160, nullable: true })
+  firstName!: string | null;
+
+  @Column({ name: "last_name", type: "varchar", length: 160, nullable: true })
+  lastName!: string | null;
+
+  @Column({ name: "subject", type: "text", nullable: true })
+  subject!: string | null;
+
+  @Column({ name: "original_request_sent_at", type: "timestamptz" })
+  originalRequestSentAt!: Date;
+
+  @Column({ name: "original_request_message_id", type: "text", nullable: true })
+  originalRequestMessageId!: string | null;
+
+  @Column({ name: "sent_at", type: "timestamptz", default: () => "now()" })
+  sentAt!: Date;
+
+  @Column({ name: "last_reminder_sent_at", type: "timestamptz", nullable: true })
+  lastReminderSentAt!: Date | null;
+
+  @Column({ name: "reminder_count", type: "integer", default: () => "0" })
+  reminderCount!: number;
+
+  @Column({ name: "last_reminder_message_id", type: "text", nullable: true })
+  lastReminderMessageId!: string | null;
+
+  @Column({ name: "message_id", type: "varchar", length: 255, nullable: true })
+  messageId!: string | null;
+
+  @Column({ name: "tags", type: "jsonb", default: () => "'[]'::jsonb" })
+  tags!: unknown[];
 
   @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
   metaData!: Record<string, unknown>;

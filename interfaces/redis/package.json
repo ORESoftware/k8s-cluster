@@ -14,7 +14,18 @@
     "./typescript": "./generated/typescript/index.ts",
     "./rust": "./generated/rust/src/lib.rs",
     "./python": "./generated/python/dd_redis_interfaces.py",
-    "./gleam": "./generated/gleam/src/dd_redis_interfaces.gleam"
+    "./gleam": "./generated/gleam/src/dd_redis_interfaces.gleam",
+    "./haskell": "./generated/haskell/src/DdRedisInterfaces.hs",
+    "./ocaml": "./generated/ocaml/lib/dd_redis_interfaces.ml",
+    "./fsharp": "./generated/fsharp/DdRedisInterfaces.fs",
+    "./cpp": "./generated/cpp/dd_redis_interfaces.hpp",
+    "./zig": "./generated/zig/dd_redis_interfaces.zig",
+    "./elixir": "./generated/elixir/lib/dd_redis_interfaces.ex",
+    "./go": "./generated/go/interfaces.go",
+    "./java": "./generated/jvm/src/main/java/dd/redis/DdRedisInterfaces.java",
+    "./dart": "./generated/dart/lib/dd_redis_interfaces.dart",
+    "./erlang": "./generated/erlang/src/dd_redis_interfaces.erl",
+    "./javascript": "./generated/javascript/index.mjs"
   },
   "packageManager": "pnpm@9.15.4"
 }

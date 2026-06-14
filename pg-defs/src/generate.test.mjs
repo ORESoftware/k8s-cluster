@@ -103,6 +103,35 @@ test("parser captures null-guarded byte limits", () => {
   assert.equal(column.validation?.maxBytes, 256);
 });
 
+test("parser maps smallint to the integer kind while preserving the physical type", () => {
+  const sql = `
+    create table example (
+      id uuid primary key default gen_random_uuid(),
+      battery smallint,
+      constraint example_battery_chk check (battery between 0 and 100)
+    );
+  `;
+  const schema = parseSchemaSql(sql);
+  const column = findColumn(schema, "example", "battery");
+  // The integer kind lets every adapter treat smallint as a whole number (range validation flows),
+  // while sqlType stays "smallint" for the strict-typed Rust adapters and SQL-type renderers.
+  assert.equal(column.kind, "integer");
+  assert.equal(column.sqlType, "smallint");
+  assert.equal(column.validation?.min, 0);
+  assert.equal(column.validation?.max, 100);
+});
+
+test("smallint decodes as i16 / Int2 in strict Rust adapters and smallint() in Drizzle", async () => {
+  // The strict-typed adapters (sqlx FromRow, Diesel) must narrow smallint to a 16-bit type or they
+  // break at runtime on the Postgres int2 OID; the loosely-typed adapters can widen it to an int.
+  const sqlx = await readFile(path.join(packageRoot, "generated/rust/src/lib.rs"), "utf8");
+  assert.match(sqlx, /pub battery_level: Option<i16>,/);
+  const diesel = await readFile(path.join(packageRoot, "generated/rust/diesel/src/lib.rs"), "utf8");
+  assert.match(diesel, /battery_level -> Nullable<Int2>,/);
+  const drizzle = await readFile(path.join(packageRoot, "generated/typescript/drizzle.ts"), "utf8");
+  assert.match(drizzle, /batteryLevel: smallint\("battery_level"\)/);
+});
+
 test("parser unescapes single quotes inside regex literals", () => {
   // `''` is the SQL way to embed a single quote inside a quoted string. The parser must collapse
   // it back to `'` so downstream regex engines (RegExp / regexp / re / Regex) see the literal

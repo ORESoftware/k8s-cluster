@@ -115,6 +115,8 @@ defmodule DdPgDefs do
     DdPgDefs.BenefactorScrapeQueries,
     DdPgDefs.BenefactorDomainSearchTracking,
     DdPgDefs.BenefactorIcps,
+    DdPgDefs.BenefactorLeadsThrottling,
+    DdPgDefs.BenefactorLeadsReminders,
     DdPgDefs.VcsRepositories,
     DdPgDefs.VcsRefs,
     DdPgDefs.VcsOperations,
