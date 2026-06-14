@@ -481,6 +481,18 @@ class SoundRecorderDevicesObjectBox {
 
   String? lastSeenAt;
 
+  bool transferPaused;
+
+  String? transferPauseReason;
+
+  String networkPolicy;
+
+  int? batteryLevel;
+
+  bool? charging;
+
+  String? transferStateUpdatedAt;
+
   String createdAt;
 
   String updatedAt;
@@ -501,6 +513,12 @@ class SoundRecorderDevicesObjectBox {
     required this.consentAcceptedAt,
     required this.recordingIndicatorAcknowledged,
     this.lastSeenAt,
+    required this.transferPaused,
+    this.transferPauseReason,
+    required this.networkPolicy,
+    this.batteryLevel,
+    this.charging,
+    this.transferStateUpdatedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -520,6 +538,12 @@ class SoundRecorderDevicesObjectBox {
     "consentAcceptedAt": consentAcceptedAt,
     "recordingIndicatorAcknowledged": recordingIndicatorAcknowledged,
     "lastSeenAt": lastSeenAt,
+    "transferPaused": transferPaused,
+    "transferPauseReason": transferPauseReason,
+    "networkPolicy": networkPolicy,
+    "batteryLevel": batteryLevel,
+    "charging": charging,
+    "transferStateUpdatedAt": transferStateUpdatedAt,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
   };
@@ -540,6 +564,12 @@ class SoundRecorderDevicesObjectBox {
       consentAcceptedAt: json["consentAcceptedAt"] as String,
       recordingIndicatorAcknowledged: json["recordingIndicatorAcknowledged"] as bool,
       lastSeenAt: json["lastSeenAt"] as String?,
+      transferPaused: json["transferPaused"] as bool,
+      transferPauseReason: json["transferPauseReason"] as String?,
+      networkPolicy: json["networkPolicy"] as String,
+      batteryLevel: json["batteryLevel"] == null ? null : (json["batteryLevel"] as num).toInt(),
+      charging: json["charging"] as bool?,
+      transferStateUpdatedAt: json["transferStateUpdatedAt"] as String?,
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
     );
@@ -9826,6 +9856,242 @@ class BenefactorIcpsObjectBox {
       targetEvents: json["targetEvents"] as bool,
       targetCorporate: json["targetCorporate"] as bool,
       targetIndustrial: json["targetIndustrial"] as bool,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorLeadsThrottlingObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? benefactorLeadId;
+
+  String email;
+
+  String requestType;
+
+  String lastRequestAt;
+
+  String? nextAllowedAt;
+
+  int requestCount;
+
+  int throttleWindowDays;
+
+  String? lastRequestSource;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorLeadsThrottlingObjectBox({
+    required this.id,
+    this.benefactorLeadId,
+    required this.email,
+    required this.requestType,
+    required this.lastRequestAt,
+    this.nextAllowedAt,
+    required this.requestCount,
+    required this.throttleWindowDays,
+    this.lastRequestSource,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "benefactorLeadId": benefactorLeadId,
+    "email": email,
+    "requestType": requestType,
+    "lastRequestAt": lastRequestAt,
+    "nextAllowedAt": nextAllowedAt,
+    "requestCount": requestCount,
+    "throttleWindowDays": throttleWindowDays,
+    "lastRequestSource": lastRequestSource,
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorLeadsThrottlingObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsThrottlingObjectBox(
+      id: json["id"] as String,
+      benefactorLeadId: json["benefactorLeadId"] as String?,
+      email: json["email"] as String,
+      requestType: json["requestType"] as String,
+      lastRequestAt: json["lastRequestAt"] as String,
+      nextAllowedAt: json["nextAllowedAt"] as String?,
+      requestCount: (json["requestCount"] as num).toInt(),
+      throttleWindowDays: (json["throttleWindowDays"] as num).toInt(),
+      lastRequestSource: json["lastRequestSource"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isActive: json["isActive"] as bool,
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class BenefactorLeadsRemindersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String? benefactorLeadId;
+
+  String reminderType;
+
+  String channel;
+
+  String email;
+
+  String? firstName;
+
+  String? lastName;
+
+  String? subject;
+
+  String originalRequestSentAt;
+
+  String? originalRequestMessageId;
+
+  String sentAt;
+
+  String? lastReminderSentAt;
+
+  int reminderCount;
+
+  String? lastReminderMessageId;
+
+  String? messageId;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String tags;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isActive;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  BenefactorLeadsRemindersObjectBox({
+    required this.id,
+    this.benefactorLeadId,
+    required this.reminderType,
+    required this.channel,
+    required this.email,
+    this.firstName,
+    this.lastName,
+    this.subject,
+    required this.originalRequestSentAt,
+    this.originalRequestMessageId,
+    required this.sentAt,
+    this.lastReminderSentAt,
+    required this.reminderCount,
+    this.lastReminderMessageId,
+    this.messageId,
+    required this.tags,
+    required this.metaData,
+    required this.isActive,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "benefactorLeadId": benefactorLeadId,
+    "reminderType": reminderType,
+    "channel": channel,
+    "email": email,
+    "firstName": firstName,
+    "lastName": lastName,
+    "subject": subject,
+    "originalRequestSentAt": originalRequestSentAt,
+    "originalRequestMessageId": originalRequestMessageId,
+    "sentAt": sentAt,
+    "lastReminderSentAt": lastReminderSentAt,
+    "reminderCount": reminderCount,
+    "lastReminderMessageId": lastReminderMessageId,
+    "messageId": messageId,
+    "tags": jsonDecode(tags),
+    "metaData": jsonDecode(metaData),
+    "isActive": isActive,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static BenefactorLeadsRemindersObjectBox fromJson(Map<String, Object?> json) {
+    return BenefactorLeadsRemindersObjectBox(
+      id: json["id"] as String,
+      benefactorLeadId: json["benefactorLeadId"] as String?,
+      reminderType: json["reminderType"] as String,
+      channel: json["channel"] as String,
+      email: json["email"] as String,
+      firstName: json["firstName"] as String?,
+      lastName: json["lastName"] as String?,
+      subject: json["subject"] as String?,
+      originalRequestSentAt: json["originalRequestSentAt"] as String,
+      originalRequestMessageId: json["originalRequestMessageId"] as String?,
+      sentAt: json["sentAt"] as String,
+      lastReminderSentAt: json["lastReminderSentAt"] as String?,
+      reminderCount: (json["reminderCount"] as num).toInt(),
+      lastReminderMessageId: json["lastReminderMessageId"] as String?,
+      messageId: json["messageId"] as String?,
+      tags: json["tags"] is String ? json["tags"] as String : jsonEncode(json["tags"]),
       metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
       isActive: json["isActive"] as bool,
       isSoftDeleted: json["isSoftDeleted"] as bool,

@@ -18,7 +18,13 @@
     "./erlang": "./generated/erlang/src/dd_nats_subject_defs.erl",
     "./dart": "./generated/dart/lib/dd_nats_subject_defs.dart",
     "./go": "./generated/go/ddnats.go",
-    "./java": "./generated/jvm/src/main/java/dd/nats/DdNatsSubjects.java"
+    "./java": "./generated/jvm/src/main/java/dd/nats/DdNatsSubjects.java",
+    "./haskell": "./generated/haskell/src/DdNatsSubjectDefs.hs",
+    "./ocaml": "./generated/ocaml/lib/dd_nats_subject_defs.ml",
+    "./fsharp": "./generated/fsharp/DdNatsSubjectDefs.fs",
+    "./cpp": "./generated/cpp/dd_nats_subject_defs.hpp",
+    "./zig": "./generated/zig/dd_nats_subject_defs.zig",
+    "./elixir": "./generated/elixir/lib/dd_nats_subject_defs.ex"
   },
   "packageManager": "pnpm@9.15.4"
 }

@@ -401,12 +401,20 @@ const SoundRecorderDevicesSelectSQL = `select
       to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consent_accepted_at,
       recording_indicator_acknowledged,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      transfer_paused,
+      transfer_pause_reason,
+      network_policy,
+      battery_level,
+      charging,
+      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as transfer_state_updated_at,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices`
 
 var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
 var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
+var SoundRecorderDevicesTransferPauseReasonValues = []string{"low_battery", "network_constraint", "offline", "manual"}
+var SoundRecorderDevicesNetworkPolicyValues = []string{"any", "wifi_only", "cellular_only"}
 
 type SoundRecorderDevicesBun struct {
 	bun.BaseModel `bun:"table:sound_recorder_devices"`
@@ -424,6 +432,12 @@ type SoundRecorderDevicesBun struct {
 	ConsentAcceptedAt time.Time `bun:"consent_accepted_at,type:timestamptz" json:"consentAcceptedAt"`
 	RecordingIndicatorAcknowledged bool `bun:"recording_indicator_acknowledged,type:boolean,default:false" json:"recordingIndicatorAcknowledged"`
 	LastSeenAt *time.Time `bun:"last_seen_at,type:timestamptz,nullzero" json:"lastSeenAt,omitempty"`
+	TransferPaused bool `bun:"transfer_paused,type:boolean,default:false" json:"transferPaused"`
+	TransferPauseReason *string `bun:"transfer_pause_reason,type:varchar(40),nullzero" json:"transferPauseReason,omitempty"`
+	NetworkPolicy string `bun:"network_policy,type:varchar(20),default:'any'" json:"networkPolicy"`
+	BatteryLevel *int32 `bun:"battery_level,type:smallint,nullzero" json:"batteryLevel,omitempty"`
+	Charging *bool `bun:"charging,type:boolean,nullzero" json:"charging,omitempty"`
+	TransferStateUpdatedAt *time.Time `bun:"transfer_state_updated_at,type:timestamptz,nullzero" json:"transferStateUpdatedAt,omitempty"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
 }
@@ -448,6 +462,14 @@ func (value SoundRecorderDevicesBun) Validate() error {
 	if !soundRecorderDevicesTokenHashPattern.MatchString(value.TokenHash) { return errors.New("sound_recorder_devices.token_hash does not match the required pattern") }
 	if !soundRecorderDevicesTokenLast4Pattern.MatchString(value.TokenLast4) { return errors.New("sound_recorder_devices.token_last4 does not match the required pattern") }
 	if !soundRecorderDevicesConsentVersionPattern.MatchString(value.ConsentVersion) { return errors.New("sound_recorder_devices.consent_version does not match the required pattern") }
+	if value.TransferPauseReason != nil {
+		if !containsString(SoundRecorderDevicesTransferPauseReasonValues, *value.TransferPauseReason) { return errors.New("unsupported sound_recorder_devices.transfer_pause_reason") }
+	}
+	if !containsString(SoundRecorderDevicesNetworkPolicyValues, value.NetworkPolicy) { return errors.New("unsupported sound_recorder_devices.network_policy") }
+	if value.BatteryLevel != nil {
+		if *value.BatteryLevel < 0 { return errors.New("sound_recorder_devices.battery_level is below the minimum") }
+		if *value.BatteryLevel > 100 { return errors.New("sound_recorder_devices.battery_level is above the maximum") }
+	}
 	return nil
 }
 
@@ -5819,6 +5841,111 @@ func (value BenefactorIcpsBun) Validate() error {
 	if !validateRawJSON(value.SearchTerms) { return errors.New("benefactor_icps.search_terms must be valid JSON") }
 	if !validateRawJSON(value.SearchSignals) { return errors.New("benefactor_icps.search_signals must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_icps.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsThrottlingTable = "benefactor.benefactor_leads_throttling"
+const BenefactorLeadsThrottlingSelectSQL = `select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      email,
+      request_type,
+      to_char(last_request_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_request_at,
+      to_char(next_allowed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_allowed_at,
+      request_count,
+      throttle_window_days,
+      last_request_source,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_throttling`
+
+type BenefactorLeadsThrottlingBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_leads_throttling"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	BenefactorLeadId *uuid.UUID `bun:"benefactor_lead_id,type:uuid,nullzero" json:"benefactorLeadId,omitempty"`
+	Email string `bun:"email,type:varchar(255)" json:"email"`
+	RequestType string `bun:"request_type,type:varchar(100)" json:"requestType"`
+	LastRequestAt time.Time `bun:"last_request_at,type:timestamptz" json:"lastRequestAt"`
+	NextAllowedAt *time.Time `bun:"next_allowed_at,type:timestamptz,nullzero" json:"nextAllowedAt,omitempty"`
+	RequestCount int32 `bun:"request_count,type:integer,default:1" json:"requestCount"`
+	ThrottleWindowDays int32 `bun:"throttle_window_days,type:integer" json:"throttleWindowDays"`
+	LastRequestSource *string `bun:"last_request_source,type:varchar(80),nullzero" json:"lastRequestSource,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorLeadsThrottlingBun) Validate() error {
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_leads_throttling.meta_data must be valid JSON") }
+	return nil
+}
+
+const BenefactorLeadsRemindersTable = "benefactor.benefactor_leads_reminders"
+const BenefactorLeadsRemindersSelectSQL = `select
+      id::text as id,
+      benefactor_lead_id::text as benefactor_lead_id,
+      reminder_type,
+      channel,
+      email,
+      first_name,
+      last_name,
+      subject,
+      to_char(original_request_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as original_request_sent_at,
+      original_request_message_id,
+      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as sent_at,
+      to_char(last_reminder_sent_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_reminder_sent_at,
+      reminder_count,
+      last_reminder_message_id,
+      message_id,
+      tags,
+      meta_data,
+      is_active,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from benefactor.benefactor_leads_reminders`
+
+type BenefactorLeadsRemindersBun struct {
+	bun.BaseModel `bun:"table:benefactor.benefactor_leads_reminders"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	BenefactorLeadId *uuid.UUID `bun:"benefactor_lead_id,type:uuid,nullzero" json:"benefactorLeadId,omitempty"`
+	ReminderType string `bun:"reminder_type,type:varchar(80)" json:"reminderType"`
+	Channel string `bun:"channel,type:varchar(50),default:'email'" json:"channel"`
+	Email string `bun:"email,type:varchar(255)" json:"email"`
+	FirstName *string `bun:"first_name,type:varchar(160),nullzero" json:"firstName,omitempty"`
+	LastName *string `bun:"last_name,type:varchar(160),nullzero" json:"lastName,omitempty"`
+	Subject *string `bun:"subject,type:text,nullzero" json:"subject,omitempty"`
+	OriginalRequestSentAt time.Time `bun:"original_request_sent_at,type:timestamptz" json:"originalRequestSentAt"`
+	OriginalRequestMessageId *string `bun:"original_request_message_id,type:text,nullzero" json:"originalRequestMessageId,omitempty"`
+	SentAt time.Time `bun:"sent_at,type:timestamptz,default:now()" json:"sentAt"`
+	LastReminderSentAt *time.Time `bun:"last_reminder_sent_at,type:timestamptz,nullzero" json:"lastReminderSentAt,omitempty"`
+	ReminderCount int32 `bun:"reminder_count,type:integer,default:0" json:"reminderCount"`
+	LastReminderMessageId *string `bun:"last_reminder_message_id,type:text,nullzero" json:"lastReminderMessageId,omitempty"`
+	MessageId *string `bun:"message_id,type:varchar(255),nullzero" json:"messageId,omitempty"`
+	Tags json.RawMessage `bun:"tags,type:jsonb,default:'[]'::jsonb" json:"tags"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsActive bool `bun:"is_active,type:boolean,default:true" json:"isActive"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value BenefactorLeadsRemindersBun) Validate() error {
+	if !validateRawJSON(value.Tags) { return errors.New("benefactor_leads_reminders.tags must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("benefactor_leads_reminders.meta_data must be valid JSON") }
 	return nil
 }
 

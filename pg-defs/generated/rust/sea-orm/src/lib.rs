@@ -248,6 +248,17 @@ pub struct Model {
     pub recording_indicator_acknowledged: bool,
     #[sea_orm(column_name = "last_seen_at")]
     pub last_seen_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "transfer_paused")]
+    pub transfer_paused: bool,
+    #[sea_orm(column_name = "transfer_pause_reason")]
+    pub transfer_pause_reason: Option<String>,
+    #[sea_orm(column_name = "network_policy")]
+    pub network_policy: String,
+    #[sea_orm(column_name = "battery_level")]
+    pub battery_level: Option<i16>,
+    pub charging: Option<bool>,
+    #[sea_orm(column_name = "transfer_state_updated_at")]
+    pub transfer_state_updated_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_name = "created_at")]
     pub created_at: DateTimeWithTimeZone,
     #[sea_orm(column_name = "updated_at")]
@@ -4638,6 +4649,115 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use benefactor_icps::Entity as BenefactorIcpsEntity;
 pub use benefactor_icps::Model as BenefactorIcpsModel;
+
+pub mod benefactor_leads_throttling {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_throttling")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "benefactor_lead_id")]
+    pub benefactor_lead_id: Option<Uuid>,
+    pub email: String,
+    #[sea_orm(column_name = "request_type")]
+    pub request_type: String,
+    #[sea_orm(column_name = "last_request_at")]
+    pub last_request_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "next_allowed_at")]
+    pub next_allowed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "request_count")]
+    pub request_count: i32,
+    #[sea_orm(column_name = "throttle_window_days")]
+    pub throttle_window_days: i32,
+    #[sea_orm(column_name = "last_request_source")]
+    pub last_request_source: Option<String>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_leads_throttling::Entity as BenefactorLeadsThrottlingEntity;
+pub use benefactor_leads_throttling::Model as BenefactorLeadsThrottlingModel;
+
+pub mod benefactor_leads_reminders {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_reminders")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "benefactor_lead_id")]
+    pub benefactor_lead_id: Option<Uuid>,
+    #[sea_orm(column_name = "reminder_type")]
+    pub reminder_type: String,
+    pub channel: String,
+    pub email: String,
+    #[sea_orm(column_name = "first_name")]
+    pub first_name: Option<String>,
+    #[sea_orm(column_name = "last_name")]
+    pub last_name: Option<String>,
+    pub subject: Option<String>,
+    #[sea_orm(column_name = "original_request_sent_at")]
+    pub original_request_sent_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "original_request_message_id")]
+    pub original_request_message_id: Option<String>,
+    #[sea_orm(column_name = "sent_at")]
+    pub sent_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_reminder_sent_at")]
+    pub last_reminder_sent_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "reminder_count")]
+    pub reminder_count: i32,
+    #[sea_orm(column_name = "last_reminder_message_id")]
+    pub last_reminder_message_id: Option<String>,
+    #[sea_orm(column_name = "message_id")]
+    pub message_id: Option<String>,
+    pub tags: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_active")]
+    pub is_active: bool,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use benefactor_leads_reminders::Entity as BenefactorLeadsRemindersEntity;
+pub use benefactor_leads_reminders::Model as BenefactorLeadsRemindersModel;
 
 pub mod vcs_repositories {
     use super::*;

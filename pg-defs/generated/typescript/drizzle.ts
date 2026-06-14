@@ -3,7 +3,7 @@
 // Generated ORM/client code is an adapter only; do not infer migrations from it.
 // MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, check, index, integer, jsonb, pgSchema, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, index, integer, jsonb, pgSchema, pgTable, smallint, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 const textEncoder = new TextEncoder();
@@ -393,6 +393,14 @@ export const soundRecorderDevicesStatusValues = ["active","revoked","lost","repl
 export const soundRecorderDevicesStatusSchema = z.enum(soundRecorderDevicesStatusValues);
 export type SoundRecorderDevicesStatus = z.infer<typeof soundRecorderDevicesStatusSchema>;
 
+export const soundRecorderDevicesTransferPauseReasonValues = ["low_battery","network_constraint","offline","manual"] as const;
+export const soundRecorderDevicesTransferPauseReasonSchema = z.enum(soundRecorderDevicesTransferPauseReasonValues);
+export type SoundRecorderDevicesTransferPauseReason = z.infer<typeof soundRecorderDevicesTransferPauseReasonSchema>;
+
+export const soundRecorderDevicesNetworkPolicyValues = ["any","wifi_only","cellular_only"] as const;
+export const soundRecorderDevicesNetworkPolicySchema = z.enum(soundRecorderDevicesNetworkPolicyValues);
+export type SoundRecorderDevicesNetworkPolicy = z.infer<typeof soundRecorderDevicesNetworkPolicySchema>;
+
 export const soundRecorderDevices = pgTable(
   "sound_recorder_devices",
   {
@@ -410,11 +418,20 @@ export const soundRecorderDevices = pgTable(
     consentAcceptedAt: timestamp("consent_accepted_at", { withTimezone: true, mode: "string" }).notNull(),
     recordingIndicatorAcknowledged: boolean("recording_indicator_acknowledged").default(sql`false`).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }),
+    transferPaused: boolean("transfer_paused").default(sql`false`).notNull(),
+    transferPauseReason: varchar("transfer_pause_reason", { length: 40 }),
+    networkPolicy: varchar("network_policy", { length: 20 }).default(sql`'any'`).notNull(),
+    batteryLevel: smallint("battery_level"),
+    charging: boolean("charging"),
+    transferStateUpdatedAt: timestamp("transfer_state_updated_at", { withTimezone: true, mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
   },
   (table) => ({
     soundRecorderDevicesPlatformChk: check("sound_recorder_devices_platform_chk", sql.raw("platform in ('ios', 'android')")),
+    soundRecorderDevicesNetworkPolicyChk: check("sound_recorder_devices_network_policy_chk", sql.raw("network_policy in ('any', 'wifi_only', 'cellular_only')")),
+    soundRecorderDevicesPauseReasonChk: check("sound_recorder_devices_pause_reason_chk", sql.raw("transfer_pause_reason is null\n      or transfer_pause_reason in ('low_battery', 'network_constraint', 'offline', 'manual')")),
+    soundRecorderDevicesBatteryLevelChk: check("sound_recorder_devices_battery_level_chk", sql.raw("battery_level is null or battery_level between 0 and 100")),
     soundRecorderDevicesStatusChk: check("sound_recorder_devices_status_chk", sql.raw("status in ('active', 'revoked', 'lost', 'replaced', 'deleted')")),
     soundRecorderDevicesInstallIdSizeChk: check("sound_recorder_devices_install_id_size_chk", sql.raw("octet_length(install_id) between 1 and 160")),
     soundRecorderDevicesDeviceLabelSizeChk: check("sound_recorder_devices_device_label_size_chk", sql.raw("device_label is null or octet_length(device_label) between 1 and 160")),
@@ -426,6 +443,7 @@ export const soundRecorderDevices = pgTable(
     soundRecorderDevicesTokenHashUq: uniqueIndex("sound_recorder_devices_token_hash_uq").on(table.tokenHash),
     soundRecorderDevicesAccountInstallUq: uniqueIndex("sound_recorder_devices_account_install_uq").on(table.accountId, table.installId),
     soundRecorderDevicesAccountStatusIdx: index("sound_recorder_devices_account_status_idx").on(table.accountId, table.status, table.updatedAt.desc()),
+    soundRecorderDevicesTransferPausedIdx: index("sound_recorder_devices_transfer_paused_idx").on(table.id).where(sql.raw("transfer_paused = true")),
   }),
 );
 
@@ -444,6 +462,12 @@ export const soundRecorderDevicesRowSchema = z.object({
   consentAcceptedAt: z.string().datetime(),
   recordingIndicatorAcknowledged: z.boolean(),
   lastSeenAt: z.string().datetime().nullable(),
+  transferPaused: z.boolean(),
+  transferPauseReason: soundRecorderDevicesTransferPauseReasonSchema.nullable(),
+  networkPolicy: soundRecorderDevicesNetworkPolicySchema,
+  batteryLevel: z.number().int().min(0).max(100).nullable(),
+  charging: z.boolean().nullable(),
+  transferStateUpdatedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -463,6 +487,12 @@ export const soundRecorderDevicesInsertSchema = z.object({
   consentAcceptedAt: z.string().datetime(),
   recordingIndicatorAcknowledged: z.boolean().optional().default(false),
   lastSeenAt: z.string().datetime().nullable().optional(),
+  transferPaused: z.boolean().optional().default(false),
+  transferPauseReason: soundRecorderDevicesTransferPauseReasonSchema.nullable().optional(),
+  networkPolicy: soundRecorderDevicesNetworkPolicySchema.optional().default("any"),
+  batteryLevel: z.number().int().min(0).max(100).nullable().optional(),
+  charging: z.boolean().nullable().optional(),
+  transferStateUpdatedAt: z.string().datetime().nullable().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
@@ -8233,6 +8263,180 @@ export const benefactorIcpsUpdateSchema = benefactorIcpsInsertSchema.partial();
 export type BenefactorIcpsRow = z.infer<typeof benefactorIcpsRowSchema>;
 export type BenefactorIcpsInsert = z.infer<typeof benefactorIcpsInsertSchema>;
 export type BenefactorIcpsUpdate = z.infer<typeof benefactorIcpsUpdateSchema>;
+
+export const benefactorLeadsThrottling = benefactorSchema.table(
+  "benefactor_leads_throttling",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    benefactorLeadId: uuid("benefactor_lead_id"),
+    email: varchar("email", { length: 255 }).notNull(),
+    requestType: varchar("request_type", { length: 100 }).notNull(),
+    lastRequestAt: timestamp("last_request_at", { withTimezone: true, mode: "string" }).notNull(),
+    nextAllowedAt: timestamp("next_allowed_at", { withTimezone: true, mode: "string" }),
+    requestCount: integer("request_count").default(sql`1`).notNull(),
+    throttleWindowDays: integer("throttle_window_days").notNull(),
+    lastRequestSource: varchar("last_request_source", { length: 80 }),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isActive: boolean("is_active").default(sql`true`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    benefactorLeadsThrottlingMetaObjectChk: check("benefactor_leads_throttling_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorLeadsThrottlingEmailTypeUq: uniqueIndex("benefactor_leads_throttling_email_type_uq").on(table.email, table.requestType).where(sql.raw("is_soft_deleted = false")),
+    benefactorLeadsThrottlingLeadIdIdx: index("benefactor_leads_throttling_lead_id_idx").on(table.benefactorLeadId),
+    benefactorLeadsThrottlingEmailIdx: index("benefactor_leads_throttling_email_idx").on(table.email),
+    benefactorLeadsThrottlingRequestTypeIdx: index("benefactor_leads_throttling_request_type_idx").on(table.requestType),
+    benefactorLeadsThrottlingLastRequestAtIdx: index("benefactor_leads_throttling_last_request_at_idx").on(table.lastRequestAt),
+    benefactorLeadsThrottlingNextAllowedAtIdx: index("benefactor_leads_throttling_next_allowed_at_idx").on(table.nextAllowedAt),
+    benefactorLeadsThrottlingEmailRequestTypeIdx: index("benefactor_leads_throttling_email_request_type_idx").on(table.email, table.requestType),
+  }),
+);
+
+export const benefactorLeadsThrottlingRowSchema = z.object({
+  id: z.string().uuid(),
+  benefactorLeadId: z.string().uuid().nullable(),
+  email: z.string().max(255),
+  requestType: z.string().max(100),
+  lastRequestAt: z.string().datetime(),
+  nextAllowedAt: z.string().datetime().nullable(),
+  requestCount: z.number().int(),
+  throttleWindowDays: z.number().int(),
+  lastRequestSource: z.string().max(80).nullable(),
+  metaData: jsonObjectSchema,
+  isActive: z.boolean(),
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const benefactorLeadsThrottlingInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  benefactorLeadId: z.string().uuid().nullable().optional(),
+  email: z.string().max(255),
+  requestType: z.string().max(100),
+  lastRequestAt: z.string().datetime(),
+  nextAllowedAt: z.string().datetime().nullable().optional(),
+  requestCount: z.number().int().optional().default(1),
+  throttleWindowDays: z.number().int(),
+  lastRequestSource: z.string().max(80).nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  isActive: z.boolean().optional().default(true),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const benefactorLeadsThrottlingUpdateSchema = benefactorLeadsThrottlingInsertSchema.partial();
+export type BenefactorLeadsThrottlingRow = z.infer<typeof benefactorLeadsThrottlingRowSchema>;
+export type BenefactorLeadsThrottlingInsert = z.infer<typeof benefactorLeadsThrottlingInsertSchema>;
+export type BenefactorLeadsThrottlingUpdate = z.infer<typeof benefactorLeadsThrottlingUpdateSchema>;
+
+export const benefactorLeadsReminders = benefactorSchema.table(
+  "benefactor_leads_reminders",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    benefactorLeadId: uuid("benefactor_lead_id"),
+    reminderType: varchar("reminder_type", { length: 80 }).notNull(),
+    channel: varchar("channel", { length: 50 }).default(sql`'email'`).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    firstName: varchar("first_name", { length: 160 }),
+    lastName: varchar("last_name", { length: 160 }),
+    subject: text("subject"),
+    originalRequestSentAt: timestamp("original_request_sent_at", { withTimezone: true, mode: "string" }).notNull(),
+    originalRequestMessageId: text("original_request_message_id"),
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastReminderSentAt: timestamp("last_reminder_sent_at", { withTimezone: true, mode: "string" }),
+    reminderCount: integer("reminder_count").default(sql`0`).notNull(),
+    lastReminderMessageId: text("last_reminder_message_id"),
+    messageId: varchar("message_id", { length: 255 }),
+    tags: jsonb("tags").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isActive: boolean("is_active").default(sql`true`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    benefactorLeadsRemindersTagsArrayChk: check("benefactor_leads_reminders_tags_array_chk", sql.raw("jsonb_typeof(tags) = 'array'")),
+    benefactorLeadsRemindersMetaObjectChk: check("benefactor_leads_reminders_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    benefactorLeadsRemindersEmailTypeUq: uniqueIndex("benefactor_leads_reminders_email_type_uq").on(table.email, table.reminderType).where(sql.raw("is_soft_deleted = false")),
+    benefactorLeadsRemindersLeadIdIdx: index("benefactor_leads_reminders_lead_id_idx").on(table.benefactorLeadId),
+    benefactorLeadsRemindersReminderTypeIdx: index("benefactor_leads_reminders_reminder_type_idx").on(table.reminderType),
+    benefactorLeadsRemindersEmailIdx: index("benefactor_leads_reminders_email_idx").on(table.email),
+    benefactorLeadsRemindersSentAtIdx: index("benefactor_leads_reminders_sent_at_idx").on(table.sentAt),
+    benefactorLeadsRemindersOriginalRequestSentAtIdx: index("benefactor_leads_reminders_original_request_sent_at_idx").on(table.originalRequestSentAt),
+    benefactorLeadsRemindersLastReminderSentAtIdx: index("benefactor_leads_reminders_last_reminder_sent_at_idx").on(table.lastReminderSentAt),
+    benefactorLeadsRemindersReminderCountIdx: index("benefactor_leads_reminders_reminder_count_idx").on(table.reminderCount),
+    benefactorLeadsRemindersEmailTypeSentAtIdx: index("benefactor_leads_reminders_email_type_sent_at_idx").on(table.email, table.reminderType, table.sentAt),
+  }),
+);
+
+export const benefactorLeadsRemindersRowSchema = z.object({
+  id: z.string().uuid(),
+  benefactorLeadId: z.string().uuid().nullable(),
+  reminderType: z.string().max(80),
+  channel: z.string().max(50),
+  email: z.string().max(255),
+  firstName: z.string().max(160).nullable(),
+  lastName: z.string().max(160).nullable(),
+  subject: z.string().nullable(),
+  originalRequestSentAt: z.string().datetime(),
+  originalRequestMessageId: z.string().nullable(),
+  sentAt: z.string().datetime(),
+  lastReminderSentAt: z.string().datetime().nullable(),
+  reminderCount: z.number().int(),
+  lastReminderMessageId: z.string().nullable(),
+  messageId: z.string().max(255).nullable(),
+  tags: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isActive: z.boolean(),
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const benefactorLeadsRemindersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  benefactorLeadId: z.string().uuid().nullable().optional(),
+  reminderType: z.string().max(80),
+  channel: z.string().max(50).optional().default("email"),
+  email: z.string().max(255),
+  firstName: z.string().max(160).nullable().optional(),
+  lastName: z.string().max(160).nullable().optional(),
+  subject: z.string().nullable().optional(),
+  originalRequestSentAt: z.string().datetime(),
+  originalRequestMessageId: z.string().nullable().optional(),
+  sentAt: z.string().datetime().optional(),
+  lastReminderSentAt: z.string().datetime().nullable().optional(),
+  reminderCount: z.number().int().optional().default(0),
+  lastReminderMessageId: z.string().nullable().optional(),
+  messageId: z.string().max(255).nullable().optional(),
+  tags: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isActive: z.boolean().optional().default(true),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const benefactorLeadsRemindersUpdateSchema = benefactorLeadsRemindersInsertSchema.partial();
+export type BenefactorLeadsRemindersRow = z.infer<typeof benefactorLeadsRemindersRowSchema>;
+export type BenefactorLeadsRemindersInsert = z.infer<typeof benefactorLeadsRemindersInsertSchema>;
+export type BenefactorLeadsRemindersUpdate = z.infer<typeof benefactorLeadsRemindersUpdateSchema>;
 
 export const vcsRepositoriesVcsKindValues = ["git","hg","svn","fossil"] as const;
 export const vcsRepositoriesVcsKindSchema = z.enum(vcsRepositoriesVcsKindValues);

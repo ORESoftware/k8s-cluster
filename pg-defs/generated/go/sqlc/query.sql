@@ -77,16 +77,16 @@ update sound_recorder_accounts set status = $2, external_subject = $3, display_n
 delete from sound_recorder_accounts where id = $1;
 
 -- name: ListSoundRecorderDevices :many
-select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at from sound_recorder_devices;
+select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, transfer_paused, transfer_pause_reason, network_policy, battery_level, charging, transfer_state_updated_at, created_at, updated_at from sound_recorder_devices;
 
 -- name: GetSoundRecorderDevices :one
-select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at from sound_recorder_devices where id = $1 limit 1;
+select id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, transfer_paused, transfer_pause_reason, network_policy, battery_level, charging, transfer_state_updated_at, created_at, updated_at from sound_recorder_devices where id = $1 limit 1;
 
 -- name: CreateSoundRecorderDevices :one
-insert into sound_recorder_devices (id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at;
+insert into sound_recorder_devices (id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, transfer_paused, transfer_pause_reason, network_policy, battery_level, charging, transfer_state_updated_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, transfer_paused, transfer_pause_reason, network_policy, battery_level, charging, transfer_state_updated_at, created_at, updated_at;
 
 -- name: UpdateSoundRecorderDevices :one
-update sound_recorder_devices set account_id = $2, platform = $3, status = $4, install_id = $5, device_label = $6, app_version = $7, os_version = $8, token_hash = $9, token_last4 = $10, consent_version = $11, consent_accepted_at = $12, recording_indicator_acknowledged = $13, last_seen_at = $14, updated_at = $15 where id = $1 returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, created_at, updated_at;
+update sound_recorder_devices set account_id = $2, platform = $3, status = $4, install_id = $5, device_label = $6, app_version = $7, os_version = $8, token_hash = $9, token_last4 = $10, consent_version = $11, consent_accepted_at = $12, recording_indicator_acknowledged = $13, last_seen_at = $14, transfer_paused = $15, transfer_pause_reason = $16, network_policy = $17, battery_level = $18, charging = $19, transfer_state_updated_at = $20, updated_at = $21 where id = $1 returning id, account_id, platform, status, install_id, device_label, app_version, os_version, token_hash, token_last4, consent_version, consent_accepted_at, recording_indicator_acknowledged, last_seen_at, transfer_paused, transfer_pause_reason, network_policy, battery_level, charging, transfer_state_updated_at, created_at, updated_at;
 
 -- name: DeleteSoundRecorderDevices :exec
 delete from sound_recorder_devices where id = $1;
@@ -1560,6 +1560,36 @@ update benefactor.benefactor_icps set slug = $2, name = $3, category = $4, servi
 
 -- name: DeleteBenefactorIcps :exec
 delete from benefactor.benefactor_icps where id = $1;
+
+-- name: ListBenefactorLeadsThrottling :many
+select id, benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by from benefactor.benefactor_leads_throttling;
+
+-- name: GetBenefactorLeadsThrottling :one
+select id, benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by from benefactor.benefactor_leads_throttling where id = $1 limit 1;
+
+-- name: CreateBenefactorLeadsThrottling :one
+insert into benefactor.benefactor_leads_throttling (id, benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateBenefactorLeadsThrottling :one
+update benefactor.benefactor_leads_throttling set benefactor_lead_id = $2, email = $3, request_type = $4, last_request_at = $5, next_allowed_at = $6, request_count = $7, throttle_window_days = $8, last_request_source = $9, meta_data = $10, is_active = $11, is_soft_deleted = $12, updated_at = $13, created_by = $14, updated_by = $15 where id = $1 returning id, benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteBenefactorLeadsThrottling :exec
+delete from benefactor.benefactor_leads_throttling where id = $1;
+
+-- name: ListBenefactorLeadsReminders :many
+select id, benefactor_lead_id, reminder_type, channel, email, first_name, last_name, subject, original_request_sent_at, original_request_message_id, sent_at, last_reminder_sent_at, reminder_count, last_reminder_message_id, message_id, tags, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by from benefactor.benefactor_leads_reminders;
+
+-- name: GetBenefactorLeadsReminders :one
+select id, benefactor_lead_id, reminder_type, channel, email, first_name, last_name, subject, original_request_sent_at, original_request_message_id, sent_at, last_reminder_sent_at, reminder_count, last_reminder_message_id, message_id, tags, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by from benefactor.benefactor_leads_reminders where id = $1 limit 1;
+
+-- name: CreateBenefactorLeadsReminders :one
+insert into benefactor.benefactor_leads_reminders (id, benefactor_lead_id, reminder_type, channel, email, first_name, last_name, subject, original_request_sent_at, original_request_message_id, sent_at, last_reminder_sent_at, reminder_count, last_reminder_message_id, message_id, tags, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) returning id, benefactor_lead_id, reminder_type, channel, email, first_name, last_name, subject, original_request_sent_at, original_request_message_id, sent_at, last_reminder_sent_at, reminder_count, last_reminder_message_id, message_id, tags, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateBenefactorLeadsReminders :one
+update benefactor.benefactor_leads_reminders set benefactor_lead_id = $2, reminder_type = $3, channel = $4, email = $5, first_name = $6, last_name = $7, subject = $8, original_request_sent_at = $9, original_request_message_id = $10, sent_at = $11, last_reminder_sent_at = $12, reminder_count = $13, last_reminder_message_id = $14, message_id = $15, tags = $16, meta_data = $17, is_active = $18, is_soft_deleted = $19, updated_at = $20, created_by = $21, updated_by = $22 where id = $1 returning id, benefactor_lead_id, reminder_type, channel, email, first_name, last_name, subject, original_request_sent_at, original_request_message_id, sent_at, last_reminder_sent_at, reminder_count, last_reminder_message_id, message_id, tags, meta_data, is_active, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteBenefactorLeadsReminders :exec
+delete from benefactor.benefactor_leads_reminders where id = $1;
 
 -- name: ListVcsRepositories :many
 select id, slug, display_name, vcs_kind, remote_url, default_branch, mirror_path, mirror_status, visibility, last_synced_at, last_error, size_bytes, ref_count, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from vcs_repositories;

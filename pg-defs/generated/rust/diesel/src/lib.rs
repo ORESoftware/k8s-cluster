@@ -309,6 +309,12 @@ diesel::table! {
         consent_accepted_at -> Timestamptz,
         recording_indicator_acknowledged -> Bool,
         last_seen_at -> Nullable<Timestamptz>,
+        transfer_paused -> Bool,
+        transfer_pause_reason -> Nullable<Varchar>,
+        network_policy -> Varchar,
+        battery_level -> Nullable<Int2>,
+        charging -> Nullable<Bool>,
+        transfer_state_updated_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
     }
@@ -331,6 +337,12 @@ pub struct SoundRecorderDevicesDieselRow {
     pub consent_accepted_at: DateTime<Utc>,
     pub recording_indicator_acknowledged: bool,
     pub last_seen_at: Option<DateTime<Utc>>,
+    pub transfer_paused: bool,
+    pub transfer_pause_reason: Option<String>,
+    pub network_policy: String,
+    pub battery_level: Option<i16>,
+    pub charging: Option<bool>,
+    pub transfer_state_updated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -352,6 +364,12 @@ pub struct SoundRecorderDevicesDieselInsert {
     pub consent_accepted_at: Option<DateTime<Utc>>,
     pub recording_indicator_acknowledged: Option<bool>,
     pub last_seen_at: Option<DateTime<Utc>>,
+    pub transfer_paused: Option<bool>,
+    pub transfer_pause_reason: Option<String>,
+    pub network_policy: Option<String>,
+    pub battery_level: Option<i16>,
+    pub charging: Option<bool>,
+    pub transfer_state_updated_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -6274,6 +6292,155 @@ pub struct BenefactorIcpsDieselInsert {
     pub target_events: Option<bool>,
     pub target_corporate: Option<bool>,
     pub target_industrial: Option<bool>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_leads_throttling (id) {
+        id -> Uuid,
+        benefactor_lead_id -> Nullable<Uuid>,
+        email -> Varchar,
+        request_type -> Varchar,
+        last_request_at -> Timestamptz,
+        next_allowed_at -> Nullable<Timestamptz>,
+        request_count -> Int4,
+        throttle_window_days -> Int4,
+        last_request_source -> Nullable<Varchar>,
+        meta_data -> Jsonb,
+        is_active -> Bool,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_leads_throttling)]
+pub struct BenefactorLeadsThrottlingDieselRow {
+    pub id: Uuid,
+    pub benefactor_lead_id: Option<Uuid>,
+    pub email: String,
+    pub request_type: String,
+    pub last_request_at: DateTime<Utc>,
+    pub next_allowed_at: Option<DateTime<Utc>>,
+    pub request_count: i32,
+    pub throttle_window_days: i32,
+    pub last_request_source: Option<String>,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_leads_throttling)]
+pub struct BenefactorLeadsThrottlingDieselInsert {
+    pub id: Option<Uuid>,
+    pub benefactor_lead_id: Option<Uuid>,
+    pub email: Option<String>,
+    pub request_type: Option<String>,
+    pub last_request_at: Option<DateTime<Utc>>,
+    pub next_allowed_at: Option<DateTime<Utc>>,
+    pub request_count: Option<i32>,
+    pub throttle_window_days: Option<i32>,
+    pub last_request_source: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_active: Option<bool>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    benefactor_leads_reminders (id) {
+        id -> Uuid,
+        benefactor_lead_id -> Nullable<Uuid>,
+        reminder_type -> Varchar,
+        channel -> Varchar,
+        email -> Varchar,
+        first_name -> Nullable<Varchar>,
+        last_name -> Nullable<Varchar>,
+        subject -> Nullable<Text>,
+        original_request_sent_at -> Timestamptz,
+        original_request_message_id -> Nullable<Text>,
+        sent_at -> Timestamptz,
+        last_reminder_sent_at -> Nullable<Timestamptz>,
+        reminder_count -> Int4,
+        last_reminder_message_id -> Nullable<Text>,
+        message_id -> Nullable<Varchar>,
+        tags -> Jsonb,
+        meta_data -> Jsonb,
+        is_active -> Bool,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_leads_reminders)]
+pub struct BenefactorLeadsRemindersDieselRow {
+    pub id: Uuid,
+    pub benefactor_lead_id: Option<Uuid>,
+    pub reminder_type: String,
+    pub channel: String,
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub subject: Option<String>,
+    pub original_request_sent_at: DateTime<Utc>,
+    pub original_request_message_id: Option<String>,
+    pub sent_at: DateTime<Utc>,
+    pub last_reminder_sent_at: Option<DateTime<Utc>>,
+    pub reminder_count: i32,
+    pub last_reminder_message_id: Option<String>,
+    pub message_id: Option<String>,
+    pub tags: Value,
+    pub meta_data: Value,
+    pub is_active: bool,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = benefactor_leads_reminders)]
+pub struct BenefactorLeadsRemindersDieselInsert {
+    pub id: Option<Uuid>,
+    pub benefactor_lead_id: Option<Uuid>,
+    pub reminder_type: Option<String>,
+    pub channel: Option<String>,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub subject: Option<String>,
+    pub original_request_sent_at: Option<DateTime<Utc>>,
+    pub original_request_message_id: Option<String>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub last_reminder_sent_at: Option<DateTime<Utc>>,
+    pub reminder_count: Option<i32>,
+    pub last_reminder_message_id: Option<String>,
+    pub message_id: Option<String>,
+    pub tags: Option<Value>,
     pub meta_data: Option<Value>,
     pub is_active: Option<bool>,
     pub is_soft_deleted: Option<bool>,

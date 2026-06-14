@@ -1,0 +1,15 @@
+{
+  "name": "dd/pg-defs",
+  "description": "Canonical remote Postgres schema definitions as Eloquent models.",
+  "type": "library",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.1",
+    "illuminate/database": "^10.0 || ^11.0"
+  },
+  "autoload": {
+    "files": [
+      "src/DdPgDefs.php"
+    ]
+  }
+}

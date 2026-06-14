@@ -83,12 +83,19 @@ or `customConstraint` shims and remain enforced by the database.
 
 - `generated/typescript/drizzle.ts` — Drizzle table definitions plus Zod row/insert/update schemas.
 - `generated/typescript/typeorm.ts` — TypeORM entity classes.
+- `generated/typescript/sequelize.ts` — Sequelize model definitions via `defineDdModels(sequelize)`,
+  with per-column `validate` (length, regex `is`, integer `min`/`max`, enum `isIn`).
 - `generated/prisma/schema.prisma` — Prisma model definitions.
 
 ### Python
 
 - `generated/python/sqlalchemy_models.py` — SQLAlchemy declarative models plus Pydantic
   row/insert schemas with full constraint enforcement.
+- `generated/python-peewee/models.py` — Peewee `Model` classes (bound through a `DatabaseProxy`),
+  with `BinaryJSONField` for jsonb and a `table_name`/`schema` Meta per table.
+- `generated/python-django/models.py` — Django `models.Model` classes with `managed = False`
+  (migrations stay owned by `schema.sql`), field types, `choices` for enums, and
+  `MinLengthValidator` / `RegexValidator` / `MinValueValidator` / `MaxValueValidator` validators.
 
 ### Go
 
@@ -141,6 +148,67 @@ or `customConstraint` shims and remain enforced by the database.
   references. Compatible with plain JDBC, Vert.x, Spring Boot, Quarkus, Micronaut, or Kotlin.
 - `generated/jvm/hibernate/src/main/java/dd/pgdefs/hibernate/` — JPA-annotated entity classes for
   Hibernate / Spring Data / Hibernate Reactive.
+
+### Ruby
+
+- `generated/ruby-activerecord/lib/dd_pg_defs.rb` — `ActiveRecord::Base` models under the
+  `DdPgDefs` module with `self.table_name`, `self.primary_key`, and `validates` declarations
+  (presence, length, format, inclusion, numericality). Regex anchors are translated from Postgres
+  `^…$` to Ruby `\A…\z` so Rails' format validator accepts them.
+
+### PHP
+
+- `generated/php-eloquent/src/DdPgDefs.php` — Laravel Eloquent models (`$table`, `$primaryKey`,
+  `$casts`, `$fillable`, and a static `rules()` returning Laravel validation rules per column).
+- `generated/php-doctrine/src/<Entity>.php` — Doctrine ORM entity classes (one per table, PSR-4)
+  with `#[ORM\Entity]` / `#[ORM\Table]` / `#[ORM\Column]` attribute mapping. `bigint` maps to a
+  PHP `string` (Doctrine's precision-safe default) and `timestamptz` to `\DateTimeImmutable`.
+
+### C# / .NET
+
+- `generated/csharp-efcore/DdPgDefs.cs` — Entity Framework Core entity classes with DataAnnotations
+  (`[Table]`, `[Column]`, `[Key]`, `[MaxLength]`, `[RegularExpression]`, `[Range]`) plus a
+  `DdPgDefsContext : DbContext`. Compatible with Npgsql; `jsonb` columns map to `string` with
+  `TypeName = "jsonb"`, `smallint` to `short`. Validated with `dotnet build`.
+
+### F#
+
+- `generated/fsharp/DdPgDefs.fs` — `…Row` records, `[<RequireQualifiedAccess>]` enum unions with
+  `parse…` / `…ToString`, a `…RowOfRow (get) (isNullAt)` decoder that turns a Postgres row into the
+  record, and `Result`-returning validators (length, regex, integer range). Validated with
+  `dotnet build`.
+
+### Kotlin
+
+- `generated/kotlin-exposed/src/main/kotlin/dd/pgdefs/PgDefs.kt` — JetBrains Exposed `Table`
+  objects (one per table) with typed column DSL, `jsonb` columns, and `PrimaryKey` overrides, plus
+  a `…Row` data class and a `to…Row(ResultRow)` mapper that decodes a queried row into the struct.
+
+### Haskell
+
+- `generated/haskell/src/DdPgDefs.hs` — Dependency-light records (one `…Row` per table) with
+  `postgresql-simple` `FromRow` instances wired to the matching `…SelectSql` constant, enum sum
+  types with `parse…` / `…ToText`, table/column/select-SQL constants, and length/range validators.
+  Regex enforcement is left to the database (no regex dependency), mirroring the Rust adapter.
+
+### OCaml
+
+- `generated/ocaml/lib/dd_pg_defs.ml` — Row records (bigint → `int64`), polymorphic-variant enum
+  types with `parse_…` / `…_to_string`, a `…_row_of_row ~get ~is_null` decoder that builds the
+  record from a Postgres row, table/column/select-SQL constants, and length/range validators.
+  Pairs with Caqti / pgocaml for execution. Validated with `dune build`.
+
+### C++
+
+- `generated/cpp/dd_pg_defs.hpp` — Header-only structs (one `…Row` per table), `enum class` enums
+  with `to_string`/`parse_…`, a `…_row_of_row(get, is_null)` decoder, and `std::optional<std::string>`
+  validators (length, regex via `<regex>`, integer range). Validated with `clang++ -fsyntax-only`.
+
+### Zig
+
+- `generated/zig/dd_pg_defs.zig` — Structs (one `…Row` per table) with a `fromRow(RowReader)`
+  decoder, enums with `toString`/`parse`, table/column/select-SQL constants, and `?[]const u8`
+  validators (length, integer range). Validated with `zig test` (full semantic analysis).
 
 Each service should depend on this library through a local file dependency or copy the generated
 adapter into its build context. Services should not own migrations; migrations remain owned by the

@@ -158,6 +158,12 @@ class SoundRecorderDevicesTable extends Table {
   DateTimeColumn get consentAcceptedAt => dateTime().named("consent_accepted_at").customConstraint("TIMESTAMPTZ")();
   BoolColumn get recordingIndicatorAcknowledged => boolean().named("recording_indicator_acknowledged").clientDefault(() => false)();
   DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").nullable().customConstraint("TIMESTAMPTZ")();
+  BoolColumn get transferPaused => boolean().named("transfer_paused").clientDefault(() => false)();
+  TextColumn get transferPauseReason => text().named("transfer_pause_reason").nullable()();
+  TextColumn get networkPolicy => text().named("network_policy").clientDefault(() => 'any')();
+  IntColumn get batteryLevel => integer().named("battery_level").nullable()();
+  BoolColumn get charging => boolean().named("charging").nullable()();
+  DateTimeColumn get transferStateUpdatedAt => dateTime().named("transfer_state_updated_at").nullable().customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
 
@@ -2888,6 +2894,71 @@ class BenefactorIcpsTable extends Table {
   };
 }
 
+@DataClassName("BenefactorLeadsThrottlingData")
+class BenefactorLeadsThrottlingTable extends Table {
+  @override String get tableName => "benefactor_leads_throttling";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get benefactorLeadId => text().named("benefactor_lead_id").nullable().customConstraint("UUID REFERENCES benefactor_leads (id)")();
+  TextColumn get email => text().named("email").withLength(max: 255)();
+  TextColumn get requestType => text().named("request_type").withLength(max: 100)();
+  DateTimeColumn get lastRequestAt => dateTime().named("last_request_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get nextAllowedAt => dateTime().named("next_allowed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get requestCount => integer().named("request_count").clientDefault(() => 1)();
+  IntColumn get throttleWindowDays => integer().named("throttle_window_days")();
+  TextColumn get lastRequestSource => text().named("last_request_source").withLength(max: 80).nullable()();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("BenefactorLeadsRemindersData")
+class BenefactorLeadsRemindersTable extends Table {
+  @override String get tableName => "benefactor_leads_reminders";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get benefactorLeadId => text().named("benefactor_lead_id").nullable().customConstraint("UUID REFERENCES benefactor_leads (id)")();
+  TextColumn get reminderType => text().named("reminder_type").withLength(max: 80)();
+  TextColumn get channel => text().named("channel").withLength(max: 50).clientDefault(() => 'email')();
+  TextColumn get email => text().named("email").withLength(max: 255)();
+  TextColumn get firstName => text().named("first_name").withLength(max: 160).nullable()();
+  TextColumn get lastName => text().named("last_name").withLength(max: 160).nullable()();
+  TextColumn get subject => text().named("subject").nullable()();
+  DateTimeColumn get originalRequestSentAt => dateTime().named("original_request_sent_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get originalRequestMessageId => text().named("original_request_message_id").nullable()();
+  DateTimeColumn get sentAt => dateTime().named("sent_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastReminderSentAt => dateTime().named("last_reminder_sent_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get reminderCount => integer().named("reminder_count").clientDefault(() => 0)();
+  TextColumn get lastReminderMessageId => text().named("last_reminder_message_id").nullable()();
+  TextColumn get messageId => text().named("message_id").withLength(max: 255).nullable()();
+  TextColumn get tags => text().named("tags").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isActive => boolean().named("is_active").clientDefault(() => true)();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("VcsRepositoriesData")
 class VcsRepositoriesTable extends Table {
   @override String get tableName => "vcs_repositories";
@@ -3074,6 +3145,8 @@ const List<Type> registeredDriftTables = <Type>[
   BenefactorScrapeQueriesTable,
   BenefactorDomainSearchTrackingTable,
   BenefactorIcpsTable,
+  BenefactorLeadsThrottlingTable,
+  BenefactorLeadsRemindersTable,
   VcsRepositoriesTable,
   VcsRefsTable,
   VcsOperationsTable,

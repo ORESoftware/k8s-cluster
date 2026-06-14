@@ -73,6 +73,35 @@ function renderOutputs(schema, sourceSql) {
   add('generated/typescript/typeorm.ts', renderTypeOrmTypeScript(schema));
   add('generated/prisma/schema.prisma', renderPrisma(schema));
   add('generated/python/sqlalchemy_models.py', renderPythonSqlAlchemy(schema));
+  add('generated/python-django/models.py', renderDjangoModels(schema));
+  add('generated/python-django/__init__.py', renderDjangoInit());
+  add('generated/python-django/apps.py', renderDjangoApps());
+  add('generated/ruby-activerecord/lib/dd_pg_defs.rb', renderActiveRecord(schema));
+  add('generated/ruby-activerecord/dd_pg_defs.gemspec', renderActiveRecordGemspec());
+  add('generated/php-eloquent/src/DdPgDefs.php', renderEloquent(schema));
+  add('generated/php-eloquent/composer.json', renderEloquentComposerJson());
+  add('generated/csharp-efcore/DdPgDefs.cs', renderEfCore(schema));
+  add('generated/csharp-efcore/DdPgDefs.csproj', renderEfCoreCsproj());
+  add('generated/kotlin-exposed/src/main/kotlin/dd/pgdefs/PgDefs.kt', renderExposed(schema));
+  add('generated/kotlin-exposed/build.gradle.kts', renderExposedBuildGradle());
+  add('generated/haskell/src/DdPgDefs.hs', renderHaskell(schema));
+  add('generated/haskell/dd-pg-defs.cabal', renderHaskellCabal());
+  add('generated/ocaml/lib/dd_pg_defs.ml', renderOcaml(schema));
+  add('generated/ocaml/lib/dune', renderOcamlDune());
+  add('generated/ocaml/dune-project', renderOcamlDuneProject());
+  add('generated/fsharp/DdPgDefs.fs', renderFSharp(schema));
+  add('generated/fsharp/DdPgDefs.fsproj', renderFSharpProject());
+  add('generated/cpp/dd_pg_defs.hpp', renderCpp(schema));
+  add('generated/cpp/CMakeLists.txt', renderCppCMake());
+  add('generated/zig/dd_pg_defs.zig', renderZig(schema));
+  add('generated/zig/build.zig', renderZigBuild());
+  add('generated/typescript/sequelize.ts', renderSequelize(schema));
+  add('generated/python-peewee/models.py', renderPeewee(schema));
+  add('generated/python-peewee/__init__.py', renderPeeweeInit());
+  for (const [path, contents] of renderDoctrineEntityFiles(schema)) {
+    add(path, contents);
+  }
+  add('generated/php-doctrine/composer.json', renderDoctrineComposerJson());
   add('generated/go/gorm/go.mod', renderGoGormMod());
   add('generated/go/gorm/pg_defs.go', renderGoGorm(schema));
   add('generated/go/bun/go.mod', renderGoBunMod());
@@ -150,7 +179,7 @@ function renderDrizzleTypeScript(contract) {
   if (customSchemas.length > 0) {
     pgCoreImports.push('pgSchema');
   }
-  pgCoreImports.push('pgTable', 'text', 'timestamp', 'uniqueIndex', 'uuid', 'varchar');
+  pgCoreImports.push('pgTable', 'smallint', 'text', 'timestamp', 'uniqueIndex', 'uuid', 'varchar');
 
   const lines = [
     ...generatedNotice('//'),
@@ -506,7 +535,7 @@ function renderPythonSqlAlchemy(contract) {
     'from uuid import UUID',
     '',
     'from pydantic import BaseModel, ConfigDict, Field, field_validator',
-    'from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text',
+    'from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, SmallInteger, String, Text, text',
     'from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID',
     'from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column',
     '',
@@ -1218,6 +1247,9 @@ function drizzleColumn(column) {
     case 'text':
       builder = `text(${JSON.stringify(column.name)})`;
       break;
+    case 'smallint':
+      builder = `smallint(${JSON.stringify(column.name)})`;
+      break;
     case 'integer':
       builder = `integer(${JSON.stringify(column.name)})`;
       break;
@@ -1421,6 +1453,8 @@ function pythonSqlAlchemyType(column) {
       return `String(${column.maxLength})`;
     case 'text':
       return 'Text()';
+    case 'smallint':
+      return 'SmallInteger()';
     case 'integer':
       return 'Integer()';
     case 'bigint':
@@ -1991,6 +2025,10 @@ function rustInsertType(column) {
 }
 
 function rustBaseType(column) {
+  // sqlx is strict about Postgres OIDs: a `smallint` column must decode into `i16`, not `i32`.
+  if (column.sqlType === 'smallint') {
+    return 'i16';
+  }
   switch (column.kind) {
     case 'integer':
       return 'i32';
@@ -2243,6 +2281,9 @@ function dieselSqlType(column) {
     case 'text':
       baseType = 'Text';
       break;
+    case 'smallint':
+      baseType = 'Int2';
+      break;
     case 'integer':
       baseType = 'Int4';
       break;
@@ -2276,6 +2317,10 @@ function dieselInsertRustType(column) {
 }
 
 function seaOrmRustType(column) {
+  // SeaORM infers the column type from the Rust field type; i16 maps to SMALLINT.
+  if (column.sqlType === 'smallint') {
+    return column.notNull ? 'i16' : 'Option<i16>';
+  }
   let baseType;
   switch (column.kind) {
     case 'uuid':
@@ -2305,6 +2350,10 @@ function seaOrmRustType(column) {
 }
 
 function rustDbType(column) {
+  // Diesel's Int2 SQL type binds to i16; keep the Rust struct field in lockstep with dieselSqlType.
+  if (column.sqlType === 'smallint') {
+    return 'i16';
+  }
   switch (column.kind) {
     case 'uuid':
       return 'Uuid';
@@ -3333,6 +3382,10 @@ function jooqDataType(column) {
       return `SQLDataType.VARCHAR(${column.maxLength})`;
     case 'text':
       return 'SQLDataType.CLOB';
+    case 'smallint':
+      // Mapped to INTEGER (not SMALLINT) so the Field<T> type parameter stays Integer, matching
+      // jooqJavaType's integer-kind mapping; jOOQ coerces the narrower physical column on read.
+      return 'SQLDataType.INTEGER';
     case 'integer':
       return 'SQLDataType.INTEGER';
     case 'bigint':
@@ -3482,6 +3535,2040 @@ function hibernateJavaType(column) {
     default:
       return 'String';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Additional ORM adapters: Django (Python), ActiveRecord (Ruby), Eloquent
+// (PHP), Entity Framework Core (C#), Exposed (Kotlin), Persistent (Haskell),
+// and a Caqti-friendly OCaml module. Each mirrors the existing adapters'
+// contract philosophy: typed models for every table plus every statically
+// derivable constraint (length, regex, enum membership, integer range). FK
+// columns are emitted as plain typed fields — relationships stay enforced by
+// the database, matching the Rust/Dart/Gleam adapters.
+// ---------------------------------------------------------------------------
+
+function renderDjangoModels(contract) {
+  const validatorsUsed = new Set();
+  const needsUuid = contract.tables.some((table) =>
+    table.columns.some((column) => column.primaryKey && column.sqlType === 'uuid'),
+  );
+
+  const body = [];
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    body.push('');
+    body.push('');
+    body.push(`class ${className}(models.Model):`);
+    if (table.description) {
+      body.push(`    # ${table.description}`);
+    }
+    for (const column of table.columns) {
+      body.push(djangoField(column, validatorsUsed));
+    }
+    body.push('');
+    body.push('    class Meta:');
+    body.push('        managed = False');
+    body.push('        app_label = "dd_pg_defs"');
+    body.push(`        db_table = ${djangoDbTable(table)}`);
+  }
+
+  const header = [
+    ...generatedNotice('#'),
+    'from __future__ import annotations',
+    '',
+    ...(needsUuid ? ['import uuid', ''] : []),
+    ...(validatorsUsed.size > 0
+      ? [`from django.core.validators import ${[...validatorsUsed].sort().join(', ')}`]
+      : []),
+    'from django.db import models',
+  ];
+
+  return `${[...header, ...body].join('\n').trimEnd()}\n`;
+}
+
+function djangoField(column, validatorsUsed) {
+  const options = [];
+  if (column.primaryKey) {
+    options.push('primary_key=True');
+  }
+  // Enums are varchar/text-backed, so they must be matched before the plain varchar branch.
+  if (column.kind === 'enum') {
+    if (column.maxLength) {
+      options.push(`max_length=${column.maxLength}`);
+    }
+    options.push(
+      `choices=[${column.enumValues.map((value) => `(${pyString(value)}, ${pyString(value)})`).join(', ')}]`,
+    );
+  } else if (column.sqlType === 'varchar' && column.maxLength) {
+    options.push(`max_length=${column.maxLength}`);
+  }
+  if (!column.notNull) {
+    options.push('null=True', 'blank=True');
+  }
+  if (column.primaryKey && column.sqlType === 'uuid') {
+    options.push('default=uuid.uuid4', 'editable=False');
+  } else if (column.defaultValue !== undefined) {
+    options.push(`default=${djangoDefault(column.defaultValue)}`);
+  }
+  const validators = djangoValidators(column, validatorsUsed);
+  if (validators) {
+    options.push(`validators=[${validators}]`);
+  }
+  return `    ${column.name} = ${djangoFieldType(column)}(${options.join(', ')})`;
+}
+
+function djangoFieldType(column) {
+  if (column.primaryKey && column.sqlType === 'bigserial') {
+    return 'models.BigAutoField';
+  }
+  switch (column.kind) {
+    case 'uuid':
+      return 'models.UUIDField';
+    case 'integer':
+      return column.sqlType === 'smallint' ? 'models.SmallIntegerField' : 'models.IntegerField';
+    case 'bigint':
+      return 'models.BigIntegerField';
+    case 'boolean':
+      return 'models.BooleanField';
+    case 'timestamp':
+      return 'models.DateTimeField';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'models.JSONField';
+    case 'enum':
+      // CharField needs a max_length; a text-backed enum (no length) falls back to TextField.
+      return column.maxLength ? 'models.CharField' : 'models.TextField';
+    default:
+      return column.sqlType === 'text' ? 'models.TextField' : 'models.CharField';
+  }
+}
+
+function djangoDefault(value) {
+  if (value === true) {
+    return 'True';
+  }
+  if (value === false) {
+    return 'False';
+  }
+  if (typeof value === 'number') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return 'list';
+  }
+  if (value && typeof value === 'object') {
+    return 'dict';
+  }
+  return pyString(value);
+}
+
+function djangoValidators(column, validatorsUsed) {
+  const parts = [];
+  const validation = column.validation ?? {};
+  if (column.kind === 'string' || column.kind === 'enum') {
+    if (validation.minLength !== undefined) {
+      parts.push(`MinLengthValidator(${validation.minLength})`);
+      validatorsUsed.add('MinLengthValidator');
+    }
+    // CharField(max_length=...) already enforces the upper bound for varchars; text columns are
+    // bounded by byte-length CHECKs the DB owns, so a redundant MaxLengthValidator is omitted.
+    if (validation.regex) {
+      parts.push(`RegexValidator(regex=${pyString(validation.regex)})`);
+      validatorsUsed.add('RegexValidator');
+    }
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (validation.min !== undefined) {
+      parts.push(`MinValueValidator(${validation.min})`);
+      validatorsUsed.add('MinValueValidator');
+    }
+    if (validation.max !== undefined) {
+      parts.push(`MaxValueValidator(${validation.max})`);
+      validatorsUsed.add('MaxValueValidator');
+    }
+  }
+  return parts.join(', ');
+}
+
+function djangoDbTable(table) {
+  if (table.schema && table.schema !== 'public') {
+    // Django wraps db_table in quotes; embedding `"."` makes it emit `"schema"."table"`.
+    return JSON.stringify(`${table.schema}"."${table.name}`);
+  }
+  return JSON.stringify(table.name);
+}
+
+function renderDjangoInit() {
+  return `${[
+    ...generatedNotice('#'),
+    'from .models import *  # noqa: F401,F403',
+  ].join('\n')}\n`;
+}
+
+function renderDjangoApps() {
+  return `${[
+    ...generatedNotice('#'),
+    'from django.apps import AppConfig',
+    '',
+    '',
+    'class DdPgDefsConfig(AppConfig):',
+    '    name = "dd_pg_defs"',
+    '    verbose_name = "DD Postgres Definitions"',
+  ].join('\n')}\n`;
+}
+
+function renderActiveRecord(contract) {
+  const classes = [];
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    const lines = [];
+    lines.push(`  class ${className} < ActiveRecord::Base`);
+    if (table.description) {
+      lines.push(`    # ${table.description}`);
+    }
+    lines.push(`    self.table_name = ${JSON.stringify(physicalName(table))}`);
+    const primaryKey = table.columns.find((column) => column.primaryKey);
+    if (primaryKey) {
+      lines.push(`    self.primary_key = ${JSON.stringify(primaryKey.name)}`);
+    }
+
+    const validations = [];
+    for (const column of table.columns) {
+      validations.push(...activeRecordValidations(column));
+    }
+    if (validations.length > 0) {
+      lines.push('');
+      lines.push(...validations.map((line) => `    ${line}`));
+    }
+    lines.push('  end');
+    classes.push(lines.join('\n'));
+  }
+
+  return `${[
+    '# frozen_string_literal: true',
+    ...generatedNotice('#'),
+    '',
+    'require "active_record"',
+    '',
+    'module DdPgDefs',
+    classes.join('\n\n'),
+    'end',
+  ].join('\n')}\n`;
+}
+
+function activeRecordValidations(column) {
+  if (column.primaryKey) {
+    return [];
+  }
+  const checks = [];
+  const validation = column.validation ?? {};
+  const name = column.name;
+  const nilOpt = column.notNull ? '' : ', allow_nil: true';
+  const isTimestampDefault = name === 'created_at' || name === 'updated_at';
+  const required =
+    column.notNull && column.defaultSql === undefined && !column.generated && !isTimestampDefault;
+
+  if (required) {
+    checks.push(`validates :${name}, presence: true`);
+  }
+  if (column.kind === 'enum') {
+    const values = column.enumValues.map((value) => JSON.stringify(value)).join(', ');
+    checks.push(`validates :${name}, inclusion: { in: [${values}] }${nilOpt}`);
+  }
+  if (column.kind === 'string') {
+    const lengthOpts = [];
+    if (validation.minLength !== undefined) {
+      lengthOpts.push(`minimum: ${validation.minLength}`);
+    }
+    if (validation.maxLength !== undefined) {
+      lengthOpts.push(`maximum: ${validation.maxLength}`);
+    }
+    if (lengthOpts.length > 0) {
+      checks.push(`validates :${name}, length: { ${lengthOpts.join(', ')} }${nilOpt}`);
+    }
+    if (validation.regex) {
+      checks.push(`validates :${name}, format: { with: ${rubyRegexLiteral(validation.regex)} }${nilOpt}`);
+    }
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    const numericOpts = ['only_integer: true'];
+    if (validation.min !== undefined) {
+      numericOpts.push(`greater_than_or_equal_to: ${validation.min}`);
+    }
+    if (validation.max !== undefined) {
+      numericOpts.push(`less_than_or_equal_to: ${validation.max}`);
+    }
+    checks.push(`validates :${name}, numericality: { ${numericOpts.join(', ')} }${nilOpt}`);
+  }
+  return checks;
+}
+
+function rubyRegexLiteral(pattern) {
+  // Postgres `~ '^...$'` anchors at string boundaries. Ruby's `^`/`$` are line anchors, and Rails'
+  // format validator rejects leading `^` / trailing `$` as a multiline-anchor security risk, so we
+  // translate the outer anchors to `\A` / `\z` (whole-string match) and build via Regexp.new to
+  // avoid forward-slash delimiter escaping.
+  let translated = pattern;
+  if (translated.startsWith('^')) {
+    translated = `\\A${translated.slice(1)}`;
+  }
+  if (translated.endsWith('$') && !translated.endsWith('\\$')) {
+    translated = `${translated.slice(0, -1)}\\z`;
+  }
+  return `Regexp.new(${JSON.stringify(translated)})`;
+}
+
+function renderActiveRecordGemspec() {
+  return `${[
+    '# frozen_string_literal: true',
+    ...generatedNotice('#'),
+    '',
+    'Gem::Specification.new do |spec|',
+    '  spec.name = "dd_pg_defs"',
+    '  spec.version = "0.1.0"',
+    '  spec.summary = "Canonical remote Postgres schema definitions as ActiveRecord models."',
+    '  spec.authors = ["@dd/pg-defs"]',
+    '  spec.files = ["lib/dd_pg_defs.rb"]',
+    '  spec.require_paths = ["lib"]',
+    '  spec.required_ruby_version = ">= 3.0"',
+    '  spec.add_dependency "activerecord", ">= 7.0"',
+    'end',
+  ].join('\n')}\n`;
+}
+
+function renderEloquent(contract) {
+  const lines = [
+    '<?php',
+    '',
+    ...generatedNotice('//'),
+    '',
+    'declare(strict_types=1);',
+    '',
+    'namespace DdPgDefs;',
+    '',
+    'use Illuminate\\Database\\Eloquent\\Model;',
+  ];
+
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    const primaryKey = table.columns.find((column) => column.primaryKey);
+    const hasTimestamps =
+      table.columns.some((column) => column.name === 'created_at') &&
+      table.columns.some((column) => column.name === 'updated_at');
+    const fillable = table.columns
+      .filter((column) => !column.primaryKey)
+      .map((column) => phpString(column.name));
+    const casts = table.columns
+      .map((column) => [column, eloquentCast(column)])
+      .filter(([, cast]) => cast !== null)
+      .map(([column, cast]) => `${phpString(column.name)} => ${phpString(cast)}`);
+
+    lines.push('');
+    if (table.description) {
+      lines.push(`/** ${table.description} */`);
+    }
+    lines.push(`class ${className} extends Model`);
+    lines.push('{');
+    lines.push(`    protected $table = ${phpString(physicalName(table))};`);
+    if (primaryKey) {
+      lines.push(`    protected $primaryKey = ${phpString(primaryKey.name)};`);
+    }
+    if (primaryKey && primaryKey.sqlType === 'uuid') {
+      lines.push('    public $incrementing = false;');
+      lines.push("    protected $keyType = 'string';");
+    }
+    lines.push(`    public $timestamps = ${hasTimestamps ? 'true' : 'false'};`);
+    lines.push(`    protected $fillable = [${fillable.join(', ')}];`);
+    if (casts.length > 0) {
+      lines.push(`    protected $casts = [${casts.join(', ')}];`);
+    }
+    lines.push('');
+    lines.push('    /** @return array<string, array<int, string>> */');
+    lines.push('    public static function rules(): array');
+    lines.push('    {');
+    lines.push('        return [');
+    for (const column of table.columns) {
+      if (column.primaryKey || column.name === 'created_at' || column.name === 'updated_at') {
+        continue;
+      }
+      lines.push(`            ${phpString(column.name)} => [${eloquentRules(column).join(', ')}],`);
+    }
+    lines.push('        ];');
+    lines.push('    }');
+    lines.push('}');
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function eloquentCast(column) {
+  switch (column.kind) {
+    case 'integer':
+    case 'bigint':
+      return 'integer';
+    case 'boolean':
+      return 'boolean';
+    case 'timestamp':
+      return 'datetime';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'array';
+    default:
+      return null;
+  }
+}
+
+function eloquentRules(column) {
+  const out = [];
+  const required = column.notNull && column.defaultSql === undefined && !column.generated;
+  out.push(phpString(required ? 'required' : 'nullable'));
+  switch (column.kind) {
+    case 'uuid':
+      out.push(phpString('uuid'));
+      break;
+    case 'integer':
+    case 'bigint':
+      out.push(phpString('integer'));
+      break;
+    case 'boolean':
+      out.push(phpString('boolean'));
+      break;
+    case 'timestamp':
+      out.push(phpString('date'));
+      break;
+    case 'jsonObject':
+    case 'jsonArray':
+      out.push(phpString('array'));
+      break;
+    default:
+      out.push(phpString('string'));
+      break;
+  }
+  const validation = column.validation ?? {};
+  if (column.kind === 'string') {
+    if (validation.minLength !== undefined) {
+      out.push(phpString(`min:${validation.minLength}`));
+    }
+    if (validation.maxLength !== undefined) {
+      out.push(phpString(`max:${validation.maxLength}`));
+    }
+    if (validation.regex) {
+      out.push(phpRegexRule(validation.regex));
+    }
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (validation.min !== undefined) {
+      out.push(phpString(`min:${validation.min}`));
+    }
+    if (validation.max !== undefined) {
+      out.push(phpString(`max:${validation.max}`));
+    }
+  }
+  if (column.kind === 'enum') {
+    out.push(phpString(`in:${column.enumValues.join(',')}`));
+  }
+  return out;
+}
+
+function phpString(value) {
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function phpRegexRule(pattern) {
+  // Laravel's `regex:` rule runs preg_match. Pass it as an array element (not a `|` string) so
+  // alternation survives, and escape the `/` delimiter inside the pattern.
+  const escaped = pattern.replace(/\//g, '\\/');
+  return phpString(`regex:/${escaped}/`);
+}
+
+function renderEloquentComposerJson() {
+  return `${JSON.stringify(
+    {
+      name: 'dd/pg-defs',
+      description: 'Canonical remote Postgres schema definitions as Eloquent models.',
+      type: 'library',
+      license: 'proprietary',
+      require: {
+        php: '>=8.1',
+        'illuminate/database': '^10.0 || ^11.0',
+      },
+      autoload: {
+        files: ['src/DdPgDefs.php'],
+      },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function renderEfCore(contract) {
+  const lines = [
+    ...generatedNotice('//'),
+    'using System;',
+    'using System.ComponentModel.DataAnnotations;',
+    'using System.ComponentModel.DataAnnotations.Schema;',
+    'using Microsoft.EntityFrameworkCore;',
+    '',
+    '#nullable enable',
+    '',
+    'namespace DdPgDefs;',
+  ];
+
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    lines.push('');
+    if (table.description) {
+      lines.push(`/// <summary>${escapeXmlDoc(table.description)}</summary>`);
+    }
+    lines.push(
+      table.schema && table.schema !== 'public'
+        ? `[Table(${JSON.stringify(table.name)}, Schema = ${JSON.stringify(table.schema)})]`
+        : `[Table(${JSON.stringify(table.name)})]`,
+    );
+    lines.push(`public class ${className}`);
+    lines.push('{');
+    table.columns.forEach((column, index) => {
+      if (index > 0) {
+        lines.push('');
+      }
+      lines.push(...efCoreProperty(column).map((line) => `    ${line}`));
+    });
+    lines.push('}');
+  }
+
+  // DbContext exposing one DbSet per table. The mapping lives on the entity attributes, so the
+  // context only needs the sets plus the constructor EF Core's DI expects.
+  lines.push('');
+  lines.push('public class DdPgDefsContext : DbContext');
+  lines.push('{');
+  lines.push('    public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)');
+  lines.push('    {');
+  lines.push('    }');
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    lines.push('');
+    lines.push(`    public DbSet<${className}> ${className}Set => Set<${className}>();`);
+  }
+  lines.push('}');
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function efCoreProperty(column) {
+  const lines = [];
+  const validation = column.validation ?? {};
+  const { base: baseType, valueType } = efCoreType(column);
+  const propType = column.notNull ? baseType : `${baseType}?`;
+
+  if (column.primaryKey) {
+    lines.push('[Key]');
+    // PK values are generated by the database (gen_random_uuid()/bigserial); let EF read them back.
+    lines.push('[DatabaseGenerated(DatabaseGeneratedOption.Identity)]');
+  }
+  if (column.notNull && !valueType && !column.primaryKey) {
+    lines.push('[Required]');
+  }
+  lines.push(
+    column.kind === 'jsonObject' || column.kind === 'jsonArray'
+      ? `[Column(${JSON.stringify(column.name)}, TypeName = "jsonb")]`
+      : `[Column(${JSON.stringify(column.name)})]`,
+  );
+  if (column.sqlType === 'varchar' && column.maxLength) {
+    lines.push(`[MaxLength(${column.maxLength})]`);
+  }
+  if (column.kind === 'enum') {
+    const alternation = column.enumValues.map(escapeRegexLiteral).join('|');
+    lines.push(`[RegularExpression(@"^(${escapeCsharpVerbatim(alternation)})$")]`);
+  } else if (column.kind === 'string' && validation.regex) {
+    lines.push(`[RegularExpression(@"${escapeCsharpVerbatim(validation.regex)}")]`);
+  }
+  const range = efCoreRange(column);
+  if (range) {
+    lines.push(range);
+  }
+
+  const initializer = !column.notNull || valueType ? '' : ' = null!;';
+  lines.push(`public ${propType} ${pascal(column.name)} { get; set; }${initializer}`);
+  return lines;
+}
+
+function efCoreType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return { base: 'Guid', valueType: true };
+    case 'integer':
+      return { base: column.sqlType === 'smallint' ? 'short' : 'int', valueType: true };
+    case 'bigint':
+      return { base: 'long', valueType: true };
+    case 'boolean':
+      return { base: 'bool', valueType: true };
+    case 'timestamp':
+      return { base: 'DateTimeOffset', valueType: true };
+    case 'jsonObject':
+    case 'jsonArray':
+      return { base: 'string', valueType: false };
+    default:
+      return { base: 'string', valueType: false };
+  }
+}
+
+function efCoreRange(column) {
+  const validation = column.validation ?? {};
+  if (validation.min === undefined && validation.max === undefined) {
+    return null;
+  }
+  if (column.kind === 'bigint') {
+    const min = validation.min !== undefined ? String(validation.min) : '-9223372036854775808';
+    const max = validation.max !== undefined ? String(validation.max) : '9223372036854775807';
+    return `[Range(typeof(long), ${JSON.stringify(min)}, ${JSON.stringify(max)})]`;
+  }
+  // int / smallint share the int-literal Range overload; one-sided bounds fill the int extreme.
+  const min = validation.min !== undefined ? validation.min : -2147483648;
+  const max = validation.max !== undefined ? validation.max : 2147483647;
+  return `[Range(${min}, ${max})]`;
+}
+
+function escapeCsharpVerbatim(value) {
+  // In a C# verbatim string (@"..."), only the double quote needs escaping (by doubling it).
+  return value.replace(/"/g, '""');
+}
+
+function escapeRegexLiteral(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeXmlDoc(value) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderEfCoreCsproj() {
+  return `${[
+    '<!-- Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth. -->',
+    '<Project Sdk="Microsoft.NET.Sdk">',
+    '  <PropertyGroup>',
+    '    <TargetFramework>net8.0</TargetFramework>',
+    '    <Nullable>enable</Nullable>',
+    '    <ImplicitUsings>disable</ImplicitUsings>',
+    '    <LangVersion>latest</LangVersion>',
+    '  </PropertyGroup>',
+    '  <ItemGroup>',
+    '    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />',
+    '    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />',
+    '  </ItemGroup>',
+    '</Project>',
+  ].join('\n')}\n`;
+}
+
+function renderExposed(contract) {
+  const lines = [
+    ...generatedNotice('//'),
+    'package dd.pgdefs',
+    '',
+    'import java.time.OffsetDateTime',
+    'import java.util.UUID',
+    'import org.jetbrains.exposed.sql.ResultRow',
+    'import org.jetbrains.exposed.sql.Table',
+    'import org.jetbrains.exposed.sql.javatime.timestampWithTimeZone',
+    'import org.jetbrains.exposed.sql.json.jsonb',
+  ];
+
+  for (const table of contract.tables) {
+    const objectName = pascal(table.name);
+    lines.push('');
+    if (table.description) {
+      lines.push(`// ${table.description}`);
+    }
+    lines.push(`object ${objectName} : Table(${JSON.stringify(physicalName(table))}) {`);
+    for (const column of table.columns) {
+      const builder = exposedColumnBuilder(column);
+      const suffix = column.notNull ? '' : '.nullable()';
+      lines.push(`    val ${exposedFieldName(column)} = ${builder}${suffix}`);
+    }
+    const primaryKeys = table.columns.filter((column) => column.primaryKey);
+    if (primaryKeys.length > 0) {
+      const refs = primaryKeys.map((column) => exposedFieldName(column)).join(', ');
+      lines.push('');
+      lines.push(`    override val primaryKey = PrimaryKey(${refs})`);
+    }
+    lines.push('}');
+  }
+
+  // Plain row holders plus ResultRow mappers so callers can decode a queried row into a struct:
+  //   transaction { AppConfig.selectAll().map(::toAppConfigRow) }
+  for (const table of contract.tables) {
+    const objectName = pascal(table.name);
+    const rowName = `${objectName}Row`;
+    lines.push('');
+    lines.push(`data class ${rowName}(`);
+    for (const column of table.columns) {
+      lines.push(`    val ${exposedFieldName(column)}: ${exposedKotlinType(column)},`);
+    }
+    lines.push(')');
+    lines.push('');
+    lines.push(`fun to${rowName}(row: ResultRow): ${rowName} = ${rowName}(`);
+    for (const column of table.columns) {
+      lines.push(`    row[${objectName}.${exposedFieldName(column)}],`);
+    }
+    lines.push(')');
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function exposedKotlinType(column) {
+  let base;
+  switch (column.kind) {
+    case 'uuid':
+      base = 'UUID';
+      break;
+    case 'integer':
+      base = column.sqlType === 'smallint' ? 'Short' : 'Int';
+      break;
+    case 'bigint':
+      base = 'Long';
+      break;
+    case 'boolean':
+      base = 'Boolean';
+      break;
+    case 'timestamp':
+      base = 'OffsetDateTime';
+      break;
+    default:
+      base = 'String';
+      break;
+  }
+  return column.notNull ? base : `${base}?`;
+}
+
+function exposedColumnBuilder(column) {
+  const name = JSON.stringify(column.name);
+  switch (column.kind) {
+    case 'uuid':
+      return `uuid(${name})`;
+    case 'integer':
+      return `${column.sqlType === 'smallint' ? 'short' : 'integer'}(${name})`;
+    case 'bigint':
+      return `long(${name})`;
+    case 'boolean':
+      return `bool(${name})`;
+    case 'timestamp':
+      return `timestampWithTimeZone(${name})`;
+    case 'jsonObject':
+    case 'jsonArray':
+      // Store/read the raw JSON text but register the column as jsonb so writes cast correctly.
+      return `jsonb<String>(${name}, { it }, { it })`;
+    case 'enum':
+      return column.maxLength ? `varchar(${name}, ${column.maxLength})` : `text(${name})`;
+    default:
+      return column.sqlType === 'varchar' && column.maxLength
+        ? `varchar(${name}, ${column.maxLength})`
+        : `text(${name})`;
+  }
+}
+
+function exposedFieldName(column) {
+  // Kotlin `is`/`object`/etc. are keywords; backtick-escape a camelCased name that lands on one.
+  const KOTLIN_KEYWORDS = new Set([
+    'as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in', 'interface',
+    'is', 'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true', 'try', 'typealias',
+    'typeof', 'val', 'var', 'when', 'while',
+  ]);
+  const name = camel(column.name);
+  return KOTLIN_KEYWORDS.has(name) ? `\`${name}\`` : name;
+}
+
+function renderExposedBuildGradle() {
+  return `${[
+    '// Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth.',
+    'plugins {',
+    '    kotlin("jvm") version "1.9.24"',
+    '}',
+    '',
+    'repositories {',
+    '    mavenCentral()',
+    '}',
+    '',
+    'dependencies {',
+    '    implementation("org.jetbrains.exposed:exposed-core:0.53.0")',
+    '    implementation("org.jetbrains.exposed:exposed-json:0.53.0")',
+    '    implementation("org.jetbrains.exposed:exposed-java-time:0.53.0")',
+    '}',
+  ].join('\n')}\n`;
+}
+
+function renderHaskell(contract) {
+  const blocks = [
+    [
+      '{-# LANGUAGE OverloadedStrings #-}',
+      '',
+      ...generatedNotice('--'),
+      '',
+      'module DdPgDefs where',
+      '',
+      'import Data.Text (Text)',
+      'import qualified Data.Text as T',
+      'import Database.PostgreSQL.Simple.FromRow (FromRow (..), field)',
+    ].join('\n'),
+  ];
+
+  for (const table of contract.tables) {
+    const base = table.names?.rust ?? pascal(table.name);
+    const tableConst = camel(table.name);
+    const lines = [];
+
+    lines.push(`${tableConst}Table :: Text`);
+    lines.push(`${tableConst}Table = ${JSON.stringify(physicalName(table))}`);
+    lines.push('');
+    lines.push(`${tableConst}Columns :: [Text]`);
+    lines.push(
+      `${tableConst}Columns = [${table.columns.map((column) => JSON.stringify(column.name)).join(', ')}]`,
+    );
+    lines.push('');
+    lines.push(`${tableConst}SelectSql :: Text`);
+    lines.push(
+      `${tableConst}SelectSql = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))}`,
+    );
+
+    for (const column of table.columns.filter((item) => item.kind === 'enum')) {
+      const typeName = `${base}${pascal(column.name)}`;
+      const ctor = (value) => `${typeName}${pascal(value)}`;
+      lines.push('');
+      lines.push(
+        `data ${typeName} = ${column.enumValues.map((value) => ctor(value)).join(' | ')}`,
+      );
+      lines.push('  deriving (Eq, Show)');
+      lines.push('');
+      lines.push(`${camel(typeName)}ToText :: ${typeName} -> Text`);
+      lines.push(`${camel(typeName)}ToText value = case value of`);
+      for (const value of column.enumValues) {
+        lines.push(`  ${ctor(value)} -> ${JSON.stringify(value)}`);
+      }
+      lines.push('');
+      lines.push(`parse${typeName} :: Text -> Either Text ${typeName}`);
+      lines.push(`parse${typeName} value = case value of`);
+      for (const value of column.enumValues) {
+        lines.push(`  ${JSON.stringify(value)} -> Right ${ctor(value)}`);
+      }
+      lines.push(
+        `  _ -> Left (T.append ${JSON.stringify(`unsupported ${table.name}.${column.name}: `)} value)`,
+      );
+    }
+
+    lines.push('');
+    lines.push(`data ${base}Row = ${base}Row`);
+    table.columns.forEach((column, index) => {
+      const prefix = index === 0 ? '  {' : '  ,';
+      lines.push(`${prefix} ${haskellFieldName(base, column)} :: ${haskellType(column)}`);
+    });
+    lines.push('  } deriving (Eq, Show)');
+    lines.push('');
+    lines.push(`instance FromRow ${base}Row where`);
+    const fieldChain = `field${' <*> field'.repeat(Math.max(0, table.columns.length - 1))}`;
+    lines.push(`  fromRow = ${base}Row <$> ${fieldChain}`);
+
+    for (const column of table.columns) {
+      const validator = haskellValidator(table, base, column);
+      if (validator.length > 0) {
+        lines.push('');
+        lines.push(...validator);
+      }
+    }
+
+    blocks.push(lines.join('\n'));
+  }
+
+  return `${blocks.join('\n\n').trimEnd()}\n`;
+}
+
+function haskellFieldName(base, column) {
+  return `${camel(base)}${pascal(column.name)}`;
+}
+
+function haskellType(column) {
+  let baseType;
+  switch (column.kind) {
+    case 'integer':
+    case 'bigint':
+      baseType = 'Int';
+      break;
+    case 'boolean':
+      baseType = 'Bool';
+      break;
+    default:
+      baseType = 'Text';
+      break;
+  }
+  return column.notNull ? baseType : `(Maybe ${baseType})`;
+}
+
+function haskellValidator(table, base, column) {
+  const validation = column.validation ?? {};
+  const fnName = `validate${base}${pascal(column.name)}`;
+  const qualified = `${table.name}.${column.name}`;
+  if (column.kind === 'string') {
+    const guards = [];
+    if (validation.minLength !== undefined) {
+      guards.push(
+        `  | T.length value < ${validation.minLength} = Left ${JSON.stringify(`${qualified} must be at least ${validation.minLength} characters`)}`,
+      );
+    }
+    if (validation.maxLength !== undefined) {
+      guards.push(
+        `  | T.length value > ${validation.maxLength} = Left ${JSON.stringify(`${qualified} must be at most ${validation.maxLength} characters`)}`,
+      );
+    }
+    if (guards.length === 0) {
+      return [];
+    }
+    return [
+      `${fnName} :: Text -> Either Text Text`,
+      `${fnName} value`,
+      ...guards,
+      '  | otherwise = Right value',
+    ];
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    const guards = [];
+    if (validation.min !== undefined) {
+      guards.push(
+        `  | value < ${validation.min} = Left ${JSON.stringify(`${qualified} is below the minimum`)}`,
+      );
+    }
+    if (validation.max !== undefined) {
+      guards.push(
+        `  | value > ${validation.max} = Left ${JSON.stringify(`${qualified} is above the maximum`)}`,
+      );
+    }
+    if (guards.length === 0) {
+      return [];
+    }
+    return [
+      `${fnName} :: Int -> Either Text Int`,
+      `${fnName} value`,
+      ...guards,
+      '  | otherwise = Right value',
+    ];
+  }
+  return [];
+}
+
+function renderHaskellCabal() {
+  return `${[
+    '-- Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth.',
+    'cabal-version: 2.4',
+    'name: dd-pg-defs',
+    'version: 0.1.0.0',
+    'synopsis: Canonical remote Postgres schema definitions as Haskell records.',
+    'build-type: Simple',
+    '',
+    'library',
+    '  exposed-modules: DdPgDefs',
+    '  hs-source-dirs: src',
+    '  build-depends: base >=4.14 && <5, text, postgresql-simple',
+    '  default-language: Haskell2010',
+  ].join('\n')}\n`;
+}
+
+function renderOcaml(contract) {
+  const blocks = [generatedNotice('').map((line) => `(*${line} *)`).join('\n')];
+
+  for (const table of contract.tables) {
+    const tableConst = table.name;
+    const lines = [];
+
+    lines.push(`let ${tableConst}_table = ${JSON.stringify(physicalName(table))}`);
+    lines.push('');
+    lines.push(
+      `let ${tableConst}_columns = [${table.columns.map((column) => JSON.stringify(column.name)).join('; ')}]`,
+    );
+    lines.push('');
+    lines.push(
+      `let ${tableConst}_select_sql = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))}`,
+    );
+
+    for (const column of table.columns.filter((item) => item.kind === 'enum')) {
+      const typeName = `${table.name}_${column.name}`;
+      const tag = (value) => `\`${pascal(value)}`;
+      lines.push('');
+      lines.push(`type ${typeName} = [ ${column.enumValues.map((value) => tag(value)).join(' | ')} ]`);
+      lines.push('');
+      lines.push(`let ${typeName}_to_string (value : ${typeName}) : string =`);
+      lines.push('  match value with');
+      for (const value of column.enumValues) {
+        lines.push(`  | ${tag(value)} -> ${JSON.stringify(value)}`);
+      }
+      lines.push('');
+      lines.push(`let parse_${typeName} (value : string) : (${typeName}, string) result =`);
+      lines.push('  match value with');
+      for (const value of column.enumValues) {
+        lines.push(`  | ${JSON.stringify(value)} -> Ok ${tag(value)}`);
+      }
+      lines.push(
+        `  | _ -> Error (${JSON.stringify(`unsupported ${table.name}.${column.name}: `)} ^ value)`,
+      );
+    }
+
+    lines.push('');
+    lines.push(`type ${table.name}_row = {`);
+    for (const column of table.columns) {
+      lines.push(`  ${ocamlFieldName(table, column)} : ${ocamlType(column)};`);
+    }
+    lines.push('}');
+
+    // Row decoder: convert one Postgres row into the typed record. `get` returns the column at a
+    // 0-based index as text (pairs with `<table>_select_sql`, which casts uuid/timestamp/jsonb to
+    // text); `is_null` reports SQL NULL. Library-agnostic — adapt the getters to postgresql-ocaml,
+    // Caqti, or pgx. Booleans arrive as Postgres text "t"/"f".
+    const hasNullable = table.columns.some((column) => !column.notNull);
+    const isNullParam = hasNullable
+      ? '~(is_null : int -> bool)'
+      : '~is_null:(_ : int -> bool)';
+    lines.push('');
+    lines.push(`let ${table.name}_row_of_row ~(get : int -> string) ${isNullParam} : ${table.name}_row =`);
+    lines.push('  {');
+    table.columns.forEach((column, index) => {
+      lines.push(`    ${ocamlFieldName(table, column)} = ${ocamlRowDecode(column, index)};`);
+    });
+    lines.push('  }');
+
+    for (const column of table.columns) {
+      const validator = ocamlValidator(table, column);
+      if (validator.length > 0) {
+        lines.push('');
+        lines.push(...validator);
+      }
+    }
+
+    blocks.push(lines.join('\n'));
+  }
+
+  return `${blocks.join('\n\n').trimEnd()}\n`;
+}
+
+function ocamlFieldName(table, column) {
+  return `${table.name}_${column.name}`;
+}
+
+function ocamlType(column) {
+  let baseType;
+  switch (column.kind) {
+    case 'integer':
+      // Covers `integer` and `smallint`; both fit OCaml's native (63-bit) int.
+      baseType = 'int';
+      break;
+    case 'bigint':
+      // OCaml's native int is 63-bit, so a 64-bit bigint must use int64 to avoid overflow.
+      baseType = 'int64';
+      break;
+    case 'boolean':
+      baseType = 'bool';
+      break;
+    default:
+      baseType = 'string';
+      break;
+  }
+  return column.notNull ? baseType : `${baseType} option`;
+}
+
+function ocamlRowDecode(column, index) {
+  let expr;
+  switch (column.kind) {
+    case 'integer':
+      expr = `int_of_string (get ${index})`;
+      break;
+    case 'bigint':
+      expr = `Int64.of_string (get ${index})`;
+      break;
+    case 'boolean':
+      expr = `(get ${index} = "t")`;
+      break;
+    default:
+      expr = `get ${index}`;
+      break;
+  }
+  if (!column.notNull) {
+    return `(if is_null ${index} then None else Some (${expr}))`;
+  }
+  return expr;
+}
+
+function ocamlValidator(table, column) {
+  const validation = column.validation ?? {};
+  const fnName = `validate_${table.name}_${column.name}`;
+  const qualified = `${table.name}.${column.name}`;
+  if (column.kind === 'string') {
+    const branches = [];
+    if (validation.minLength !== undefined) {
+      branches.push(
+        `  if String.length value < ${validation.minLength} then Error ${JSON.stringify(`${qualified} must be at least ${validation.minLength} characters`)}`,
+      );
+    }
+    if (validation.maxLength !== undefined) {
+      branches.push(
+        `  ${branches.length > 0 ? 'else ' : ''}if String.length value > ${validation.maxLength} then Error ${JSON.stringify(`${qualified} must be at most ${validation.maxLength} characters`)}`,
+      );
+    }
+    if (branches.length === 0) {
+      return [];
+    }
+    return [
+      `let ${fnName} (value : string) : (string, string) result =`,
+      ...branches,
+      '  else Ok value',
+    ];
+  }
+  if (column.kind === 'integer') {
+    const branches = [];
+    if (validation.min !== undefined) {
+      branches.push(
+        `  if value < ${validation.min} then Error ${JSON.stringify(`${qualified} is below the minimum`)}`,
+      );
+    }
+    if (validation.max !== undefined) {
+      branches.push(
+        `  ${branches.length > 0 ? 'else ' : ''}if value > ${validation.max} then Error ${JSON.stringify(`${qualified} is above the maximum`)}`,
+      );
+    }
+    if (branches.length === 0) {
+      return [];
+    }
+    return [
+      `let ${fnName} (value : int) : (int, string) result =`,
+      ...branches,
+      '  else Ok value',
+    ];
+  }
+  if (column.kind === 'bigint') {
+    const branches = [];
+    if (validation.min !== undefined) {
+      branches.push(
+        `  if Int64.compare value ${validation.min}L < 0 then Error ${JSON.stringify(`${qualified} is below the minimum`)}`,
+      );
+    }
+    if (validation.max !== undefined) {
+      branches.push(
+        `  ${branches.length > 0 ? 'else ' : ''}if Int64.compare value ${validation.max}L > 0 then Error ${JSON.stringify(`${qualified} is above the maximum`)}`,
+      );
+    }
+    if (branches.length === 0) {
+      return [];
+    }
+    return [
+      `let ${fnName} (value : int64) : (int64, string) result =`,
+      ...branches,
+      '  else Ok value',
+    ];
+  }
+  return [];
+}
+
+function renderOcamlDuneProject() {
+  return '(lang dune 3.0)\n';
+}
+
+function renderOcamlDune() {
+  return `${['(library', ' (name dd_pg_defs))'].join('\n')}\n`;
+}
+
+function renderFSharp(contract) {
+  const blocks = [
+    [
+      ...generatedNotice('//'),
+      'module DdPgDefs',
+      '',
+      'open System.Text.RegularExpressions',
+    ].join('\n'),
+  ];
+
+  for (const table of contract.tables) {
+    const base = table.names?.rust ?? pascal(table.name);
+    const tableConst = camel(table.name);
+    const lines = [];
+
+    lines.push(`let ${tableConst}Table = ${JSON.stringify(physicalName(table))}`);
+    lines.push(
+      `let ${tableConst}Columns = [ ${table.columns.map((column) => JSON.stringify(column.name)).join('; ')} ]`,
+    );
+    lines.push(`let ${tableConst}SelectSql = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))}`);
+
+    for (const column of table.columns.filter((item) => item.kind === 'enum')) {
+      const typeName = `${base}${pascal(column.name)}`;
+      lines.push('');
+      lines.push('[<RequireQualifiedAccess>]');
+      lines.push(`type ${typeName} =`);
+      for (const value of column.enumValues) {
+        lines.push(`    | ${pascal(value)}`);
+      }
+      lines.push('');
+      lines.push(`let ${camel(typeName)}ToString (value: ${typeName}) : string =`);
+      lines.push('    match value with');
+      for (const value of column.enumValues) {
+        lines.push(`    | ${typeName}.${pascal(value)} -> ${JSON.stringify(value)}`);
+      }
+      lines.push('');
+      lines.push(`let parse${typeName} (value: string) : Result<${typeName}, string> =`);
+      lines.push('    match value with');
+      for (const value of column.enumValues) {
+        lines.push(`    | ${JSON.stringify(value)} -> Ok ${typeName}.${pascal(value)}`);
+      }
+      lines.push(`    | _ -> Error (${JSON.stringify(`unsupported ${table.name}.${column.name}: `)} + value)`);
+    }
+
+    lines.push('');
+    lines.push(`type ${base}Row =`);
+    table.columns.forEach((column, index) => {
+      const prefix = index === 0 ? '    {' : '     ';
+      lines.push(`${prefix} ${base}${pascal(column.name)}: ${fsharpType(column)}`);
+    });
+    lines.push('    }');
+    lines.push('');
+    lines.push(`let ${camel(base)}RowOfRow (get: int -> string) (isNullAt: int -> bool) : ${base}Row =`);
+    table.columns.forEach((column, index) => {
+      const prefix = index === 0 ? '    {' : '     ';
+      lines.push(`${prefix} ${base}${pascal(column.name)} = ${fsharpRowDecode(column, index)}`);
+    });
+    lines.push('    }');
+
+    for (const column of table.columns) {
+      const validator = fsharpValidator(table, base, column);
+      if (validator.length > 0) {
+        lines.push('');
+        lines.push(...validator);
+      }
+    }
+
+    blocks.push(lines.join('\n'));
+  }
+
+  return `${blocks.join('\n\n').trimEnd()}\n`;
+}
+
+function fsharpType(column) {
+  let baseType;
+  switch (column.kind) {
+    case 'integer':
+      baseType = 'int';
+      break;
+    case 'bigint':
+      baseType = 'int64';
+      break;
+    case 'boolean':
+      baseType = 'bool';
+      break;
+    default:
+      baseType = 'string';
+      break;
+  }
+  return column.notNull ? baseType : `${baseType} option`;
+}
+
+function fsharpRowDecode(column, index) {
+  let expr;
+  switch (column.kind) {
+    case 'integer':
+      expr = `int (get ${index})`;
+      break;
+    case 'bigint':
+      expr = `int64 (get ${index})`;
+      break;
+    case 'boolean':
+      expr = `(get ${index} = "t")`;
+      break;
+    default:
+      expr = `get ${index}`;
+      break;
+  }
+  if (!column.notNull) {
+    return `(if isNullAt ${index} then None else Some (${expr}))`;
+  }
+  return expr;
+}
+
+function fsharpValidator(table, base, column) {
+  const validation = column.validation ?? {};
+  const fnName = `validate${base}${pascal(column.name)}`;
+  const qualified = `${table.name}.${column.name}`;
+  const branches = [];
+  if (column.kind === 'string') {
+    if (validation.minLength !== undefined) {
+      branches.push(
+        `    ${branches.length ? 'elif' : 'if'} value.Length < ${validation.minLength} then Error ${JSON.stringify(`${qualified} must be at least ${validation.minLength} characters`)}`,
+      );
+    }
+    if (validation.maxLength !== undefined) {
+      branches.push(
+        `    ${branches.length ? 'elif' : 'if'} value.Length > ${validation.maxLength} then Error ${JSON.stringify(`${qualified} must be at most ${validation.maxLength} characters`)}`,
+      );
+    }
+    if (validation.regex) {
+      branches.push(
+        `    ${branches.length ? 'elif' : 'if'} not (Regex.IsMatch(value, @${JSON.stringify(validation.regex)})) then Error ${JSON.stringify(`${qualified} does not match the required pattern`)}`,
+      );
+    }
+    if (branches.length === 0) {
+      return [];
+    }
+    return [`let ${fnName} (value: string) : Result<string, string> =`, ...branches, '    else Ok value'];
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    const suffix = column.kind === 'bigint' ? 'L' : '';
+    if (validation.min !== undefined) {
+      branches.push(
+        `    ${branches.length ? 'elif' : 'if'} value < ${validation.min}${suffix} then Error ${JSON.stringify(`${qualified} is below the minimum`)}`,
+      );
+    }
+    if (validation.max !== undefined) {
+      branches.push(
+        `    ${branches.length ? 'elif' : 'if'} value > ${validation.max}${suffix} then Error ${JSON.stringify(`${qualified} is above the maximum`)}`,
+      );
+    }
+    if (branches.length === 0) {
+      return [];
+    }
+    const fsType = column.kind === 'bigint' ? 'int64' : 'int';
+    return [`let ${fnName} (value: ${fsType}) : Result<${fsType}, string> =`, ...branches, '    else Ok value'];
+  }
+  return [];
+}
+
+function renderFSharpProject() {
+  return `${[
+    '<!-- Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth. -->',
+    '<Project Sdk="Microsoft.NET.Sdk">',
+    '  <PropertyGroup>',
+    '    <TargetFramework>net8.0</TargetFramework>',
+    '  </PropertyGroup>',
+    '  <ItemGroup>',
+    '    <Compile Include="DdPgDefs.fs" />',
+    '  </ItemGroup>',
+    '</Project>',
+  ].join('\n')}\n`;
+}
+
+function renderCpp(contract) {
+  const lines = [
+    ...generatedNotice('//'),
+    '#pragma once',
+    '',
+    '#include <cstdint>',
+    '#include <functional>',
+    '#include <optional>',
+    '#include <regex>',
+    '#include <string>',
+    '#include <vector>',
+    '',
+    'namespace dd_pg_defs {',
+  ];
+
+  for (const table of contract.tables) {
+    const structName = `${table.names?.rust ?? pascal(table.name)}Row`;
+    lines.push('');
+    if (table.description) {
+      lines.push(`// ${table.description}`);
+    }
+    lines.push(`inline const char* ${table.name}_table = ${JSON.stringify(physicalName(table))};`);
+    lines.push(
+      `inline const std::vector<std::string> ${table.name}_columns = { ${table.columns.map((column) => JSON.stringify(column.name)).join(', ')} };`,
+    );
+    lines.push(
+      `inline const char* ${table.name}_select_sql = R"SQL(${renderSelectSql(table, { jsonAsText: true })})SQL";`,
+    );
+
+    for (const column of table.columns.filter((item) => item.kind === 'enum')) {
+      const enumName = `${table.names?.rust ?? pascal(table.name)}${pascal(column.name)}`;
+      lines.push('');
+      lines.push(`enum class ${enumName} { ${column.enumValues.map((value) => pascal(value)).join(', ')} };`);
+      lines.push(`inline std::string ${table.name}_${column.name}_to_string(${enumName} value) {`);
+      lines.push('    switch (value) {');
+      for (const value of column.enumValues) {
+        lines.push(`        case ${enumName}::${pascal(value)}: return ${JSON.stringify(value)};`);
+      }
+      lines.push('    }');
+      lines.push('    return "";');
+      lines.push('}');
+      lines.push(
+        `inline std::optional<${enumName}> parse_${table.name}_${column.name}(const std::string& value) {`,
+      );
+      for (const value of column.enumValues) {
+        lines.push(`    if (value == ${JSON.stringify(value)}) return ${enumName}::${pascal(value)};`);
+      }
+      lines.push('    return std::nullopt;');
+      lines.push('}');
+    }
+
+    lines.push('');
+    lines.push(`struct ${structName} {`);
+    for (const column of table.columns) {
+      lines.push(`    ${cppType(column)} ${cppFieldName(column)};`);
+    }
+    lines.push('};');
+    lines.push('');
+    lines.push(
+      `inline ${structName} ${table.name}_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {`,
+    );
+    lines.push(`    ${structName} row;`);
+    lines.push('    (void)is_null;');
+    table.columns.forEach((column, index) => {
+      lines.push(`    row.${cppFieldName(column)} = ${cppRowDecodeExpr(column, index)};`);
+    });
+    lines.push('    return row;');
+    lines.push('}');
+
+    for (const column of table.columns) {
+      const validator = cppValidator(table, column);
+      if (validator.length > 0) {
+        lines.push(...validator);
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('}  // namespace dd_pg_defs');
+  return `${lines.join('\n')}\n`;
+}
+
+function cppBaseType(column) {
+  switch (column.kind) {
+    case 'integer':
+      return 'int32_t';
+    case 'bigint':
+      return 'int64_t';
+    case 'boolean':
+      return 'bool';
+    default:
+      return 'std::string';
+  }
+}
+
+function cppType(column) {
+  const base = cppBaseType(column);
+  return column.notNull ? base : `std::optional<${base}>`;
+}
+
+function cppFieldName(column) {
+  // snake_case DB names map straight through; suffix any C++ keyword to keep the struct valid.
+  const CPP_KEYWORDS = new Set([
+    'alignas', 'alignof', 'and', 'asm', 'auto', 'bool', 'break', 'case', 'catch', 'char', 'class',
+    'const', 'continue', 'default', 'delete', 'do', 'double', 'else', 'enum', 'export', 'extern',
+    'false', 'float', 'for', 'friend', 'goto', 'if', 'inline', 'int', 'long', 'mutable', 'namespace',
+    'new', 'not', 'nullptr', 'operator', 'or', 'private', 'protected', 'public', 'register', 'return',
+    'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'template', 'this', 'throw', 'true',
+    'try', 'typedef', 'typename', 'union', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'while',
+    'xor',
+  ]);
+  return CPP_KEYWORDS.has(column.name) ? `${column.name}_` : column.name;
+}
+
+function cppRowDecodeExpr(column, index) {
+  let expr;
+  switch (column.kind) {
+    case 'integer':
+      expr = `std::stoi(get(${index}))`;
+      break;
+    case 'bigint':
+      expr = `std::stoll(get(${index}))`;
+      break;
+    case 'boolean':
+      expr = `(get(${index}) == "t")`;
+      break;
+    default:
+      expr = `get(${index})`;
+      break;
+  }
+  if (!column.notNull) {
+    return `is_null(${index}) ? std::nullopt : std::optional<${cppBaseType(column)}>(${expr})`;
+  }
+  return expr;
+}
+
+function cppValidator(table, column) {
+  const validation = column.validation ?? {};
+  const fnName = `validate_${table.name}_${column.name}`;
+  const qualified = `${table.name}.${column.name}`;
+  const checks = [];
+  if (column.kind === 'string') {
+    if (validation.minLength !== undefined) {
+      checks.push(
+        `    if (value.size() < ${validation.minLength}) return std::string(${JSON.stringify(`${qualified} must be at least ${validation.minLength} characters`)});`,
+      );
+    }
+    if (validation.maxLength !== undefined) {
+      checks.push(
+        `    if (value.size() > ${validation.maxLength}) return std::string(${JSON.stringify(`${qualified} must be at most ${validation.maxLength} characters`)});`,
+      );
+    }
+    if (validation.regex) {
+      checks.push(
+        `    if (!std::regex_match(value, std::regex(R"RX(${validation.regex})RX"))) return std::string(${JSON.stringify(`${qualified} does not match the required pattern`)});`,
+      );
+    }
+    if (checks.length === 0) {
+      return [];
+    }
+    return [
+      `inline std::optional<std::string> ${fnName}(const std::string& value) {`,
+      ...checks,
+      '    return std::nullopt;',
+      '}',
+    ];
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (validation.min !== undefined) {
+      checks.push(
+        `    if (value < ${validation.min}) return std::string(${JSON.stringify(`${qualified} is below the minimum`)});`,
+      );
+    }
+    if (validation.max !== undefined) {
+      checks.push(
+        `    if (value > ${validation.max}) return std::string(${JSON.stringify(`${qualified} is above the maximum`)});`,
+      );
+    }
+    if (checks.length === 0) {
+      return [];
+    }
+    return [
+      `inline std::optional<std::string> ${fnName}(${cppBaseType(column)} value) {`,
+      ...checks,
+      '    return std::nullopt;',
+      '}',
+    ];
+  }
+  return [];
+}
+
+function renderCppCMake() {
+  return `${[
+    '# Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth.',
+    'cmake_minimum_required(VERSION 3.14)',
+    'project(dd_pg_defs CXX)',
+    'add_library(dd_pg_defs INTERFACE)',
+    'target_include_directories(dd_pg_defs INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})',
+    'target_compile_features(dd_pg_defs INTERFACE cxx_std_17)',
+  ].join('\n')}\n`;
+}
+
+function renderZig(contract) {
+  const lines = [
+    ...generatedNotice('//'),
+    'const std = @import("std");',
+    '',
+    '// A row reader the caller wires to its Postgres driver. `text`/`int`/`boolean` return the',
+    '// column at a 0-based index (pairs with `<table>_select_sql`, which casts uuid/timestamp/jsonb',
+    '// to text); `is_null` reports SQL NULL. Booleans arrive as Postgres text "t"/"f".',
+    'pub const RowReader = struct {',
+    '    text: *const fn (usize) []const u8,',
+    '    int: *const fn (usize) i64,',
+    '    boolean: *const fn (usize) bool,',
+    '    is_null: *const fn (usize) bool,',
+    '};',
+  ];
+
+  for (const table of contract.tables) {
+    const structName = `${table.names?.rust ?? pascal(table.name)}Row`;
+    const fnBase = camel(table.name);
+    lines.push('');
+    if (table.description) {
+      lines.push(`// ${table.description}`);
+    }
+    lines.push(`pub const ${table.name}_table: []const u8 = ${JSON.stringify(physicalName(table))};`);
+    lines.push(
+      `pub const ${table.name}_columns = [_][]const u8{ ${table.columns.map((column) => JSON.stringify(column.name)).join(', ')} };`,
+    );
+    lines.push(`pub const ${table.name}_select_sql: []const u8 = ${JSON.stringify(renderSelectSql(table, { jsonAsText: true }))};`);
+
+    for (const column of table.columns.filter((item) => item.kind === 'enum')) {
+      const enumName = `${table.names?.rust ?? pascal(table.name)}${pascal(column.name)}`;
+      lines.push('');
+      lines.push(`pub const ${enumName} = enum {`);
+      for (const value of column.enumValues) {
+        lines.push(`    ${zigIdent(value)},`);
+      }
+      lines.push('');
+      lines.push(`    pub fn toString(self: ${enumName}) []const u8 {`);
+      lines.push('        return switch (self) {');
+      for (const value of column.enumValues) {
+        lines.push(`            .${zigIdent(value)} => ${JSON.stringify(value)},`);
+      }
+      lines.push('        };');
+      lines.push('    }');
+      lines.push('');
+      lines.push(`    pub fn parse(value: []const u8) ?${enumName} {`);
+      for (const value of column.enumValues) {
+        lines.push(`        if (std.mem.eql(u8, value, ${JSON.stringify(value)})) return .${zigIdent(value)};`);
+      }
+      lines.push('        return null;');
+      lines.push('    }');
+      lines.push('};');
+    }
+
+    lines.push('');
+    lines.push(`pub const ${structName} = struct {`);
+    for (const column of table.columns) {
+      lines.push(`    ${zigIdent(column.name)}: ${zigType(column)},`);
+    }
+    lines.push('');
+    lines.push(`    pub fn fromRow(reader: RowReader) ${structName} {`);
+    lines.push(`        return ${structName}{`);
+    table.columns.forEach((column, index) => {
+      lines.push(`            .${zigIdent(column.name)} = ${zigRowDecode(column, index)},`);
+    });
+    lines.push('        };');
+    lines.push('    }');
+    lines.push('};');
+
+    for (const column of table.columns) {
+      const validator = zigValidator(table, fnBase, column);
+      if (validator.length > 0) {
+        lines.push('');
+        lines.push(...validator);
+      }
+    }
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+const ZIG_KEYWORDS = new Set([
+  'addrspace', 'align', 'allowzero', 'and', 'anyframe', 'anytype', 'asm', 'async', 'await', 'break',
+  'callconv', 'catch', 'comptime', 'const', 'continue', 'defer', 'else', 'enum', 'errdefer', 'error',
+  'export', 'extern', 'fn', 'for', 'if', 'inline', 'linksection', 'noalias', 'noinline', 'nosuspend',
+  'opaque', 'or', 'orelse', 'packed', 'pub', 'resume', 'return', 'struct', 'suspend', 'switch', 'test',
+  'threadlocal', 'try', 'union', 'unreachable', 'usingnamespace', 'var', 'volatile', 'while',
+]);
+
+function zigIdent(name) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !ZIG_KEYWORDS.has(name)
+    ? name
+    : `@${JSON.stringify(name)}`;
+}
+
+function zigType(column) {
+  let base;
+  switch (column.kind) {
+    case 'integer':
+      base = 'i32';
+      break;
+    case 'bigint':
+      base = 'i64';
+      break;
+    case 'boolean':
+      base = 'bool';
+      break;
+    default:
+      base = '[]const u8';
+      break;
+  }
+  return column.notNull ? base : `?${base}`;
+}
+
+function zigRowDecode(column, index) {
+  let expr;
+  switch (column.kind) {
+    case 'integer':
+      expr = `@as(i32, @intCast(reader.int(${index})))`;
+      break;
+    case 'bigint':
+      expr = `reader.int(${index})`;
+      break;
+    case 'boolean':
+      expr = `reader.boolean(${index})`;
+      break;
+    default:
+      expr = `reader.text(${index})`;
+      break;
+  }
+  if (!column.notNull) {
+    return `if (reader.is_null(${index})) null else ${expr}`;
+  }
+  return expr;
+}
+
+function zigValidator(table, fnBase, column) {
+  const validation = column.validation ?? {};
+  const fnName = `validate${pascal(fnBase)}${pascal(column.name)}`;
+  const qualified = `${table.name}.${column.name}`;
+  const checks = [];
+  if (column.kind === 'string') {
+    if (validation.minLength !== undefined) {
+      checks.push(
+        `    if (value.len < ${validation.minLength}) return ${JSON.stringify(`${qualified} must be at least ${validation.minLength} characters`)};`,
+      );
+    }
+    if (validation.maxLength !== undefined) {
+      checks.push(
+        `    if (value.len > ${validation.maxLength}) return ${JSON.stringify(`${qualified} must be at most ${validation.maxLength} characters`)};`,
+      );
+    }
+    if (checks.length === 0) {
+      return [];
+    }
+    return [`pub fn ${fnName}(value: []const u8) ?[]const u8 {`, ...checks, '    return null;', '}'];
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    const zigInt = column.kind === 'bigint' ? 'i64' : 'i32';
+    if (validation.min !== undefined) {
+      checks.push(
+        `    if (value < ${validation.min}) return ${JSON.stringify(`${qualified} is below the minimum`)};`,
+      );
+    }
+    if (validation.max !== undefined) {
+      checks.push(
+        `    if (value > ${validation.max}) return ${JSON.stringify(`${qualified} is above the maximum`)};`,
+      );
+    }
+    if (checks.length === 0) {
+      return [];
+    }
+    return [`pub fn ${fnName}(value: ${zigInt}) ?[]const u8 {`, ...checks, '    return null;', '}'];
+  }
+  return [];
+}
+
+function renderZigBuild() {
+  return `${[
+    '// Generated by @dd/pg-defs. Do not edit by hand. schema/schema.sql is the source of truth.',
+    'const std = @import("std");',
+    '',
+    'pub fn build(b: *std.Build) void {',
+    '    const target = b.standardTargetOptions(.{});',
+    '    const optimize = b.standardOptimizeOption(.{});',
+    '    _ = b.addModule("dd_pg_defs", .{',
+    '        .root_source_file = b.path("dd_pg_defs.zig"),',
+    '        .target = target,',
+    '        .optimize = optimize,',
+    '    });',
+    '}',
+  ].join('\n')}\n`;
+}
+
+function renderSequelize(contract) {
+  const lines = [
+    ...generatedNotice('//'),
+    'import { DataTypes, Sequelize } from "sequelize";',
+    '',
+    'export function defineDdModels(sequelize: Sequelize) {',
+  ];
+  const modelNames = [];
+  for (const table of contract.tables) {
+    const modelName = table.names?.rust ?? pascal(table.name);
+    modelNames.push(modelName);
+    lines.push('');
+    if (table.description) {
+      lines.push(`  // ${table.description}`);
+    }
+    lines.push(`  const ${modelName} = sequelize.define(${JSON.stringify(modelName)}, {`);
+    for (const column of table.columns) {
+      lines.push(`    ${sequelizeAttribute(column)}`);
+    }
+    const options = [`tableName: ${JSON.stringify(table.name)}`];
+    if (table.schema && table.schema !== 'public') {
+      options.push(`schema: ${JSON.stringify(table.schema)}`);
+    }
+    options.push('timestamps: false', 'freezeTableName: true');
+    lines.push(`  }, { ${options.join(', ')} });`);
+  }
+  lines.push('');
+  lines.push(`  return { ${modelNames.join(', ')} };`);
+  lines.push('}');
+  return `${lines.join('\n')}\n`;
+}
+
+function sequelizeAttribute(column) {
+  const parts = [`type: ${sequelizeDataType(column)}`, `allowNull: ${column.notNull ? 'false' : 'true'}`];
+  if (column.primaryKey) {
+    parts.push('primaryKey: true');
+  }
+  if (column.primaryKey && column.sqlType === 'uuid') {
+    parts.push('defaultValue: DataTypes.UUIDV4');
+  } else if (column.defaultValue !== undefined) {
+    parts.push(`defaultValue: ${sequelizeDefault(column.defaultValue)}`);
+  }
+  const validate = sequelizeValidate(column);
+  if (validate) {
+    parts.push(`validate: { ${validate} }`);
+  }
+  return `${column.name}: { ${parts.join(', ')} },`;
+}
+
+function sequelizeDataType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return 'DataTypes.UUID';
+    case 'integer':
+      return column.sqlType === 'smallint' ? 'DataTypes.SMALLINT' : 'DataTypes.INTEGER';
+    case 'bigint':
+      return 'DataTypes.BIGINT';
+    case 'boolean':
+      return 'DataTypes.BOOLEAN';
+    case 'timestamp':
+      return 'DataTypes.DATE';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'DataTypes.JSONB';
+    case 'enum':
+      return column.maxLength ? `DataTypes.STRING(${column.maxLength})` : 'DataTypes.TEXT';
+    default:
+      return column.sqlType === 'varchar' && column.maxLength
+        ? `DataTypes.STRING(${column.maxLength})`
+        : 'DataTypes.TEXT';
+  }
+}
+
+function sequelizeDefault(value) {
+  if (value === true) return 'true';
+  if (value === false) return 'false';
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return '[]';
+  if (value && typeof value === 'object') return '{}';
+  return JSON.stringify(value);
+}
+
+function sequelizeValidate(column) {
+  const validation = column.validation ?? {};
+  const items = [];
+  if (column.kind === 'enum') {
+    items.push(`isIn: [[${column.enumValues.map((value) => JSON.stringify(value)).join(', ')}]]`);
+  }
+  if (column.kind === 'string') {
+    if (validation.maxLength !== undefined) {
+      items.push(`len: [${validation.minLength ?? 0}, ${validation.maxLength}]`);
+    }
+    if (validation.regex) {
+      items.push(`is: new RegExp(${JSON.stringify(validation.regex)})`);
+    }
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (validation.min !== undefined) {
+      items.push(`min: ${validation.min}`);
+    }
+    if (validation.max !== undefined) {
+      items.push(`max: ${validation.max}`);
+    }
+  }
+  return items.join(', ');
+}
+
+function renderPeewee(contract) {
+  const lines = [
+    ...generatedNotice('#'),
+    'from peewee import (',
+    '    AutoField,',
+    '    BigAutoField,',
+    '    BigIntegerField,',
+    '    BooleanField,',
+    '    CharField,',
+    '    DatabaseProxy,',
+    '    DateTimeField,',
+    '    IntegerField,',
+    '    Model,',
+    '    SmallIntegerField,',
+    '    TextField,',
+    '    UUIDField,',
+    ')',
+    'from playhouse.postgres_ext import BinaryJSONField',
+    '',
+    'database = DatabaseProxy()',
+    '',
+    '',
+    'class BaseModel(Model):',
+    '    class Meta:',
+    '        database = database',
+  ];
+
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    lines.push('');
+    lines.push('');
+    lines.push(`class ${className}(BaseModel):`);
+    if (table.description) {
+      lines.push(`    # ${table.description}`);
+    }
+    for (const column of table.columns) {
+      lines.push(`    ${peeweeField(column)}`);
+    }
+    lines.push('');
+    lines.push('    class Meta:');
+    lines.push(`        table_name = ${pyString(table.name)}`);
+    if (table.schema && table.schema !== 'public') {
+      lines.push(`        schema = ${pyString(table.schema)}`);
+    }
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function peeweeField(column) {
+  const args = [];
+  let fieldClass;
+  if (column.primaryKey && column.sqlType === 'bigserial') {
+    fieldClass = 'BigAutoField';
+  } else {
+    fieldClass = peeweeFieldClass(column);
+  }
+  if (fieldClass === 'CharField' && column.maxLength) {
+    args.push(`max_length=${column.maxLength}`);
+  }
+  if (column.primaryKey) {
+    args.push('primary_key=True');
+  }
+  if (!column.notNull) {
+    args.push('null=True');
+  }
+  return `${column.name} = ${fieldClass}(${args.join(', ')})`;
+}
+
+function peeweeFieldClass(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return 'UUIDField';
+    case 'integer':
+      return column.sqlType === 'smallint' ? 'SmallIntegerField' : 'IntegerField';
+    case 'bigint':
+      return 'BigIntegerField';
+    case 'boolean':
+      return 'BooleanField';
+    case 'timestamp':
+      return 'DateTimeField';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'BinaryJSONField';
+    case 'enum':
+      return column.maxLength ? 'CharField' : 'TextField';
+    default:
+      return column.sqlType === 'varchar' && column.maxLength ? 'CharField' : 'TextField';
+  }
+}
+
+function renderPeeweeInit() {
+  return `${[...generatedNotice('#'), 'from .models import *  # noqa: F401,F403'].join('\n')}\n`;
+}
+
+function renderDoctrineEntityFiles(contract) {
+  return contract.tables.map((table) => {
+    const className = table.names?.rust ?? pascal(table.name);
+    return [`generated/php-doctrine/src/${className}.php`, renderDoctrineEntityFile(table)];
+  });
+}
+
+function renderDoctrineEntityFile(table) {
+  const className = table.names?.rust ?? pascal(table.name);
+  const lines = [
+    '<?php',
+    '',
+    ...generatedNotice('//'),
+    '',
+    'declare(strict_types=1);',
+    '',
+    'namespace DdPgDefs\\Doctrine;',
+    '',
+    'use Doctrine\\ORM\\Mapping as ORM;',
+    '',
+  ];
+  if (table.description) {
+    lines.push(`/** ${table.description} */`);
+  }
+  lines.push('#[ORM\\Entity]');
+  lines.push(
+    table.schema && table.schema !== 'public'
+      ? `#[ORM\\Table(name: ${phpString(table.name)}, schema: ${phpString(table.schema)})]`
+      : `#[ORM\\Table(name: ${phpString(table.name)})]`,
+  );
+  lines.push(`class ${className}`);
+  lines.push('{');
+  table.columns.forEach((column, index) => {
+    if (index > 0) {
+      lines.push('');
+    }
+    lines.push(...doctrineProperty(column).map((line) => `    ${line}`));
+  });
+  lines.push('}');
+  return `${lines.join('\n')}\n`;
+}
+
+function doctrineProperty(column) {
+  const lines = [];
+  const prop = camel(column.name);
+  const columnOptions = [`type: ${phpString(doctrineType(column))}`];
+  if ((column.sqlType === 'varchar' || column.kind === 'enum') && column.maxLength) {
+    columnOptions.push(`length: ${column.maxLength}`);
+  }
+  if (prop !== column.name) {
+    columnOptions.push(`name: ${phpString(column.name)}`);
+  }
+  if (!column.notNull) {
+    columnOptions.push('nullable: true');
+  }
+  if (column.primaryKey) {
+    lines.push('#[ORM\\Id]');
+    lines.push(
+      `#[ORM\\GeneratedValue(strategy: ${phpString(column.sqlType === 'bigserial' ? 'IDENTITY' : 'NONE')})]`,
+    );
+  }
+  lines.push(`#[ORM\\Column(${columnOptions.join(', ')})]`);
+  const phpType = column.notNull ? doctrinePhpType(column) : `?${doctrinePhpType(column)}`;
+  lines.push(`public ${phpType} $${prop};`);
+  return lines;
+}
+
+function doctrineType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return 'guid';
+    case 'integer':
+      return column.sqlType === 'smallint' ? 'smallint' : 'integer';
+    case 'bigint':
+      return 'bigint';
+    case 'boolean':
+      return 'boolean';
+    case 'timestamp':
+      return 'datetimetz_immutable';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'json';
+    case 'enum':
+      return 'string';
+    default:
+      return column.sqlType === 'text' ? 'text' : 'string';
+  }
+}
+
+function doctrinePhpType(column) {
+  switch (column.kind) {
+    case 'integer':
+      return 'int';
+    case 'bigint':
+      // Doctrine maps bigint to string in PHP to avoid 64-bit precision loss on 32-bit platforms.
+      return 'string';
+    case 'boolean':
+      return 'bool';
+    case 'timestamp':
+      return '\\DateTimeImmutable';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'array';
+    default:
+      return 'string';
+  }
+}
+
+function renderDoctrineComposerJson() {
+  return `${JSON.stringify(
+    {
+      name: 'dd/pg-defs-doctrine',
+      description: 'Canonical remote Postgres schema definitions as Doctrine ORM entities.',
+      type: 'library',
+      license: 'proprietary',
+      require: {
+        php: '>=8.1',
+        'doctrine/orm': '^2.15 || ^3.0',
+      },
+      autoload: {
+        'psr-4': { 'DdPgDefs\\Doctrine\\': 'src/' },
+      },
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 function renderDdl(contract) {

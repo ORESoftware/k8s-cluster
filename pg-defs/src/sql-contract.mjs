@@ -920,6 +920,11 @@ function defaultValueFromSql(defaultSql) {
 
 function kindFromSqlType(sqlType) {
   switch (sqlType) {
+    case "smallint":
+    // A 16-bit signed integer. Modeled as the `integer` kind so every adapter treats it as a
+    // whole number (and integer range validation applies). The narrower physical type is
+    // preserved on `column.sqlType`, which the strict-typed Rust adapters (sqlx/Diesel/SeaORM)
+    // and the SQL-type renderers (Drizzle/SQLAlchemy/jOOQ) use to emit `i16`/`Int2`/`smallint`.
     case "integer":
       return "integer";
     case "bigint":

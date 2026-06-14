@@ -290,7 +290,7 @@ pub fn validate_sound_recorder_accounts_status(value: String) -> Result(String, 
 }
 
 pub const sound_recorder_devices_table = "sound_recorder_devices"
-pub const sound_recorder_devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices"
+pub const sound_recorder_devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      transfer_paused,\n      transfer_pause_reason,\n      network_policy,\n      battery_level,\n      charging,\n      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as transfer_state_updated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices"
 
 pub type SoundRecorderDevicesPlatform {
   SoundRecorderDevicesPlatformIos
@@ -341,6 +341,55 @@ pub fn parse_sound_recorder_devices_status(value: String) -> Result(SoundRecorde
   }
 }
 
+pub type SoundRecorderDevicesTransferPauseReason {
+  SoundRecorderDevicesTransferPauseReasonLowBattery
+  SoundRecorderDevicesTransferPauseReasonNetworkConstraint
+  SoundRecorderDevicesTransferPauseReasonOffline
+  SoundRecorderDevicesTransferPauseReasonManual
+}
+
+pub fn sound_recorder_devices_transfer_pause_reason_to_string(value: SoundRecorderDevicesTransferPauseReason) -> String {
+  case value {
+    SoundRecorderDevicesTransferPauseReasonLowBattery -> "low_battery"
+    SoundRecorderDevicesTransferPauseReasonNetworkConstraint -> "network_constraint"
+    SoundRecorderDevicesTransferPauseReasonOffline -> "offline"
+    SoundRecorderDevicesTransferPauseReasonManual -> "manual"
+  }
+}
+
+pub fn parse_sound_recorder_devices_transfer_pause_reason(value: String) -> Result(SoundRecorderDevicesTransferPauseReason, String) {
+  case value {
+    "low_battery" -> Ok(SoundRecorderDevicesTransferPauseReasonLowBattery)
+    "network_constraint" -> Ok(SoundRecorderDevicesTransferPauseReasonNetworkConstraint)
+    "offline" -> Ok(SoundRecorderDevicesTransferPauseReasonOffline)
+    "manual" -> Ok(SoundRecorderDevicesTransferPauseReasonManual)
+    _ -> Error("unsupported sound_recorder_devices.transfer_pause_reason: " <> value)
+  }
+}
+
+pub type SoundRecorderDevicesNetworkPolicy {
+  SoundRecorderDevicesNetworkPolicyAny
+  SoundRecorderDevicesNetworkPolicyWifiOnly
+  SoundRecorderDevicesNetworkPolicyCellularOnly
+}
+
+pub fn sound_recorder_devices_network_policy_to_string(value: SoundRecorderDevicesNetworkPolicy) -> String {
+  case value {
+    SoundRecorderDevicesNetworkPolicyAny -> "any"
+    SoundRecorderDevicesNetworkPolicyWifiOnly -> "wifi_only"
+    SoundRecorderDevicesNetworkPolicyCellularOnly -> "cellular_only"
+  }
+}
+
+pub fn parse_sound_recorder_devices_network_policy(value: String) -> Result(SoundRecorderDevicesNetworkPolicy, String) {
+  case value {
+    "any" -> Ok(SoundRecorderDevicesNetworkPolicyAny)
+    "wifi_only" -> Ok(SoundRecorderDevicesNetworkPolicyWifiOnly)
+    "cellular_only" -> Ok(SoundRecorderDevicesNetworkPolicyCellularOnly)
+    _ -> Error("unsupported sound_recorder_devices.network_policy: " <> value)
+  }
+}
+
 pub type SoundRecorderDevicesRow {
   SoundRecorderDevicesRow(
     id: String,
@@ -357,6 +406,12 @@ pub type SoundRecorderDevicesRow {
     consent_accepted_at: String,
     recording_indicator_acknowledged: Bool,
     last_seen_at: Option(String),
+    transfer_paused: Bool,
+    transfer_pause_reason: Option(String),
+    network_policy: String,
+    battery_level: Option(Int),
+    charging: Option(Bool),
+    transfer_state_updated_at: Option(String),
     created_at: String,
     updated_at: String,
   )
@@ -381,6 +436,20 @@ pub fn validate_sound_recorder_devices_status(value: String) -> Result(String, S
   case list.contains(["active", "revoked", "lost", "replaced", "deleted"], value) {
     True -> Ok(value)
     False -> Error("unsupported sound_recorder_devices.status: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_devices_transfer_pause_reason(value: String) -> Result(String, String) {
+  case list.contains(["low_battery", "network_constraint", "offline", "manual"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_devices.transfer_pause_reason: " <> value)
+  }
+}
+
+pub fn validate_sound_recorder_devices_network_policy(value: String) -> Result(String, String) {
+  case list.contains(["any", "wifi_only", "cellular_only"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sound_recorder_devices.network_policy: " <> value)
   }
 }
 
@@ -9059,6 +9128,77 @@ pub fn validate_benefactor_icps_slug(value: String) -> Result(String, String) {
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("benefactor_icps.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const benefactor_leads_throttling_table = "benefactor.benefactor_leads_throttling"
+pub const benefactor_leads_throttling_select_sql = "select\n      id::text as id,\n      benefactor_lead_id::text as benefactor_lead_id,\n      email,\n      request_type,\n      to_char(last_request_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_request_at,\n      to_char(next_allowed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_allowed_at,\n      request_count,\n      throttle_window_days,\n      last_request_source,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_throttling"
+
+pub type BenefactorLeadsThrottlingRow {
+  BenefactorLeadsThrottlingRow(
+    id: String,
+    benefactor_lead_id: Option(String),
+    email: String,
+    request_type: String,
+    last_request_at: String,
+    next_allowed_at: Option(String),
+    request_count: Int,
+    throttle_window_days: Int,
+    last_request_source: Option(String),
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_leads_throttling_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_leads_throttling.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const benefactor_leads_reminders_table = "benefactor.benefactor_leads_reminders"
+pub const benefactor_leads_reminders_select_sql = "select\n      id::text as id,\n      benefactor_lead_id::text as benefactor_lead_id,\n      reminder_type,\n      channel,\n      email,\n      first_name,\n      last_name,\n      subject,\n      to_char(original_request_sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as original_request_sent_at,\n      original_request_message_id,\n      to_char(sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as sent_at,\n      to_char(last_reminder_sent_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_reminder_sent_at,\n      reminder_count,\n      last_reminder_message_id,\n      message_id,\n      tags::text as tags_json,\n      meta_data::text as meta_data_json,\n      is_active,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from benefactor.benefactor_leads_reminders"
+
+pub type BenefactorLeadsRemindersRow {
+  BenefactorLeadsRemindersRow(
+    id: String,
+    benefactor_lead_id: Option(String),
+    reminder_type: String,
+    channel: String,
+    email: String,
+    first_name: Option(String),
+    last_name: Option(String),
+    subject: Option(String),
+    original_request_sent_at: String,
+    original_request_message_id: Option(String),
+    sent_at: String,
+    last_reminder_sent_at: Option(String),
+    reminder_count: Int,
+    last_reminder_message_id: Option(String),
+    message_id: Option(String),
+    tags_json: String,
+    meta_data_json: String,
+    is_active: Bool,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_benefactor_leads_reminders_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("benefactor_leads_reminders.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

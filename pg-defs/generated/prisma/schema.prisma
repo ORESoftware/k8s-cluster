@@ -136,11 +136,18 @@ model SoundRecorderDevices {
   consentAcceptedAt DateTime @map("consent_accepted_at") @db.Timestamptz(6)
   recordingIndicatorAcknowledged Boolean @map("recording_indicator_acknowledged") @default(false)
   lastSeenAt DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  transferPaused Boolean @map("transfer_paused") @default(false)
+  transferPauseReason String? @map("transfer_pause_reason") @db.VarChar(40)
+  networkPolicy String @map("network_policy") @default("any") @db.VarChar(20)
+  batteryLevel Int? @map("battery_level")
+  charging Boolean?
+  transferStateUpdatedAt DateTime? @map("transfer_state_updated_at") @db.Timestamptz(6)
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
   @@unique([tokenHash], map: "sound_recorder_devices_token_hash_uq")
   @@unique([accountId, installId], map: "sound_recorder_devices_account_install_uq")
   @@index([accountId, status, updatedAt], map: "sound_recorder_devices_account_status_idx")
+  // sound_recorder_devices_transfer_paused_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("sound_recorder_devices")
 }
@@ -2343,6 +2350,71 @@ model BenefactorIcps {
   @@index([isSoftDeleted], map: "benefactor_icps_soft_deleted_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("benefactor_icps")
+}
+
+model BenefactorLeadsThrottling {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  benefactorLeadId String? @map("benefactor_lead_id") @db.Uuid
+  email String @db.VarChar(255)
+  requestType String @map("request_type") @db.VarChar(100)
+  lastRequestAt DateTime @map("last_request_at") @db.Timestamptz(6)
+  nextAllowedAt DateTime? @map("next_allowed_at") @db.Timestamptz(6)
+  requestCount Int @map("request_count") @default(1)
+  throttleWindowDays Int @map("throttle_window_days")
+  lastRequestSource String? @map("last_request_source") @db.VarChar(80)
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // benefactor_leads_throttling_email_type_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([benefactorLeadId], map: "benefactor_leads_throttling_lead_id_idx")
+  @@index([email], map: "benefactor_leads_throttling_email_idx")
+  @@index([requestType], map: "benefactor_leads_throttling_request_type_idx")
+  @@index([lastRequestAt], map: "benefactor_leads_throttling_last_request_at_idx")
+  @@index([nextAllowedAt], map: "benefactor_leads_throttling_next_allowed_at_idx")
+  @@index([email, requestType], map: "benefactor_leads_throttling_email_request_type_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_leads_throttling")
+}
+
+model BenefactorLeadsReminders {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  benefactorLeadId String? @map("benefactor_lead_id") @db.Uuid
+  reminderType String @map("reminder_type") @db.VarChar(80)
+  channel String @default("email") @db.VarChar(50)
+  email String @db.VarChar(255)
+  firstName String? @map("first_name") @db.VarChar(160)
+  lastName String? @map("last_name") @db.VarChar(160)
+  subject String? @db.Text
+  originalRequestSentAt DateTime @map("original_request_sent_at") @db.Timestamptz(6)
+  originalRequestMessageId String? @map("original_request_message_id") @db.Text
+  sentAt DateTime @map("sent_at") @default(now()) @db.Timestamptz(6)
+  lastReminderSentAt DateTime? @map("last_reminder_sent_at") @db.Timestamptz(6)
+  reminderCount Int @map("reminder_count") @default(0)
+  lastReminderMessageId String? @map("last_reminder_message_id") @db.Text
+  messageId String? @map("message_id") @db.VarChar(255)
+  tags Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isActive Boolean @map("is_active") @default(true)
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // benefactor_leads_reminders_email_type_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([benefactorLeadId], map: "benefactor_leads_reminders_lead_id_idx")
+  @@index([reminderType], map: "benefactor_leads_reminders_reminder_type_idx")
+  @@index([email], map: "benefactor_leads_reminders_email_idx")
+  @@index([sentAt], map: "benefactor_leads_reminders_sent_at_idx")
+  @@index([originalRequestSentAt], map: "benefactor_leads_reminders_original_request_sent_at_idx")
+  @@index([lastReminderSentAt], map: "benefactor_leads_reminders_last_reminder_sent_at_idx")
+  @@index([reminderCount], map: "benefactor_leads_reminders_reminder_count_idx")
+  @@index([email, reminderType, sentAt], map: "benefactor_leads_reminders_email_type_sent_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("benefactor_leads_reminders")
 }
 
 model VcsRepositories {

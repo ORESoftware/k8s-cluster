@@ -1,0 +1,7 @@
+name: dd_redis_interfaces
+description: Generated Dart types and redis key formatters. Do not edit by hand.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'

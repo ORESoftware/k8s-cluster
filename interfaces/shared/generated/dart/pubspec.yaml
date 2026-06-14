@@ -1,0 +1,7 @@
+name: dd_shared_interfaces
+description: Generated Dart types for dd cross-runtime shared interfaces. Do not edit by hand.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
