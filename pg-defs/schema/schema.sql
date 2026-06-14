@@ -2424,6 +2424,80 @@ create index if not exists des_soccer_learning_merge_events_experiment_idx
   on des_soccer_learning_merge_events (experiment_id, created_at desc);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- DES soccer learning TOURNAMENTS.
+--
+-- A nightly 128-team bracket persists AS IT PLAYS: the `des_soccer_tournaments`
+-- header is created at start (status='running', champion unknown/NULL), every
+-- match is written to `des_soccer_tournament_matches` the moment its wave commits,
+-- the per-team evolving brain (incl. neural snapshot) is checkpointed each wave to
+-- `des_soccer_tournament_team_brains`, and the header is finalized (status +
+-- champion) at the end. So a worker panic or a killed pod (OOM / deadline) leaves
+-- a durable audit trail + standings + salvageable brains instead of discarding
+-- hours of play. `id` is bigserial; the engine also creates these at runtime
+-- (CREATE TABLE IF NOT EXISTS) so it works before this migration runs.
+create table if not exists des_soccer_tournaments (
+  id bigserial primary key,
+  experiment_id uuid not null,
+  tournament_date text not null,
+  seed bigint not null,
+  learning_mode text not null,
+  format jsonb not null,
+  team_count integer not null,
+  match_count integer not null default 0,
+  matches_played integer not null default 0,
+  champion_team_id integer,
+  runner_up_team_id integer,
+  third_place_team_id integer,
+  wall_time_seconds double precision,
+  status text not null default 'running',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  finished_at timestamptz,
+  constraint des_soccer_tournaments_status_chk
+    check (status in ('running', 'completed', 'failed', 'aborted'))
+);
+
+create index if not exists des_soccer_tournaments_experiment_idx
+  on des_soccer_tournaments (experiment_id, created_at desc);
+
+create table if not exists des_soccer_tournament_matches (
+  id bigserial primary key,
+  tournament_id bigint not null
+    references des_soccer_tournaments(id) on delete cascade,
+  match_index integer not null,
+  stage text not null,
+  home_team_id integer not null,
+  away_team_id integer not null,
+  home_goals integer not null,
+  away_goals integer not null,
+  shootout_winner_team_id integer,
+  home_training_steps bigint not null,
+  away_training_steps bigint not null,
+  recorded_at timestamptz not null default now(),
+  unique (tournament_id, match_index)
+);
+
+create table if not exists des_soccer_tournament_team_brains (
+  id bigserial primary key,
+  tournament_id bigint not null
+    references des_soccer_tournaments(id) on delete cascade,
+  team_id integer not null,
+  team_name text not null,
+  seed bigint not null,
+  matches_learned integer not null,
+  training_steps bigint not null,
+  played integer not null,
+  wins integer not null,
+  draws integer not null,
+  losses integer not null,
+  goals_for integer not null,
+  goals_against integer not null,
+  neural_snapshot jsonb,
+  updated_at timestamptz not null default now(),
+  unique (tournament_id, team_id)
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- DES FEL elevator dispatch learning.
 --
 -- Durable storage for next-event elevator learning runs. Full run/policy
