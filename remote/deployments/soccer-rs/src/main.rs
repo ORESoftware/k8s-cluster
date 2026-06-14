@@ -194,7 +194,10 @@ async fn inspect_game(
 ) -> Response {
     if let Some(expected) = inspect_token() {
         let provided = bearer_token(&headers).or(q.token.as_deref());
-        if provided != Some(expected.as_str()) {
+        let authorized = provided
+            .map(|token| constant_time_eq(token, &expected))
+            .unwrap_or(false);
+        if !authorized {
             return (StatusCode::FORBIDDEN, "invalid or missing inspect token").into_response();
         }
     }
@@ -213,6 +216,20 @@ fn inspect_token() -> Option<String> {
         .ok()
         .map(|token| token.trim().to_string())
         .filter(|token| !token.is_empty())
+}
+
+/// Constant-time string comparison so a wrong token cannot be recovered by timing
+/// the response. Mirrors the engine's own admin-token check.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 /// Extract a bearer token from the `Authorization` header, if present.
