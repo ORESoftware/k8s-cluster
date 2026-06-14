@@ -9,6 +9,10 @@
 //!   * `GET  /soccer/game?id=<uuid>`  — game metadata / liveness.
 //!   * `GET  /soccer/live?id=<uuid>`  — live 2D UI bound to the game.
 //!   * `GET  /soccer/sim?id=<uuid>`   — static/replay view of the game.
+//!   * `GET  /soccer/inspect?id=<uuid>` — read-only dump of the game's full engine
+//!                                      internals for an external debugger/inspector
+//!                                      (`&weights=1` embeds raw NN weights; gated by
+//!                                      `SOCCER_INSPECT_TOKEN` when set).
 //!   * `*    /api/*?id=<uuid>`        — the live bridge API, scoped to the game
 //!                                      (state/step/reset/input/team-policy).
 //!   * `GET  /healthz`                — liveness for k8s probes.
@@ -23,7 +27,7 @@ use std::time::{Duration, Instant};
 use axum::{
     body::Bytes,
     extract::{Query, State},
-    http::{header, Method, StatusCode, Uri},
+    http::{header, HeaderMap, Method, StatusCode, Uri},
     response::{Html, IntoResponse, Response},
     routing::{any, get, post},
     Json, Router,
@@ -152,6 +156,75 @@ async fn sim_view(State(state): State<AppState>, Query(q): Query<GameQuery>) -> 
     }
 }
 
+#[derive(Deserialize)]
+struct InspectQuery {
+    id: Option<Uuid>,
+    /// `weights=1` additionally embeds the raw neural-network snapshot (large).
+    #[serde(default)]
+    weights: Option<u8>,
+    /// Token may be supplied here instead of an `Authorization: Bearer` header.
+    #[serde(default)]
+    token: Option<String>,
+}
+
+/// `GET /soccer/inspect?id=<uuid>[&weights=1]` — read-only dump of the game's FULL
+/// engine internals for an external debugger/inspector: the physical frame plus the
+/// neural critic state, Q-policy aggregates, every agent's MDP/POMDP decision (with
+/// its observation vector, masked+scored options and chosen target), the
+/// central-brain/formation-LP decision, and the reward plumbing.
+///
+/// This is the **deep** inspection tier: a one-shot dump of all the decision/learning
+/// internals. It complements the engine's own `GET /soccer/api/inspect` (proxied
+/// through `game_api`), which is the **fast** tier — a zero-copy mmap ring serving
+/// curated kinematics + time-series history (`?player=&fields=&history=&section=`).
+/// Use the proxied ring path for high-frequency field/history polling; use this for
+/// the full why-did-it-do-that snapshot (per-agent MDP/POMDP decisions, neural
+/// critic, Q aggregates, reward plumbing, central-brain/LP).
+///
+/// It is the "attach and read the engine's memory" seam done as structured data:
+/// **pull-based** (nothing is computed until this is hit, under one brief session
+/// lock) so it costs nothing when idle — far cheaper than continuously streaming
+/// everything to I/O — and the engine stays transport-agnostic (it just hands back
+/// JSON via the bridge; this server owns the HTTP). Gated by `SOCCER_INSPECT_TOKEN`
+/// when that env var is set; default-open otherwise, for the in-cluster workflow.
+async fn inspect_game(
+    State(state): State<AppState>,
+    Query(q): Query<InspectQuery>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(expected) = inspect_token() {
+        let provided = bearer_token(&headers).or(q.token.as_deref());
+        if provided != Some(expected.as_str()) {
+            return (StatusCode::FORBIDDEN, "invalid or missing inspect token").into_response();
+        }
+    }
+    let session = match resolve(&state, q.id) {
+        Ok(session) => session,
+        Err(resp) => return resp,
+    };
+    let include_weights = matches!(q.weights, Some(n) if n != 0);
+    Json(session.bridge.inspector_snapshot(include_weights)).into_response()
+}
+
+/// The inspect-endpoint admin token, if one is configured. When unset the endpoint
+/// is open (the in-cluster default); when set, callers must present it.
+fn inspect_token() -> Option<String> {
+    std::env::var("SOCCER_INSPECT_TOKEN")
+        .ok()
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
+}
+
+/// Extract a bearer token from the `Authorization` header, if present.
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+}
+
 async fn healthz() -> &'static str {
     "ok"
 }
@@ -223,6 +296,7 @@ async fn main() {
         .route("/soccer/game", post(create_game).get(game_meta))
         .route("/soccer/live", get(live_ui))
         .route("/soccer/sim", get(sim_view))
+        .route("/soccer/inspect", get(inspect_game))
         .route("/soccer/api/*rest", any(game_api))
         .with_state(state);
 
