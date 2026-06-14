@@ -35,6 +35,12 @@ write_files:
       exec > >(tee -a /var/log/dd-prereqs.log) 2>&1
       echo "==> DD Hetzner node prereqs starting $(date -u)"
 
+      # Hetzner servers prefer IPv6, but pkgs.k8s.io returns HTTP 403 over IPv6
+      # (302/OK over IPv4), which breaks the kubeadm/kubelet apt install. Force
+      # IPv4 for getaddrinfo (curl) and apt before any downloads.
+      grep -q "^precedence ::ffff:0:0/96  100$" /etc/gai.conf 2>/dev/null || echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
+      echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
       ARCH=amd64
       K8S_VERSION="${K8S_VERSION:-1.31}"
       CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.24}"
