@@ -58,3 +58,7 @@
 	path = remote/libs
 	url = git@github.com:ORESoftware/k8s-libs-and-shared-defs.git
 	branch = main
+[submodule "remote/deployments/benefactor-backend-rs"]
+	path = remote/deployments/benefactor-backend-rs
+	url = git@github.com:benefactor-cc/backend.rs.git
+	branch = main
