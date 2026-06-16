@@ -77,6 +77,7 @@ use tokio::{io::AsyncWriteExt, sync::broadcast, sync::Mutex};
 use tokio_util::io::ReaderStream;
 
 use des_engine::des::bathrooms::render_default_bathrooms_html;
+use des_engine::des::two_bathrooms::render_default_two_bathrooms_html;
 use des_engine::des::fel::elevator::{
     elevator_mdp_spec, elevator_pomdp_spec, render_elevator_html, run_fel_elevator, ElevatorConfig,
 };
@@ -238,6 +239,12 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="name">des::bathrooms &middot; finite-source loss</div>
     <div class="desc">8 people share 2 bathrooms, each visiting 3&times;/day for 20 min at random times; if both are busy the arrival is rejected. A Monte-Carlo discrete-event sim recovers P(none / one / both occupied) and checks it against the closed-form binomial. Animated house, gantt scrubber, and convergence chart.</div>
     <div class="row"><a class="open" href="bathrooms" target="_blank" rel="noopener">Open animation &#8599;</a></div>
+  </div>
+  <div class="sim">
+    <div class="label">Bathroom occupancy (framework build)</div>
+    <div class="name">des::two_bathrooms &middot; MovingEntity + visual blocks</div>
+    <div class="desc">The same 8-people / 2-bathrooms loss system, re-built on the engine's reusable frameworks: people are <code>MovingEntity</code> tokens flowing through <code>StationaryEntity</code> bathrooms, rendered as visual blocks through the shared animation player (the same one the elevator/traffic scenes use), with an occupancy time-series and the binomial-vs-simulated stats table.</div>
+    <div class="row"><a class="open" href="two-bathrooms" target="_blank" rel="noopener">Open animation &#8599;</a></div>
   </div>
 </div>
 <h2>Soccer <span class="muted">— videogame, learning sim, rotation planner</span></h2>
@@ -792,6 +799,10 @@ struct AppState {
     /// study is self-contained and deterministic (fixed seeds), so it is
     /// rendered once at startup and served verbatim at `/bathrooms`.
     bathrooms_html: Arc<str>,
+    /// Framework-based variant of the bathroom study (MovingEntity people,
+    /// StationaryEntity bathrooms, visual-block animation player), served at
+    /// `/two-bathrooms`. Also pre-rendered once at startup.
+    two_bathrooms_html: Arc<str>,
     /// Interactive 11-a-side rotation planner (roster constraints + re-solve).
     soccer_planner_html: Arc<str>,
     /// Live 2D soccer gameplay bridge with its own shared session state.
@@ -912,6 +923,7 @@ fn changed_artifacts(
 fn simulation_output_candidates(name: &str) -> &'static [&'static str] {
     match name {
         "main_bathrooms" => &["bathrooms.html"],
+        "main_two_bathrooms" => &["two-bathrooms.html"],
         "main_build_site" => &["index.html"],
         "main_delivery_planner" => &["delivery-planner.html"],
         "main_empirical_control_report" => &[
@@ -2473,6 +2485,13 @@ async fn bathrooms(State(state): State<AppState>) -> Html<String> {
     Html(state.bathrooms_html.to_string())
 }
 
+/// `GET /two-bathrooms` — the same study built on the engine's entity +
+/// animation frameworks (MovingEntity people, StationaryEntity bathrooms,
+/// visual-block player). Deterministic, pre-rendered at startup.
+async fn two_bathrooms(State(state): State<AppState>) -> Html<String> {
+    Html(state.two_bathrooms_html.to_string())
+}
+
 /// `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
 async fn soccer_planner_page(State(state): State<AppState>) -> Html<String> {
     Html(state.soccer_planner_html.to_string())
@@ -3791,6 +3810,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Monte-Carlo DES with a self-contained animation. Deterministic, so render
     // once at startup like the elevator artifacts.
     let bathrooms_html: Arc<str> = Arc::from(render_default_bathrooms_html());
+    // Framework-based variant: entity/visual-block animation player.
+    let two_bathrooms_html: Arc<str> = Arc::from(render_default_two_bathrooms_html());
     let soccer_live_bridge = Arc::new(SoccerLiveHttpBridge::new(SoccerLiveServerConfig::default()));
 
     let state = AppState {
@@ -3804,6 +3825,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         elevator_mdp_html,
         elevator_pomdp_html,
         bathrooms_html,
+        two_bathrooms_html,
         soccer_planner_html,
         soccer_live_bridge,
         soccer_live_ws: Arc::new(SoccerLiveWsHub::default()),
@@ -3855,6 +3877,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/elevator-mdp", get(elevator_mdp))
         .route("/elevator-pomdp", get(elevator_pomdp))
         .route("/bathrooms", get(bathrooms))
+        .route("/two-bathrooms", get(two_bathrooms))
         .route("/soccer/planner", get(soccer_planner_page))
         .route("/soccer/planner/solve", post(soccer_planner_solve))
         .route("/soccer/planner/stream", post(soccer_planner_stream))
