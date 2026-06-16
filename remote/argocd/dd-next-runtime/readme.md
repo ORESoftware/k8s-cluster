@@ -71,6 +71,7 @@ blocks administrative, dangerous, scripting, module, persistence, and bulk-key c
 Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`
+- `/sonus-auris`, `/sonus-auris/` -> `dd-sonus-auris-site:8080`
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
 - `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)

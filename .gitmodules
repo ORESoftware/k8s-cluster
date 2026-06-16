@@ -62,3 +62,7 @@
 	path = remote/deployments/benefactor-backend-rs
 	url = git@github.com:benefactor-cc/backend.rs.git
 	branch = main
+[submodule "remote/submodules/sonus-auris-site.web"]
+	path = remote/submodules/sonus-auris-site.web
+	url = https://github.com/sonus-auris/sonus-auris-site.web
+	branch = main
