@@ -33,7 +33,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/secrets/providers/hetzner
   destination:
@@ -54,7 +54,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/secrets/common
   destination:
@@ -75,7 +75,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/messaging
   destination:
@@ -96,7 +96,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/observability
   destination:
@@ -185,7 +185,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/argocd/dd-next-runtime
   destination:

@@ -95,6 +95,8 @@ test('cloud cluster profiles render the same branch with provider overlays', () 
     assert.match(rendered, /name:\s*dd-next-runtime/, profile.provider);
     assert.match(rendered, /name:\s*dd-secret-store/, profile.provider);
     assert.match(rendered, /name:\s*dd-secrets/, profile.provider);
+    assert.match(rendered, /repoURL:\s*https:\/\/github\.com\/ORESoftware\/k8s-cluster\.git/, profile.provider);
+    assert.doesNotMatch(rendered, /repoURL:\s*git@github\.com:ORESoftware\/k8s-cluster\.git/, profile.provider);
     assert.match(rendered, /targetRevision:\s*dev/, profile.provider);
     assert.match(
       rendered,
