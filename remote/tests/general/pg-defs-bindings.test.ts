@@ -203,7 +203,7 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
 });
 
 test('each gleam runtime secret has an ExternalSecret backing it', async () => {
-  const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   for (const secret of [
     'dd-gleam-lambda-runner-secrets',
     'dd-gleam-mcp-server-secrets',
@@ -212,7 +212,7 @@ test('each gleam runtime secret has an ExternalSecret backing it', async () => {
     assert.match(
       externalSecrets,
       new RegExp(`name:\\s*${secret}`),
-      `${secret} must be created by an ExternalSecret in remote/argocd/secrets/external-secrets.yaml so RDS_DATABASE_URL et al. flow from AWS Secrets Manager.`,
+      `${secret} must be created by an ExternalSecret in remote/argocd/secrets/common/external-secrets.yaml so RDS_DATABASE_URL et al. flow from the selected secret backend.`,
     );
   }
 });
