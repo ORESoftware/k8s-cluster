@@ -2085,9 +2085,6 @@ version = "0.0.1"
 dependencies = [
  "des_engine",
  "memmap2",
- "native-tls",
- "postgres",
- "postgres-native-tls",
  "serde",
  "serde_json",
  "uuid",

@@ -31,4 +31,9 @@ des_engine = { path = "../../submodules/discrete-event-system.rs" }
 # (soccer-sim-game-engine.rs), checked out adjacently as a submodule. Its own
 # `des_engine = { path = "../discrete-event-system.rs" }` resolves to the SAME
 # engine submodule above, so there is exactly one des_engine in the graph.
-soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs" }
+#
+# The `planner` feature is REQUIRED: soccer-sim-game-engine.rs@main feature-gated
+# its `soccer_planner` re-export behind `#[cfg(feature = "planner")]`, and this
+# server imports `soccer_engine::soccer_planner` for the rotation planner routes.
+# Without it the in-pod build fails with `unresolved import` (E0432).
+soccer_engine = { path = "../../submodules/soccer-sim-game-engine.rs", features = ["planner"] }
