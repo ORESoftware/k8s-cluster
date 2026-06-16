@@ -1,0 +1,26 @@
+# Non-secret R2 connection config shared by general-purpose storage workloads.
+# Bucket names follow the `ores-k8s-<name>` convention from the Terraform module
+# (remote/terraform/cloudflare/r2). The account id is semi-public (it appears in
+# every R2 endpoint URL) so the endpoint lives here, not in the secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: r2-config
+  namespace: ores-k8s-storage
+data:
+  DEFAULT_STORAGE_PROVIDER: 'r2'
+  R2_REGION: 'auto'
+  # https://<account-id>.r2.cloudflarestorage.com — `terraform output s3_endpoint`.
+  R2_ENDPOINT: 'https://REPLACE_ME_ACCOUNT_ID.r2.cloudflarestorage.com'
+
+  # Logical namespace / bucket prefix (matches var.bucket_prefix in Terraform).
+  R2_BUCKET_PREFIX: 'ores-k8s-'
+
+  # The general-purpose buckets created by the Terraform module. Apps pick one
+  # by full name; this list is informational + lets a generic client enumerate.
+  R2_BUCKETS: 'ores-k8s-artifacts,ores-k8s-media,ores-k8s-public-assets,ores-k8s-backups,ores-k8s-cache,ores-k8s-general'
+
+  # Edge-cached public hostnames (only the custom-domain buckets). Empty until
+  # you set edge_domain in Terraform; then fill from `terraform output edge_domains`.
+  # R2_PUBLIC_BASE_URL_MEDIA: 'https://media.cdn.example.com'
+  # R2_PUBLIC_BASE_URL_PUBLIC_ASSETS: 'https://public-assets.cdn.example.com'

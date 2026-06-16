@@ -70,6 +70,8 @@ Thumbs.db
 # K8s Secrets (filled-in templates)
 # ──────────────────────────────────────────────
 **/k8s/02-secrets.yaml
+# Filled-in storage secrets (keep the *.template.yaml; ignore the real one).
+**/k8s/storage/*.secret.yaml
 kubeconfig
 kubeconfig.*
 !kubeconfig.example

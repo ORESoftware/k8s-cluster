@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+# Auth comes from the env: export CLOUDFLARE_API_TOKEN=...
+
+account_id    = "REPLACE_ME_cloudflare_account_id"
+bucket_prefix = "ores-k8s-"
+
+# General-purpose buckets. Add an entry to create another bucket — that's it.
+buckets = {
+  artifacts     = { location = "WNAM" }
+  media         = { location = "WNAM", edge_cache = true }
+  public-assets = { location = "WNAM", edge_cache = true }
+  backups       = { location = "WNAM", storage_class = "InfrequentAccess" }
+  cache         = { location = "WNAM" }
+  general       = { location = "WNAM" }
+}
+
+# ---- Edge caching: leave blank for now, fill in once you add a domain ----
+# edge_domain    = "example.com"
+# edge_zone_id   = "REPLACE_ME_zone_id"
+# edge_subdomain = "cdn"          # => media.cdn.example.com, public-assets.cdn.example.com
+# edge_cache_ttl = 86400
+
+create_access_token = true
+token_name          = "ores-k8s-r2-storage"

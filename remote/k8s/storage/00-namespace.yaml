@@ -1,0 +1,15 @@
+# General-purpose object-storage namespace for the cluster. Workloads that
+# need R2 buckets mount the credentials from this namespace. Buckets themselves
+# are provisioned out-of-band by remote/terraform/cloudflare/r2 (Cloudflare R2
+# is account-global; this namespace is just where the cluster-side credentials
+# + config live).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ores-k8s-storage
+  labels:
+    app.kubernetes.io/part-of: ores-k8s-cluster
+    app.kubernetes.io/component: object-storage
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
