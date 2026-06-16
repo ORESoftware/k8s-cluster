@@ -65,10 +65,14 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 
 ## Wiring GitOps (optional next step)
 
-Point ArgoCD at this repo to sync everything under [`../argocd/apps/`](../argocd/apps/).
-Note those apps were authored against the EC2 cluster; storage-bound apps expect a
-`gp3` StorageClass (satisfied here) and the `dd-dev` runtime apps need real secrets
-(`remote/k8s/02-secrets.yaml`) — bring those over before syncing the full set.
+Point ArgoCD at this repo and use
+[`../argocd/clusters/hetzner`](../argocd/clusters/hetzner/) as the cluster bootstrap overlay.
+That overlay keeps the shared app manifests on the same `dev` branch as EC2/GCP, while selecting
+the Hetzner storage and secret-store implementations.
+
+The public gateway ingress for the current Hetzner load balancer lives in
+[`dd-remote-gateway-ingress.yaml`](dd-remote-gateway-ingress.yaml) and serves
+`https://hello.95-217-171-250.sslip.io/` through `dd-remote-gateway`.
 
 ## Teardown
 

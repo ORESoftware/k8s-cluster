@@ -65,7 +65,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   // Single source of truth for shared table DDL; per-table dupes were retired.
   const tableSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
-  const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   const manifest = await readRepoFile('remote/deployments/gleam-lambda-runner/manifest.toml');
   const dockerfile = await readRepoFile('remote/deployments/gleam-lambda-runner/Dockerfile');
   const nodeRuntimeDockerfile = await readRepoFile(

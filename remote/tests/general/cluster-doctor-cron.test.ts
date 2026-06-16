@@ -213,8 +213,8 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   const operatorApp = await readRepoFile(
     'remote/argocd/apps/external-secrets-operator.application.yaml',
   );
-  const secretStore = await readRepoFile('remote/argocd/secrets/aws-secret-store.yaml');
-  const secrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const secretStore = await readRepoFile('remote/argocd/secrets/providers/aws/secret-store.yaml');
+  const secrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   const kustomization = await readRepoFile('remote/argocd/secrets/kustomization.yaml');
   const secretsReadme = await readRepoFile('remote/argocd/secrets/readme.md');
   const restDeployment = await readRepoFile(
@@ -230,13 +230,13 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   assert.match(operatorApp, /hostNetwork:\s*true/);
   assert.match(operatorApp, /dnsPolicy:\s*ClusterFirstWithHostNet/);
   assert.match(secretStore, /kind:\s*ClusterSecretStore/);
-  assert.match(secretStore, /name:\s*dd-aws-secrets-manager/);
+  assert.match(secretStore, /name:\s*dd-cluster-secrets/);
   assert.match(secretStore, /argocd\.argoproj\.io\/sync-options:\s*Replace=true/);
   assert.match(secretStore, /service:\s*SecretsManager/);
   assert.match(secretStore, /region:\s*us-east-1/);
   assert.doesNotMatch(secretStore, /accessKeyIDSecretRef/);
-  assert.match(kustomization, /- aws-secret-store\.yaml/);
-  assert.match(kustomization, /- external-secrets\.yaml/);
+  assert.match(kustomization, /- providers\/aws/);
+  assert.match(kustomization, /- common/);
   assert.match(secrets, /name:\s*dd-agent-secrets/);
   assert.match(secrets, /key:\s*dd\/remote-dev\/agent-secrets/);
   assert.match(secrets, /name:\s*dd-remote-rest-api-secrets/);

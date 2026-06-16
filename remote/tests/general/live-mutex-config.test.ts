@@ -81,7 +81,7 @@ test('rust live-mutex broker pulls admin token from dd-lmx-admin-token', async (
 });
 
 test('lmx admin token is wired through External Secrets', async () => {
-  const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   assert.match(
     externalSecrets,
     /name:\s*dd-lmx-admin-token[\s\S]*target:[\s\S]*name:\s*dd-lmx-admin-token[\s\S]*key:\s*dd\/remote-dev\/lmx-admin-token/,

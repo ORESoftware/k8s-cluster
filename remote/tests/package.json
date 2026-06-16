@@ -18,6 +18,7 @@
     "test:cli:deep": "pnpm exec tsx --test general/cli.deep.test.ts",
     "test:cli:cluster-doctor-cron": "pnpm exec tsx --test general/cluster-doctor-cron.test.ts",
     "test:cli:cluster-hardening": "pnpm exec tsx --test general/cluster-hardening.test.ts",
+    "test:cli:cloud-gitops-profiles": "pnpm exec tsx --test general/cloud-gitops-profiles.test.ts",
     "test:cli:container-pool-config": "pnpm exec tsx --test general/container-pool-config.test.ts",
     "test:cli:contract-service-config": "pnpm exec tsx --test general/contract-service-config.test.ts",
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
