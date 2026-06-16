@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+# Cloud-neutral edge base. The gateway Deployment + nginx routing ConfigMap remain in
+# remote/argocd/dd-next-runtime (they are cloud-neutral); this base only owns the
+# Service that the per-cloud overlays route to.
+resources:
+  - service.yaml

@@ -1,0 +1,35 @@
+# ApplicationSet that gives every registered cluster the gateway edge for ITS cloud,
+# from one Git repo/commit/branch. Each ArgoCD cluster secret must carry the label
+# `dd.dev/cloud: aws|hetzner|gcp`; the generator templates the overlay path from it.
+#
+# NOT YET APPLIED — this is the adoption target (see README.md). Applying it requires
+# the per-cluster cloud labels to exist first.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dd-remote-gateway-edge
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            dd.dev/managed: "true"
+  template:
+    metadata:
+      name: 'gateway-edge-{{.name}}'
+    spec:
+      project: default
+      source:
+        repoURL: git@github.com:ORESoftware/k8s-cluster.git
+        targetRevision: dev
+        # cloud label drives the overlay — aws | hetzner | gcp
+        path: 'remote/argocd/gateway-edge/overlays/{{index .metadata.labels "dd.dev/cloud"}}'
+      destination:
+        server: '{{.server}}'
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

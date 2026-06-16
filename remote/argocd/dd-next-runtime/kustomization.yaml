@@ -152,6 +152,8 @@ resources:
   - dd-soccer-rs.service.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
+  - dd-remote-gateway.service.yaml
+  - dd-remote-gateway.ingress.yaml
   - dd-runtime-config.deployment.yaml
   - dd-runtime-config.service.yaml
   - dd-idle-reaper.configmap.yaml

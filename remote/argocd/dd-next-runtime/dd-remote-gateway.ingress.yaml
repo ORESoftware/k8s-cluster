@@ -1,0 +1,42 @@
+# Gateway edge for clusters that front traffic with ingress-nginx + cert-manager
+# (Hetzner today; GCP once provisioned). This object is INERT on AWS: that cluster
+# has no `nginx` IngressClass and no cert-manager, so the controller never claims it
+# and the cert-manager annotation is ignored — AWS keeps serving via the gateway's
+# own hostPort 80/443 + certbot-managed secret (dd-remote-gateway-tls).
+#
+# backend-protocol HTTPS re-encrypts to the gateway's :443 (its :80 does a 308 -> https
+# redirect, so proxying to :80 would loop). ingress-nginx does not verify the upstream
+# cert, so the gateway's own (self/LE) cert on :443 is fine; the public-facing cert is
+# the cert-manager one below.
+#
+# NOTE (cloud-agnostic roadmap): the host + issuer are Hetzner-specific. The clean
+# multi-cloud form lives under remote/argocd/gateway-edge/overlays/<cloud> (see the
+# README there) — adopt that via per-cluster ApplicationSet when GCP comes online so
+# each cloud supplies its own host/issuer instead of carrying Hetzner's here.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-remote-gateway
+  namespace: default
+  labels:
+    app: dd-remote-gateway
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["hello.95-217-171-250.sslip.io"]
+      secretName: gateway-public-tls
+  rules:
+    - host: hello.95-217-171-250.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dd-remote-gateway
+                port:
+                  number: 443

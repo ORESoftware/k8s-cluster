@@ -1,0 +1,22 @@
+# Cloud-neutral ClusterIP for the gateway. Harmless on every cloud:
+#  - AWS (single node): unused — the gateway binds the node's hostPort 80/443 directly
+#    and terminates TLS itself (cert from certbot, secret dd-remote-gateway-tls).
+#  - Hetzner / GCP (LB + ingress-nginx): the per-cloud Ingress routes to this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-remote-gateway
+  namespace: default
+  labels:
+    app: dd-remote-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-remote-gateway
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+    - name: http
+      port: 80
+      targetPort: 80
