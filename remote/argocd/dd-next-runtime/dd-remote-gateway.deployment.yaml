@@ -18,6 +18,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
+        dd.dev/gateway-config-revision: '2026-06-16-sonus-auris'
       labels:
         app: dd-remote-gateway
     spec:
