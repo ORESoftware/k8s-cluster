@@ -1,0 +1,90 @@
+# dd-remote-gateway-hz — the Hetzner entry gateway.
+#
+# Same nginx gateway as the AWS dd-remote-gateway (reuses the SAME
+# `dd-remote-gateway-config` ConfigMap / `default.conf.template`), but exposed
+# as a ClusterIP behind the ingress-nginx DaemonSet instead of binding hostPort
+# directly. AWS terminates at the node (hostPort 80/443); Hetzner terminates TLS
+# at ingress-nginx, which proxies (HTTPS) to this Service. See ../ingress-tls.sh
+# and ./dd-remote-gateway-hz.ingress.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-gateway-hz
+  namespace: default
+  labels:
+    app: dd-remote-gateway-hz
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-remote-gateway-hz
+  template:
+    metadata:
+      labels:
+        app: dd-remote-gateway-hz
+    spec:
+      automountServiceAccountToken: false
+      priorityClassName: system-cluster-critical
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gateway
+          image: docker.io/library/nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DD_REMOTE_GATEWAY_AUTH_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-auth-secrets
+                  key: DD_AUTH_COOKIE_VALUE
+            - name: DD_REMOTE_DEV_SERVER_AUTH_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: DD_MCP_READONLY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-mcp-gateway-token
+                  key: MCP_READONLY_TOKEN
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 5m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+            - name: acme-webroot
+              mountPath: /var/www/acme
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: dd-remote-gateway-config
+            defaultMode: 420
+        - name: tls
+          secret:
+            secretName: dd-remote-gateway-tls
+            defaultMode: 420
+        - name: acme-webroot
+          emptyDir: {}
