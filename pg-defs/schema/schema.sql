@@ -2493,9 +2493,151 @@ create table if not exists des_soccer_tournament_team_brains (
   goals_for integer not null,
   goals_against integer not null,
   neural_snapshot jsonb,
+  -- Heritable tactical genome (formation anchors + style genes); nullable for
+  -- rows persisted before genomes shipped.
+  genome jsonb,
   updated_at timestamptz not null default now(),
   unique (tournament_id, team_id)
 );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Soccer set-play (free-kick) learning artifacts + per-run neural metrics.
+--
+-- Written by the queue/batch learners after a completed run. Micros = 1e6 fixed
+-- point for seconds/rates/losses so RDS querying stays cheap and the generated
+-- adapters stay portable. (The pgvector retrieval tables — des_soccer_moment_embeddings
+-- and des_soccer_config_moments — are intentionally NOT in this canonical contract:
+-- they require the `vector` extension + hnsw indexes and back an off-by-default
+-- feature, so the adapter creates them on demand at runtime instead.)
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists des_soccer_learning_set_play_runs (
+  run_id uuid primary key references des_soccer_learning_runs(id) on delete cascade,
+  policy_version_id uuid not null references des_soccer_learning_policy_versions(id) on delete cascade,
+  primary_restart varchar(40) not null,
+  team varchar(8) not null,
+  spot_x_micros bigint not null,
+  spot_y_micros bigint not null,
+  duration_seconds_micros bigint not null,
+  episode_count integer not null,
+  goals integer not null,
+  goal_rate_micros bigint not null,
+  first_window_goal_rate_micros bigint not null,
+  last_window_goal_rate_micros bigint not null,
+  goal_rate_delta_micros bigint not null,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_set_play_runs_restart_chk
+    check (primary_restart in ('direct-free-kick', 'indirect-free-kick')),
+  constraint des_soccer_learning_set_play_runs_team_chk
+    check (team in ('home', 'away')),
+  constraint des_soccer_learning_set_play_runs_duration_chk
+    check (duration_seconds_micros >= 0),
+  constraint des_soccer_learning_set_play_runs_episode_chk
+    check (episode_count >= 0),
+  constraint des_soccer_learning_set_play_runs_goals_chk
+    check (goals >= 0),
+  constraint des_soccer_learning_set_play_runs_goal_rate_chk
+    check (goal_rate_micros between 0 and 1000000)
+);
+
+create table if not exists des_soccer_learning_set_play_restart_mix (
+  run_id uuid not null references des_soccer_learning_set_play_runs(run_id) on delete cascade,
+  ordinal integer not null,
+  restart varchar(40) not null,
+  primary key (run_id, ordinal),
+  constraint des_soccer_learning_set_play_restart_mix_ordinal_chk
+    check (ordinal >= 0),
+  constraint des_soccer_learning_set_play_restart_mix_restart_chk
+    check (restart in ('direct-free-kick', 'indirect-free-kick'))
+);
+
+create table if not exists des_soccer_learning_set_play_episode_metrics (
+  run_id uuid not null references des_soccer_learning_set_play_runs(run_id) on delete cascade,
+  episode_index integer not null,
+  seed bigint not null,
+  restart varchar(40) not null,
+  routine varchar(80),
+  scored boolean not null,
+  score_delta_for_team integer not null,
+  ticks bigint not null,
+  simulated_seconds_micros bigint not null,
+  policy_updates bigint not null,
+  home_policy_entries integer not null,
+  home_policy_target_entries integer not null,
+  away_policy_entries integer not null,
+  away_policy_target_entries integer not null,
+  neural_training_steps integer not null,
+  neural_samples bigint not null,
+  neural_replay_samples integer not null,
+  neural_last_loss_micros bigint,
+  cumulative_goals integer not null,
+  goal_rate_so_far_micros bigint not null,
+  primary key (run_id, episode_index),
+  constraint des_soccer_learning_set_play_episode_idx_chk
+    check (episode_index >= 0),
+  constraint des_soccer_learning_set_play_episode_seed_chk
+    check (seed >= 0),
+  constraint des_soccer_learning_set_play_episode_restart_chk
+    check (restart in ('direct-free-kick', 'indirect-free-kick')),
+  constraint des_soccer_learning_set_play_episode_ticks_chk
+    check (ticks >= 0),
+  constraint des_soccer_learning_set_play_episode_seconds_chk
+    check (simulated_seconds_micros >= 0),
+  constraint des_soccer_learning_set_play_episode_policy_updates_chk
+    check (policy_updates >= 0),
+  constraint des_soccer_learning_set_play_episode_entries_chk
+    check (
+      home_policy_entries >= 0
+      and home_policy_target_entries >= 0
+      and away_policy_entries >= 0
+      and away_policy_target_entries >= 0
+    ),
+  constraint des_soccer_learning_set_play_episode_neural_chk
+    check (
+      neural_training_steps >= 0
+      and neural_samples >= 0
+      and neural_replay_samples >= 0
+    ),
+  constraint des_soccer_learning_set_play_episode_goals_chk
+    check (cumulative_goals >= 0),
+  constraint des_soccer_learning_set_play_episode_goal_rate_chk
+    check (goal_rate_so_far_micros between 0 and 1000000)
+);
+
+create table if not exists des_soccer_learning_neural_run_metrics (
+  run_id uuid primary key references des_soccer_learning_runs(id) on delete cascade,
+  policy_version_id uuid not null references des_soccer_learning_policy_versions(id) on delete cascade,
+  enabled boolean not null,
+  backend varchar(32) not null,
+  training_steps integer not null,
+  samples bigint not null,
+  pending_batches integer not null,
+  dropped_batches integer not null,
+  replay_samples integer not null,
+  replay_capacity integer not null,
+  parameter_count integer not null,
+  target_clip_micros bigint not null,
+  last_loss_micros bigint,
+  average_loss_micros bigint,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_neural_run_backend_chk
+    check (backend in ('inline', 'threaded')),
+  constraint des_soccer_learning_neural_run_counts_chk
+    check (
+      training_steps >= 0
+      and samples >= 0
+      and pending_batches >= 0
+      and dropped_batches >= 0
+      and replay_samples >= 0
+      and replay_capacity >= 0
+      and parameter_count >= 0
+    )
+);
+
+create index if not exists des_soccer_learning_set_play_episode_restart_idx
+  on des_soccer_learning_set_play_episode_metrics (restart, scored, episode_index);
+
+create index if not exists des_soccer_learning_neural_run_steps_idx
+  on des_soccer_learning_neural_run_metrics (training_steps desc, samples desc);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DES FEL elevator dispatch learning.
