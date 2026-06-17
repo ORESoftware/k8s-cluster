@@ -21,7 +21,18 @@ AWS_INSTANCE="${AWS_INSTANCE:-i-0cc2461a55d491af6}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 BUCKET="${BUCKET:-dd-img-xfer-710156900967}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_hetzner}"
-read -r -a NODES <<<"${HETZNER_NODES:-167.233.100.88 116.203.52.135 204.168.152.145}"
+# Node list: explicit HETZNER_NODES wins; otherwise auto-discover EVERY current
+# dd-k8s node IP from hcloud. Auto-discovery is the safe default — it can never
+# miss a node (control-plane OR worker) and survives Hetzner IP reuse on rebuild.
+# (A hard-coded subset is how new workers silently went without images before.)
+if [ -n "${HETZNER_NODES:-}" ]; then
+  read -r -a NODES <<<"$HETZNER_NODES"
+elif command -v hcloud >/dev/null; then
+  read -r -a NODES <<<"$(hcloud server list --selector role=dd-k8s -o noheader -o columns=ipv4 | tr '\n' ' ')"
+else
+  echo "ERROR: set HETZNER_NODES or install/authenticate hcloud for node discovery." >&2; exit 1
+fi
+[ "${#NODES[@]}" -ge 1 ] || { echo "ERROR: no Hetzner nodes resolved." >&2; exit 1; }
 [ $# -ge 1 ] || { echo "usage: $0 <image-ref> [image-ref...]" >&2; exit 1; }
 
 command -v aws >/dev/null || { echo "ERROR: aws CLI required." >&2; exit 1; }

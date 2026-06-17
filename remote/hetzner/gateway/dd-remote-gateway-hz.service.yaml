@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-remote-gateway-hz
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-remote-gateway-hz
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP

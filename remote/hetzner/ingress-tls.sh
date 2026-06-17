@@ -62,6 +62,13 @@ kubectl apply --server-side --force-conflicts -f "https://github.com/cert-manage
 kubectl -n cert-manager rollout status deploy/cert-manager --timeout=180s
 kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=180s
 
+# --- ingress placement safety: label every node `ingress-enabled=true` -------
+# The DaemonSet below has NO nodeSelector, so it already lands on all nodes. But
+# if a nodeSelector ever gets (re)introduced out-of-band — as happened once and
+# took the whole ingress to DESIRED=0 after a node rebuild (no labeled nodes) —
+# this idempotent label keeps it scheduling. Harmless no-op without a selector.
+kubectl label node --all ingress-enabled=true --overwrite
+
 # --- ingress-nginx: DaemonSet on hostNetwork => all node IPs serve 80/443/TCP ---
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
 helm repo update >/dev/null
