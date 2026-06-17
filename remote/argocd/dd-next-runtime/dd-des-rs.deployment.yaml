@@ -171,11 +171,11 @@ spec:
               value: main
             # Soccer engine source: soccer was extracted out of des_engine into
             # the soccer_engine crate. Cloned at pod start the same way; pinned to
-            # main so it tracks the engine. Set URL to "" to use the submodule.
+            # a tested engine SHA. Set URL to "" to use the submodule.
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: main
+              value: 5c7132891c1eb2d91737deed0c273850da0ac9fc
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: 'uuid-keyed-root-server'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@main'
+        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@5c7132891c1eb2d91737deed0c273850da0ac9fc'
         dd.dev/des-engine-revision: 'discrete-event-system.rs@main'
       labels:
         app: dd-soccer-rs
@@ -90,7 +90,7 @@ spec:
                 fi
               fi
 
-              # 2) soccer_engine source (soccer-sim-game-engine.rs @ main).
+              # 2) soccer_engine source (soccer-sim-game-engine.rs at the pinned ref).
               soccer_src="/opt/dd-next-1/remote/submodules/soccer-sim-game-engine.rs"
               if [ -n "${SOCCER_ENGINE_GIT_URL:-}" ]; then
                 if out="$(fetch_git_ref "${SOCCER_ENGINE_GIT_URL}" "${SOCCER_ENGINE_GIT_REF:-main}" "${build_root}/soccer-engine-source")" && [ -n "${out}" ]; then
@@ -133,7 +133,7 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: main
+              value: 5c7132891c1eb2d91737deed0c273850da0ac9fc
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
