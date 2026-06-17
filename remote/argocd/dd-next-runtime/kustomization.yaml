@@ -153,6 +153,9 @@ resources:
   # and the whole gateway crashloops.
   - dd-soccer-rs.deployment.yaml
   - dd-soccer-rs.service.yaml
+  # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
+  # the runner's Postgres advisory lock lets only one cluster run matches.
+  - dd-soccer-tournament-nightly.cronjob.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
   - dd-remote-gateway.service.yaml

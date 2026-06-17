@@ -1,0 +1,162 @@
+# Nightly 128-team soccer learning tournament.
+#
+# This lives in the parent GitOps repo so the shared dd-next-runtime Argo app
+# applies it to both AWS and Hetzner. The runner itself uses a Postgres advisory
+# lock keyed by SOCCER_TOURNAMENT_LOCK_KEY, so both clusters may schedule the
+# CronJob while only one proceeds with matches.
+#
+# OOM guardrails:
+# - CARGO_BUILD_JOBS=1 serializes the cold release build. The soccer-rs service
+#   needs the same treatment because soccer_engine + des_engine compile hot.
+# - SOCCER_TOURNAMENT_THREADS=2 keeps runtime match workers equal to the CPU cap.
+# - The 14Gi memory limit is below half of a 32Gi Hetzner node, but high enough
+#   for the known cold source-build envelope used by dd-soccer-rs.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-soccer-tournament-nightly
+  namespace: default
+  labels:
+    app: dd-soccer-tournament-nightly
+    app.kubernetes.io/name: dd-soccer-tournament-nightly
+    app.kubernetes.io/component: learning-tournament
+    app.kubernetes.io/part-of: dd-next-runtime
+spec:
+  schedule: "0 2 * * *"
+  timeZone: America/Chicago
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 28800
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          labels:
+            app: dd-soccer-tournament-nightly
+            app.kubernetes.io/name: dd-soccer-tournament-nightly
+            app.kubernetes.io/component: learning-tournament
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: soccer-tournament
+              image: docker.io/library/rust:1.90-bookworm
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -lc
+              args:
+                - |
+                  set -euo pipefail
+                  export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+                  run_prefix="${SOCCER_RUN_ID_PREFIX:-codex-soccer-tournament-nightly}"
+                  soccer_repo="${SOCCER_SOURCE_REPO:-https://github.com/ORESoftware/soccer-sim-game-engine.rs.git}"
+                  engine_repo="${SOCCER_ENGINE_SOURCE_REPO:-https://github.com/ORESoftware/discrete-event-system.rs.git}"
+                  source_ref="${SOCCER_SOURCE_REF:-main}"
+                  engine_ref="${SOCCER_ENGINE_SOURCE_REF:-main}"
+                  base="/tmp/${run_prefix}-src"
+                  soccer="${base}/soccer-sim-game-engine.rs"
+                  engine="${base}/discrete-event-system.rs"
+                  target="/tmp/${run_prefix}-target"
+                  export CARGO_TARGET_DIR="${target}"
+
+                  clone_ref() {
+                    repo="$1"; ref="$2"; dir="$3"
+                    echo "source_clone_started dir=${dir} ref=${ref}"
+                    git clone --depth 1 --filter=blob:none --no-checkout "${repo}" "${dir}"
+                    git -C "${dir}" fetch --depth 1 origin "${ref}"
+                    git -C "${dir}" switch --detach FETCH_HEAD
+                  }
+
+                  mkdir -p "${base}"
+                  clone_ref "${engine_repo}" "${engine_ref}" "${engine}"
+                  clone_ref "${soccer_repo}" "${source_ref}" "${soccer}"
+
+                  cd "${soccer}"
+                  echo "soccer_commit=$(git rev-parse HEAD) engine_commit=$(git -C "${engine}" rev-parse HEAD)"
+                  echo "tournament_build_started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  /usr/local/cargo/bin/cargo build --release --features postgres-persistence --bin main_soccer_tournament_run
+
+                  export SOCCER_RUN_ID="${run_prefix}-$(date -u +%Y%m%dT%H%M%SZ)"
+                  echo "tournament_run_started_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ) run_id=${SOCCER_RUN_ID}"
+                  exec "${target}/release/main_soccer_tournament_run"
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: CARGO_HOME
+                  value: /tmp/cargo
+                - name: CARGO_BUILD_JOBS
+                  value: "1"
+                - name: CARGO_NET_RETRY
+                  value: "5"
+                - name: RUST_BACKTRACE
+                  value: "1"
+                - name: SOCCER_SOURCE_REPO
+                  value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
+                - name: SOCCER_SOURCE_REF
+                  value: main
+                - name: SOCCER_ENGINE_SOURCE_REPO
+                  value: https://github.com/ORESoftware/discrete-event-system.rs.git
+                - name: SOCCER_ENGINE_SOURCE_REF
+                  value: main
+                - name: SOCCER_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-remote-rest-api-secrets
+                      key: RDS_DATABASE_URL
+                - name: SOCCER_PG_TLS_INSECURE
+                  value: "1"
+                - name: SOCCER_EXPERIMENT_SLUG
+                  value: soccer-nightly-tournament
+                - name: SOCCER_TOURNAMENT_LOCK_KEY
+                  value: soccer-nightly-tournament
+                - name: SOCCER_TOURNAMENT_MATCH_SECONDS
+                  value: "3600"
+                - name: SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS
+                  value: "25200"
+                - name: SOCCER_TOURNAMENT_THREADS
+                  value: "2"
+                - name: SOCCER_TOURNAMENT_LEARNING_MODE
+                  value: bilearning
+                - name: SOCCER_TOURNAMENT_SEED_FRACTION
+                  value: "0.5"
+                - name: SOCCER_TOURNAMENT_PROMOTE
+                  value: "true"
+                - name: SOCCER_TOURNAMENT_SEED
+                  value: "20260613"
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: 4Gi
+                limits:
+                  cpu: "2"
+                  memory: 14Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 20Gi

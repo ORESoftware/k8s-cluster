@@ -141,6 +141,36 @@ test('argocd runtime exposes a native headlamp cron sentinel', async () => {
   assert.match(runtimeReadme, /Headlamp's Jobs and Cron Jobs workload cards/);
 });
 
+test('argocd runtime schedules the soccer tournament without compile or worker OOM spikes', async () => {
+  const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
+  const cron = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-soccer-tournament-nightly.cronjob.yaml',
+  );
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+
+  assert.match(kustomization, /dd-soccer-tournament-nightly\.cronjob\.yaml/);
+  assert.match(cron, /kind:\s*CronJob/);
+  assert.match(cron, /name:\s*dd-soccer-tournament-nightly/);
+  assert.match(cron, /namespace:\s*default/);
+  assert.match(cron, /schedule:\s*["']0 2 \* \* \*["']/);
+  assert.match(cron, /timeZone:\s*America\/Chicago/);
+  assert.match(cron, /concurrencyPolicy:\s*Forbid/);
+  assert.match(cron, /activeDeadlineSeconds:\s*28800/);
+  assert.match(cron, /automountServiceAccountToken:\s*false/);
+  assert.match(cron, /enableServiceLinks:\s*false/);
+  assert.match(cron, /CARGO_BUILD_JOBS[\s\S]*value:\s*["']1["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_THREADS[\s\S]*value:\s*["']2["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS[\s\S]*value:\s*["']25200["']/);
+  assert.match(cron, /SOCCER_TOURNAMENT_LOCK_KEY[\s\S]*value:\s*soccer-nightly-tournament/);
+  assert.match(cron, /limits:[\s\S]*cpu:\s*["']2["'][\s\S]*memory:\s*14Gi/);
+  assert.match(cron, /emptyDir:[\s\S]*sizeLimit:\s*20Gi/);
+  assert.match(cron, /git -C "\$\{dir\}" switch --detach FETCH_HEAD/);
+  assert.doesNotMatch(cron, /\bgit checkout\b/);
+  assert.doesNotMatch(cron, /rm -rf/);
+  assert.match(runtimeReadme, /dd-soccer-tournament-nightly/);
+  assert.match(runtimeReadme, /AWS\/Hetzner runner/);
+});
+
 test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
   const reaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
   const cargo = await readRepoFile('remote/deployments/idle-reaper-rs/Cargo.toml');

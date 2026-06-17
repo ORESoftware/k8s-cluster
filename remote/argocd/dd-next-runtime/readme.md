@@ -34,6 +34,8 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-redis-cache` (cluster-local Redis cache for low-latency ephemeral runtime state)
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
 - `dd-idle-reaper` (Rust scheduler for idle sweeps and the 90-minute cluster doctor task)
+- `dd-soccer-tournament-nightly` (cross-cluster 128-team learning tournament CronJob; Postgres
+  advisory locking allows only one AWS/Hetzner runner to play matches each night)
 
 The ArgoCD application for this bundle is
 `remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
