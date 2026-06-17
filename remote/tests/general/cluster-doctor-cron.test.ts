@@ -163,6 +163,7 @@ test('argocd runtime schedules the soccer tournament without compile or worker O
   assert.match(cron, /SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS[\s\S]*value:\s*["']25200["']/);
   assert.match(cron, /SOCCER_TOURNAMENT_LOCK_KEY[\s\S]*value:\s*soccer-nightly-tournament/);
   assert.match(cron, /limits:[\s\S]*cpu:\s*["']2["'][\s\S]*memory:\s*14Gi/);
+  assert.match(cron, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*4Gi/);
   assert.match(cron, /emptyDir:[\s\S]*sizeLimit:\s*20Gi/);
   assert.match(cron, /git -C "\$\{dir\}" switch --detach FETCH_HEAD/);
   assert.doesNotMatch(cron, /\bgit checkout\b/);
