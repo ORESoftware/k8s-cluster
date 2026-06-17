@@ -930,6 +930,14 @@ function kindFromSqlType(sqlType) {
     case "bigint":
     case "bigserial":
       return "bigint";
+    // Floating-point. `real` is 32-bit (float4), `double precision` is 64-bit (float8);
+    // the parser collapses the two-word `double precision` to the `double` token. Both map
+    // to the `float` kind so adapters treat them as real numbers (no integer min/max
+    // validation), while the precise width is preserved on `column.sqlType` for the
+    // strict-typed adapters (Rust f32/f64, SQL-type renderers real/double precision).
+    case "double":
+    case "real":
+      return "float";
     case "boolean":
       return "boolean";
     case "jsonb":

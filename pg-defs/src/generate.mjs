@@ -180,6 +180,15 @@ function renderDrizzleTypeScript(contract) {
     pgCoreImports.push('pgSchema');
   }
   pgCoreImports.push('pgTable', 'smallint', 'text', 'timestamp', 'uniqueIndex', 'uuid', 'varchar');
+  // Floating-point column builders, imported only when the schema actually uses them so we
+  // never emit an unused import.
+  const usedSqlTypes = new Set(contract.tables.flatMap((table) => table.columns.map((col) => col.sqlType)));
+  if (usedSqlTypes.has('double')) {
+    pgCoreImports.push('doublePrecision');
+  }
+  if (usedSqlTypes.has('real')) {
+    pgCoreImports.push('real');
+  }
 
   const lines = [
     ...generatedNotice('//'),
@@ -1259,6 +1268,12 @@ function drizzleColumn(column) {
     case 'bigserial':
       builder = `bigserial(${JSON.stringify(column.name)}, { mode: "number" })`;
       break;
+    case 'double':
+      builder = `doublePrecision(${JSON.stringify(column.name)})`;
+      break;
+    case 'real':
+      builder = `real(${JSON.stringify(column.name)})`;
+      break;
     case 'boolean':
       builder = `boolean(${JSON.stringify(column.name)})`;
       break;
@@ -1323,6 +1338,9 @@ function zodColumn(table, column, options) {
     case 'integer':
     case 'bigint':
       schemaExpression = 'z.number().int()';
+      break;
+    case 'float':
+      schemaExpression = 'z.number()';
       break;
     case 'boolean':
       schemaExpression = 'z.boolean()';
