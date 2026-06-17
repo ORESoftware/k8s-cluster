@@ -701,7 +701,7 @@ pub fn secret_scan_example_request() -> ArtifactScanRequest {
         title: Some("Example secret leak scan".to_string()),
         artifacts: vec![DiagramSource {
             name: Some(".env".to_string()),
-            content: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nGITHUB_TOKEN=ghp_examplotokenvalue0000000000000000\n".to_string(),
+            content: "AWS_ACCESS_KEY_ID=AWS_EXAMPLE_ACCESS_KEY_ID\nGITHUB_TOKEN=ghp_examplotokenvalue0000000000000000\n".to_string(),
         }],
         inline_text: Some("postgres://app:hunter2@db.internal:5432/app".to_string()),
         indicators: vec![],
